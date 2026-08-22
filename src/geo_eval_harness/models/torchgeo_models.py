@@ -647,12 +647,30 @@ _DEO_S2_BANDS = [
     "swir1",
     "swir2",
 ]
-_DEO_RGB_MEAN = (0.485, 0.456, 0.406)
-_DEO_RGB_STD = (0.229, 0.224, 0.225)
+# DEO's own preprocessing (github.com/wolfilip/DEO-FM, utils/augmentations.py)
+# ships two different 10-channel Normalize objects, not one. Both share the
+# same 7 multispectral values, but their RGB channels differ by three orders
+# of magnitude:
+#
+#   normalize_hr — RGB in reflectance scale (~0.4).  Used for the "HR"
+#     pretraining samples, where the paper (arXiv:2602.19863, Sec 3.6)
+#     replaces 150k of the 500k fMoW-Sentinel images' optical channels with
+#     co-located high-resolution *aerial* RGB from fMoW-RGB.
+#   normalize_s2 — RGB in raw Sentinel-2 DN scale (~1100-1200), matching the
+#     multispectral channels' own scale.  Used for genuine single-sensor S2
+#     samples, where RGB is just bands 4/3/2 of the same raw tile.
+#
+# torchgeo's DEO_Weights.DEO_SWIN.transforms bundles normalize_hr, but that's
+# the *aerial* variant — right for `mode="rgb"` (a true aerial/optical
+# dataset), wrong for `mode="s2"` (real Sentinel-2 multispectral, whose RGB
+# is raw-DN like the rest of its bands, not aerial reflectance). Do not
+# trust torchgeo's single bundled transform to cover both pathways.
+_DEO_RGB_MEAN = (0.4182007312774658, 0.4214799106121063, 0.3991275727748871)
+_DEO_RGB_STD = (0.28774282336235046, 0.27541765570640564, 0.2764017581939697)
 _DEO_S2_MEAN = (
-    0.4182007312774658,
-    0.4214799106121063,
-    0.3991275727748871,
+    1136.26026392,
+    1120.77120066,
+    1184.3824625,
     1263.73947144,
     1645.40315151,
     1846.87040806,
@@ -662,9 +680,9 @@ _DEO_S2_MEAN = (
     1247.91870117,
 )
 _DEO_S2_STD = (
-    0.28774282336235046,
-    0.27541765570640564,
-    0.2764017581939697,
+    965.23119807,
+    712.12507725,
+    650.2842772,
     948.9819932,
     1108.06650639,
     1258.36394548,
@@ -676,11 +694,15 @@ _DEO_S2_STD = (
 
 
 class TorchGeoDEOBench(BenchModel):
-    """Frozen DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
+    """Frozen DEO Swin-B wrapper for native aerial-RGB or Sentinel-2 inputs.
 
-    DEO has separate RGB and ten-channel Sentinel-2 patch embeddings. Its
-    normalization deliberately bypasses the generic TorchGeo weights transform:
-    RGB uses ImageNet statistics, while S2 uses DEO's exact published values.
+    DEO has separate RGB and ten-channel Sentinel-2 patch embeddings, each
+    with its own published normalization (``normalize_hr`` / ``normalize_s2``
+    in DEO-FM's own source) -- see the comment on ``_DEO_RGB_MEAN`` above for
+    why these must not be conflated. ``mode="rgb"`` is for genuine aerial /
+    high-resolution optical datasets (matches DEO's fMoW-RGB pretraining
+    data); it is NOT a generic "any RGB dataset" pathway -- Sentinel-2 RGB
+    belongs to ``mode="s2"`` instead, using the raw 10-band tile.
     """
 
     _deo_mean: torch.Tensor
@@ -770,12 +792,12 @@ class TorchGeoDEOBench(BenchModel):
                 _DEO_S2_BANDS,
                 policy=BandMappingPolicy(preferred_sensors=("s2",)),
             )
-            rgb = mapped[:, :3]
-            finite_rgb = torch.where(torch.isfinite(rgb), rgb, torch.zeros_like(rgb))
-            rgb_max = finite_rgb.amax(dim=(1, 2, 3), keepdim=True).clamp_min(1e-6)
-            rgb = (finite_rgb / rgb_max).clamp(0.0, 1.0)
-            multispectral = to_s2_dn(mapped[:, 3:], self._s2_input_unit)
-            inputs = torch.cat((rgb, multispectral), dim=1)
+            # All 10 channels (RGB included) are raw Sentinel-2 DN here --
+            # normalize_s2's RGB stats are DN-scale too, so no separate
+            # rescale for the RGB slice is needed (or correct): unlike the
+            # aerial `hr` pathway, S2 RGB is not a differently-scaled source,
+            # it's bands 4/3/2 of the same raw tile as the other 7 channels.
+            inputs = to_s2_dn(mapped, self._s2_input_unit)
         return (inputs - self._deo_mean.to(inputs)) / self._deo_std.to(inputs)
 
     @torch.no_grad()
