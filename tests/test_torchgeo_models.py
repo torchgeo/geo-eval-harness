@@ -505,16 +505,7 @@ def test_torchgeo_panopticon_model_native_raises(monkeypatch: pytest.MonkeyPatch
 
 
 def test_deo_rgb_and_s2_use_distinct_published_normalizers() -> None:
-    """DEO-FM's own source (utils/augmentations.py) ships two different
-    10-channel Normalize objects sharing the same 7 multispectral values but
-    with RGB channels three orders of magnitude apart: `normalize_hr`
-    (reflectance-scale RGB, for HR aerial samples) and `normalize_s2`
-    (raw-DN-scale RGB, for genuine single-sensor Sentinel-2 samples).
-    torchgeo's bundled DEO_Weights.DEO_SWIN.transforms only carries
-    `normalize_hr` -- it must not be reused for the s2 pathway, and the two
-    RGB stat sets must never accidentally collapse to the same values.
-    """
-    # mode="rgb" (aerial, e.g. RESISC45/m-pv4ger) uses normalize_hr's RGB.
+    """rgb (normalize_hr) and s2 (normalize_s2) must not collapse to the same RGB stats."""
     assert (
         pytest.approx((0.4182007312774658, 0.4214799106121063, 0.3991275727748871)) == _DEO_RGB_MEAN
     )
@@ -522,10 +513,8 @@ def test_deo_rgb_and_s2_use_distinct_published_normalizers() -> None:
         pytest.approx((0.28774282336235046, 0.27541765570640564, 0.2764017581939697))
         == _DEO_RGB_STD
     )
-    # mode="s2" (genuine Sentinel-2) uses normalize_s2's raw-DN RGB, not hr's.
     assert _DEO_S2_MEAN[:3] == pytest.approx((1136.26026392, 1120.77120066, 1184.3824625))
     assert _DEO_S2_STD[:3] == pytest.approx((965.23119807, 712.12507725, 650.2842772))
-    # Both share the same 7 multispectral values regardless of RGB source.
     assert _DEO_S2_MEAN[3:] == pytest.approx(
         (
             1263.73947144,
@@ -537,8 +526,6 @@ def test_deo_rgb_and_s2_use_distinct_published_normalizers() -> None:
             1247.91870117,
         )
     )
-    # The two RGB stat sets must differ -- if they ever match, the s2 pathway
-    # has regressed to treating raw-DN Sentinel-2 RGB as aerial reflectance.
     assert pytest.approx(_DEO_S2_MEAN[:3]) != _DEO_RGB_MEAN
 
 
@@ -568,16 +555,12 @@ def test_deo_forward_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
     out = s2_model.forward_patch_features(torch.rand(2, len(s2_bands), 224, 224) * 5000)
     assert out.shape == (2, 1024)
 
-    # Alternate normalization strategies must work too, not just model_native
-    # -- band selection/reordering (3ch for rgb, 10ch canonical order for s2)
-    # is independent of which normalizer is applied on top.
     zscore_rgb = TorchGeoDEOBench(bands=_rgb_bands(), mode="rgb", normalization="bandspec_zscore")
     out = zscore_rgb.forward_patch_features(torch.rand(2, 3, 224, 224) * 10000)
     assert out.shape == (2, 1024)
 
     zscore_s2 = TorchGeoDEOBench(bands=s2_bands, mode="s2", normalization="bandspec_zscore")
-    # _s2_multispectral_bands() gives every band mean=0.2, std=0.05 -- at
-    # exactly the dataset mean, a z-score normalizer must output ~0.
+    # _s2_multispectral_bands() bands have mean=0.2, std=0.05.
     x = torch.full((1, len(s2_bands), 4, 4), 0.2)
     normed = zscore_s2.normalize_inputs(x)
     assert torch.allclose(normed, torch.zeros_like(normed), atol=1e-4)
