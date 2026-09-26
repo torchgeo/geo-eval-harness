@@ -191,7 +191,13 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "manifest",
-    ["aid.sha256", "geobench_v1.sha256", "geobench_v2.sha256", "hotosm_buildings.sha256"],
+    [
+        "aid.sha256",
+        "geobench_v1.sha256",
+        "geobench_v2.sha256",
+        "hotosm_buildings.sha256",
+        "infrabench_cls.sha256",
+    ],
 )
 def test_checksum_manifests_are_well_formed(manifest: str) -> None:
     text = (Path(hub.__file__).parent / "checksums" / manifest).read_text().splitlines()
