@@ -80,7 +80,11 @@ class InfraBenchCLS(BenchDataset):
 
     Six border assets sit in two regional cells, so they appear twice, always in val or test.
 
-    Sentinel-2 is reflectance scaled to 0--255 and clipped, not L2A digital numbers.
+    Sentinel-2 comes from the least cloudy Planetary Computer L2A scene in 2021--2024.
+
+    Its digital numbers are divided by 10,000, scaled to 0--255, clipped, and rounded down.
+
+    The +1000 offset from baseline 04.00 was not subtracted, so about 95% of tiles read ~25 high.
 
     Sentinel-1 is backscatter in dB clipped to -30--10, and zero where no scene was found.
 
