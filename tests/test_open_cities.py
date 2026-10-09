@@ -132,6 +132,35 @@ def test_dataset_reads_native_chips_by_window(
     assert not test[0]["mask"].any()
 
 
+def test_mask_preserves_polygons_in_nested_repaired_collections(
+    scene: Path, index: pd.DataFrame
+) -> None:
+    bowtie_with_tail = _polygon(
+        [100, 150, 100, 150, 100, 80, 100], [100, 150, 150, 100, 100, 100, 100]
+    )
+    geometry = {
+        "type": "GeometryCollection",
+        "geometries": [{"type": "GeometryCollection", "geometries": [bowtie_with_tail]}],
+    }
+    label_path = scene / "dar" / "abc123.geojson"
+    label_path.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [{"type": "Feature", "properties": {}, "geometry": geometry}],
+            }
+        )
+    )
+    path = oc.build_scene_mask(scene / "dar" / "abc123.tif", label_path, index)
+    with rasterio.open(path) as ds:
+        mask = ds.read(1)
+    assert mask[110, 125] == 1
+    assert mask[140, 125] == 1
+    assert (mask[105:110, 120:130] == 1).all()
+    assert (mask[140:145, 120:130] == 1).all()
+    assert not mask[100, 80:100].any()
+
+
 def test_dataset_reports_missing_scene_files(
     tmp_path: Path, index: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
 ) -> None:

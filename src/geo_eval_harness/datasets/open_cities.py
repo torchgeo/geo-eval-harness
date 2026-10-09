@@ -67,8 +67,16 @@ def load_labels(path: Path, crs: CRS) -> np.ndarray:
 
     Repairs can yield line or point fragments; only the polygonal parts are kept.
     """
-    geoms = shapely.get_parts(shapely.make_valid(gpd.read_file(path).to_crs(crs).geometry.values))
-    return geoms[shapely.get_type_id(geoms) == shapely.GeometryType.POLYGON]
+    geoms = shapely.make_valid(gpd.read_file(path).to_crs(crs).geometry.values)
+    polygons = []
+    while len(geoms):
+        types = shapely.get_type_id(geoms)
+        polygons.extend(geoms[types == shapely.GeometryType.POLYGON])
+        collections = np.isin(
+            types, [shapely.GeometryType.MULTIPOLYGON, shapely.GeometryType.GEOMETRYCOLLECTION]
+        )
+        geoms = shapely.get_parts(geoms[collections])
+    return np.asarray(polygons, dtype=object)
 
 
 def upstream_url(relative: str) -> str:
