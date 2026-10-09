@@ -122,6 +122,7 @@ data/
 !**/normalizer.json
 !docs/_static/_results_snapshots/*.json
 !docs/_static/_dataset_geography/*.json
+!src/geo_eval_harness/datasets/open_cities_index.csv
 
 # Logs
 *.log
