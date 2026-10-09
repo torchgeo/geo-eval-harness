@@ -172,6 +172,9 @@ class _OpenCitiesSplit(Dataset):
     def __len__(self) -> int:
         return len(self.scenes)
 
+    def __getstate__(self) -> dict[str, object]:
+        return self.__dict__ | {"_handles": {}}
+
     def _open(self, path: Path) -> rasterio.DatasetReader:
         # Handles must not cross a fork: each DataLoader worker opens its own.
         if os.getpid() != self._pid:

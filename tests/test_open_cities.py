@@ -12,6 +12,7 @@ import pytest
 import rasterio
 import torch
 from rasterio.transform import from_origin
+from torch.utils.data import DataLoader
 
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets import open_cities as oc
@@ -159,6 +160,24 @@ def test_mask_preserves_polygons_in_nested_repaired_collections(
     assert (mask[105:110, 120:130] == 1).all()
     assert (mask[140:145, 120:130] == 1).all()
     assert not mask[100, 80:100].any()
+
+
+def test_spawn_worker_reads_dataset_after_parent_sample_access(
+    scene: Path, index: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    oc.build_scene_mask(scene / "dar" / "abc123.tif", scene / "dar" / "abc123.geojson", index)
+    monkeypatch.chdir(scene.parents[1])
+    monkeypatch.setattr(oc, "load_index", lambda: index)
+    dataset = oc.OpenCities().get_dataset("train")
+    expected = dataset[0]
+    loader = DataLoader(
+        dataset, batch_size=1, num_workers=1, multiprocessing_context="spawn", timeout=30
+    )
+    batches = list(loader)
+    assert len(batches) == 1
+    for key, value in expected.items():
+        torch.testing.assert_close(batches[0][key][0], value)
+        torch.testing.assert_close(dataset[0][key], value)
 
 
 def test_dataset_reports_missing_scene_files(
