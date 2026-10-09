@@ -349,7 +349,9 @@ def test_download_datasets_validates_every_name_before_dispatch(
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize("name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings"])
+@pytest.mark.parametrize(
+    "name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings", "open_cities"]
+)
 def test_download_datasets_deduplicates_names(tmp_path: Path, name: str) -> None:
     with mock.patch(f"geo_eval_harness.download.download_{name}") as download:
         download_datasets([name, name], tmp_path)

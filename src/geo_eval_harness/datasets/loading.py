@@ -53,6 +53,7 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "aid": ("aid", "AID", "classification"),
     # other segmentation
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
+    "open_cities": ("open_cities", "OpenCities", "segmentation"),
 }
 
 
@@ -99,7 +100,15 @@ def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
-    if name in {"eurosat", "eurosat-spatial", "resisc45", "ucmerced", "aid", "hotosm_buildings"}:
+    if name in {
+        "eurosat",
+        "eurosat-spatial",
+        "resisc45",
+        "ucmerced",
+        "aid",
+        "hotosm_buildings",
+        "open_cities",
+    }:
         return f"geo-eval-harness download {name.removesuffix('-spatial')}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"
 

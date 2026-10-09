@@ -10,6 +10,8 @@ Targets:
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
   into compact per-split files under ``<output>/hotosm_buildings``.
+- ``open_cities`` — Open Cities AI Challenge tier-1 scenes from source.coop, plus native-grid
+  masks built from the labels, into ``<output>/open_cities``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -18,11 +20,18 @@ Use ``--datasets`` to select a GeoBench subset.
 
 import logging
 import shutil
+import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import rasterio
+from rasterio.windows import Window
 from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, UCMerced
 
+from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
 from geo_eval_harness.datasets.hotosm_buildings import (
@@ -30,7 +39,7 @@ from geo_eval_harness.datasets.hotosm_buildings import (
     HOTOSMBuildings,
     convert_hotosm_split,
 )
-from geo_eval_harness.hub import fetch_pinned, load_checksums
+from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +62,7 @@ V1_DATASETS: tuple[str, ...] = (
     "m-bigearthnet",
 )
 TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings")
+DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "open_cities")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
 )
@@ -190,6 +199,89 @@ def download_hotosm_buildings(output_dir: Path) -> None:
     logger.info("HOTOSM buildings download complete.")
 
 
+def fetch_open_cities_file(relative: str, root: Path) -> Path:
+    """Download one upstream ``<city>/<scene>.tif|.geojson`` into ``root``, resuming partial files.
+
+    Existing complete files are not downloaded again.
+    """
+    dst = root / relative
+    if dst.is_file():
+        return dst
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + ".part")
+    offset = part.stat().st_size if part.exists() else 0
+    headers = {"User-Agent": open_cities.USER_AGENT}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    request = urllib.request.Request(open_cities.upstream_url(relative), headers=headers)
+    with urllib.request.urlopen(request) as response:
+        # A server that ignores the range answers 200 with the whole file.
+        mode = "ab" if response.status == 206 else "wb"
+        with part.open(mode) as stream:
+            shutil.copyfileobj(response, stream, length=1 << 20)
+    part.replace(dst)
+    return dst
+
+
+def _check_open_cities_masks(root: Path, index: pd.DataFrame, tolerance: float = 0.002) -> None:
+    """Compare each split's building fraction in the written masks with the index."""
+    fractions = np.zeros(len(index))
+    for scene, rows in index.groupby(["city", "scene"]).groups.items():
+        with rasterio.open(root / scene[0] / f"{scene[1]}_mask.tif") as mask:
+            for i in rows:
+                chip = mask.read(
+                    1,
+                    window=Window(
+                        index.col_off[i],
+                        index.row_off[i],
+                        open_cities.CHIP_SIZE,
+                        open_cities.CHIP_SIZE,
+                    ),
+                )
+                fractions[i] = (chip == 1).mean()
+    for split, measured in index.assign(measured=fractions).groupby("split"):
+        delta = abs(measured.measured.mean() - measured.building_frac.mean())
+        if delta > tolerance:
+            raise ValueError(
+                f"Open Cities {split}: mask building fraction differs from the index by {delta:.4f}. "
+                f"Remove the *_mask.tif files under {root} and retry the download."
+            )
+        logger.info("Open Cities %s masks match the index (|delta| = %.4f).", split, delta)
+
+
+def download_open_cities(output_dir: Path, workers: int = 4) -> None:
+    """Download the tier-1 Open Cities scenes and build their masks in ``output_dir/open_cities``.
+
+    Imagery (about 34 GB) is kept byte-identical and verified against the packaged
+    checksums. Masks are rasterised on each scene's native grid for the indexed chips only.
+    """
+    target = Path(output_dir) / "open_cities"
+    checksums = load_checksums("open_cities.sha256")
+    logger.info("Downloading %d Open Cities files -> %s", len(checksums), target)
+
+    def fetch(item: tuple[str, str]) -> None:
+        fetch_open_cities_file(item[0], target)
+        verify_checksums(target, {item[0]: item[1]})
+
+    with ThreadPoolExecutor(workers) as pool:
+        list(pool.map(fetch, checksums.items()))
+
+    index = open_cities.load_index()
+
+    def build(scene: tuple[str, str]) -> None:
+        city, name = scene
+        rows = index[(index.city == city) & (index.scene == name)]
+        open_cities.build_scene_mask(
+            target / city / f"{name}.tif", target / city / f"{name}.geojson", rows
+        )
+        logger.info("Built mask for %s/%s (%d chips).", city, name, len(rows))
+
+    with ThreadPoolExecutor(workers) as pool:
+        list(pool.map(build, index[["city", "scene"]].drop_duplicates().itertuples(index=False)))
+    _check_open_cities_masks(target, index)
+    logger.info("Open Cities download complete.")
+
+
 def download_ucmerced(output_dir: Path) -> None:
     """Download verified UC Merced imagery and splits into ``output_dir/ucmerced``."""
     target = Path(output_dir) / "ucmerced"
@@ -227,3 +319,5 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_ucmerced(output_dir)
     if "hotosm_buildings" in selected:
         download_hotosm_buildings(output_dir)
+    if "open_cities" in selected:
+        download_open_cities(output_dir)

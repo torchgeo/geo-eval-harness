@@ -9,6 +9,7 @@ Usage::
 
     $ python scripts/compute_band_statistics.py --dataset resisc45
     $ python scripts/compute_band_statistics.py --dataset resisc45 --batch-size 32
+    $ python scripts/compute_band_statistics.py --dataset open_cities --ignore-index 255
 
 The dataset must already be on disk; see ``geo-eval-harness download``.
 """
@@ -36,10 +37,12 @@ def compute_statistics(
     *,
     batch_size: int = 64,
     num_workers: int = 8,
+    ignore_index: int | None = None,
 ) -> list[dict[str, float]]:
     """Return per-channel ``mean``/``std``/``min``/``max`` over the train split.
 
-    Use float64 totals to limit rounding error when summing large datasets.
+    Use float64 totals to limit rounding error when summing large datasets. With
+    ``ignore_index``, pixels whose segmentation mask equals it (nodata) are left out.
     """
     bench = get_bench_dataset_class(dataset_name)()
     dataset = bench.get_dataset("train", bands=None)
@@ -59,11 +62,17 @@ def compute_statistics(
                 f"{dataset_name}: loader returned {images.shape[1]} channels but the "
                 f"wrapper declares {n_bands} BandSpec entries"
             )
-        count += images.shape[0] * images.shape[2] * images.shape[3]
-        total += images.sum(dim=(0, 2, 3))
-        total_sq += (images * images).sum(dim=(0, 2, 3))
-        minimum = torch.minimum(minimum, images.amin(dim=(0, 2, 3)))
-        maximum = torch.maximum(maximum, images.amax(dim=(0, 2, 3)))
+        if ignore_index is None:
+            keep = torch.ones_like(images[:, 0], dtype=torch.bool)
+        else:
+            keep = batch["mask"] != ignore_index
+        weight = keep.unsqueeze(1).double()
+        count += int(keep.sum())
+        total += (images * weight).sum(dim=(0, 2, 3))
+        total_sq += (images * images * weight).sum(dim=(0, 2, 3))
+        kept = keep.unsqueeze(1).expand_as(images)
+        minimum = torch.minimum(minimum, images.where(kept, float("inf")).amin(dim=(0, 2, 3)))
+        maximum = torch.maximum(maximum, images.where(kept, float("-inf")).amax(dim=(0, 2, 3)))
         if index % 50 == 0:
             logger.info("batch %d/%d", index, len(loader))
 
@@ -104,11 +113,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset", required=True, help="Registered dataset name")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--num-workers", type=int, default=8)
+    parser.add_argument(
+        "--ignore-index",
+        type=int,
+        default=None,
+        help="Skip pixels whose segmentation mask equals this value (e.g. 255 nodata)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     stats = compute_statistics(
-        args.dataset, batch_size=args.batch_size, num_workers=args.num_workers
+        args.dataset,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        ignore_index=args.ignore_index,
     )
 
     logger.info("%s train-split statistics (raw sensor units)", args.dataset)
