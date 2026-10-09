@@ -11,7 +11,7 @@ from tests.support.data import require_dataset_data
 # RESISC45 uses torchgeo split-file counts: 31500 images split 60/20/20.
 # UCMerced uses torchgeo split-file counts: 2100 images split 60/20/20.
 # HOTOSM buildings uses the official Hugging Face split row counts.
-# Open Cities counts come from the committed open_cities_index.csv.
+# Open Cities counts come from the committed open_cities_index.csv.gz.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},
