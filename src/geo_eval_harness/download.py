@@ -226,8 +226,9 @@ def fetch_open_cities_file(relative: str, root: Path) -> Path:
 def _check_open_cities_masks(root: Path, index: pd.DataFrame, tolerance: float = 0.002) -> None:
     """Compare each split's building fraction in the written masks with the index."""
     fractions = np.zeros(len(index))
-    for scene, rows in index.groupby(["city", "scene"]).groups.items():
-        with rasterio.open(root / scene[0] / f"{scene[1]}_mask.tif") as mask:
+    scenes = index.city.str.cat(index.scene, sep="/")
+    for scene, rows in index.groupby(scenes).groups.items():
+        with rasterio.open(root / f"{scene}_mask.tif") as mask:
             for i in rows:
                 chip = mask.read(
                     1,
