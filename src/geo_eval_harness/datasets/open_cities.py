@@ -1,7 +1,7 @@
 """Open Cities AI Challenge building segmentation, from GFDRR Labs on source.coop.
 
 The upstream drone scenes stay byte-identical on disk. A committed chip index
-(``open_cities_index.csv``) fixes 512 px chips on each scene's native pixel grid and assigns
+(``open_cities_index.csv.gz``) fixes 512 px chips on each scene's native pixel grid and assigns
 them to train/val/test by 500 m geographic block. Masks are rasterised once, on the same
 native grid, into one sparse GeoTIFF per scene. Chips are read by window; nothing is resampled.
 """
@@ -37,7 +37,7 @@ IGNORE_INDEX = 255
 # scenes also store nodata as black RGB under opaque alpha.
 ALPHA_MIN = 128
 BLACK_MAX = 10
-INDEX_FILE = "open_cities_index.csv"
+INDEX_FILE = "open_cities_index.csv.gz"
 CITY_NAME: dict[str, str] = {
     "acc": "Accra",
     "dar": "Dar es Salaam",
@@ -57,8 +57,8 @@ def is_valid(rgba: np.ndarray) -> np.ndarray:
 def load_index() -> pd.DataFrame:
     """Return the committed chip index shipped with the package."""
     path = resources.files(__package__).joinpath(INDEX_FILE)
-    with path.open() as stream:
-        return pd.read_csv(stream, comment="#")
+    with path.open("rb") as stream:
+        return pd.read_csv(stream, comment="#", compression="gzip")
 
 
 def load_labels(path: Path, crs: rasterio.crs.CRS) -> np.ndarray:
@@ -196,7 +196,7 @@ class OpenCities(BenchDataset):
     sampling distance varies from 0.02 m to 0.20 m (a chip spans 10-100 m). Resizing is left
     to the model's transforms. A chip is kept when at least half of it is valid imagery.
     Train/val/test (70/10/20 per city) are assigned per 500 m geographic block and fixed in
-    the packaged ``open_cities_index.csv``. Zanzibar blocks with under 1% building cover are
+    the packaged ``open_cities_index.csv.gz``. Zanzibar blocks with under 1% building cover are
     dropped, as are chips duplicated by overlapping scenes. See
     ``docs/plans/2026-10-09-open-cities-building-segmentation.md`` for the label audit.
 

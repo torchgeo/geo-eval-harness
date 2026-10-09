@@ -18,6 +18,7 @@ Usage::
 """
 
 import argparse
+import gzip
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -74,7 +75,7 @@ def source(data_dir: Path, city: str, scene: str, ext: str) -> str:
 
 def read_dropped_blocks(path: Path) -> pd.Series:
     """Read the dropped Zanzibar blocks and their building fraction from the index header."""
-    with path.open() as stream:
+    with gzip.open(path, "rt") as stream:
         for line in stream:
             if line.startswith("# znz_dropped_blocks:"):
                 pairs = [item.split("=") for item in line.split(":", 1)[1].split()]
