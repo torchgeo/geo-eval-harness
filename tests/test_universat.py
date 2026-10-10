@@ -101,7 +101,7 @@ def test_forward_routes_interleaved_sensors_and_pools_tokens(
     assert seen["load"] == (
         "fixture/model:pinned",
         "from_pretrained",
-        {"trust_repo": True, "compile": False},
+        {"trust_repo": True, "skip_validation": True, "compile": False},
     )
     assert not model.model.training
     expected = torch.tensor([[0.6, 0.8]]) if normalize else torch.tensor([[3.0, 4.0]])

@@ -214,9 +214,17 @@ class UniverSatBenchModel(BenchModel):
         source = f"{repo}:{repo_ref}" if repo_ref else repo
         # Single-pass extraction does not amortize torch.compile's max-autotune warmup.
         # Varying dataset shapes can also exhaust its recompile limit.
+        # torch.hub's fork check only accepts a commit that is a branch or tag head,
+        # so the pinned commit fails once upstream main moves past it.
         self.model = cast(
             UniverSatEncoder,
-            torch.hub.load(source, "from_pretrained", trust_repo=True, compile=False),
+            torch.hub.load(
+                source,
+                "from_pretrained",
+                trust_repo=True,
+                skip_validation=True,
+                compile=False,
+            ),
         ).eval()
         logger.info(
             "UniverSat loaded (modalities=%s, %d channels, patch_size=%sm)",
