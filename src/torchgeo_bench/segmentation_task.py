@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 
 SegMetrics = dict[str, float]
 
+# Free GPU memory kept back for the head's activations when deciding where cached features live.
+DEVICE_HEADROOM_BYTES = 6 * 2**30
+
 
 class LearningRateTrial(TypedDict):
     """Validation outcome of one rate in a learning-rate search."""
@@ -364,13 +367,34 @@ class SegmentationSolver:
         return last_val_miou
 
     def _device_cache(self, cache: "CachedFeaturesDataset | GPUTensorCache") -> GPUTensorCache:
-        """Move a CPU cache to the training device once; reuse device caches as-is."""
+        """Move a CPU cache to the training device once; reuse device caches as-is.
+
+        A cache that would not fit in free GPU memory stays in host memory as float16 and moves
+        to the GPU one batch at a time. The arithmetic is the same; only the transfer cost differs.
+        """
         if isinstance(cache, GPUTensorCache):
             return cache
+        if self.device_type == "cuda" and cache.nbytes(torch.float16) > self._free_device_bytes():
+            logger.warning(
+                "Keeping %.1f GiB of cached features in host memory; they exceed free GPU memory",
+                cache.nbytes(torch.float16) / 2**30,
+            )
+            return GPUTensorCache.from_cached(cache, "cpu", dtype=torch.float16)
         return GPUTensorCache.from_cached(cache, self.device)
 
+    def _free_device_bytes(self) -> int:
+        """Return GPU memory available to this process, less room for the head's activations.
+
+        Memory that PyTorch has reserved but not allocated, such as freed training caches,
+        counts as available.
+        """
+        free, _ = torch.cuda.mem_get_info(self.device)
+        cached = torch.cuda.memory_reserved(self.device) - torch.cuda.memory_allocated(self.device)
+        return free + cached - DEVICE_HEADROOM_BYTES
+
     def _head_inputs(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
-        """Upcast float16 cached features when the head runs without autocast."""
+        """Move features to the training device, upcasting float16 when autocast is off."""
+        features = [f.to(self.device, non_blocking=True) for f in features]
         if self.use_amp:
             return features
         return [f.float() for f in features]
@@ -398,7 +422,7 @@ class SegmentationSolver:
             self.optimizer.zero_grad()
             with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                 logits = self.model.head(self._head_inputs(features), *input_hw)
-                loss: torch.Tensor = self.criterion(logits, masks)
+                loss: torch.Tensor = self.criterion(logits, masks.to(self.device))
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
@@ -528,7 +552,7 @@ class SegmentationSolver:
         Returns:
             Metrics, optionally followed by per-image confusion matrices.
         """
-        gpu_cache = GPUTensorCache.from_cached(cache, self.device)
+        gpu_cache = self._device_cache(cache)
         return self._evaluate(
             gpu_cache,
             batch_size,
@@ -565,7 +589,7 @@ class SegmentationSolver:
             for features, masks in data.ordered_batches(batch_size):
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                     logits = self.model.head(self._head_inputs(features), *input_hw)
-                yield logits, masks
+                yield logits, masks.to(self.device)
             return
 
         for batch in data:

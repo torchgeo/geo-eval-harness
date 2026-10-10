@@ -60,6 +60,12 @@ class CachedFeaturesDataset(Dataset):
     def __getitem__(self, index: int) -> tuple[list[torch.Tensor], torch.Tensor]:
         return [t[index] for t in self.layer_tensors], self.masks[index]
 
+    def nbytes(self, dtype: torch.dtype) -> int:
+        """Return the bytes needed to hold the features as ``dtype`` and the masks as long."""
+        itemsize = torch.empty((), dtype=dtype).element_size()
+        features = sum(t.numel() for t in self.layer_tensors) * itemsize
+        return features + self.masks.numel() * torch.empty((), dtype=torch.long).element_size()
+
 
 def _estimate_cache_bytes(cache: "CachedFeaturesDataset") -> int:
     if not cache.layer_tensors:
@@ -101,19 +107,22 @@ class GPUTensorCache:
         cls,
         cache: "CachedFeaturesDataset",
         device: torch.device | str,
+        dtype: torch.dtype | None = None,
     ) -> "GPUTensorCache":
         """Move cached features and masks to ``device``.
 
         Args:
             cache: CPU-resident cached features.
             device: Target device.
+            dtype: Feature dtype. Defaults to float16 on CUDA and float32 on CPU.
 
         Returns:
             A :class:`GPUTensorCache` with all data on *device*.
         """
         target_device = torch.device(device)
-        # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
-        dtype = torch.float16 if target_device.type == "cuda" else torch.float32
+        if dtype is None:
+            # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
+            dtype = torch.float16 if target_device.type == "cuda" else torch.float32
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
         masks = cache.masks.to(target_device, dtype=torch.long)
         return cls(layer_tensors, masks, target_device)
