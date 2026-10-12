@@ -118,6 +118,11 @@ def recorded_normalization(preset: ModelPreset, requested: str) -> str:
     return requested if fixed is None else str(fixed)
 
 
+def wants_resolved_image_size(preset: ModelPreset) -> bool:
+    """Return whether the model builds a fixed input grid and so needs the input size."""
+    return bool(getattr(model_constructor(preset), "wants_resolved_image_size", False))
+
+
 def build_model(preset: ModelPreset, **runtime_options: Any) -> Any:
     """Construct one model; nested target-like kwargs remain ordinary mappings."""
     options = {**preset.kwargs, **runtime_options}
