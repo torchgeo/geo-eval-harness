@@ -112,12 +112,23 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     return effective, preset.model_copy(update={"input": effective.input})
 
 
+def model_constructor(preset: ModelPreset) -> Any:
+    """Import the class or factory named by a preset's ``target``."""
+    module, _, symbol = preset.target.rpartition(".")
+    return getattr(importlib.import_module(module), symbol)
+
+
+def recorded_normalization(preset: ModelPreset, requested: str) -> str:
+    """Return the normalization a model's result rows record, without building the model."""
+    fixed = getattr(model_constructor(preset), "fixed_normalization", None)
+    return requested if fixed is None else str(fixed)
+
+
 def build_model(preset: ModelPreset, **runtime_options: Any) -> Any:
     """Construct one model; nested target-like kwargs remain ordinary mappings."""
     options = {**preset.kwargs, **runtime_options}
     preset.validate_normalization(options.get("normalization", NORMALIZATIONS["dataset"]))
-    module, _, symbol = preset.target.rpartition(".")
-    constructor = getattr(importlib.import_module(module), symbol)
+    constructor = model_constructor(preset)
     if getattr(constructor, "wants_resolved_image_size", False):
         options.setdefault("image_size", preset.input.image_size)
     validated = getattr(constructor, "validated_settings", None)

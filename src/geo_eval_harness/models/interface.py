@@ -1,6 +1,7 @@
 """Model interface for geo-eval-harness."""
 
 from abc import ABC, abstractmethod
+from typing import ClassVar
 
 import torch
 import torch.nn as nn
@@ -39,6 +40,10 @@ class BenchModel(nn.Module, ABC):
     #: Skip the unused strategy normalizer and its ``expected_input_unit`` validation.
     handles_own_normalization: bool = False
 
+    #: Normalization a wrapper always applies, whatever ``normalization`` requests. Declared on
+    #: the class so resume can match result rows before the model is built.
+    fixed_normalization: ClassVar[NormalizationStrategy | None] = None
+
     def __init__(
         self,
         bands: list[BandSpec],
@@ -71,11 +76,11 @@ class BenchModel(nn.Module, ABC):
         """Return the input-normalization policy applied by this model.
 
         Most wrappers apply ``normalization`` directly. Wrappers with an
-        internal pretrained normalization pipeline override this property so
-        result metadata describes the policy that actually reached the
+        internal pretrained normalization pipeline set :attr:`fixed_normalization`
+        so result metadata describes the policy that actually reached the
         backbone, rather than merely the requested dataset setting.
         """
-        return self.normalization.value
+        return (self.fixed_normalization or self.normalization).value
 
     @abstractmethod
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:

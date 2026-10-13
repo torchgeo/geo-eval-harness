@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._input_units import InputUnit, _detect_band_group_unit, to_s2_dn
+from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -437,15 +438,11 @@ class OlmoEarthBenchModel(BenchModel):
         self.normalizer = Normalizer(std_multiplier=std_multiplier)
 
     handles_own_normalization = True
+    fixed_normalization = NormalizationStrategy.MODEL_NATIVE
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Identity — OlmoEarth's internal Normalizer handles raw values."""
         return images
-
-    @property
-    def effective_normalization(self) -> str:
-        """Record OlmoEarth's internal preprocessing as model-native."""
-        return "model_native"
 
     def _pad_group(
         self,
