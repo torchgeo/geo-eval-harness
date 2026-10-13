@@ -67,7 +67,7 @@ Pick the strategy that matches how your backbone was trained:
        raw DN/reflectance directly and auto-detects the sensor scale.  See
        :class:`~geo_eval_harness.models.OlmoEarthBenchModel` and
        :file:`src/geo_eval_harness/models/olmoearth.py` for the pattern.
-     - The runner passes ``identity``. If the model always normalizes internally, declare ``handles_own_normalization = True`` on the wrapper, as OlmoEarth does.
+     - The runner passes ``identity``. If the model always normalizes internally, declare ``handles_own_normalization = True`` on the wrapper, as OlmoEarth does. If it applies the same strategy whatever ``normalization`` requests, also set the class attribute ``fixed_normalization`` to that strategy (OlmoEarth uses ``NormalizationStrategy.MODEL_NATIVE`` for its internal pipeline). Result rows record it, and ``--resume`` reads it from the class before building the model, so finished runs are skipped.
    * - ``model``
      - The exact pretraining input scale is published and you can declare it
        explicitly.  The framework converts the dataset's sensor unit to the
