@@ -11,6 +11,7 @@ import torch
 
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import UniverSatBenchModel
+from geo_eval_harness.models._band_mapping import S2_WAVELENGTHS_UM
 from geo_eval_harness.models.universat import _build_sensor_groups, _sar_code
 
 
@@ -43,6 +44,29 @@ def test_multi_sensor_grouping() -> None:
     assert groups["s2"]["indices"] == [0, 2]
     assert groups["s1"]["indices"] == [1, 3]
     assert groups["s1"]["wavelengths"] == ["VV", "VH"]
+
+
+def test_bands_without_wavelengths_use_the_s2_band_of_the_same_name() -> None:
+    def landsat(name: str, wavelength_um: float | None) -> BandSpec:
+        return BandSpec(
+            "landsat", name, name, mean=0.1, std=0.05, min=0.0, max=1.0, wavelength_um=wavelength_um
+        )
+
+    bands = [landsat("red", 0.655), landsat("nir", None), landsat("swir_1", None)]
+    bands.append(landsat("swir_2", None))
+    (group,) = _build_sensor_groups(bands)
+    assert group["wavelengths"] == [
+        0.655,
+        S2_WAVELENGTHS_UM["nir"],
+        S2_WAVELENGTHS_UM["swir1"],
+        S2_WAVELENGTHS_UM["swir2"],
+    ]
+
+
+def test_rejects_bands_without_a_wavelength_or_s2_counterpart() -> None:
+    mystery = BandSpec("s2", "mystery", "M", mean=0.0, std=1.0, min=0.0, max=1.0)
+    with pytest.raises(ValueError, match="Missing wavelengths"):
+        _build_sensor_groups([*_RGB, mystery])
 
 
 def test_sar_code_mapping() -> None:
