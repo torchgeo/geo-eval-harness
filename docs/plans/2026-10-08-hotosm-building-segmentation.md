@@ -150,8 +150,12 @@ pytest tests/test_hotosm_buildings.py tests/test_download.py tests/test_geograph
 pytest tests/test_split_sizes.py -m slow -k hotosm
 python scripts/compute_band_statistics.py --dataset hotosm_buildings   # expect the values above
 torchgeo-bench datasets hotosm_buildings
-torchgeo-bench run model=timm/resnet50 dataset.names=[hotosm_buildings] \
-  segmentation.head=fpn segmentation.cache_features=false               # GPU smoke run
+cat > /tmp/hotosm-smoke.yaml <<'YAML'
+segmentation:
+  head: fpn
+  cache_features: false
+YAML
+torchgeo-bench run --config /tmp/hotosm-smoke.yaml --model timm/resnet50 --dataset hotosm_buildings --workers 0  # GPU smoke run
 ```
 
 Sanity checks:
