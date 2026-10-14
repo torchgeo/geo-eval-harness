@@ -69,6 +69,7 @@ class TestV2Loading:
             ("burn_scars", "geobench_v2 --datasets burn_scars"),
             ("eurosat", "eurosat"),
             ("resisc45", "resisc45"),
+            ("openearthmap-sar", "openearthmap-sar"),
         ],
     )
     def test_missing_data_requires_download(

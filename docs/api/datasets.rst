@@ -61,6 +61,11 @@ GeoBench V2 — segmentation
 .. autoclass:: SpaceNet2
 .. autoclass:: SpaceNet7
 
+Standalone segmentation
+-----------------------
+
+.. autoclass:: OpenEarthMapSAR
+
 torchgeo wrappers
 -----------------
 

@@ -1,4 +1,4 @@
-# OpenEarthMap-SAR integration into torchgeo-bench
+# OpenEarthMap-SAR integration into geo-eval-harness
 
 ## Problem and agreed approach
 
@@ -67,8 +67,8 @@ These digests are planning cross-checks, not a request for redundant runtime has
   8. building
 - Native ID `0` occurs but is rare. A full scan found it in 159/4,333 train masks, 24/210 validation masks, and 34/490 test masks. Pixel counts were 6,659,368 train, 2,038,247 validation, and 2,828,931 test. Every ID `1..8` occurs in every split.
 - All 4,333 train masks and all released validation/test masks were decoded during planning to establish the complete label domain.
-- The official baseline creates nine logits, trains native zero as background, and computes mIoU over classes `1..8`. Because torchgeo-bench cannot train a class while excluding only that class from metrics, the user selected `0 -> 255` and `1..8 -> 0..7`. Document this deliberate loss-level deviation from the official baseline.
-- The official DFC baseline scales image bytes to `[0, 1]`, randomly crops training images to 512, and resizes validation to 1024. The torchgeo-bench adapter must instead emit raw float32 `0..255` tensors, perform no augmentation, and leave resizing/normalization to the existing runner/model configuration.
+- The official baseline creates nine logits, trains native zero as background, and computes mIoU over classes `1..8`. Because geo-eval-harness cannot train a class while excluding only that class from metrics, the user selected `0 -> 255` and `1..8 -> 0..7`. Document this deliberate loss-level deviation from the official baseline.
+- The official DFC baseline scales image bytes to `[0, 1]`, randomly crops training images to 512, and resizes validation to 1024. The geo-eval-harness adapter must instead emit raw float32 `0..255` tensors, perform no augmentation, and leave resizing/normalization to the existing runner/model configuration.
 - GeoTIFF georeferencing is inconsistent. An inspected train SAR/RGB/label triplet had no GeoTIFF CRS/affine tags, while an inspected validation SAR tile carried NAD83 / UTM zone 18N tags and a 0.5 m pixel size. The geography implementation must scan real headers across all selected SAR files, retain valid locations, and report actual coverage rather than inventing coordinates or assuming every tile is georeferenced.
 - Zenodo describes SAR imagery from the Umbra Open Data Program under CC BY 4.0. Optical-source and label licenses vary by source; do not describe the entire installed benchmark as uniformly CC BY 4.0 without preserving the source-specific caveat.
 
@@ -94,16 +94,16 @@ Planning inspection used HTTP byte ranges instead of retaining the full 8.86 GB 
 
 ## Repository integration findings
 
-- `src/torchgeo_bench/datasets/base.py` defines the raw float32 `BenchDataset` contract.
-- `src/torchgeo_bench/datasets/loading.py::_REGISTRY_SPEC` is the authoritative lightweight catalog. It must get a standalone segmentation entry and an explicit standalone `download_command` route; otherwise it will incorrectly suggest GeoBench V2.
-- `src/torchgeo_bench/datasets/__init__.py` owns sorted lazy public exports.
+- `src/geo_eval_harness/datasets/base.py` defines the raw float32 `BenchDataset` contract.
+- `src/geo_eval_harness/datasets/loading.py::_REGISTRY_SPEC` is the authoritative lightweight catalog. It must get a standalone segmentation entry and an explicit standalone `download_command` route; otherwise it will incorrectly suggest GeoBench V2.
+- `src/geo_eval_harness/datasets/__init__.py` owns sorted lazy public exports.
 - A direct `BenchDataset` adapter is appropriate. OpenEarthMap-SAR is neither GeoBench V1 nor V2, and TorchGeo 0.10 has no adapter for it.
 - Rasterio, NumPy, PyTorch, and torchvision are already available through hard project dependencies; no dependency-manifest change is required.
-- `src/torchgeo_bench/datasets/_transforms.py::select_bands` should be reused, although the only valid selection is the single SAR band.
+- `src/geo_eval_harness/datasets/_transforms.py::select_bands` should be reused, although the only valid selection is the single SAR band.
 - `get_datasets` already owns resize behavior, categorical nearest-neighbor mask resizing, loader construction, missing-data error wrapping, and partition warnings.
 - The existing segmentation solver can consume eight classes with ignored `255` pixels without changes.
 - `scripts/compute_band_statistics.py` computes train-only raw-unit statistics and should be used after the real adapter/download are operational.
-- `src/torchgeo_bench/download.py` explicitly registers and dispatches standalone datasets. A large ZIP64 release needs record-pinned URLs, published checksum validation, exact-member extraction, and repeat-run repair semantics.
+- `src/geo_eval_harness/download.py` explicitly registers and dispatches standalone datasets. A large ZIP64 release needs record-pinned URLs, published checksum validation, exact-member extraction, and repeat-run repair semantics.
 - Python `zipfile` supports these ZIP64 archives. Extraction must whitelist expected members and reject path traversal instead of calling unrestricted `extractall`.
 - Geography coverage is mandatory: `tests/test_geography.py` requires every registry entry in the committed store. Add a standalone TIFF-header extraction path that tolerates genuinely ungeoreferenced samples but fails malformed georeferencing.
 - `tests/support/data.py::require_dataset_data` currently routes unknown standalone datasets to `data/geobenchv2`; it needs an explicit `data/openearthmap-sar` case.
@@ -120,14 +120,14 @@ Planning inspection used HTTP byte ranges instead of retaining the full 8.86 GB 
 
 ### 2. Implementing the standalone dataset adapter and registration
 
-- Add `src/torchgeo_bench/datasets/openearthmap_sar.py` with public `OpenEarthMapSAR(BenchDataset)` and a private map-style raster dataset.
+- Add `src/geo_eval_harness/datasets/openearthmap_sar.py` with public `OpenEarthMapSAR(BenchDataset)` and a private map-style raster dataset.
 - Declare `name="openearthmap-sar"`, `task="segmentation"`, `num_classes=8`, `multilabel=False`, `supports_partitions=False`, `split_sizes={"train": 4333, "val": 210, "test": 490}`, one SAR `BandSpec`, and `rgb_bands=["sar"]`.
 - Implement one split descriptor mapping each split to its prefix, numeric range, image directory, and label directory. Generate IDs with minimum three-digit zero padding and sort numerically.
 - Validate `split`, `partition`, requested bands, the exact expected image/label filenames, and one-to-one spatial dimensions. Ignore no extra TIFF silently; dotfiles/non-TIFF metadata are irrelevant outside expected directories, but unexpected TIFFs inside benchmark directories should fail installation validation.
 - Read with context-managed rasterio handles. Require one image band and one label band, `uint8` storage, 1024 x 1024 dimensions, and matching image/mask shapes. Copy arrays before closing file handles.
 - Return raw float32 images and long masks. Convert masks to a signed integer type before mapping; map zero to 255 and subtract one from `1..8`; reject values outside `0..8`.
 - Compose `select_bands` before the caller transform. Do not normalize, divide by 255, crop, resize, augment, or emit one-hot masks in the adapter.
-- Register the dataset in `_REGISTRY_SPEC`, add `OpenEarthMapSAR` to lazy exports and `__all__`, and make `download_command("openearthmap-sar")` return `torchgeo-bench download openearthmap-sar`.
+- Register the dataset in `_REGISTRY_SPEC`, add `OpenEarthMapSAR` to lazy exports and `__all__`, and make `download_command("openearthmap-sar")` return `geo-eval-harness download openearthmap-sar`.
 - Keep config, segmentation solver, result schema, resume keys, and public CLI parsing unchanged.
 
 ### 3. Implementing the verified multi-record downloader
@@ -159,7 +159,7 @@ Planning inspection used HTTP byte ranges instead of retaining the full 8.86 GB 
 
 ### 5. Integrating honest dataset geography
 
-- Add an explicit OpenEarthMap-SAR extraction route in `src/torchgeo_bench/geography.py`.
+- Add an explicit OpenEarthMap-SAR extraction route in `src/geo_eval_harness/geography.py`.
 - Iterate the benchmark SAR images only, once per sample, across the fixed splits. Read CRS/affine headers without decoding pixel arrays.
 - Reuse the existing CRS-grouping and reprojection-to-EPSG:4326 mechanism, extracting a shared raster-origin helper if the optical OpenEarthMap work has not already done so.
 - Treat absent CRS/affine tags as unavailable coordinates, not malformed samples. Treat partially specified or invalid georeferencing as explicit read failures.
@@ -184,7 +184,7 @@ Planning inspection used HTTP byte ranges instead of retaining the full 8.86 GB 
 
 - Update `docs/user/datasets.rst` with a standalone segmentation entry, download command, exact data layout, one SAR band, 4,333/210/490 counts, eight classes, native-zero ignore mapping, 1024-pixel/GSD facts, source records, and source-specific licensing caveat.
 - State explicitly that training RGB is intentionally not installed/exposed and that the benchmark evaluates SAR only.
-- State explicitly that torchgeo-bench ignores native-zero pixels during loss and metrics, unlike the official baseline which trains a ninth background output but excludes it from mIoU.
+- State explicitly that geo-eval-harness ignores native-zero pixels during loss and metrics, unlike the official baseline which trains a ninth background output but excludes it from mIoU.
 - Add `OpenEarthMapSAR` to `docs/api/datasets.rst` under a standalone segmentation section.
 - Add a concise Unreleased changelog entry and update README download examples/supported-dataset wording where appropriate.
 - Add `docs/examples/openearthmap-sar-run.yaml` using the strict existing schema, a segmentation-capable model/head, explicit `ignore_index: 255`, the `sar` band, and an explicit image size. Do not add a dataset-specific configuration engine.
@@ -221,8 +221,8 @@ uv run pytest tests\test_split_sizes.py -m slow -k openearthmap-sar --no-cov
 uv run python scripts\compute_band_statistics.py --dataset openearthmap-sar --batch-size 4 --num-workers 0
 uv run python scripts\extract_dataset_geography.py --dataset openearthmap-sar
 uv run python scripts\extract_dataset_geography.py --check
-uv run torchgeo-bench datasets openearthmap-sar
-uv run torchgeo-bench run --config docs\examples\openearthmap-sar-run.yaml --dry-run
+uv run geo-eval-harness datasets openearthmap-sar
+uv run geo-eval-harness run --config docs\examples\openearthmap-sar-run.yaml --dry-run
 uv run ruff check <changed Python files>
 uv run ruff format --check <changed Python files>
 uv run pyrefly check
@@ -231,7 +231,7 @@ uv build --wheel
 
 ## Acceptance criteria
 
-- `torchgeo-bench download openearthmap-sar` retrieves the four immutable Zenodo archives, verifies integrity, safely installs only SAR images and labels, and repairs incomplete installs.
+- `geo-eval-harness download openearthmap-sar` retrieves the four immutable Zenodo archives, verifies integrity, safely installs only SAR images and labels, and repairs incomplete installs.
 - The dataset catalog and strict run configuration resolve `openearthmap-sar` lazily as an eight-class segmentation dataset.
 - Train/validation/test expose exactly 4,333/210/490 deterministic paired samples in raw SAR units.
 - Native labels are validated and mapped exactly as agreed: `0 -> 255`, `1..8 -> 0..7`.

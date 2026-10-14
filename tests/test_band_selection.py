@@ -52,7 +52,8 @@ def test_existing_none_selection_keeps_all_bands(bench: BenchDataset) -> None:
 
 
 @pytest.mark.parametrize(
-    ("dataset", "channels"), [("caffe", 1), ("kuro_siwo", 2), ("m-eurosat", 3)]
+    ("dataset", "channels"),
+    [("caffe", 1), ("kuro_siwo", 2), ("m-eurosat", 3), ("openearthmap-sar", 1)],
 )
 def test_rgb_does_not_assume_three_channels(dataset: str, channels: int) -> None:
     bench = get_bench_dataset_class(dataset)()
