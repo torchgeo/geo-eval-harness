@@ -247,12 +247,40 @@ class ClassificationConfig(StrictModel):
         return self
 
 
+class EarlyStoppingConfig(StrictModel):
+    """Stop cached probe training once validation mIoU stops improving."""
+
+    enabled: StrictBool = False
+    check_every: StrictInt = Field(default=5, gt=0)
+    patience: StrictInt = Field(default=16, gt=0)
+    min_delta: StrictFloat = Field(default=0.001, ge=0)
+    min_epochs: StrictInt = Field(default=25, ge=0)
+    max_epochs: StrictInt = Field(default=1000, gt=0)
+
+    @model_validator(mode="after")
+    def validate_horizon(self) -> "EarlyStoppingConfig":
+        """Require room to reach the minimum training length."""
+        if self.max_epochs < self.min_epochs:
+            raise ValueError("max_epochs must be greater than or equal to min_epochs")
+        return self
+
+
+def _check_learning_rates(value: list[float]) -> list[float]:
+    """Reject non-positive or repeated grid values."""
+    if any(rate <= 0 for rate in value) or len(set(value)) != len(value):
+        raise ValueError("learning_rates must be positive and unique")
+    return value
+
+
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear"] = "fpn"
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
+    learning_rates: Annotated[list[StrictFloat], AfterValidator(_check_learning_rates)] = Field(
+        default_factory=list
+    )
     epochs: StrictInt = Field(default=10, gt=0)
     batch_size: StrictInt = Field(default=64, gt=0)
     temporal_pool: Literal["mean", "max"] = "mean"
@@ -260,6 +288,18 @@ class SegmentationConfig(StrictModel):
     ignore_index: StrictInt = 255
     cache_features: StrictBool = True
     cache_dtype: Literal["float16", "float32"] = "float16"
+    early_stopping: EarlyStoppingConfig = Field(default_factory=EarlyStoppingConfig)
+
+    @model_validator(mode="after")
+    def validate_fitting(self) -> "SegmentationConfig":
+        """Reject fitting options that the chosen training path cannot honor."""
+        if self.early_stopping.enabled and self.scheduler != "none":
+            raise ValueError(
+                "early_stopping requires scheduler 'none'; cosine needs a fixed number of epochs"
+            )
+        if (self.early_stopping.enabled or self.learning_rates) and not self.cache_features:
+            raise ValueError("early_stopping and learning_rates require cache_features=true")
+        return self
 
 
 class RuntimeConfig(StrictModel):

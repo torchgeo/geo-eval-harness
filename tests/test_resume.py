@@ -36,8 +36,18 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         {"datasets": ["m-forestnet"]},
         {"output": {"resume": True}},
         {"runtime": {"device": "cpu", "workers": 0}},
+        {"segmentation": {"early_stopping": {"patience": 3}}},
+        {"segmentation": {"learning_rates": []}},
     ],
-    ids=["profile-pass", "intrinsic-dim-pass", "dataset-selection", "resume-toggle", "execution"],
+    ids=[
+        "profile-pass",
+        "intrinsic-dim-pass",
+        "dataset-selection",
+        "resume-toggle",
+        "execution",
+        "disabled-early-stopping",
+        "empty-learning-rate-grid",
+    ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
     assert _hash(_cfg()) == _hash(_cfg(**overrides))
@@ -67,11 +77,18 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"classification": {"bootstrap_samples": 100}},
         {"segmentation": {"head": "linear"}},
         {"segmentation": {"learning_rate": 0.01}},
+        {"segmentation": {"learning_rates": [0.001, 0.01]}},
+        {"segmentation": {"scheduler": "none", "early_stopping": {"enabled": True}}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
     ],
 )
 def test_config_hash_changes_with_result_affecting_settings(overrides: dict) -> None:
     assert _hash(_cfg()) != _hash(_cfg(**overrides))
+
+
+def test_default_config_hash_is_unchanged_by_opt_in_segmentation_options() -> None:
+    """Stored rows keep resuming: this is the default hash from before those options existed."""
+    assert _hash(_cfg()) == "608c653a164202c5"
 
 
 def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
