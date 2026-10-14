@@ -93,7 +93,7 @@ A small `torch.utils.data.Dataset` subclass lives in the same module. No torchge
   2. Convert each split as in section 2.
   3. Delete `upstream/`.
 
-  The conversion function (`_convert_hotosm_split(src_files, dst)`) lives in the dataset module, so
+  The conversion function (`convert_hotosm_split(src_files, dst)`) lives in the dataset module, so
   the tests can build fixtures with it.
 - Add `"hotosm_buildings"` to `DIRECT_DATASETS`, route it in `download_datasets`, and update the
   module docstring.
@@ -114,7 +114,7 @@ place) from all three split files, with `version="hf_parquet"`. Generate it with
 - `tests/test_hotosm_buildings.py` (fast, no real data):
   - Build two tiny upstream-format shards in `tmp_path`: an 8x8 JPEG row and a PNG RGBA row with
     alpha=0 pixels, plus {0, 255} TIFF masks.
-  - Run `_convert_hotosm_split`, then `HOTBuildings().get_dataset(...)` under `monkeypatch.chdir`.
+  - Run `convert_hotosm_split`, then `HOTBuildings().get_dataset(...)` under `monkeypatch.chdir`.
   - Assert:
     - the image is float32 with shape `(3, 8, 8)`;
     - the mask is int64 with values in {0, 1, 255}, and 255 appears exactly at the alpha=0 pixels;

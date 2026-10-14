@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 from torchgeo_bench import download
-from torchgeo_bench.datasets.hotosm_buildings import HOTBuildings, _convert_hotosm_split
+from torchgeo_bench.datasets.hotosm_buildings import HOTBuildings, convert_hotosm_split
 
 RGB = (11, 22, 33)
 
@@ -65,7 +65,7 @@ def converted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _write_upstream_shard(upstream / "train-00001.parquet", ["c"])
     root = tmp_path / "data" / "hotosm_buildings"
     root.mkdir(parents=True)
-    rows = _convert_hotosm_split(upstream.glob("train-*.parquet"), root / "train.parquet")
+    rows = convert_hotosm_split(upstream.glob("train-*.parquet"), root / "train.parquet")
     assert rows == 3
     return root
 
@@ -146,7 +146,13 @@ def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.M
     assert pq.read_table(root / "val.parquet")["tile_id"].to_pylist() == ["v"]
 
 
-def test_download_rejects_row_count_mismatch(tmp_path: Path) -> None:
+@pytest.mark.parametrize("existing_split", [False, True])
+def test_download_rejects_row_count_mismatch(tmp_path: Path, *, existing_split: bool) -> None:
+    target = tmp_path / "hotosm_buildings" / "train.parquet"
+    if existing_split:
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"existing valid split")
+
     def fake_snapshot(*, local_dir: Path, **_: object) -> None:
         _write_upstream_shard(local_dir / "data" / "train-00000-of-00001.parquet", ["a"])
 
@@ -155,3 +161,10 @@ def test_download_rejects_row_count_mismatch(tmp_path: Path) -> None:
         pytest.raises(ValueError, match="expected 57890 rows, got 1"),
     ):
         download.download_hotosm_buildings(tmp_path)
+
+    if existing_split:
+        assert target.read_bytes() == b"existing valid split"
+    else:
+        assert not target.exists()
+    assert not target.with_suffix(".parquet.tmp").exists()
+    assert (target.parent / "upstream" / "data").is_dir()

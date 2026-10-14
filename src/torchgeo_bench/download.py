@@ -30,7 +30,7 @@ from torchgeo_bench.datasets.geobench_v2 import list_v2_datasets
 from torchgeo_bench.datasets.hotosm_buildings import (
     UPSTREAM_SPLITS,
     HOTBuildings,
-    _convert_hotosm_split,
+    convert_hotosm_split,
 )
 
 logger = logging.getLogger(__name__)
@@ -203,14 +203,11 @@ def download_hotosm_buildings(output_dir: Path) -> None:
         local_dir=upstream,
     )
     for split, prefix in UPSTREAM_SPLITS.items():
-        rows = _convert_hotosm_split(
-            (upstream / "data").glob(f"{prefix}-*.parquet"), target / f"{split}.parquet"
+        rows = convert_hotosm_split(
+            (upstream / "data").glob(f"{prefix}-*.parquet"),
+            target / f"{split}.parquet",
+            expected_rows=HOTBuildings.split_sizes[split],
         )
-        if rows != HOTBuildings.split_sizes[split]:
-            raise ValueError(
-                f"HOT buildings {split}: expected {HOTBuildings.split_sizes[split]} rows, "
-                f"got {rows}. Remove {target} and retry the download."
-            )
         logger.info("Converted HOT buildings %s split (%d rows).", split, rows)
     shutil.rmtree(upstream)
     logger.info("HOT buildings download complete.")

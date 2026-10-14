@@ -45,7 +45,9 @@ def _encode_mask(mask_bytes: bytes, image_bytes: bytes) -> bytes:
     return buffer.getvalue()
 
 
-def _convert_hotosm_split(src_files: Iterable[Path], dst: Path) -> int:
+def convert_hotosm_split(
+    src_files: Iterable[Path], dst: Path, *, expected_rows: int | None = None
+) -> int:
     """Stream upstream parquet shards into one compact split file.
 
     Image bytes are copied unchanged; masks are re-encoded as small PNGs.
@@ -53,6 +55,7 @@ def _convert_hotosm_split(src_files: Iterable[Path], dst: Path) -> int:
     Args:
         src_files: Upstream parquet shards of one split.
         dst: Output parquet path.
+        expected_rows: Required row count, validated before publishing the split.
 
     Returns:
         Number of rows written.
@@ -82,6 +85,12 @@ def _convert_hotosm_split(src_files: Iterable[Path], dst: Path) -> int:
                 }
                 writer.write_table(pa.table(batch, schema=_SCHEMA))
                 rows += table.num_rows
+    if expected_rows is not None and rows != expected_rows:
+        tmp.unlink()
+        raise ValueError(
+            f"HOT buildings {dst.stem}: expected {expected_rows} rows, "
+            f"got {rows}. Retry the download."
+        )
     tmp.replace(dst)
     return rows
 
