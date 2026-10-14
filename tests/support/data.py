@@ -28,7 +28,7 @@ def require_dataset_data(name: str) -> None:
         ]
     elif name in ("eurosat", "eurosat-spatial"):
         paths = [Path("data/eurosat")]
-    elif name in ("resisc45", "ucmerced", "hotosm_buildings"):
+    elif name in ("resisc45", "ucmerced", "hotosm_buildings", "openearthmap-sar"):
         paths = [Path("data") / name]
     else:
         paths = [Path("data/geobenchv2") / name]
@@ -104,6 +104,52 @@ def geotiff_bytes(pixels: np.ndarray) -> bytes:
         ) as dataset:
             dataset.write(pixels)
         return memory.read()
+
+
+def write_openearthmap_sar_files(root: Path) -> Path:
+    """Write tiny, disjoint SAR/label pairs using the active split descriptors."""
+    from geo_eval_harness.datasets.openearthmap_sar import RASTER_SIZE, SPLITS, split_filenames
+
+    directory = root / "data" / "openearthmap-sar"
+    y, x = np.indices((RASTER_SIZE, RASTER_SIZE))
+    for split_index, split in enumerate(SPLITS):
+        for index, name in enumerate(reversed(split_filenames(split))):
+            mask = ((x // 2 + y // 4 + index) % 8 + 1).astype(np.uint8)
+            image = (mask * 25 + split_index * 3 + index).astype(np.uint8)
+            mask[0, 0] = 0
+            for kind, pixels in (("sar_images", image), ("labels", mask)):
+                path = directory / split / kind / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels[None]))
+    return directory
+
+
+def write_openearthmap_sar_archives(root: Path) -> tuple:
+    """Package tiny release ZIPs, preserving production URLs and directory ownership."""
+    import hashlib
+    from dataclasses import replace
+
+    from geo_eval_harness.download import SAR_ARCHIVES
+
+    directory = write_openearthmap_sar_files(root)
+    artifacts = []
+    for artifact in SAR_ARCHIVES:
+        path = root / artifact.filename
+        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for prefix in artifact.prefixes:
+                for member in (directory / prefix).glob("*.tif"):
+                    archive.write(member, member.relative_to(directory).as_posix())
+            archive.writestr("train/rgb_images/TrainArea_001.tif", b"not SAR")
+            archive.writestr("__MACOSX/._ValArea_001.tif", b"metadata")
+            archive.writestr("val/.DS_Store", b"metadata")
+        artifacts.append(
+            replace(
+                artifact,
+                size=path.stat().st_size,
+                md5=hashlib.md5(path.read_bytes()).hexdigest(),
+            )
+        )
+    return tuple(artifacts)
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:
