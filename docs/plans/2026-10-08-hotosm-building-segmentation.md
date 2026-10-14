@@ -72,6 +72,7 @@ single-threaded (0.8 ms per mask).
   `BinaryArray`s.
   - Arrow buffers have no per-item Python refcounts, so forked DataLoader workers share them
     copy-on-write.
+  - Spawn and forkserver workers require `--workers 0` to avoid serializing a full split into each worker.
   - `__getitem__` decodes with PIL. The image goes through `.convert("RGB")` to a float32
     `(3, 256, 256)` tensor; the mask becomes an int64 `(256, 256)` tensor.
   - It returns `{"image", "mask"}`. Band selection uses `select_bands` from `_transforms.py`, applied

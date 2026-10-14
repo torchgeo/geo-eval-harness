@@ -1,6 +1,7 @@
 """HOT building segmentation: conversion, loading, band selection, and download."""
 
 import io
+import pickle
 from pathlib import Path
 from unittest import mock
 
@@ -168,3 +169,14 @@ def test_download_rejects_row_count_mismatch(tmp_path: Path, *, existing_split: 
         assert not target.exists()
     assert not target.with_suffix(".parquet.tmp").exists()
     assert (target.parent / "upstream" / "data").is_dir()
+
+
+def test_spawn_serialization_requires_zero_workers(converted: Path) -> None:
+    del converted
+    dataset = HOTBuildings().get_dataset("train")
+    with pytest.raises(ValueError, match="--workers 0"):
+        pickle.dumps(dataset)
+
+    batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=3, num_workers=0)))
+    assert batch["image"].shape == (3, 3, 8, 8)
+    torch.testing.assert_close(batch["mask"][1, :2], torch.full((2, 8), 255))

@@ -107,6 +107,12 @@ class _HOTBuildingsSplit(Dataset):
         self.masks = table["mask"]
         self.transform = transform
 
+    def __getstate__(self) -> dict:
+        raise ValueError(
+            "HOT buildings holds encoded splits in RAM and supports forked workers only. "
+            "Use --workers 0 with spawn or forkserver to avoid copying each split per worker."
+        )
+
     def __len__(self) -> int:
         return len(self.images)
 
