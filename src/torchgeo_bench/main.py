@@ -6,7 +6,9 @@ import os
 import time
 from collections.abc import Iterator, Sequence, Sized
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from functools import partial
+from pathlib import Path
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import numpy as np
 import torch
@@ -64,7 +66,9 @@ from torchgeo_bench.resume import (
 from torchgeo_bench.utils import FeatureSplit, FeatureSplits, extract_features
 
 if TYPE_CHECKING:
+    import torchgeo_bench.segmentation_probe
     import torchgeo_bench.segmentation_task
+    from torchgeo_bench.segmentation_probe import CachedFeaturesDataset
 
 logger = logging.getLogger(__name__)
 
@@ -614,15 +618,62 @@ def _elapsed_since(start: float, device: torch.device) -> float:
     return time.perf_counter() - start
 
 
-def evaluate_segmentation(
+def _segmentation_features(
+    probe: "torchgeo_bench.segmentation_probe.SegmentationProbe",
+    loaders: LoaderSplits,
+    cfg: RunConfig,
+    *,
+    dataset: str,
+    model_cfg: ModelPreset,
+) -> "tuple[CachedFeaturesDataset, CachedFeaturesDataset, CachedFeaturesDataset]":
+    """Extract train, val, and test features, reusing the disk cache when one is configured."""
+    seg_cfg = cfg.segmentation
+    cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
+    splits = {"train": loaders.train, "val": loaders.val, "test": loaders.test}
+    extractors = {
+        split: partial(probe.extract_segmentation_features, loader, cache_dtype=cache_dtype)
+        for split, loader in splits.items()
+    }
+    if seg_cfg.feature_cache_dir is None:
+        return extractors["train"](), extractors["val"](), extractors["test"]()
+
+    from torchgeo_bench.feature_cache import cached_features, feature_cache_key, weights_digest
+
+    identity = {
+        "model": {"name": model_cfg.name, "target": model_cfg.target, "kwargs": model_cfg.kwargs},
+        "weights": weights_digest(probe.backbone),
+        "input": cfg.input.model_dump(mode="json"),
+        "layers": seg_cfg.layers,
+        "temporal_pool": seg_cfg.temporal_pool,
+        "cache_dtype": seg_cfg.cache_dtype,
+        "extract_batch_size": cfg.runtime.batch_size,
+        "dataset": dataset,
+    }
+    root = Path(seg_cfg.feature_cache_dir) / dataset
+    train, val, test = (
+        cached_features(
+            root / f"{feature_cache_key({**identity, 'split': split})}-{split}.pt",
+            partial(probe.iter_segmentation_features, loader, cache_dtype=cache_dtype),
+            num_samples=len(cast(Sized, loader.dataset)),
+        )
+        for split, loader in splits.items()
+    )
+    return train, val, test
+
+
+def evaluate_segmentation(  # noqa: PLR0913 -- Probe inputs plus feature-cache identity.
     model: torch.nn.Module,
     loaders: LoaderSplits,
     cfg: RunConfig,
     num_classes: int,
+    *,
+    dataset: str,
+    model_cfg: ModelPreset,
 ) -> SegmentationOutcome:
     """Train a segmentation head on a frozen backbone and evaluate test mIoU.
 
-    Backbone features can be cached to avoid recomputing them each epoch.
+    Backbone features can be cached to avoid recomputing them each epoch, and on disk
+    (``segmentation.feature_cache_dir``) to share them across jobs.
 
     Returns:
         Test metrics, feature dimension, learning rate, batch size, and fitting details. With
@@ -636,17 +687,16 @@ def evaluate_segmentation(
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
     use_cache = seg_cfg.cache_features
-    cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
     early_stopping = seg_cfg.early_stopping if seg_cfg.early_stopping.enabled else None
     extract_seconds: float | None = None
     if use_cache and probe.freeze_backbone:
-        logger.info("Caching backbone features for train and val splits...")
+        logger.info("Caching backbone features for train, val, and test splits...")
         start = time.perf_counter()
-        train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
-        val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
-        test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        train_cache, val_cache, test_cache = _segmentation_features(
+            probe, loaders, cfg, dataset=dataset, model_cfg=model_cfg
+        )
         extract_seconds = _elapsed_since(start, device)
         if seg_cfg.learning_rates:
             lr = solver.select_learning_rate_cached(
@@ -728,6 +778,7 @@ def run_segmentation(
     model: BenchModel,
     loaders: LoaderSplits,
     common_meta: ResultMetadata,
+    model_cfg: ModelPreset,
 ) -> Iterator[list[dict]]:
     """Yield the completed segmentation probe measurement."""
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
@@ -736,7 +787,9 @@ def run_segmentation(
     num_classes = common_meta["num_classes"]
     assert isinstance(val_loader.dataset, Sized)
     assert isinstance(test_loader.dataset, Sized)
-    outcome = evaluate_segmentation(model, loaders, cfg, num_classes)
+    outcome = evaluate_segmentation(
+        model, loaders, cfg, num_classes, dataset=common_meta["dataset"], model_cfg=model_cfg
+    )
     metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {
@@ -989,7 +1042,7 @@ def run_dataset(
     common_meta["normalization"] = model.effective_normalization
     loaders = LoaderSplits(train_loader, val_loader, test_loader)
     if ds_cls.task == "segmentation":
-        for rows in run_segmentation(cfg, model, loaders, common_meta):
+        for rows in run_segmentation(cfg, model, loaders, common_meta, model_cfg):
             yield rows, [], []
         return
     for rows, id_rows, profile_rows in run_classification(

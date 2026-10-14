@@ -1,4 +1,5 @@
 paper/
+features_seg/
 results/*
 !results/contributed/
 results/contributed/*.csv

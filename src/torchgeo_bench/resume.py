@@ -36,12 +36,13 @@ KEY_COLS = (
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
-    Excludes device and worker count, which only control execution. Includes batch size because
-    it can change floating-point results. Opt-in segmentation fitting options are omitted while
-    they keep their defaults, so results recorded before those options existed still resume.
+    Excludes device, worker count, and the feature cache directory, which only control
+    execution. Includes batch size because it can change floating-point results. Opt-in
+    segmentation fitting options are omitted while they keep their defaults, so results recorded
+    before those options existed still resume.
     """
     seg = config.segmentation
-    segmentation = seg.model_dump(mode="json")
+    segmentation = seg.model_dump(mode="json", exclude={"feature_cache_dir"})
     if not seg.early_stopping.enabled:
         segmentation.pop("early_stopping")
     if not seg.learning_rates:

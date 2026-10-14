@@ -37,10 +37,10 @@ def _resolve_num_prefix_tokens(backbone: nn.Module) -> int | None:
 
 
 class CachedFeaturesDataset(Dataset):
-    """Backbone features and masks cached in RAM.
+    """Backbone features and masks cached in RAM or memory-mapped from the disk cache.
 
     ``layer_tensors[li]`` holds contiguous ``(N, C, H, W)`` features, float16 by default.
-    ``masks`` is an ``(N, H, W)`` long tensor.
+    ``masks`` is an ``(N, H, W)`` integer tensor; the disk cache stores it as int16.
     :meth:`GPUTensorCache.from_cached` transfers whole layers, avoiding per-sample Python work.
 
     Each ``__getitem__`` returns a ``(features, mask)`` tuple.
@@ -58,13 +58,13 @@ class CachedFeaturesDataset(Dataset):
         return self.masks.shape[0]
 
     def __getitem__(self, index: int) -> tuple[list[torch.Tensor], torch.Tensor]:
-        return [t[index] for t in self.layer_tensors], self.masks[index]
+        return [t[index] for t in self.layer_tensors], self.masks[index].long()
 
     def nbytes(self, dtype: torch.dtype) -> int:
-        """Return the bytes needed to hold the features as ``dtype`` and the masks as long."""
+        """Return the bytes needed to hold the features as ``dtype`` and the masks as stored."""
         itemsize = torch.empty((), dtype=dtype).element_size()
         features = sum(t.numel() for t in self.layer_tensors) * itemsize
-        return features + self.masks.numel() * torch.empty((), dtype=torch.long).element_size()
+        return features + self.masks.numel() * self.masks.element_size()
 
 
 def _estimate_cache_bytes(cache: "CachedFeaturesDataset") -> int:
@@ -85,7 +85,7 @@ class GPUTensorCache:
     Args:
         layer_tensors: Contiguous ``(N, C, H, W)`` tensors, one per hooked layer on ``device``.
             ``from_cached`` uses float16 on CUDA and float32 on CPU.
-        masks: ``(N, H, W)`` long tensor on the target device.
+        masks: ``(N, H, W)`` integer tensor on the target device; batches yield it as long.
         device: The device these tensors live on.
     """
 
@@ -124,8 +124,7 @@ class GPUTensorCache:
             # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
             dtype = torch.float16 if target_device.type == "cuda" else torch.float32
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
-        masks = cache.masks.to(target_device, dtype=torch.long)
-        return cls(layer_tensors, masks, target_device)
+        return cls(layer_tensors, cache.masks.to(target_device), target_device)
 
     def shuffled_batches(
         self, batch_size: int
@@ -134,7 +133,7 @@ class GPUTensorCache:
         idx = torch.randperm(len(self), device=self.device)
         for start in range(0, len(self), batch_size):
             b = idx[start : start + batch_size]
-            yield [t[b] for t in self.layer_tensors], self.masks[b]
+            yield [t[b] for t in self.layer_tensors], self.masks[b].long()
 
     def fixed_batches(self, batch_size: int) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
         """Yield the same contiguous mini-batches every epoch, in a random order.
@@ -146,13 +145,13 @@ class GPUTensorCache:
         order = torch.randperm(num_batches, device=self.device).tolist()
         for batch in order:
             s = slice(batch * batch_size, (batch + 1) * batch_size)
-            yield [t[s] for t in self.layer_tensors], self.masks[s]
+            yield [t[s] for t in self.layer_tensors], self.masks[s].long()
 
     def ordered_batches(self, batch_size: int) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
         """Yield *(features, masks)* mini-batches in sequential order."""
         for start in range(0, len(self), batch_size):
             s = slice(start, start + batch_size)
-            yield [t[s] for t in self.layer_tensors], self.masks[s]
+            yield [t[s] for t in self.layer_tensors], self.masks[s].long()
 
 
 class SegmentationProbe(nn.Module):
@@ -347,30 +346,25 @@ class SegmentationProbe(nn.Module):
         )
 
     @torch.no_grad()
-    def extract_segmentation_features(
+    def iter_segmentation_features(
         self,
         dataloader: "torch.utils.data.DataLoader",
         cache_dtype: torch.dtype = torch.float16,
-    ) -> "CachedFeaturesDataset":
-        """Run the frozen backbone once over *dataloader* and cache features.
+    ) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
+        """Run the frozen backbone over *dataloader*, yielding one batch of features at a time.
 
         Args:
             dataloader: DataLoader that yields ``dict`` or ``(image, mask)`` batches.
-            cache_dtype: Storage dtype for cached feature tensors. Use
-                ``torch.float16`` (default) to halve RAM, or ``torch.float32``
-                for full precision.
+            cache_dtype: Storage dtype for the yielded CPU feature tensors.
 
-        Returns:
-            A :class:`CachedFeaturesDataset` with one entry per sample, pooling
-            temporal features across dates as in :meth:`forward`.
+        Yields:
+            ``(features, masks)``: one ``(B, C, H, W)`` CPU tensor per hooked layer, pooling
+            temporal features across dates as in :meth:`forward`, and ``(B, H, W)`` long masks.
         """
         was_training = self.backbone.training
         self.backbone.eval()
         try:
-            batches_per_layer: list[list[torch.Tensor]] = [[] for _ in self.layer_names]
-            all_masks: list[torch.Tensor] = []
             device = self._backbone_device()
-
             for batch in dataloader:
                 if isinstance(batch, dict):
                     images = batch["image"].to(device)
@@ -385,19 +379,42 @@ class SegmentationProbe(nn.Module):
 
                 if masks.ndim == 4:
                     masks = masks.squeeze(1)
-                masks = masks.long()
                 self._features.clear()
                 _ = self.backbone(images)
 
-                for li, n in enumerate(self.layer_names):
+                features = []
+                for n in self.layer_names:
                     feat = self._process_feature(self._features[n])
                     if steps:
                         feat = self._pool_time(feat, steps)
-                    batches_per_layer[li].append(feat.to(dtype=cache_dtype, device="cpu"))
-                all_masks.append(masks.cpu())
+                    features.append(feat.to(dtype=cache_dtype, device="cpu"))
+                yield features, masks.long().cpu()
         finally:
             self.backbone.train(was_training)
 
+    def extract_segmentation_features(
+        self,
+        dataloader: "torch.utils.data.DataLoader",
+        cache_dtype: torch.dtype = torch.float16,
+    ) -> "CachedFeaturesDataset":
+        """Run the frozen backbone once over *dataloader* and cache features in RAM.
+
+        Args:
+            dataloader: DataLoader that yields ``dict`` or ``(image, mask)`` batches.
+            cache_dtype: Storage dtype for cached feature tensors. Use
+                ``torch.float16`` (default) to halve RAM, or ``torch.float32``
+                for full precision.
+
+        Returns:
+            A :class:`CachedFeaturesDataset` with one entry per sample, pooling
+            temporal features across dates as in :meth:`forward`.
+        """
+        batches_per_layer: list[list[torch.Tensor]] = [[] for _ in self.layer_names]
+        all_masks: list[torch.Tensor] = []
+        for features, masks in self.iter_segmentation_features(dataloader, cache_dtype):
+            for batches, feat in zip(batches_per_layer, features, strict=True):
+                batches.append(feat)
+            all_masks.append(masks)
         layer_tensors = [torch.cat(batches) for batches in batches_per_layer]
         masks_tensor = torch.cat(all_masks)
         logger.info("Cached features for %s samples.", masks_tensor.shape[0])
