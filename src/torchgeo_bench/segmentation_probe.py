@@ -127,6 +127,18 @@ class GPUTensorCache:
             b = idx[start : start + batch_size]
             yield [t[b] for t in self.layer_tensors], self.masks[b]
 
+    def fixed_batches(self, batch_size: int) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
+        """Yield the same contiguous mini-batches every epoch, in a random order.
+
+        Keeping batch membership fixed keeps BatchNorm statistics in the head computed over the
+        same groups of images throughout training.
+        """
+        num_batches = math.ceil(len(self) / batch_size)
+        order = torch.randperm(num_batches, device=self.device).tolist()
+        for batch in order:
+            s = slice(batch * batch_size, (batch + 1) * batch_size)
+            yield [t[s] for t in self.layer_tensors], self.masks[s]
+
     def ordered_batches(self, batch_size: int) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
         """Yield *(features, masks)* mini-batches in sequential order."""
         for start in range(0, len(self), batch_size):

@@ -265,6 +265,16 @@ class EvaluationResult:
     mce_ts: float | None = None
     temperature: float | None = None
     calibration_n_bins: int | None = None
+    # Segmentation fitting details (None for classification rows)
+    per_class_iou: str | None = (
+        None  # JSON list; null for classes absent from labels and predictions
+    )
+    val_miou: float | None = None  # validation mIoU of the kept checkpoint
+    best_epoch: int | None = None  # epoch of the kept checkpoint
+    stopped_epoch: int | None = None
+    fit_seconds: float | None = None  # head fitting only, summed over any learning-rate grid
+    extract_seconds: float | None = None  # backbone feature extraction for all three splits
+    lr_search: str | None = None  # JSON list of per-rate validation results
 
     def to_row(self) -> dict:
         """Convert to a flat dictionary suitable for CSV/DataFrame export."""

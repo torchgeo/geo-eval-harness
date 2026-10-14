@@ -3,7 +3,9 @@
 import copy
 import logging
 import math
+import time
 from collections.abc import Iterator
+from typing import TypedDict
 
 import torch
 import torch.nn as nn
@@ -26,6 +28,30 @@ from .segmentation_probe import (
 logger = logging.getLogger(__name__)
 
 SegMetrics = dict[str, float]
+
+
+class LearningRateTrial(TypedDict):
+    """Validation outcome of one rate in a learning-rate search."""
+
+    lr: float
+    val_miou: float
+    best_epoch: int | None
+    stopped_epoch: int | None
+    fit_seconds: float
+
+
+def per_class_iou(confusion: torch.Tensor) -> list[float | None]:
+    """Return IoU for each class from a ``(true, predicted)`` confusion matrix.
+
+    Classes that appear in neither the labels nor the predictions get ``None``.
+    """
+    confusion = confusion.double()
+    true_positive = confusion.diagonal()
+    union = confusion.sum(dim=0) + confusion.sum(dim=1) - true_positive
+    return [
+        None if total == 0 else float(tp / total)
+        for tp, total in zip(true_positive.tolist(), union.tolist(), strict=True)
+    ]
 
 
 class ValidationStopping:
@@ -70,6 +96,9 @@ class SegmentationSolver:
         criterion: nn.Module | None = None,
         lr_scheduler: str = "cosine",
         ignore_index: int = 255,
+        *,
+        mixed_precision: bool = True,
+        batch_membership: str = "shuffled",
     ) -> None:
         """Configure the optimizer, loss, and segmentation metrics.
 
@@ -82,15 +111,26 @@ class SegmentationSolver:
             criterion: Loss module. Defaults to CrossEntropyLoss with ignore_index.
             lr_scheduler: LR schedule: "cosine" (CosineAnnealingLR) or "none" (constant LR).
             ignore_index: Label value to ignore in loss and metrics (default: 255).
+            mixed_precision: Use float16 autocast on CUDA. When False, train and evaluate the head
+                in float32, upcasting float16 cached features per batch.
+            batch_membership: "shuffled" draws new mini-batches every epoch; "fixed" keeps the
+                same contiguous cached mini-batches and only shuffles their order.
         """
+        if batch_membership not in {"shuffled", "fixed"}:
+            raise ValueError(
+                f"Unknown batch_membership {batch_membership!r}. Expected 'shuffled' or 'fixed'."
+            )
         self.model = model.to(device)
         self.num_classes = num_classes
         self.device = device
         self.lr_scheduler_type = lr_scheduler
+        self.batch_membership = batch_membership
         self.val_history: list[float] = []
-        self.lr_history: list[dict[str, float]] = []
+        self.lr_history: list[LearningRateTrial] = []
         self.best_epoch: int | None = None
         self.stopped_epoch: int | None = None
+        self.fit_seconds = 0.0
+        self.val_miou: float | None = None
 
         self.ignore_index = ignore_index
         self.weight_decay = weight_decay
@@ -139,7 +179,7 @@ class SegmentationSolver:
             self.metric_f1,
         ]
 
-        self.use_amp = device.startswith("cuda") and torch.cuda.is_available()
+        self.use_amp = mixed_precision and device.startswith("cuda") and torch.cuda.is_available()
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
         self.device_type = torch.device(device).type
 
@@ -272,19 +312,41 @@ class SegmentationSolver:
         """
         gpu_train = self._device_cache(train_cache)
         gpu_val = None if val_cache is None else self._device_cache(val_cache)
+        start = self._clock()
         if early_stopping is not None and early_stopping.enabled:
             if gpu_val is None:
                 raise ValueError("Early stopping requires a validation cache.")
             if self.lr_scheduler_type != "none":
                 raise ValueError("Early stopping requires lr_scheduler='none'.")
-            return self._fit_until_validation_stops(
+            val_miou: float | None = self._fit_until_validation_stops(
                 gpu_train, gpu_val, batch_size, early_stopping, verbose=verbose
             )
+        else:
+            val_miou = self._fit_epochs(gpu_train, gpu_val, batch_size, epochs, verbose=verbose)
+        self.fit_seconds = self._clock() - start
+        self.val_miou = val_miou
+        return val_miou
 
+    def _clock(self) -> float:
+        """Return a wall-clock reading after queued GPU work has finished."""
+        if self.device_type == "cuda":
+            torch.cuda.synchronize(self.device)
+        return time.perf_counter()
+
+    def _fit_epochs(
+        self,
+        gpu_train: GPUTensorCache,
+        gpu_val: GPUTensorCache | None,
+        batch_size: int,
+        epochs: int,
+        *,
+        verbose: bool,
+    ) -> float | None:
+        """Train for a fixed number of epochs, logging validation mIoU after each one."""
         scheduler = self._make_scheduler(epochs)
         last_val_miou: float | None = None
         self.val_history = []
-        self.best_epoch = self.stopped_epoch = None
+        self.best_epoch = self.stopped_epoch = epochs
 
         for epoch in range(epochs):
             self._train_epoch(gpu_train, batch_size, f"Epoch {epoch + 1}/{epochs}", verbose=verbose)
@@ -307,16 +369,27 @@ class SegmentationSolver:
             return cache
         return GPUTensorCache.from_cached(cache, self.device)
 
+    def _head_inputs(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Upcast float16 cached features when the head runs without autocast."""
+        if self.use_amp:
+            return features
+        return [f.float() for f in features]
+
     def _train_epoch(
         self, gpu_train: GPUTensorCache, batch_size: int, desc: str, *, verbose: bool
     ) -> None:
-        """Run one shuffled pass over the cached training features."""
+        """Run one pass over the cached training features in a random batch order."""
         self.model.train()
         if self.model.freeze_backbone:
             self.model.backbone.eval()
         input_hw = (gpu_train.masks.shape[-2], gpu_train.masks.shape[-1])
+        epoch_batches = (
+            gpu_train.fixed_batches(batch_size)
+            if self.batch_membership == "fixed"
+            else gpu_train.shuffled_batches(batch_size)
+        )
         batches = tqdm(
-            gpu_train.shuffled_batches(batch_size),
+            epoch_batches,
             total=math.ceil(len(gpu_train) / batch_size),
             desc=desc,
             disable=not verbose,
@@ -324,7 +397,7 @@ class SegmentationSolver:
         for features, masks in batches:
             self.optimizer.zero_grad()
             with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                logits = self.model.head(features, *input_hw)
+                logits = self.model.head(self._head_inputs(features), *input_hw)
                 loss: torch.Tensor = self.criterion(logits, masks)
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
@@ -406,11 +479,24 @@ class SegmentationSolver:
                 early_stopping=early_stopping,
             )
             assert miou is not None
-            self.lr_history.append({"lr": lr, "val_miou": miou})
+            self.lr_history.append(
+                {
+                    "lr": lr,
+                    "val_miou": miou,
+                    "best_epoch": self.best_epoch,
+                    "stopped_epoch": self.stopped_epoch,
+                    "fit_seconds": self.fit_seconds,
+                }
+            )
             if best is None or miou > best[1] or (miou == best[1] and lr < best[0]):
                 best = (lr, miou, copy.deepcopy(self.model.head.state_dict()))
         assert best is not None
         self.model.head.load_state_dict(best[2])
+        selected = next(entry for entry in self.lr_history if entry["lr"] == best[0])
+        self.best_epoch = selected["best_epoch"]
+        self.stopped_epoch = selected["stopped_epoch"]
+        self.val_miou = best[1]
+        self.fit_seconds = sum(entry["fit_seconds"] for entry in self.lr_history)
         return best[0]
 
     def _reset_optimizer(self, lr: float) -> None:
@@ -478,7 +564,7 @@ class SegmentationSolver:
             input_hw = (data.masks.shape[-2], data.masks.shape[-1])
             for features, masks in data.ordered_batches(batch_size):
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                    logits = self.model.head(features, *input_hw)
+                    logits = self.model.head(self._head_inputs(features), *input_hw)
                 yield logits, masks
             return
 
@@ -555,5 +641,7 @@ def build_seg_probe_and_solver(
         criterion=criterion,
         lr_scheduler=config.scheduler,
         ignore_index=config.ignore_index,
+        mixed_precision=config.mixed_precision,
+        batch_membership=config.batch_membership,
     )
     return probe, solver
