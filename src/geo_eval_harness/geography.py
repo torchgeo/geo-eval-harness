@@ -22,7 +22,7 @@ Coordinate sources:
 * **V1**: reproject JSON affine/CRS origins from shards or HDF5 to EPSG:4326.
 * **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
-* **OpenEarthMap-SAR**: reproject usable SAR GeoTIFF header origins to EPSG:4326.
+* **GeoTIFF**: reproject image header origins to EPSG:4326.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -86,8 +86,8 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Source family, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
-            ``"openearthmap-sar"``. ``None`` when nothing was read.
+        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
+            ``"geotiff"``. ``None`` when nothing was read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -263,7 +263,7 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     if not usable:
         return None
 
-    lon, lat = _reproject_origins(usable)
+    lon, lat = reproject_origins(usable)
     ok = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
     return {
         "lon": lon[ok],
@@ -273,11 +273,10 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     }
 
 
-def _reproject_origins(origins: list[tuple[float, float, str]]) -> tuple[np.ndarray, np.ndarray]:
+def reproject_origins(origins: list[tuple[float, float, str]]) -> tuple[np.ndarray, np.ndarray]:
     """Group raster origins by CRS and transform each group to longitude/latitude."""
     from pyproj import Transformer
 
-    # A dataset can span several coordinate systems; reproject each group separately.
     by_crs: dict[str, list[tuple[float, float]]] = {}
     for x, y, epsg in origins:
         by_crs.setdefault(epsg, []).append((x, y))
@@ -299,46 +298,25 @@ def _reproject_origins(origins: list[tuple[float, float, str]]) -> tuple[np.ndar
     return np.concatenate(lons), np.concatenate(lats)
 
 
-def _raster_origin(path: Path) -> tuple[float, float, str] | None:
-    """Read an affine/CRS origin, skipping absent but rejecting partial georeferencing."""
+def extract_geotiffs(paths: list[Path]) -> dict | None:
+    """Read image origins from GeoTIFF headers, omitting images without georeferencing."""
     import rasterio
 
-    with rasterio.open(path) as raster:
-        transform, crs = raster.transform, raster.crs
-        if crs is None and transform.is_identity:
-            return None
-        if (
-            crs is None
-            or transform.is_identity
-            or transform.is_degenerate
-            or not np.isfinite(tuple(transform)).all()
-        ):
-            raise ValueError(f"Incomplete or invalid GeoTIFF georeferencing: {path}")
-        return transform.c, transform.f, crs.to_string()
-
-
-def _extract_openearthmap_sar(directory: Path) -> dict | None:
-    from .datasets.openearthmap_sar import SPLITS, split_paths
-
     origins = []
-    total = 0
-    for split in SPLITS:
-        for image, _ in split_paths(directory, split):
-            total += 1
-            origin = _raster_origin(image)
-            if origin is not None:
-                origins.append(origin)
-    logger.info("OpenEarthMap-SAR: %d/%d SAR samples have georeferencing", len(origins), total)
+    for path in paths:
+        with rasterio.open(path) as raster:
+            if raster.crs is not None and not raster.transform.is_identity:
+                origins.append((raster.transform.c, raster.transform.f, raster.crs.to_string()))
     if not origins:
         return None
-    lon, lat = _reproject_origins(origins)
+    lon, lat = reproject_origins(origins)
     if not (np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)).all():
-        raise ValueError("OpenEarthMap-SAR: GeoTIFF origins do not map to valid lon/lat")
+        raise ValueError("GeoTIFF origins do not map to valid lon/lat")
     return {
         "lon": lon,
         "lat": lat,
         "place": np.full(len(lon), None, dtype=object),
-        "version": "openearthmap-sar",
+        "version": "geotiff",
     }
 
 
@@ -463,11 +441,9 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
     hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    geotiffs = sorted(directory.glob("*/sar_images/*.tif"))
 
-    if name == "openearthmap-sar":
-        data = _extract_openearthmap_sar(directory)
-        reason = "no SAR GeoTIFF carries a usable affine/CRS"
-    elif tortillas:
+    if tortillas:
         data = _extract_v2(tortillas)
         reason = "tortilla metadata has no lon/lat columns"
     elif shards or hdf5s:
@@ -476,9 +452,12 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
+    elif geotiffs:
+        data = extract_geotiffs(geotiffs)
+        reason = "no image carries a usable GeoTIFF transform/crs"
     else:
         raise FileNotFoundError(
-            f"No .tortilla, V1 shard, or .hdf5 files under {directory}. Run `{command}`."
+            f"No .tortilla, V1 shard, .hdf5, or SAR .tif files under {directory}. Run `{command}`."
         )
 
     if data is None:
