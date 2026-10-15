@@ -875,6 +875,29 @@ def test_fit_cached_in_float32_upcasts_float16_features(mock_backbone, dummy_dat
     assert solver.fit_seconds > 0
 
 
+def test_caches_larger_than_free_gpu_memory_stay_in_host_memory(
+    mock_backbone, dummy_data, monkeypatch: pytest.MonkeyPatch
+):
+    cache = _make_cpu_cache(mock_backbone, dummy_data)
+    solver = SegmentationSolver(
+        model=make_probe(mock_backbone, ["layer1", "layer2"]),
+        num_classes=NUM_CLASSES,
+        device="cpu",
+        mixed_precision=False,
+    )
+    monkeypatch.setattr(solver, "device_type", "cuda")
+    monkeypatch.setattr(solver, "_free_device_bytes", lambda: cache.nbytes(torch.float16) - 1)
+
+    staged = solver._device_cache(cache)
+    solver._train_epoch(staged, batch_size=2, desc="", verbose=False)
+    metrics = solver._evaluate(staged, batch_size=2)
+
+    assert staged.device == torch.device("cpu")
+    assert staged.layer_tensors[0].dtype == torch.float16
+    assert isinstance(metrics, dict)
+    assert 0.0 <= metrics["mIoU"] <= 1.0
+
+
 def test_gpu_tensor_cache_ordered_batches(mock_backbone, dummy_data):
     cache = _make_cpu_cache(mock_backbone, dummy_data)
     gpu_cache = GPUTensorCache.from_cached(cache, device="cpu")
