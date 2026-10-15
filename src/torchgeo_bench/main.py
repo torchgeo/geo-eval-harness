@@ -599,7 +599,8 @@ def evaluate_segmentation(
     Backbone features can be cached to avoid recomputing them each epoch.
 
     Returns:
-        Tuple of (metrics, feature_dim, lr, batch_size).
+        Tuple of (metrics, feature_dim, lr, batch_size). With ``segmentation.learning_rates``
+        set, lr is the rate selected on validation.
     """
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
     device = torch.device(cfg.runtime.device)
@@ -613,18 +614,32 @@ def evaluate_segmentation(
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
     collect_confusions = cfg.classification.bootstrap_samples > 0
+    early_stopping = seg_cfg.early_stopping if seg_cfg.early_stopping.enabled else None
     if use_cache and probe.freeze_backbone:
         logger.info("Caching backbone features for train and val splits...")
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
-        solver.fit_cached(
-            train_cache=train_cache,
-            val_cache=val_cache,
-            batch_size=probe_batch_size,
-            epochs=epochs,
-            verbose=verbose,
-        )
+        if seg_cfg.learning_rates:
+            lr = solver.select_learning_rate_cached(
+                train_cache,
+                val_cache,
+                seg_cfg.learning_rates,
+                batch_size=probe_batch_size,
+                epochs=epochs,
+                seed=seed,
+                verbose=verbose,
+                early_stopping=early_stopping,
+            )
+        else:
+            solver.fit_cached(
+                train_cache=train_cache,
+                val_cache=val_cache,
+                batch_size=probe_batch_size,
+                epochs=epochs,
+                verbose=verbose,
+                early_stopping=early_stopping,
+            )
         eval_result = solver.evaluate_cached(
             test_cache,
             batch_size=probe_batch_size,
