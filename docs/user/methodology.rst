@@ -350,6 +350,9 @@ Training knobs
    * - ``batch_membership``
      - ``shuffled``
      - ``shuffled`` draws new mini-batches every epoch. ``fixed`` keeps the same contiguous cached mini-batches, so BatchNorm in the head always sees the same groups of images, and shuffles only their order. Cached features only.
+   * - ``feature_cache_dir``
+     - ``null``
+     - Directory where extracted features are saved and reused by later runs with the same weights, inputs, layers, and split. Execution-only: excluded from the resume fingerprint.
 
 Validation early stopping
 ^^^^^^^^^^^^^^^^^^^^^^^^^

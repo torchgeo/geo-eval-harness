@@ -226,3 +226,47 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     build_mock.assert_not_called()
     df = pd.read_csv(out)
     assert int((df["method"] == "seg-fpn").sum()) == 1
+
+
+def test_feature_cache_reuses_extracted_features_across_runs(tmp_path: Path):
+    """A second run of the same model and inputs loads cached features instead of extracting."""
+    cache_dir = tmp_path / "features"
+    cfg = _cfg_for_segmentation(
+        tmp_path / "out.csv",
+        overrides={"segmentation": {"cache_features": True, "feature_cache_dir": str(cache_dir)}},
+    )
+    probe, solver = _mock_probe_and_solver()
+    probe.freeze_backbone = True
+    probe.backbone = torch.nn.Linear(1, 1)
+    probe.iter_segmentation_features.side_effect = lambda loader, cache_dtype: iter(
+        [
+            (
+                [torch.zeros(len(loader.dataset), 1, 2, 2, dtype=cache_dtype)],
+                torch.zeros(len(loader.dataset), 2, 2, dtype=torch.long),
+            )
+        ]
+    )
+    solver.evaluate_cached.return_value = (
+        {"mIoU": 0.42, "fw_IoU": 0.55, "precision": 0.6, "recall": 0.7, "f1": 0.65},
+        torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
+    )
+
+    with (
+        mock.patch(
+            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+        ),
+        mock.patch(
+            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+            return_value=(probe, solver),
+        ),
+    ):
+        main(cfg)
+        main(cfg)
+
+    assert probe.iter_segmentation_features.call_count == 3
+    assert sorted(path.parent.name.split("-")[-1] for path in cache_dir.rglob("masks.npy")) == [
+        "test",
+        "train",
+        "val",
+    ]
+    assert len(pd.read_csv(tmp_path / "out.csv")) == 2

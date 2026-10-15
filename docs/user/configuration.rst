@@ -201,6 +201,7 @@ Segmentation
        max_epochs: 1000
      mixed_precision: true
      batch_membership: shuffled
+     feature_cache_dir: null
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
@@ -217,7 +218,7 @@ dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-``learning_rates`` and ``early_stopping`` are opt-in and need cached features. A non-empty ``learning_rates`` grid is searched on validation in place of ``learning_rate``. Early stopping requires ``scheduler: none`` and uses ``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule. ``mixed_precision: false`` trains and evaluates the head in float32 instead of float16 autocast. ``batch_membership: fixed`` keeps the same cached mini-batches every epoch and only shuffles their order; it needs cached features.
+``learning_rates`` and ``early_stopping`` are opt-in and need cached features. A non-empty ``learning_rates`` grid is searched on validation in place of ``learning_rate``. Early stopping requires ``scheduler: none`` and uses ``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule. ``mixed_precision: false`` trains and evaluates the head in float32 instead of float16 autocast. ``batch_membership: fixed`` keeps the same cached mini-batches every epoch and only shuffles their order; it needs cached features. ``feature_cache_dir`` saves each split's extracted features under that directory and reuses them in later runs whose model weights, input settings, layers, and dataset split match, for example other heads or seeds. Extraction writes each batch straight to memory-mapped files, and later runs read them memory-mapped, so host memory stays small however large the split is. It does not change results and is not part of the resume fingerprint.
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

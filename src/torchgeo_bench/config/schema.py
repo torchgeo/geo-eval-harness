@@ -291,6 +291,7 @@ class SegmentationConfig(StrictModel):
     early_stopping: EarlyStoppingConfig = Field(default_factory=EarlyStoppingConfig)
     mixed_precision: StrictBool = True
     batch_membership: Literal["shuffled", "fixed"] = "shuffled"
+    feature_cache_dir: StrictStr | None = None
 
     @model_validator(mode="after")
     def validate_fitting(self) -> "SegmentationConfig":
@@ -303,10 +304,12 @@ class SegmentationConfig(StrictModel):
             self.early_stopping.enabled
             or self.learning_rates
             or self.batch_membership != "shuffled"
+            or self.feature_cache_dir is not None
         )
         if cached_only and not self.cache_features:
             raise ValueError(
-                "early_stopping, learning_rates, and batch_membership require cache_features=true"
+                "early_stopping, learning_rates, batch_membership, and feature_cache_dir "
+                "require cache_features=true"
             )
         return self
 

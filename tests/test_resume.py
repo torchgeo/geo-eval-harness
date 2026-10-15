@@ -39,6 +39,7 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         {"segmentation": {"early_stopping": {"patience": 3}}},
         {"segmentation": {"learning_rates": []}},
         {"segmentation": {"mixed_precision": True, "batch_membership": "shuffled"}},
+        {"segmentation": {"feature_cache_dir": "features_seg"}},
     ],
     ids=[
         "profile-pass",
@@ -49,6 +50,7 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         "disabled-early-stopping",
         "empty-learning-rate-grid",
         "default-precision-and-batches",
+        "feature-cache-location",
     ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
