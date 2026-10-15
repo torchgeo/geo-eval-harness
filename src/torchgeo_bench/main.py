@@ -4,7 +4,7 @@ import logging
 import os
 from collections.abc import Iterator, Sequence, Sized
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import numpy as np
 import torch
@@ -22,6 +22,7 @@ from torchgeo_bench.config.presets import (
     build_model,
     recorded_normalization,
     resolve_run_config,
+    wants_resolved_image_size,
 )
 from torchgeo_bench.config.run import RunConfig
 from torchgeo_bench.config.schema import resolve_output_path
@@ -813,6 +814,29 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         yield [], [], profile_rows
 
 
+def native_image_size(dataset: Dataset, ds_name: str) -> int:
+    """Return the side of a split's unresized square images, for models with a fixed grid.
+
+    Checks the first, middle, and last samples rather than decoding the whole split; a model
+    built for this size still rejects any other size at its first forward pass.
+    """
+    sized = cast(Sized, dataset)
+    indices = sorted({0, len(sized) // 2, len(sized) - 1})
+    shapes = {tuple(dataset[i]["image"].shape[-2:]) for i in indices}
+    if len(shapes) != 1:
+        raise ValueError(
+            f"{ds_name} images vary in size {sorted(shapes)}; a model with a fixed input grid "
+            "needs one native size, so set input.image_size."
+        )
+    height, width = shapes.pop()
+    if height != width:
+        raise ValueError(
+            f"{ds_name} images are {height}x{width}; a model with a fixed input grid needs "
+            "square native images, so set input.image_size."
+        )
+    return height
+
+
 def instantiate_dataset_model(
     cfg: RunConfig,
     model_cfg: ModelPreset,
@@ -838,6 +862,8 @@ def instantiate_dataset_model(
     if model_cfg.kwargs.get("mode") == "empirical":
         # Empirical RCF whitens against real patches, so it needs the dataset.
         instantiate_kwargs["dataset"] = train_dataset
+    if model_cfg.input.image_size is None and wants_resolved_image_size(model_cfg):
+        instantiate_kwargs["image_size"] = native_image_size(train_dataset, ds_name)
     model: BenchModel = build_model(model_cfg, **instantiate_kwargs)
     model.to(device).eval()
 
