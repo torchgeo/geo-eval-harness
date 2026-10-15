@@ -838,6 +838,43 @@ def test_gpu_tensor_cache_shuffling_keeps_features_paired_with_masks() -> None:
         torch.testing.assert_close(features[1][:, 0], masks.float() + 10)
 
 
+def test_gpu_tensor_cache_fixed_batches_keep_membership_and_shuffle_order() -> None:
+    ids = torch.arange(7).reshape(7, 1, 1)
+    gpu_cache = GPUTensorCache.from_cached(
+        CachedFeaturesDataset([ids[:, None].float()], ids), "cpu"
+    )
+
+    torch.manual_seed(0)
+    epochs = [
+        tuple(tuple(masks.flatten().tolist()) for _, masks in gpu_cache.fixed_batches(2))
+        for _ in range(6)
+    ]
+
+    for batches in epochs:
+        assert sorted(batches) == [(0, 1), (2, 3), (4, 5), (6,)]
+    assert len(set(epochs)) > 1
+
+
+def test_fit_cached_in_float32_upcasts_float16_features(mock_backbone, dummy_data):
+    """Without autocast, a float32 head must accept float16 cached features."""
+    cache = _make_cpu_cache(mock_backbone, dummy_data)
+    half = GPUTensorCache([t.half() for t in cache.layer_tensors], cache.masks.long(), "cpu")
+    solver = SegmentationSolver(
+        model=make_probe(mock_backbone, ["layer1", "layer2"]),
+        num_classes=NUM_CLASSES,
+        device="cpu",
+        mixed_precision=False,
+        batch_membership="fixed",
+    )
+
+    val_miou = solver.fit_cached(half, half, batch_size=2, epochs=2, verbose=False)
+
+    assert val_miou is not None
+    assert 0.0 <= val_miou <= 1.0
+    assert solver.stopped_epoch == 2
+    assert solver.fit_seconds > 0
+
+
 def test_gpu_tensor_cache_ordered_batches(mock_backbone, dummy_data):
     cache = _make_cpu_cache(mock_backbone, dummy_data)
     gpu_cache = GPUTensorCache.from_cached(cache, device="cpu")
@@ -1043,10 +1080,10 @@ def test_select_learning_rate_refits_same_initial_head(mock_backbone, dummy_data
     )
 
     assert chosen == 0.001
-    assert solver.lr_history == [
-        {"lr": 0.1, "val_miou": 0.5},
-        {"lr": 0.01, "val_miou": 0.7},
-        {"lr": 0.001, "val_miou": 0.7},
+    assert [(entry["lr"], entry["val_miou"]) for entry in solver.lr_history] == [
+        (0.1, 0.5),
+        (0.01, 0.7),
+        (0.001, 0.7),
     ]
     for start in starts:
         for name, value in start.items():
@@ -1063,6 +1100,7 @@ def test_select_learning_rate_refits_same_initial_head(mock_backbone, dummy_data
             {"cache_features": False, "learning_rates": [0.001], "scheduler": "none"},
             "cache_features=true",
         ),
+        ({"cache_features": False, "batch_membership": "fixed"}, "cache_features=true"),
         ({"learning_rates": [0.001, 0.001]}, "positive and unique"),
         ({"learning_rates": [0.0]}, "positive and unique"),
         ({"early_stopping": {"min_epochs": 30, "max_epochs": 20}}, "max_epochs"),

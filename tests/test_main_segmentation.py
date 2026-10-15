@@ -1,5 +1,6 @@
 """Offline tests for the segmentation runner."""
 
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -72,6 +73,9 @@ def _mock_probe_and_solver():
     probe = mock.Mock()
     probe.channels_list = [16, 32]
     solver = mock.Mock()
+    solver.lr_history = []
+    solver.val_miou = solver.best_epoch = solver.stopped_epoch = None
+    solver.fit_seconds = 0.0
     return probe, solver
 
 
@@ -147,6 +151,7 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     )
     df = pd.read_csv(out)
     assert df.loc[0, "best_batch_size"] == 3
+    assert json.loads(df.loc[0, "per_class_iou"]) == [0.0, 0.5]
 
 
 def test_cached_segmentation_selects_and_records_learning_rate(tmp_path: Path):
@@ -168,6 +173,8 @@ def test_cached_segmentation_selects_and_records_learning_rate(tmp_path: Path):
     probe.freeze_backbone = True
     probe.extract_segmentation_features.return_value = cache
     solver.select_learning_rate_cached.return_value = 0.01
+    solver.lr_history = [{"lr": 0.001, "val_miou": 0.3}, {"lr": 0.01, "val_miou": 0.4}]
+    solver.val_miou = 0.4
     solver.evaluate_cached.return_value = (
         {"mIoU": 0.42, "fw_IoU": 0.55, "precision": 0.6, "recall": 0.7, "f1": 0.65},
         torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
@@ -195,7 +202,10 @@ def test_cached_segmentation_selects_and_records_learning_rate(tmp_path: Path):
         verbose=cfg.runtime.verbose,
         early_stopping=cfg.segmentation.early_stopping,
     )
-    assert pd.read_csv(out).loc[0, "best_lr"] == 0.01
+    row = pd.read_csv(out).loc[0]
+    assert row["best_lr"] == 0.01
+    assert row["val_miou"] == 0.4
+    assert json.loads(row["lr_search"]) == solver.lr_history
 
 
 def test_segmentation_resume_skips_complete_run(tmp_path: Path):

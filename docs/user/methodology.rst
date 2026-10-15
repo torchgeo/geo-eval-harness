@@ -344,11 +344,17 @@ Training knobs
    * - ``batch_size``
      - ``64``
      - Batch size when training the probe head.
+   * - ``mixed_precision``
+     - ``true``
+     - Float16 autocast on CUDA. ``false`` trains and evaluates the head in float32, upcasting float16 cached features per batch.
+   * - ``batch_membership``
+     - ``shuffled``
+     - ``shuffled`` draws new mini-batches every epoch. ``fixed`` keeps the same contiguous cached mini-batches, so BatchNorm in the head always sees the same groups of images, and shuffles only their order. Cached features only.
 
 Validation early stopping
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Opt-in, under ``segmentation.early_stopping``. Requires ``scheduler: none`` and ``cache_features: true``. Validation mIoU is checked at epoch 0 and every ``check_every`` epochs. Patience resets only after a gain of more than ``min_delta`` over the last reference score, so a run of tiny gains cannot postpone stopping. When disabled, these settings are left out of the resume fingerprint, so existing results still resume.
+Opt-in, under ``segmentation.early_stopping``. Requires ``scheduler: none`` and ``cache_features: true``. Validation mIoU is checked at epoch 0 and every ``check_every`` epochs. Patience resets only after a gain of more than ``min_delta`` over the last reference score, so a run of tiny gains cannot postpone stopping. When disabled, these settings are left out of the resume fingerprint, so existing results still resume. The same holds for ``learning_rates``, ``mixed_precision``, and ``batch_membership`` at their defaults.
 
 .. list-table::
    :header-rows: 1

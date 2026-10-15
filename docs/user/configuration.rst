@@ -199,6 +199,8 @@ Segmentation
        min_delta: 0.001
        min_epochs: 25
        max_epochs: 1000
+     mixed_precision: true
+     batch_membership: shuffled
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
@@ -215,7 +217,7 @@ dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-``learning_rates`` and ``early_stopping`` are opt-in and need cached features. A non-empty ``learning_rates`` grid is searched on validation in place of ``learning_rate``. Early stopping requires ``scheduler: none`` and uses ``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule.
+``learning_rates`` and ``early_stopping`` are opt-in and need cached features. A non-empty ``learning_rates`` grid is searched on validation in place of ``learning_rate``. Early stopping requires ``scheduler: none`` and uses ``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule. ``mixed_precision: false`` trains and evaluates the head in float32 instead of float16 autocast. ``batch_membership: fixed`` keeps the same cached mini-batches every epoch and only shuffles their order; it needs cached features.
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

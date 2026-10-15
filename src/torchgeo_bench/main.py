@@ -1,7 +1,9 @@
 """Benchmark script for torchgeo-bench."""
 
+import json
 import logging
 import os
+import time
 from collections.abc import Iterator, Sequence, Sized
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, NotRequired, TypedDict
@@ -588,24 +590,48 @@ def evaluate_profile(
     return rows
 
 
+@dataclass
+class SegmentationOutcome:
+    """Test metrics and fitting details from one segmentation probe."""
+
+    metrics: "torchgeo_bench.segmentation_task.SegMetrics"
+    feature_dim: int
+    learning_rate: float | None
+    batch_size: int | None
+    per_class_iou: str
+    val_miou: float | None
+    best_epoch: int | None
+    stopped_epoch: int | None
+    fit_seconds: float
+    extract_seconds: float | None
+    lr_search: str | None
+
+
+def _elapsed_since(start: float, device: torch.device) -> float:
+    """Return seconds since ``start`` after queued GPU work has finished."""
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    return time.perf_counter() - start
+
+
 def evaluate_segmentation(
     model: torch.nn.Module,
     loaders: LoaderSplits,
     cfg: RunConfig,
     num_classes: int,
-) -> "tuple[torchgeo_bench.segmentation_task.SegMetrics, int, float | None, int | None]":
+) -> SegmentationOutcome:
     """Train a segmentation head on a frozen backbone and evaluate test mIoU.
 
     Backbone features can be cached to avoid recomputing them each epoch.
 
     Returns:
-        Tuple of (metrics, feature_dim, lr, batch_size). With ``segmentation.learning_rates``
-        set, lr is the rate selected on validation.
+        Test metrics, feature dimension, learning rate, batch size, and fitting details. With
+        ``segmentation.learning_rates`` set, the learning rate is the one selected on validation.
     """
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
     device = torch.device(cfg.runtime.device)
     seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
-    from torchgeo_bench.segmentation_task import build_seg_probe_and_solver
+    from torchgeo_bench.segmentation_task import build_seg_probe_and_solver, per_class_iou
 
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
@@ -613,13 +639,15 @@ def evaluate_segmentation(
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
-    collect_confusions = cfg.classification.bootstrap_samples > 0
     early_stopping = seg_cfg.early_stopping if seg_cfg.early_stopping.enabled else None
+    extract_seconds: float | None = None
     if use_cache and probe.freeze_backbone:
         logger.info("Caching backbone features for train and val splits...")
+        start = time.perf_counter()
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        extract_seconds = _elapsed_since(start, device)
         if seg_cfg.learning_rates:
             lr = solver.select_learning_rate_cached(
                 train_cache,
@@ -640,33 +668,45 @@ def evaluate_segmentation(
                 verbose=verbose,
                 early_stopping=early_stopping,
             )
+        # Free host memory held by the training features before moving test features.
+        del train_cache, val_cache
         eval_result = solver.evaluate_cached(
             test_cache,
             batch_size=probe_batch_size,
-            collect_confusions=collect_confusions,
+            collect_confusions=True,
         )
     else:
+        start = time.perf_counter()
         solver.fit(train_loader=train_loader, val_loader=val_loader, epochs=epochs, verbose=verbose)
-        eval_result = solver.evaluate(
-            test_loader,
-            collect_confusions=collect_confusions,
-        )
+        solver.fit_seconds = _elapsed_since(start, device)
+        eval_result = solver.evaluate(test_loader, collect_confusions=True)
     actual_batch_size = (
         probe_batch_size
         if use_cache and probe.freeze_backbone
         else int(train_loader.batch_size or 1)
     )
 
-    if isinstance(eval_result, tuple):
-        metrics, confusion_matrices = eval_result
+    assert isinstance(eval_result, tuple)
+    metrics, confusion_matrices = eval_result
+    if cfg.classification.bootstrap_samples > 0:
         metrics["ci_lower"], metrics["ci_upper"] = bootstrap_miou(
             confusion_matrices,
             n_boot=cfg.classification.bootstrap_samples,
             seed=seed,
         )
-    else:
-        metrics = eval_result
-    return metrics, sum(probe.channels_list), lr, actual_batch_size
+    return SegmentationOutcome(
+        metrics=metrics,
+        feature_dim=sum(probe.channels_list),
+        learning_rate=lr,
+        batch_size=actual_batch_size,
+        per_class_iou=json.dumps(per_class_iou(confusion_matrices.sum(dim=0))),
+        val_miou=solver.val_miou,
+        best_epoch=solver.best_epoch,
+        stopped_epoch=solver.stopped_epoch,
+        fit_seconds=solver.fit_seconds,
+        extract_seconds=extract_seconds,
+        lr_search=json.dumps(solver.lr_history) if solver.lr_history else None,
+    )
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:
@@ -696,12 +736,13 @@ def run_segmentation(
     num_classes = common_meta["num_classes"]
     assert isinstance(val_loader.dataset, Sized)
     assert isinstance(test_loader.dataset, Sized)
-    metrics, feat_dim, best_lr, best_bs = evaluate_segmentation(model, loaders, cfg, num_classes)
+    outcome = evaluate_segmentation(model, loaders, cfg, num_classes)
+    metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {
         **common_meta,
         "merge_val": False,
-        "feature_dim": feat_dim,
+        "feature_dim": outcome.feature_dim,
         "n_train": len(train_dataset),
         "n_val": len(val_loader.dataset),
         "n_test": len(test_loader.dataset),
@@ -713,12 +754,19 @@ def run_segmentation(
         metric_value=metrics.get("mIoU", float("nan")),
         ci_lower=metrics.get("ci_lower", float("nan")),
         ci_upper=metrics.get("ci_upper", float("nan")),
-        best_lr=best_lr,
-        best_batch_size=best_bs,
+        best_lr=outcome.learning_rate,
+        best_batch_size=outcome.batch_size,
         fw_iou=metrics.get("fw_IoU"),
         precision=metrics.get("precision"),
         recall=metrics.get("recall"),
         f1=metrics.get("f1"),
+        per_class_iou=outcome.per_class_iou,
+        val_miou=outcome.val_miou,
+        best_epoch=outcome.best_epoch,
+        stopped_epoch=outcome.stopped_epoch,
+        fit_seconds=outcome.fit_seconds,
+        extract_seconds=outcome.extract_seconds,
+        lr_search=outcome.lr_search,
     ).to_row()
     yield [row]
 

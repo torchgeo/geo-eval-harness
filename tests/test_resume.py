@@ -38,6 +38,7 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         {"runtime": {"device": "cpu", "workers": 0}},
         {"segmentation": {"early_stopping": {"patience": 3}}},
         {"segmentation": {"learning_rates": []}},
+        {"segmentation": {"mixed_precision": True, "batch_membership": "shuffled"}},
     ],
     ids=[
         "profile-pass",
@@ -47,6 +48,7 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         "execution",
         "disabled-early-stopping",
         "empty-learning-rate-grid",
+        "default-precision-and-batches",
     ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
@@ -79,6 +81,8 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"segmentation": {"learning_rate": 0.01}},
         {"segmentation": {"learning_rates": [0.001, 0.01]}},
         {"segmentation": {"scheduler": "none", "early_stopping": {"enabled": True}}},
+        {"segmentation": {"mixed_precision": False}},
+        {"segmentation": {"batch_membership": "fixed"}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
     ],
 )

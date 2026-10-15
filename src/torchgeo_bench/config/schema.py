@@ -289,6 +289,8 @@ class SegmentationConfig(StrictModel):
     cache_features: StrictBool = True
     cache_dtype: Literal["float16", "float32"] = "float16"
     early_stopping: EarlyStoppingConfig = Field(default_factory=EarlyStoppingConfig)
+    mixed_precision: StrictBool = True
+    batch_membership: Literal["shuffled", "fixed"] = "shuffled"
 
     @model_validator(mode="after")
     def validate_fitting(self) -> "SegmentationConfig":
@@ -297,8 +299,15 @@ class SegmentationConfig(StrictModel):
             raise ValueError(
                 "early_stopping requires scheduler 'none'; cosine needs a fixed number of epochs"
             )
-        if (self.early_stopping.enabled or self.learning_rates) and not self.cache_features:
-            raise ValueError("early_stopping and learning_rates require cache_features=true")
+        cached_only = (
+            self.early_stopping.enabled
+            or self.learning_rates
+            or self.batch_membership != "shuffled"
+        )
+        if cached_only and not self.cache_features:
+            raise ValueError(
+                "early_stopping, learning_rates, and batch_membership require cache_features=true"
+            )
         return self
 
 

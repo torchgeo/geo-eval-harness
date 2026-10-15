@@ -37,14 +37,19 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
     Excludes device and worker count, which only control execution. Includes batch size because
-    it can change floating-point results. Disabled segmentation early stopping and an empty
-    learning-rate grid are omitted so results recorded before those options existed still resume.
+    it can change floating-point results. Opt-in segmentation fitting options are omitted while
+    they keep their defaults, so results recorded before those options existed still resume.
     """
-    segmentation = config.segmentation.model_dump(mode="json")
-    if not config.segmentation.early_stopping.enabled:
+    seg = config.segmentation
+    segmentation = seg.model_dump(mode="json")
+    if not seg.early_stopping.enabled:
         segmentation.pop("early_stopping")
-    if not config.segmentation.learning_rates:
+    if not seg.learning_rates:
         segmentation.pop("learning_rates")
+    if seg.mixed_precision:
+        segmentation.pop("mixed_precision")
+    if seg.batch_membership == "shuffled":
+        segmentation.pop("batch_membership")
     payload = {
         "schema_version": config.schema_version,
         "model": {

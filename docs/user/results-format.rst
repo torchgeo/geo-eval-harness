@@ -126,6 +126,18 @@ Column               Description
 ``precision``        Macro precision (segmentation only).
 ``recall``           Macro recall (segmentation only).
 ``f1``               Macro F1 (segmentation only).
+``per_class_iou``    JSON list of test IoU per class (segmentation only);
+                     ``null`` for classes absent from labels and predictions.
+``val_miou``         Validation mIoU of the evaluated checkpoint (segmentation
+                     only; empty without a validation split).
+``best_epoch``       Epoch of the evaluated checkpoint (segmentation only).
+``stopped_epoch``    Last training epoch of that fit (segmentation only).
+``fit_seconds``      Head fitting time, summed over any ``learning_rates`` grid
+                     (segmentation only).
+``extract_seconds``  Backbone feature extraction time for the three splits
+                     (cached segmentation only).
+``lr_search``        JSON list of per-rate validation mIoU, epochs, and fit
+                     seconds when ``learning_rates`` is set (segmentation only).
 ==================== ============================================================
 
 Atomic appends
