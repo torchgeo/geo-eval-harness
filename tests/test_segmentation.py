@@ -681,32 +681,42 @@ def test_solver_refit_clears_previous_selection(
 
 
 @pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("invalid", ["empty", "nan", "inf", "-inf"])
-def test_solver_rejects_invalid_validation(
-    monkeypatch: pytest.MonkeyPatch, invalid: str, *, cached: bool
+def test_solver_rejects_empty_validation_before_training(*, cached: bool) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    initial_state = {name: tensor.clone() for name, tensor in probe.state_dict().items()}
+    if cached:
+        train = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        val = CachedFeaturesDataset([t[:0] for t in train.layer_tensors], train.masks[:0])
+        with pytest.raises(ValueError, match="validation cache must contain at least one sample"):
+            solver.fit_cached(train, val, epochs=1, verbose=False)
+    else:
+        val_loader = make_loader(torch.empty(0, 3, 8, 8), torch.empty(0, 8, 8, dtype=torch.long))
+        with pytest.raises(ValueError, match="validation loader must contain at least one batch"):
+            solver.fit(loader, val_loader, epochs=1, verbose=False)
+
+    assert not solver.optimizer.state
+    for name, tensor in probe.state_dict().items():
+        torch.testing.assert_close(tensor, initial_state[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), -float("inf")])
+def test_solver_rejects_nonfinite_validation(
+    monkeypatch: pytest.MonkeyPatch, score: float, *, cached: bool
 ) -> None:
     loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
     probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
     solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
-    if invalid != "empty":
-        monkeypatch.setattr(solver, "_compute_metrics", lambda: {"mIoU": float(invalid)})
+    monkeypatch.setattr(solver, "_compute_metrics", lambda: {"mIoU": score})
     if cached:
-        train = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
-        val = (
-            CachedFeaturesDataset([t[:0] for t in train.layer_tensors], train.masks[:0])
-            if invalid == "empty"
-            else train
-        )
-        with pytest.raises(ValueError, match=r"non-empty|must be finite"):
-            solver.fit_cached(train, val, epochs=1, verbose=False)
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        with pytest.raises(ValueError, match="must be finite"):
+            solver.fit_cached(cache, cache, epochs=1, verbose=False)
     else:
-        val_loader = (
-            make_loader(torch.empty(0, 3, 8, 8), torch.empty(0, 8, 8, dtype=torch.long))
-            if invalid == "empty"
-            else loader
-        )
-        with pytest.raises(ValueError, match=r"non-empty|must be finite"):
-            solver.fit(loader, val_loader, epochs=1, verbose=False)
+        with pytest.raises(ValueError, match="must be finite"):
+            solver.fit(loader, loader, epochs=1, verbose=False)
 
 
 class MockBackbone4Layer(nn.Module):
@@ -962,13 +972,16 @@ def _make_cpu_cache(mock_backbone, dummy_data):
     return probe.extract_segmentation_features(loader, cache_dtype=torch.float16)
 
 
-def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data):
+def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data, monkeypatch):
     """The device-cache path must also work without CUDA."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     cache = _make_cpu_cache(mock_backbone, dummy_data)
     gpu_cache = GPUTensorCache.from_cached(cache, device="cpu")
 
     assert len(gpu_cache) == len(cache)
     assert len(gpu_cache.layer_tensors) == 2
+    assert all(tensor.device.type == "cpu" for tensor in gpu_cache.layer_tensors)
+    assert gpu_cache.masks.device.type == "cpu"
     assert gpu_cache.layer_tensors[0].dtype == torch.float32  # CPU path uses float32
     assert gpu_cache.masks.dtype == torch.long
     assert gpu_cache.masks.shape == (len(cache), 64, 64)

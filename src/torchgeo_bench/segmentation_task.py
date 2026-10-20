@@ -28,10 +28,9 @@ SegMetrics = dict[str, float]
 
 
 class SegmentationSolver:
-    """Train a segmentation probe and restore its best-validation epoch.
+    """Train and evaluate a segmentation probe.
 
-    ``best_epoch`` is one-based; ``best_val_miou`` is dataset-level macro mIoU.
-    Both are unset when fitting without validation.
+    See :ref:`segmentation-model-selection` for the selection policy.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -178,15 +177,16 @@ class SegmentationSolver:
 
         Args:
             train_loader: Training data loader.
-            val_loader: Optional validation loader for best-epoch selection by macro mIoU.
+            val_loader: Optional validation data loader.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
 
         Returns:
-            Best validation mIoU after restoring its state, else None (final-epoch state).
-            All epochs run; ties select the earliest epoch. ``val_history`` keeps every score.
+            Selected validation mIoU, or None without validation.
         """
         self._reset_selection(epochs)
+        if val_loader is not None and len(val_loader) == 0:
+            raise ValueError("Segmentation validation loader must contain at least one batch.")
         scheduler = self._make_scheduler(epochs)
 
         for epoch in range(epochs):
@@ -264,16 +264,17 @@ class SegmentationSolver:
         Args:
             train_cache: Pre-extracted training features from
                 :meth:`SegmentationProbe.extract_segmentation_features`, or a GPU cache.
-            val_cache: Optional validation cache for best-epoch selection by macro mIoU.
+            val_cache: Optional validation cache.
             batch_size: Batch size for iterating over cached data.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
 
         Returns:
-            Best validation mIoU after restoring its state, else None (final-epoch state).
-            All epochs run; ties select the earliest epoch. ``val_history`` keeps every score.
+            Selected validation mIoU, or None without validation.
         """
         self._reset_selection(epochs)
+        if val_cache is not None and len(val_cache) == 0:
+            raise ValueError("Segmentation validation cache must contain at least one sample.")
         gpu_train = (
             train_cache
             if isinstance(train_cache, GPUTensorCache)
@@ -411,20 +412,13 @@ class SegmentationSolver:
             m.to(self.device)
 
         confusion_list: list[torch.Tensor] = []
-        has_batches = False
-
         for logits, masks in self._evaluation_batches(data, batch_size):
-            has_batches = True
             for m in self._all_metrics:
                 m.update(logits, masks)
             if collect_confusions:
                 predictions = logits.argmax(dim=1)
                 confusion_list.append(self._per_image_confusions(predictions, masks).cpu())
 
-        if not has_batches:
-            raise ValueError(
-                "Segmentation evaluation requires non-empty data (including validation)."
-            )
         metrics = self._compute_metrics()
         if collect_confusions:
             return metrics, torch.cat(confusion_list, dim=0)

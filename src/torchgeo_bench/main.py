@@ -602,6 +602,8 @@ def evaluate_segmentation(
         Tuple of (metrics, feature_dim, lr, batch_size).
     """
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
+    if val_loader is None or len(val_loader) == 0:
+        raise ValueError("Segmentation benchmarks require a non-empty validation loader.")
     device = torch.device(cfg.runtime.device)
     seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
     from torchgeo_bench.segmentation_task import build_seg_probe_and_solver

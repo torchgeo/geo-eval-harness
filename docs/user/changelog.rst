@@ -24,7 +24,7 @@ Added
 Fixed
 ^^^^^
 
-* Segmentation test metrics and bootstrap intervals use the earliest epoch with the highest validation mIoU. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
+* Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 
 0.5.0 (2026-08-10)
 ------------------

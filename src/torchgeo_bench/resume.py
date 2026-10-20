@@ -53,7 +53,7 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
     if task == "segmentation":
-        payload["segmentation"]["selection_protocol"] = "best-validation-miou-v1"
+        payload["segmentation"]["selection_protocol"] = "best-validation-miou"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 

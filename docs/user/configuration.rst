@@ -207,9 +207,7 @@ dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-All heads train for ``segmentation.epochs`` epochs. The model with the highest validation dataset-level macro mIoU is restored before test evaluation; ties select the earliest epoch. There is no final-epoch option or early stopping.
-
-Validation must be non-empty and its mIoU finite. Otherwise, the run fails without writing a successful result. See :doc:`methodology` for selection metadata and direct solver calls without validation.
+See :ref:`segmentation-model-selection` for the validation requirements and model-selection policy.
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

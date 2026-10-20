@@ -14,7 +14,7 @@ from torchgeo_bench.config.run import RunConfig
 from torchgeo_bench.main import LoaderSplits, evaluate_segmentation, main, run_dataset
 from torchgeo_bench.results import bootstrap_miou
 from torchgeo_bench.resume import ResumeState
-from torchgeo_bench.segmentation_probe import SegmentationProbe
+from torchgeo_bench.segmentation_probe import GPUTensorCache, SegmentationProbe
 from torchgeo_bench.segmentation_task import SegmentationSolver
 
 
@@ -201,13 +201,10 @@ def test_runner_test_metrics_and_bootstrap_use_selected_epoch(
     probe.head = _ChangingHead()
     solver = SegmentationSolver(probe, 2, lr=1.0, lr_scheduler="none", device="cpu")
     evaluate = solver._evaluate
-    test_data = (
-        probe.extract_segmentation_features(test, cache_dtype=torch.float32) if cached else test
-    )
+    test_data = test
     if cached:
-        from torchgeo_bench.segmentation_probe import GPUTensorCache
-
-        test_data = GPUTensorCache.from_cached(test_data, "cpu")
+        test_cache = probe.extract_segmentation_features(test, cache_dtype=torch.float32)
+        test_data = GPUTensorCache.from_cached(test_cache, device="cpu")
     boundaries: list[tuple[dict[str, float], torch.Tensor]] = []
 
     def controlled_validation(data, batch_size=64, *, collect_confusions=False):
@@ -240,8 +237,27 @@ def test_runner_test_metrics_and_bootstrap_use_selected_epoch(
 
 
 @pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("validation", ["missing", "empty"])
+def test_runner_requires_validation_before_building_probe(
+    tmp_path: Path, validation: str, *, cached: bool
+) -> None:
+    cfg = _cfg_for_segmentation(tmp_path / "out.csv", {"segmentation": {"cache_features": cached}})
+    _, train, empty_val, test = _synthetic_segmentation_loaders(n_val=0)
+    loaders = LoaderSplits(train, None if validation == "missing" else empty_val, test)
+
+    with (
+        mock.patch("torchgeo_bench.segmentation_task.build_seg_probe_and_solver") as build,
+        pytest.raises(ValueError, match="require a non-empty validation loader"),
+    ):
+        evaluate_segmentation(mock.Mock(), loaders, cfg, num_classes=3)
+
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("validation", ["empty", "non-finite"])
 def test_runner_invalid_validation_does_not_write_results(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validation: str, *, cached: bool
 ) -> None:
     out = tmp_path / "out.csv"
     cfg = _cfg_for_segmentation(
@@ -256,7 +272,8 @@ def test_runner_invalid_validation_does_not_write_results(
         },
     )
     monkeypatch.setattr(
-        "torchgeo_bench.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+        "torchgeo_bench.main.get_datasets",
+        lambda **_kwargs: _synthetic_segmentation_loaders(n_val=0 if validation == "empty" else 4),
     )
     backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
     backbone.effective_normalization = "bandspec_zscore"
@@ -264,9 +281,10 @@ def test_runner_invalid_validation_does_not_write_results(
         "torchgeo_bench.main.instantiate_dataset_model",
         lambda *_args: backbone,
     )
-    monkeypatch.setattr(
-        SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": float("nan")}
-    )
-    with pytest.raises(ValueError, match="must be finite"):
+    if validation == "non-finite":
+        monkeypatch.setattr(
+            SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": float("nan")}
+        )
+    with pytest.raises(ValueError, match=r"non-empty validation|must be finite"):
         main(cfg)
     assert not out.exists()

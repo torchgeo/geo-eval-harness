@@ -277,16 +277,22 @@ Training & evaluation (all heads)
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
   (``segmentation.scheduler``); ``none`` disables.
-* **Model selection:** train for all configured epochs, then restore the completed epoch with the highest validation dataset-level macro mIoU. Ties retain the earliest epoch. Selection uses no test metrics.
 * **Metric:** mean Intersection-over-Union (mIoU) via
   ``torchmetrics.MulticlassJaccardIndex``.  Frequency-weighted IoU plus
   macro precision / recall / F1 are also reported in the result row
   (see :doc:`results-format`).
 * **Uncertainty:** 95% bootstrap confidence intervals resample held-out
   images and recompute dataset-level mIoU from their aggregated confusion
-  matrices. All test metrics and confusion matrices use the restored best-validation model, on both loader and cached-feature paths.
+  matrices.
 
-Validation must be non-empty and its mIoU finite. Otherwise, fitting raises an error and the runner does not write a successful result. Direct solver calls without validation retain the final epoch.
+.. _segmentation-model-selection:
+
+Model selection
+^^^^^^^^^^^^^^^
+
+All segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no early stopping or configurable final-epoch option.
+
+Benchmark runs require a non-empty validation loader before training or feature extraction. Direct solver calls may omit validation and retain the final epoch; supplied validation must be non-empty. Non-finite validation mIoU raises an error. A failed run does not write a successful result.
 
 After fitting, :class:`~torchgeo_bench.segmentation_task.SegmentationSolver` exposes:
 

@@ -157,7 +157,7 @@ Resume requires an exact ``config_hash`` match. The hash covers the resolved mod
 
 Segmentation hashes also include the best-validation-mIoU selection protocol, determined from the resolved dataset task. A final-epoch result cannot satisfy a best-validation run's resume key. Classification hashes are unaffected by this protocol discriminator.
 
-Segmentation test metrics, auxiliary metrics, and bootstrap intervals all describe the restored selected epoch. Method names and CSV columns are unchanged.
+Method names and CSV columns are unchanged. The selection policy is defined in :ref:`segmentation-model-selection`.
 
 Existing results are not relabeled or rewritten. Affected segmentation configurations need new runs to obtain best-validation results.
 
