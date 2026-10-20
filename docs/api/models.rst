@@ -76,3 +76,4 @@ backbone family.
 .. autoclass:: ConvBlockHead
 .. autoclass:: FPNHead
 .. autoclass:: DPTHead
+.. autoclass:: UPerNetHead

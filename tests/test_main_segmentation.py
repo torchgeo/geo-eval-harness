@@ -171,6 +171,49 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     assert int((df["method"] == "seg-fpn").sum()) == 1
 
 
+_TINY_VIT = {
+    "name": "tiny-vit",
+    "target": "torchgeo_bench.models.TimmPatchBenchModel",
+    "kwargs": {"model_name": "vit_tiny_patch16_224", "pretrained": False, "auto_resize": True},
+}
+_TINY_VIT_LAYERS = ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]
+
+
+@pytest.mark.parametrize("cache_features", [True, False])
+def test_upernet_skips_a_final_training_batch_of_one(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, *, cache_features: bool
+):
+    """Pyramid pooling BatchNorm cannot train on one sample, so that batch is dropped."""
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "cache_features": cache_features,
+                "batch_size": 2,
+            },
+        },
+    )
+
+    with (
+        mock.patch(
+            "torchgeo_bench.main.get_datasets",
+            return_value=_synthetic_segmentation_loaders(n_train=9),
+        ),
+        caplog.at_level("INFO", logger="torchgeo_bench.segmentation_task"),
+    ):
+        main(cfg)
+
+    assert "Skipping a training batch of 1 samples" in caplog.text
+    df = pd.read_csv(out)
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
+
+
 class _ChangingHead(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

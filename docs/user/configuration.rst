@@ -194,7 +194,7 @@ Segmentation
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
-``fpn``, ``dpt``, and ``patch_linear``; not every head works with every
+``fpn``, ``dpt``, ``patch_linear``, and ``upernet``; not every head works with every
 backbone. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See

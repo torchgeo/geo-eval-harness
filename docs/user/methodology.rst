@@ -269,6 +269,12 @@ A DPT-style reassemble + fusion-transformer decoder
 backbone layers in coarse-to-fine order; otherwise structurally
 similar to the FPN probe but with deeper fusion blocks.
 
+UPerNet probe
+^^^^^^^^^^^^^
+
+**Method name:** ``seg-upernet`` (YAML ``segmentation: {head: upernet}``).
+A UPerNet decoder (:class:`~torchgeo_bench.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped.
+
 Training & evaluation (all heads)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -330,6 +336,8 @@ Head type
      - FPN top-down pathway.  Layers must be coarse-to-fine.
    * - ``dpt``
      - DPT-style reassemble + fusion-transformer decoder.
+   * - ``upernet``
+     - Pyramid pooling on the coarsest layer + FPN fusion.  Layers must be coarse-to-fine.
 
 Training knobs
 ^^^^^^^^^^^^^^
