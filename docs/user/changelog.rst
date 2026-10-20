@@ -20,6 +20,7 @@ Added
   deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
   Downloadable with ``torchgeo-bench download aid``.  One of the three
   most-used benchmarks in the GFM literature.
+* ``segmentation.head: upernet``: a UPerNet decoder (pyramid pooling plus FPN fusion) built on the ``transformers`` reference implementation, for coarse-to-fine feature maps from any backbone.
 
 0.5.0 (2026-08-10)
 ------------------

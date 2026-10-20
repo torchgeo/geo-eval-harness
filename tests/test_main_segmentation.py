@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 from tests.support.runner import _chainable_model_mock, _compose_cfg, _resume_row
 from torchgeo_bench.config.presets import merge_settings
 from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import main, run_dataset
+from torchgeo_bench.main import LoaderSplits, evaluate_segmentation, main, run_dataset
 from torchgeo_bench.resume import ResumeState
 
 
@@ -166,3 +166,26 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     build_mock.assert_not_called()
     df = pd.read_csv(out)
     assert int((df["method"] == "seg-fpn").sum()) == 1
+
+
+def test_upernet_rejects_a_final_training_batch_of_one_before_training(tmp_path: Path):
+    """Pyramid pooling BatchNorm cannot train on one sample, so fail before any epoch runs."""
+    cfg = _cfg_for_segmentation(
+        tmp_path / "out.csv",
+        overrides={"segmentation": {"head": "upernet", "cache_features": True, "batch_size": 7}},
+    )
+    probe, solver = _mock_probe_and_solver()
+    probe.freeze_backbone = True
+    _, train, val, test = _synthetic_segmentation_loaders(n_train=8)
+
+    with (
+        mock.patch(
+            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+            return_value=(probe, solver),
+        ),
+        pytest.raises(ValueError, match="final batch of one sample"),
+    ):
+        evaluate_segmentation(mock.Mock(), LoaderSplits(train, val, test), cfg, num_classes=3)
+
+    probe.extract_segmentation_features.assert_not_called()
+    solver.fit_cached.assert_not_called()

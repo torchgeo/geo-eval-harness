@@ -612,6 +612,19 @@ def evaluate_segmentation(
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
+    actual_batch_size = (
+        probe_batch_size
+        if use_cache and probe.freeze_backbone
+        else int(train_loader.batch_size or 1)
+    )
+    assert isinstance(train_loader.dataset, Sized)
+    n_train = len(train_loader.dataset)
+    if seg_cfg.head == "upernet" and n_train % actual_batch_size == 1:
+        raise ValueError(
+            f"UPerNet cannot train on a final batch of one sample ({n_train} training samples, "
+            f"batch size {actual_batch_size}); its pyramid pooling BatchNorm needs at least two. "
+            "Change segmentation.batch_size (cached features) or runtime.batch_size."
+        )
     collect_confusions = cfg.classification.bootstrap_samples > 0
     if use_cache and probe.freeze_backbone:
         logger.info("Caching backbone features for train and val splits...")
@@ -636,11 +649,6 @@ def evaluate_segmentation(
             test_loader,
             collect_confusions=collect_confusions,
         )
-    actual_batch_size = (
-        probe_batch_size
-        if use_cache and probe.freeze_backbone
-        else int(train_loader.batch_size or 1)
-    )
 
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result

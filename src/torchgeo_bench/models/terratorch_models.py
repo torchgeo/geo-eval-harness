@@ -77,7 +77,6 @@ class _TerraTorchBench(BenchModel):
     def _prepare_input(self, images: torch.Tensor) -> torch.Tensor:
         return images
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         x = _maybe_resize(self._prepare_input(images), self.target_size)
         return _reduce_to_vec(self.backbone(x), pool=self.pool)
@@ -347,7 +346,6 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
 
         return _f
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if images.shape[1] != len(self.bands):
             raise ValueError(

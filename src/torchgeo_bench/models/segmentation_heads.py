@@ -239,6 +239,48 @@ class FPNHead(nn.Module):
         return logits
 
 
+class UPerNetHead(nn.Module):
+    """UPerNet decoder head using the reference ``transformers`` implementation.
+
+    A pyramid pooling module on the coarsest map feeds a top-down FPN over the other maps,
+    and all levels are fused before classification (Xiao et al., 2018). Layers must be in
+    **coarse-to-fine order**; they may share one resolution (ViT blocks) or form a pyramid
+    (CNN or Swin stages).
+
+    Convolutions use the ``N(0, 0.02)`` initialisation of ``UperNetForSemanticSegmentation``.
+    The pool-scale-1 branch applies BatchNorm to a ``1x1`` map, so training batches need at
+    least two samples.
+
+    Args:
+        channels_list: Channel count for each hooked feature layer (coarse-to-fine).
+        num_classes: Number of segmentation output classes.
+        hidden_dim: Channel width of the pyramid pooling and FPN layers (default 256).
+    """
+
+    def __init__(self, channels_list: list[int], num_classes: int, hidden_dim: int = 256) -> None:
+        super().__init__()
+        from transformers import UperNetConfig
+        from transformers.models.upernet.modeling_upernet import UperNetHead as ReferenceHead
+
+        config = UperNetConfig(hidden_size=hidden_dim)
+        config.num_labels = num_classes
+        self.decoder = ReferenceHead(config, list(reversed(channels_list)))
+        for module in self.decoder.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.normal_(module.weight, mean=0.0, std=config.initializer_range)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Decode coarse-to-fine feature maps into logits at the input resolution."""
+        logits = self.decoder(list(reversed(features)))
+        if logits.shape[-2:] != (input_h, input_w):
+            logits = F.interpolate(
+                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
+            )
+        return logits
+
+
 # The fusion cascade is the reference implementation from
 # ``transformers.models.dpt.modeling_dpt`` (Apache-2.0), itself a faithful port
 # of Intel-ISL DPT. It is imported rather than reimplemented so the residual
