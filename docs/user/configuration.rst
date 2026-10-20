@@ -191,6 +191,14 @@ Segmentation
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
+     learning_rates: []
+     early_stopping:
+       enabled: false
+       check_every: 5
+       patience: 16
+       min_delta: 0.001
+       min_epochs: 25
+       max_epochs: 1000
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
@@ -206,6 +214,11 @@ feature layers. See
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
+
+``learning_rates`` and ``early_stopping`` are opt-in and need cached features.
+A non-empty ``learning_rates`` grid is searched on validation in place of
+``learning_rate``. Early stopping requires ``scheduler: none`` and uses
+``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule.
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

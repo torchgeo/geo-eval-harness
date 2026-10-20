@@ -277,6 +277,9 @@ Training & evaluation (all heads)
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
   (``segmentation.scheduler``); ``none`` disables.
+* **Weights evaluated:** the final epoch by default. With
+  ``segmentation.early_stopping.enabled``, training stops once validation mIoU
+  stops improving and the best validation check is evaluated instead.
 * **Metric:** mean Intersection-over-Union (mIoU) via
   ``torchmetrics.MulticlassJaccardIndex``.  Frequency-weighted IoU plus
   macro precision / recall / F1 are also reported in the result row
@@ -331,6 +334,12 @@ Training knobs
    * - ``learning_rate``
      - ``1e-3``
      - Initial learning rate (AdamW).
+   * - ``learning_rates``
+     - ``[]``
+     - Optional grid searched instead of ``learning_rate``. Each rate refits
+       the same initial head with the same batch order; the rate with the
+       best validation mIoU is kept (ties go to the lower rate) and recorded
+       as ``best_lr``.
    * - ``scheduler``
      - ``cosine``
      - ``cosine`` (CosineAnnealingLR to 1e-6) or ``none`` (constant).
@@ -340,6 +349,42 @@ Training knobs
    * - ``batch_size``
      - ``64``
      - Batch size when training the probe head.
+
+Validation early stopping
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Opt-in, under ``segmentation.early_stopping``. Requires ``scheduler: none``
+and ``cache_features: true``. Validation mIoU is checked at epoch 0 and every
+``check_every`` epochs. Patience resets only after a gain of more than
+``min_delta`` over the last reference score, so a run of tiny gains cannot
+postpone stopping. When disabled, these settings are left out of the resume
+fingerprint, so existing results still resume.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - Option
+     - Default
+     - Description
+   * - ``enabled``
+     - ``false``
+     - Turn validation early stopping on.
+   * - ``check_every``
+     - ``5``
+     - Epochs between validation checks.
+   * - ``patience``
+     - ``16``
+     - Checks without a ``min_delta`` gain before stopping.
+   * - ``min_delta``
+     - ``0.001``
+     - Required cumulative mIoU gain (a fraction, so 0.1 points).
+   * - ``min_epochs``
+     - ``25``
+     - No stopping before this epoch.
+   * - ``max_epochs``
+     - ``1000``
+     - Hard cap; replaces ``epochs`` while early stopping is enabled.
 
 Feature caching
 ^^^^^^^^^^^^^^^

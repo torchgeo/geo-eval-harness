@@ -143,9 +143,59 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
         batch_size=3,
         epochs=cfg.segmentation.epochs,
         verbose=cfg.runtime.verbose,
+        early_stopping=None,
     )
     df = pd.read_csv(out)
     assert df.loc[0, "best_batch_size"] == 3
+
+
+def test_cached_segmentation_selects_and_records_learning_rate(tmp_path: Path):
+    """A learning-rate grid is searched on validation and the chosen rate is recorded."""
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "segmentation": {
+                "cache_features": True,
+                "learning_rates": [0.001, 0.01],
+                "scheduler": "none",
+                "early_stopping": {"enabled": True, "patience": 2},
+            }
+        },
+    )
+    probe, solver = _mock_probe_and_solver()
+    cache = mock.Mock()
+    probe.freeze_backbone = True
+    probe.extract_segmentation_features.return_value = cache
+    solver.select_learning_rate_cached.return_value = 0.01
+    solver.evaluate_cached.return_value = (
+        {"mIoU": 0.42, "fw_IoU": 0.55, "precision": 0.6, "recall": 0.7, "f1": 0.65},
+        torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
+    )
+
+    with (
+        mock.patch(
+            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+        ),
+        mock.patch(
+            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+            return_value=(probe, solver),
+        ),
+    ):
+        main(cfg)
+
+    solver.fit_cached.assert_not_called()
+    solver.select_learning_rate_cached.assert_called_once_with(
+        cache,
+        cache,
+        [0.001, 0.01],
+        batch_size=cfg.segmentation.batch_size,
+        epochs=cfg.segmentation.epochs,
+        seed=cfg.runtime.seed,
+        verbose=cfg.runtime.verbose,
+        early_stopping=cfg.segmentation.early_stopping,
+    )
+    assert pd.read_csv(out).loc[0, "best_lr"] == 0.01
 
 
 def test_segmentation_resume_skips_complete_run(tmp_path: Path):

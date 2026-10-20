@@ -16,7 +16,7 @@ from torchmetrics.functional.classification import (
 )
 
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.config.schema import SegmentationConfig
+from torchgeo_bench.config.schema import EarlyStoppingConfig, SegmentationConfig
 from torchgeo_bench.results import bootstrap_miou
 from torchgeo_bench.segmentation_probe import (
     CachedFeaturesDataset,
@@ -24,7 +24,11 @@ from torchgeo_bench.segmentation_probe import (
     SegmentationProbe,
     _resolve_num_prefix_tokens,
 )
-from torchgeo_bench.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
+from torchgeo_bench.segmentation_task import (
+    SegmentationSolver,
+    ValidationStopping,
+    build_seg_probe_and_solver,
+)
 
 NUM_CLASSES = 5
 
@@ -934,3 +938,136 @@ def test_probe_pools_encoded_dates_with_the_requested_reduction(
 def test_probe_rejects_unknown_temporal_pool(mock_backbone):
     with pytest.raises(ValueError, match="temporal_pool"):
         SegmentationProbe(mock_backbone, ["layer1"], NUM_CLASSES, temporal_pool="median")
+
+
+def test_validation_stopping_needs_cumulative_gains_and_minimum_epochs() -> None:
+    """Many tiny gains still count as stale; stopping waits for min_epochs."""
+    tracker = ValidationStopping(EarlyStoppingConfig(patience=2, min_delta=0.01, min_epochs=15))
+    observed = [tracker.observe(epoch, miou) for epoch, miou in [(0, 0.5), (5, 0.505), (10, 0.509)]]
+    assert observed == [(True, False), (True, False), (True, False)]
+    assert tracker.stale_checks == 2
+    assert tracker.observe(15, 0.509) == (False, True)
+    assert (tracker.best_epoch, tracker.best_miou) == (10, 0.509)
+
+
+def test_validation_stopping_keeps_earliest_tied_best() -> None:
+    tracker = ValidationStopping(EarlyStoppingConfig(patience=5, min_delta=0.0, min_epochs=0))
+    for epoch, miou in [(0, 0.2), (5, 0.6), (10, 0.6)]:
+        tracker.observe(epoch, miou)
+    assert tracker.best_epoch == 5
+
+
+def _scripted_solver(mock_backbone, dummy_data, scores: list[float], **kwargs):
+    """Return a solver whose validation checks replay ``scores`` and record head snapshots."""
+    images, masks = dummy_data["image"], dummy_data["mask"]
+    probe = make_probe(mock_backbone, ["layer1", "layer2"])
+    cache = probe.extract_segmentation_features(
+        make_loader(images, masks), cache_dtype=torch.float32
+    )
+    solver = SegmentationSolver(
+        model=probe, num_classes=NUM_CLASSES, lr=1e-2, device="cpu", lr_scheduler="none", **kwargs
+    )
+    snapshots: list[dict[str, torch.Tensor]] = []
+    remaining = iter(scores)
+
+    def evaluate(_cache, _batch_size):
+        snapshots.append({k: v.clone() for k, v in probe.head.state_dict().items()})
+        return {"mIoU": next(remaining)}
+
+    solver._evaluate = evaluate
+    return solver, cache, snapshots
+
+
+def test_fit_cached_early_stopping_restores_best_checkpoint(mock_backbone, dummy_data):
+    scores = [0.1, 0.4, 0.3, 0.35, 0.2, 0.9]
+    solver, cache, snapshots = _scripted_solver(mock_backbone, dummy_data, scores)
+    config = EarlyStoppingConfig(
+        enabled=True, check_every=2, patience=3, min_delta=0.0, min_epochs=0, max_epochs=50
+    )
+
+    best = solver.fit_cached(cache, cache, batch_size=2, verbose=False, early_stopping=config)
+
+    assert best == 0.4
+    assert solver.val_history == [0.1, 0.4, 0.3, 0.35, 0.2]
+    assert (solver.best_epoch, solver.stopped_epoch) == (2, 8)
+    for name, value in solver.model.head.state_dict().items():
+        torch.testing.assert_close(value, snapshots[1][name])
+
+
+def test_fit_cached_early_stopping_honors_max_epochs(mock_backbone, dummy_data):
+    solver, cache, _ = _scripted_solver(mock_backbone, dummy_data, [0.1, 0.2, 0.3, 0.4])
+    config = EarlyStoppingConfig(
+        enabled=True, check_every=2, patience=5, min_delta=0.0, min_epochs=0, max_epochs=5
+    )
+    assert (
+        solver.fit_cached(cache, cache, batch_size=2, verbose=False, early_stopping=config) == 0.4
+    )
+    assert solver.stopped_epoch == 5
+    assert solver.val_history == [0.1, 0.2, 0.3, 0.4]
+
+
+def test_fit_cached_early_stopping_requires_validation_and_constant_lr(mock_backbone, dummy_data):
+    solver, cache, _ = _scripted_solver(mock_backbone, dummy_data, [])
+    config = EarlyStoppingConfig(enabled=True)
+    with pytest.raises(ValueError, match="validation cache"):
+        solver.fit_cached(cache, None, verbose=False, early_stopping=config)
+    solver.lr_scheduler_type = "cosine"
+    with pytest.raises(ValueError, match="lr_scheduler='none'"):
+        solver.fit_cached(cache, cache, verbose=False, early_stopping=config)
+
+
+def test_select_learning_rate_refits_same_initial_head(mock_backbone, dummy_data):
+    """Each rate starts from identical weights; exact ties go to the lower rate."""
+    images, masks = dummy_data["image"], dummy_data["mask"]
+    probe = make_probe(mock_backbone, ["layer1", "layer2"])
+    cache = probe.extract_segmentation_features(
+        make_loader(images, masks), cache_dtype=torch.float32
+    )
+    solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, device="cpu")
+    initial = {k: v.clone() for k, v in probe.head.state_dict().items()}
+    scores = {0.1: 0.5, 0.01: 0.7, 0.001: 0.7}
+    starts, finals = [], {}
+
+    def fake_fit(_train, _val, _batch_size, _epochs, *, verbose, early_stopping):
+        lr = solver.optimizer.param_groups[0]["lr"]
+        starts.append({k: v.clone() for k, v in probe.head.state_dict().items()})
+        with torch.no_grad():
+            for parameter in probe.head.parameters():
+                parameter.add_(lr)
+        finals[lr] = {k: v.clone() for k, v in probe.head.state_dict().items()}
+        return scores[lr]
+
+    solver.fit_cached = fake_fit
+    chosen = solver.select_learning_rate_cached(
+        cache, cache, [0.1, 0.01, 0.001], batch_size=2, seed=0, verbose=False
+    )
+
+    assert chosen == 0.001
+    assert solver.lr_history == [
+        {"lr": 0.1, "val_miou": 0.5},
+        {"lr": 0.01, "val_miou": 0.7},
+        {"lr": 0.001, "val_miou": 0.7},
+    ]
+    for start in starts:
+        for name, value in start.items():
+            torch.testing.assert_close(value, initial[name])
+    for name, value in probe.head.state_dict().items():
+        torch.testing.assert_close(value, finals[0.001][name])
+
+
+@pytest.mark.parametrize(
+    ("settings", "message"),
+    [
+        ({"early_stopping": {"enabled": True}}, "scheduler 'none'"),
+        (
+            {"cache_features": False, "learning_rates": [0.001], "scheduler": "none"},
+            "cache_features=true",
+        ),
+        ({"learning_rates": [0.001, 0.001]}, "positive and unique"),
+        ({"learning_rates": [0.0]}, "positive and unique"),
+        ({"early_stopping": {"min_epochs": 30, "max_epochs": 20}}, "max_epochs"),
+    ],
+)
+def test_segmentation_config_rejects_unsupported_fitting_options(settings, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        SegmentationConfig.model_validate(settings)

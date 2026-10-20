@@ -1,5 +1,6 @@
 """Training and evaluation for segmentation probes."""
 
+import copy
 import logging
 import math
 from collections.abc import Iterator
@@ -15,7 +16,7 @@ from torchmetrics.classification import (
 )
 from tqdm.auto import tqdm
 
-from .config.schema import SegmentationConfig
+from .config.schema import EarlyStoppingConfig, SegmentationConfig
 from .segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -25,6 +26,35 @@ from .segmentation_probe import (
 logger = logging.getLogger(__name__)
 
 SegMetrics = dict[str, float]
+
+
+class ValidationStopping:
+    """Decide when validation mIoU has stopped improving.
+
+    Patience resets only after a gain of more than ``min_delta`` over the last reference score, so a
+    long run of tiny improvements cannot postpone stopping indefinitely. The earliest strict maximum
+    is the checkpoint to keep.
+    """
+
+    def __init__(self, config: EarlyStoppingConfig) -> None:
+        """Start with no observed checks."""
+        self.config = config
+        self.best_miou: float | None = None
+        self.best_epoch: int | None = None
+        self.reference: float | None = None
+        self.stale_checks = 0
+
+    def observe(self, epoch: int, miou: float) -> tuple[bool, bool]:
+        """Record one check and return whether it is a new best and whether to stop."""
+        improved = self.best_miou is None or miou > self.best_miou
+        if improved:
+            self.best_miou, self.best_epoch = miou, epoch
+        if self.reference is None or miou > self.reference + self.config.min_delta:
+            self.reference, self.stale_checks = miou, 0
+        else:
+            self.stale_checks += 1
+        stop = epoch >= self.config.min_epochs and self.stale_checks >= self.config.patience
+        return improved, stop
 
 
 class SegmentationSolver:
@@ -58,8 +88,12 @@ class SegmentationSolver:
         self.device = device
         self.lr_scheduler_type = lr_scheduler
         self.val_history: list[float] = []
+        self.lr_history: list[dict[str, float]] = []
+        self.best_epoch: int | None = None
+        self.stopped_epoch: int | None = None
 
         self.ignore_index = ignore_index
+        self.weight_decay = weight_decay
         self.optimizer = torch.optim.AdamW(
             filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=lr,
@@ -203,7 +237,7 @@ class SegmentationSolver:
             collect_confusions=collect_confusions,
         )
 
-    def fit_cached(
+    def fit_cached(  # noqa: PLR0913 -- Public training options.
         self,
         train_cache: "CachedFeaturesDataset | GPUTensorCache",
         val_cache: "CachedFeaturesDataset | GPUTensorCache | None" = None,
@@ -211,6 +245,7 @@ class SegmentationSolver:
         epochs: int = 10,
         *,
         verbose: bool = True,
+        early_stopping: EarlyStoppingConfig | None = None,
     ) -> float | None:
         """Train the segmentation head on cached backbone features.
 
@@ -222,54 +257,37 @@ class SegmentationSolver:
         Args:
             train_cache: Pre-extracted training features from
                 :meth:`SegmentationProbe.extract_segmentation_features`, or a GPU cache.
-            val_cache: Optional validation cache for per-epoch mIoU logging.
+            val_cache: Optional validation cache for per-epoch mIoU logging. Required for
+                early stopping.
             batch_size: Batch size for iterating over cached data.
-            epochs: Number of training epochs.
+            epochs: Number of training epochs. Ignored when early stopping is enabled, which
+                uses ``early_stopping.max_epochs`` instead.
             verbose: Whether to show progress bars and epoch logs.
+            early_stopping: When enabled, stop once validation mIoU stops improving and
+                restore the head weights from the best validation check.
 
         Returns:
-            Val mIoU from the final epoch if val_cache is given, else None.
+            Validation mIoU of the weights left in the head when val_cache is given (the final
+            epoch, or the best check with early stopping), otherwise None.
         """
-        gpu_train = (
-            train_cache
-            if isinstance(train_cache, GPUTensorCache)
-            else GPUTensorCache.from_cached(train_cache, self.device)
-        )
-        gpu_val = (
-            GPUTensorCache.from_cached(val_cache, self.device)
-            if isinstance(val_cache, CachedFeaturesDataset)
-            else val_cache
-        )
+        gpu_train = self._device_cache(train_cache)
+        gpu_val = None if val_cache is None else self._device_cache(val_cache)
+        if early_stopping is not None and early_stopping.enabled:
+            if gpu_val is None:
+                raise ValueError("Early stopping requires a validation cache.")
+            if self.lr_scheduler_type != "none":
+                raise ValueError("Early stopping requires lr_scheduler='none'.")
+            return self._fit_until_validation_stops(
+                gpu_train, gpu_val, batch_size, early_stopping, verbose=verbose
+            )
 
         scheduler = self._make_scheduler(epochs)
-
-        input_hw: tuple[int, int] = (gpu_train.masks.shape[-2], gpu_train.masks.shape[-1])
         last_val_miou: float | None = None
         self.val_history = []
-        num_batches = math.ceil(len(gpu_train) / batch_size)
+        self.best_epoch = self.stopped_epoch = None
 
         for epoch in range(epochs):
-            self.model.train()
-            if self.model.freeze_backbone:
-                self.model.backbone.eval()
-
-            desc = f"Epoch {epoch + 1}/{epochs}"
-            batches = tqdm(
-                gpu_train.shuffled_batches(batch_size),
-                total=num_batches,
-                desc=desc,
-                disable=not verbose,
-            )
-            for features, masks in batches:
-                self.optimizer.zero_grad()
-                with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                    logits = self.model.head(features, *input_hw)
-                    loss: torch.Tensor = self.criterion(logits, masks)
-
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-
+            self._train_epoch(gpu_train, batch_size, f"Epoch {epoch + 1}/{epochs}", verbose=verbose)
             if scheduler is not None:
                 scheduler.step()
 
@@ -282,6 +300,127 @@ class SegmentationSolver:
                     logger.info("Epoch %d Val mIoU: %.17g", epoch + 1, last_val_miou)
 
         return last_val_miou
+
+    def _device_cache(self, cache: "CachedFeaturesDataset | GPUTensorCache") -> GPUTensorCache:
+        """Move a CPU cache to the training device once; reuse device caches as-is."""
+        if isinstance(cache, GPUTensorCache):
+            return cache
+        return GPUTensorCache.from_cached(cache, self.device)
+
+    def _train_epoch(
+        self, gpu_train: GPUTensorCache, batch_size: int, desc: str, *, verbose: bool
+    ) -> None:
+        """Run one shuffled pass over the cached training features."""
+        self.model.train()
+        if self.model.freeze_backbone:
+            self.model.backbone.eval()
+        input_hw = (gpu_train.masks.shape[-2], gpu_train.masks.shape[-1])
+        batches = tqdm(
+            gpu_train.shuffled_batches(batch_size),
+            total=math.ceil(len(gpu_train) / batch_size),
+            desc=desc,
+            disable=not verbose,
+        )
+        for features, masks in batches:
+            self.optimizer.zero_grad()
+            with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
+                logits = self.model.head(features, *input_hw)
+                loss: torch.Tensor = self.criterion(logits, masks)
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+
+    def _fit_until_validation_stops(
+        self,
+        gpu_train: GPUTensorCache,
+        gpu_val: GPUTensorCache,
+        batch_size: int,
+        config: EarlyStoppingConfig,
+        *,
+        verbose: bool,
+    ) -> float:
+        """Train with validation checks at epoch 0 and every ``check_every`` epochs."""
+        tracker = ValidationStopping(config)
+        self.val_history = []
+        best_state: dict[str, torch.Tensor] | None = None
+        epoch = 0
+        while True:
+            if epoch % config.check_every == 0 or epoch == config.max_epochs:
+                val_metrics = self._evaluate(gpu_val, batch_size)
+                assert isinstance(val_metrics, dict)
+                miou = val_metrics["mIoU"]
+                self.val_history.append(miou)
+                improved, stop = tracker.observe(epoch, miou)
+                if improved:
+                    best_state = copy.deepcopy(self.model.head.state_dict())
+                if verbose:
+                    logger.info("Epoch %d Val mIoU: %.17g", epoch, miou)
+                if stop or epoch == config.max_epochs:
+                    break
+            epoch += 1
+            self._train_epoch(
+                gpu_train, batch_size, f"Epoch {epoch}/{config.max_epochs}", verbose=verbose
+            )
+        assert best_state is not None
+        assert tracker.best_miou is not None
+        self.model.head.load_state_dict(best_state)
+        self.best_epoch, self.stopped_epoch = tracker.best_epoch, epoch
+        return tracker.best_miou
+
+    def select_learning_rate_cached(  # noqa: PLR0913 -- Mirrors fit_cached plus the grid.
+        self,
+        train_cache: "CachedFeaturesDataset | GPUTensorCache",
+        val_cache: "CachedFeaturesDataset | GPUTensorCache",
+        learning_rates: list[float],
+        batch_size: int = 64,
+        epochs: int = 10,
+        *,
+        seed: int,
+        verbose: bool = True,
+        early_stopping: EarlyStoppingConfig | None = None,
+    ) -> float:
+        """Fit the same initial head at each rate and keep the one best on validation.
+
+        Every rate starts from identical head weights and batch order, so rates differ only in
+        the learning rate. Exact validation ties go to the lower rate.
+
+        Returns:
+            The selected learning rate; the head is left holding its fitted weights.
+        """
+        if not learning_rates:
+            raise ValueError("learning_rates must not be empty.")
+        gpu_train, gpu_val = self._device_cache(train_cache), self._device_cache(val_cache)
+        initial = copy.deepcopy(self.model.head.state_dict())
+        self.lr_history = []
+        best: tuple[float, float, dict[str, torch.Tensor]] | None = None
+        for lr in learning_rates:
+            self.model.head.load_state_dict(initial)
+            self._reset_optimizer(lr)
+            torch.manual_seed(seed)
+            miou = self.fit_cached(
+                gpu_train,
+                gpu_val,
+                batch_size,
+                epochs,
+                verbose=verbose,
+                early_stopping=early_stopping,
+            )
+            assert miou is not None
+            self.lr_history.append({"lr": lr, "val_miou": miou})
+            if best is None or miou > best[1] or (miou == best[1] and lr < best[0]):
+                best = (lr, miou, copy.deepcopy(self.model.head.state_dict()))
+        assert best is not None
+        self.model.head.load_state_dict(best[2])
+        return best[0]
+
+    def _reset_optimizer(self, lr: float) -> None:
+        """Start a fresh optimizer and loss scaler at the given learning rate."""
+        self.optimizer = torch.optim.AdamW(
+            filter(lambda p: p.requires_grad, self.model.parameters()),
+            lr=lr,
+            weight_decay=self.weight_decay,
+        )
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
     def evaluate_cached(
         self,
