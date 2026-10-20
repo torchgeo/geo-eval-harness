@@ -20,7 +20,8 @@ Three coordinate sources are handled:
 
 * **V2**: read coordinates and place labels from ``.tortilla`` metadata, not imagery.
 * **V1**: reproject JSON affine/CRS origins from shards or HDF5 to EPSG:4326.
-* **HF parquet**: read ``lon``/``lat``/``country`` columns from converted split files.
+* **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
+  ``torchgeo-bench download hotosm_buildings`` writes into its split files.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -84,7 +85,7 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, or ``"hf_parquet"``.
+        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, or ``"hotosm"``.
             ``None`` when nothing was read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
@@ -150,8 +151,8 @@ def _extract_v2(paths: list[str]) -> dict | None:
     return {"lon": lon[ok], "lat": lat[ok], "place": place[ok], "version": "v2"}
 
 
-def _extract_parquet(paths: list[Path]) -> dict:
-    """Read lon/lat and country columns from converted per-split parquet files."""
+def _extract_hotosm(paths: list[Path]) -> dict:
+    """Read tile centres and countries from the converted ``hotosm_buildings`` splits."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -162,7 +163,7 @@ def _extract_parquet(paths: list[Path]) -> dict:
         "lon": table["lon"].to_numpy(),
         "lat": table["lat"].to_numpy(),
         "place": np.asarray(table["country"].to_pylist(), dtype=object),
-        "version": "hf_parquet",
+        "version": "hotosm",
     }
 
 
@@ -413,7 +414,7 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
-    parquets = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
 
     if tortillas:
         data = _extract_v2(tortillas)
@@ -427,11 +428,11 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
             return GeoRecord(
                 name=name, status="no_geo", reason="no sample carries a usable transform/crs"
             )
-    elif all(path.is_file() for path in parquets):
-        data = _extract_parquet(parquets)
+    elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
+        data = _extract_hotosm(hotosm_splits)
     else:
         raise FileNotFoundError(
-            f"No .tortilla, V1 shard, .hdf5, or split .parquet files under {directory}. Run `{command}`."
+            f"No .tortilla, V1 shard, or .hdf5 files under {directory}. Run `{command}`."
         )
 
     if len(data["lon"]) == 0:

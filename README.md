@@ -63,7 +63,7 @@ torchgeo-bench download geobench_v1 --datasets m-eurosat
 
 V1 uses the pickle-free [JSON-metadata mirror](https://huggingface.co/datasets/calebrob6/geobenchv1-webdataset) under `data/classification_v1.0_wds/`, with a pinned revision and archive SHA-256 verification. Re-download existing pickle-based V1 caches; the readers no longer unpickle metadata.
 
-V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOT buildings Hugging Face rehosts (`torchgeo-bench download geobench_v2`, `torchgeo-bench download eurosat`, `torchgeo-bench download resisc45`, `torchgeo-bench download ucmerced`, `torchgeo-bench download hotosm_buildings`). See the [documentation](https://torchgeo.org/torchgeo-bench/user/datasets.html) for all options.
+V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`torchgeo-bench download geobench_v2`, `torchgeo-bench download eurosat`, `torchgeo-bench download resisc45`, `torchgeo-bench download ucmerced`, `torchgeo-bench download hotosm_buildings`). See the [documentation](https://torchgeo.org/torchgeo-bench/user/datasets.html) for all options.
 
 ## Run a basic experiment
 

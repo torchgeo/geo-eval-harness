@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``torchgeo-bench`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), and HOT building segmentation (Hugging Face). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), and HOTOSM building segmentation (Hugging Face). All datasets share the
 :class:`~torchgeo_bench.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -61,7 +61,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ torchgeo-bench download aid                                      # isaaccorley/aid rehost
 
    $ torchgeo-bench download ucmerced                                 # torchgeo UC Merced
-   $ torchgeo-bench download hotosm_buildings                         # HOT VHR buildings
+   $ torchgeo-bench download hotosm_buildings                         # HOTOSM VHR buildings
    $ torchgeo-bench download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -224,7 +224,7 @@ CLI name             Class
 ``aid``              :class:`~torchgeo_bench.datasets.AID`  (30-class aerial scenes, RGB)
 
 ``ucmerced``         :class:`~torchgeo_bench.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~torchgeo_bench.datasets.HOTBuildings`  (building segmentation, RGB)
+``hotosm_buildings`` :class:`~torchgeo_bench.datasets.HOTOSMBuildings`  (building segmentation, RGB)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's

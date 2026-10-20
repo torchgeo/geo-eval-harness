@@ -10,7 +10,7 @@ from torchgeo_bench.datasets import get_bench_dataset_class
 # EuroSAT uses torchgeo split-file counts: 27000 images split 60/20/20.
 # RESISC45 uses torchgeo split-file counts: 31500 images split 60/20/20.
 # UCMerced uses torchgeo split-file counts: 2100 images split 60/20/20.
-# HOT buildings uses the official Hugging Face split row counts.
+# HOTOSM buildings uses the official Hugging Face split row counts.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},

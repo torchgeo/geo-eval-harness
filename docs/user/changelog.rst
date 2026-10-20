@@ -20,11 +20,11 @@ Added
   deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
   Downloadable with ``torchgeo-bench download aid``.  One of the three
   most-used benchmarks in the GFM literature.
-* HOT building segmentation (``hotosm_buildings``) from Hugging Face
-  ``hotosm/vhr-building-segmentation`` (pinned commit): 72,363 RGB tiles at
-  about 0.3 m with OpenStreetMap building masks, on the official
-  57,890 / 7,237 / 7,236 split.  ``torchgeo-bench download hotosm_buildings``
-  converts the upstream parquet into compact per-split files held in RAM.
+* HOTOSM building segmentation (``hotosm_buildings``) from Hugging Face
+  ``hotosm/vhr-building-segmentation``: 72,363 RGB tiles at about 0.3 m with
+  OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
+  ``torchgeo-bench download hotosm_buildings`` converts the upstream parquet
+  into compact per-split files held in RAM.
 
 0.5.0 (2026-08-10)
 ------------------

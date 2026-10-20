@@ -140,7 +140,7 @@ DATASET_DISPLAY = {
     "fotw": "Fields of the World · V2",
     "kuro_siwo": "Kuro Siwo · V2",
     "pastis": "PASTIS · V2",
-    "hotosm_buildings": "HOT Buildings",
+    "hotosm_buildings": "HOTOSM Buildings",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.

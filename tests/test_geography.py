@@ -68,7 +68,7 @@ def test_extract_geography_requires_imagery(
         extract_geography("m-eurosat")
 
 
-def test_extract_geography_concatenates_parquet_splits(
+def test_extract_geography_reads_hotosm_splits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -83,7 +83,7 @@ def test_extract_geography_concatenates_parquet_splits(
     record = extract_geography("hotosm_buildings")
 
     assert record.status == "extracted"
-    assert record.version == "hf_parquet"
+    assert record.version == "hotosm"
     assert record.n == 3
     assert record.points == [list(point) for point in points]
     assert record.bbox == [-77.0, -26.0, 139.0, 35.0]

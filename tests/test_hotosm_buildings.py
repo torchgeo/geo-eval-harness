@@ -1,4 +1,4 @@
-"""HOT building segmentation: conversion, loading, band selection, and download."""
+"""HOTOSM building segmentation: conversion, loading, band selection, and download."""
 
 import io
 import pickle
@@ -13,7 +13,7 @@ import torch
 from PIL import Image
 
 from torchgeo_bench import download
-from torchgeo_bench.datasets.hotosm_buildings import HOTBuildings, convert_hotosm_split
+from torchgeo_bench.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
 
 RGB = (11, 22, 33)
 
@@ -66,7 +66,9 @@ def converted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _write_upstream_shard(upstream / "train-00001.parquet", ["c"])
     root = tmp_path / "data" / "hotosm_buildings"
     root.mkdir(parents=True)
-    rows = convert_hotosm_split(upstream.glob("train-*.parquet"), root / "train.parquet")
+    rows = convert_hotosm_split(
+        upstream.glob("train-*.parquet"), root / "train.parquet", expected_rows=3
+    )
     assert rows == 3
     return root
 
@@ -77,7 +79,7 @@ def test_conversion_keeps_metadata_and_marks_nodata(converted: Path) -> None:
     assert table["lon"].to_pylist() == [11.0] * 3
     assert table["lat"].to_pylist() == [-4.0] * 3
 
-    dataset = HOTBuildings().get_dataset("train")
+    dataset = HOTOSMBuildings().get_dataset("train")
     assert len(dataset) == 3
     for index, has_nodata in enumerate((False, True, False)):
         sample = dataset[index]
@@ -110,7 +112,7 @@ def test_band_selection_precedes_transform(
         seen.append(sample["image"].clone())
         return sample
 
-    sample = HOTBuildings().get_dataset("train", bands=bands, transform=transform)[0]
+    sample = HOTOSMBuildings().get_dataset("train", bands=bands, transform=transform)[0]
     assert seen[0].shape == (len(expected), 8, 8)
     torch.testing.assert_close(sample["image"][:, 4, 4], torch.tensor(expected))
 
@@ -118,11 +120,11 @@ def test_band_selection_precedes_transform(
 def test_missing_split_points_to_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     with pytest.raises(FileNotFoundError, match="download hotosm_buildings"):
-        HOTBuildings().get_dataset("val")
+        HOTOSMBuildings().get_dataset("val")
 
 
 def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(HOTBuildings, "split_sizes", {"train": 2, "val": 1, "test": 1})
+    monkeypatch.setattr(HOTOSMBuildings, "split_sizes", {"train": 2, "val": 1, "test": 1})
 
     def fake_snapshot(*, local_dir: Path, **_: object) -> None:
         for prefix, ids in (("train", ["a", "b"]), ("validation", ["v"]), ("test", ["t"])):
@@ -173,7 +175,9 @@ def test_download_rejects_row_count_mismatch(tmp_path: Path, *, existing_split: 
 
 def test_spawn_serialization_requires_zero_workers(converted: Path) -> None:
     del converted
-    dataset = HOTBuildings().get_dataset("train")
+    pickle.dumps(HOTOSMBuildings())
+    dataset = HOTOSMBuildings().get_dataset("train")
+    assert isinstance(dataset, HOTOSMBuildings)
     with pytest.raises(ValueError, match="--workers 0"):
         pickle.dumps(dataset)
 

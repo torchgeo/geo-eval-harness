@@ -29,7 +29,7 @@ from torchgeo_bench.datasets._v1_webdataset import download_sharded_root
 from torchgeo_bench.datasets.geobench_v2 import list_v2_datasets
 from torchgeo_bench.datasets.hotosm_buildings import (
     UPSTREAM_SPLITS,
-    HOTBuildings,
+    HOTOSMBuildings,
     convert_hotosm_split,
 )
 
@@ -188,7 +188,7 @@ def download_aid(output_dir: Path) -> None:
 
 
 def download_hotosm_buildings(output_dir: Path) -> None:
-    """Download the pinned HOT parquet and convert it into ``output_dir/hotosm_buildings``.
+    """Download the pinned HOTOSM parquet and convert it into ``output_dir/hotosm_buildings``.
 
     The upstream shards (5.9 GB) are deleted after conversion (about 1.3 GB).
     """
@@ -206,11 +206,11 @@ def download_hotosm_buildings(output_dir: Path) -> None:
         rows = convert_hotosm_split(
             (upstream / "data").glob(f"{prefix}-*.parquet"),
             target / f"{split}.parquet",
-            expected_rows=HOTBuildings.split_sizes[split],
+            expected_rows=HOTOSMBuildings.split_sizes[split],
         )
-        logger.info("Converted HOT buildings %s split (%d rows).", split, rows)
+        logger.info("Converted HOTOSM buildings %s split (%d rows).", split, rows)
     shutil.rmtree(upstream)
-    logger.info("HOT buildings download complete.")
+    logger.info("HOTOSM buildings download complete.")
 
 
 def download_ucmerced(output_dir: Path) -> None:

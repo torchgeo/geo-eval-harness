@@ -52,7 +52,7 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     # other classification
     "aid": ("aid", "AID", "classification"),
     # other segmentation
-    "hotosm_buildings": ("hotosm_buildings", "HOTBuildings", "segmentation"),
+    "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
 }
 
 

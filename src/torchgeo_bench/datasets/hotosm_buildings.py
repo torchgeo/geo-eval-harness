@@ -1,10 +1,10 @@
-"""HOT VHR building segmentation, from the Humanitarian OpenStreetMap Team on Hugging Face."""
+"""HOTOSM VHR building segmentation, from the Humanitarian OpenStreetMap Team on Hugging Face."""
 
 import io
 import logging
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import numpy as np
 import pyarrow as pa
@@ -45,9 +45,7 @@ def _encode_mask(mask_bytes: bytes, image_bytes: bytes) -> bytes:
     return buffer.getvalue()
 
 
-def convert_hotosm_split(
-    src_files: Iterable[Path], dst: Path, *, expected_rows: int | None = None
-) -> int:
+def convert_hotosm_split(src_files: Iterable[Path], dst: Path, *, expected_rows: int) -> int:
     """Stream upstream parquet shards into one compact split file.
 
     Image bytes are copied unchanged; masks are re-encoded as small PNGs.
@@ -59,6 +57,9 @@ def convert_hotosm_split(
 
     Returns:
         Number of rows written.
+
+    Raises:
+        ValueError: If the shards do not hold exactly *expected_rows* rows.
     """
     columns = ["image", "mask", "tile_id", "project_id", "country"]
     columns += ["bbox_west", "bbox_south", "bbox_east", "bbox_north"]
@@ -85,48 +86,17 @@ def convert_hotosm_split(
                 }
                 writer.write_table(pa.table(batch, schema=_SCHEMA))
                 rows += table.num_rows
-    if expected_rows is not None and rows != expected_rows:
+    if rows != expected_rows:
         tmp.unlink()
         raise ValueError(
-            f"HOT buildings {dst.stem}: expected {expected_rows} rows, "
+            f"HOTOSM buildings {dst.stem}: expected {expected_rows} rows, "
             f"got {rows}. Retry the download."
         )
     tmp.replace(dst)
     return rows
 
 
-class _HOTBuildingsSplit(Dataset):
-    """One split held in memory as encoded image and mask bytes."""
-
-    def __init__(self, path: Path, transform: Callable[[dict], dict] | None) -> None:
-        table = pq.read_table(path, columns=["image", "mask"])
-        # The allocator keeps parquet read buffers (about 2x the data) unless released.
-        pa.default_memory_pool().release_unused()
-        # Arrow buffers carry no per-item refcounts, so forked workers share them copy-on-write.
-        self.images = table["image"]
-        self.masks = table["mask"]
-        self.transform = transform
-
-    def __getstate__(self) -> dict:
-        raise ValueError(
-            "HOT buildings holds encoded splits in RAM and supports forked workers only. "
-            "Use --workers 0 with spawn or forkserver to avoid copying each split per worker."
-        )
-
-    def __len__(self) -> int:
-        return len(self.images)
-
-    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
-        image = Image.open(io.BytesIO(self.images[index].as_py())).convert("RGB")
-        mask = Image.open(io.BytesIO(self.masks[index].as_py()))
-        sample = {
-            "image": torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1)),
-            "mask": torch.from_numpy(np.asarray(mask, dtype=np.int64)),
-        }
-        return sample if self.transform is None else self.transform(sample)
-
-
-class HOTBuildings(BenchDataset):
+class HOTOSMBuildings(BenchDataset, Dataset):
     """Building footprint segmentation (2 classes) on VHR OpenAerialMap imagery.
 
     72,363 RGB tiles at 256x256 (zoom 19, about 0.3 m GSD) from 93 HOT Tasking
@@ -137,6 +107,9 @@ class HOTBuildings(BenchDataset):
     Mask values: 0 background, 1 building, 255 nodata (transparent image pixels).
     Source: https://huggingface.co/datasets/hotosm/vhr-building-segmentation.
     Imagery CC-BY 4.0 (OpenAerialMap); labels ODbL 1.0 (OpenStreetMap).
+
+    :meth:`get_dataset` returns an instance holding one split's encoded image
+    and mask bytes in RAM; the bare instance carries only metadata.
     """
 
     name = "hotosm_buildings"
@@ -160,10 +133,47 @@ class HOTBuildings(BenchDataset):
         ),
     ]
 
+    def __init__(
+        self, path: Path | None = None, transform: Callable[[dict], dict] | None = None
+    ) -> None:
+        """Load the converted split at *path*, or no samples when it is ``None``."""
+        table = _SCHEMA.empty_table()
+        if path is not None:
+            table = pq.read_table(path, columns=["image", "mask"])
+            # The allocator keeps parquet read buffers (about 2x the data) unless released.
+            pa.default_memory_pool().release_unused()
+        # Arrow buffers carry no per-item refcounts, so forked workers share them copy-on-write.
+        self.images = table["image"]
+        self.masks = table["mask"]
+        self.transform = transform
+
+    def __getstate__(self) -> dict:
+        """Refuse to serialize a loaded split, which would copy it into every spawned worker."""
+        if len(self.images):
+            raise ValueError(
+                "HOTOSM buildings holds encoded splits in RAM and supports forked workers only. "
+                "Use --workers 0 with spawn or forkserver to avoid copying each split per worker."
+            )
+        return self.__dict__
+
+    def __len__(self) -> int:
+        """Return the number of loaded samples."""
+        return len(self.images)
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        """Decode one sample into ``image`` (float32 CHW, 0-255) and ``mask`` (int64 HW)."""
+        image = Image.open(io.BytesIO(self.images[index].as_py())).convert("RGB")
+        mask = Image.open(io.BytesIO(self.masks[index].as_py()))
+        sample = {
+            "image": torch.from_numpy(np.asarray(image, dtype=np.float32).transpose(2, 0, 1)),
+            "mask": torch.from_numpy(np.asarray(mask, dtype=np.int64)),
+        }
+        return sample if self.transform is None else self.transform(sample)
+
     @classmethod
     def data_root(cls) -> Path:
-        """Return ``Path("data/hotosm_buildings")``."""
-        return Path("data/hotosm_buildings")
+        """Return ``Path("data") / "hotosm_buildings"``."""
+        return Path("data") / cls.name
 
     def get_dataset(
         self,
@@ -172,8 +182,8 @@ class HOTBuildings(BenchDataset):
         partition: str = "default",
         bands: tuple[str, ...] | None = None,
         transform: Callable[[dict], dict] | None = None,
-    ) -> Dataset:
-        """Return the split with ``image`` (float32 CHW, 0-255) and ``mask`` (int64 HW)."""
+    ) -> Self:
+        """Return a new instance holding *split*."""
         del partition
         if split not in UPSTREAM_SPLITS:
             raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
@@ -182,7 +192,7 @@ class HOTBuildings(BenchDataset):
         path = self.data_root() / f"{split}.parquet"
         if not path.is_file():
             raise FileNotFoundError(
-                f"HOT buildings split not found: {path}. "
+                f"HOTOSM buildings split not found: {path}. "
                 "Run `torchgeo-bench download hotosm_buildings` first."
             )
-        return _HOTBuildingsSplit(path, select_bands(indices, len(self.bands), transform))
+        return type(self)(path, select_bands(indices, len(self.bands), transform))
