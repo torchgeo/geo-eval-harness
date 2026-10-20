@@ -262,6 +262,7 @@ def test_solver_fit_and_evaluate(mock_backbone, dummy_data):
     )
 
     solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, lr=1e-3, device="cpu")
+    assert [group["lr"] for group in solver.optimizer.param_groups] == [1e-3]
 
     solver.fit(loader, epochs=1, verbose=True)
 

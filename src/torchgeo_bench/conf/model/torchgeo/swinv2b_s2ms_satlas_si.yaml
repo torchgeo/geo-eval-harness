@@ -9,6 +9,7 @@ kwargs:
 input:
   bands: all
 segmentation:
+  lora_target_modules: 'features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])'
   layers:
     - features.7
     - features.5

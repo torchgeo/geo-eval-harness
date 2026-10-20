@@ -6,6 +6,7 @@ kwargs:
   global_pool: avg
   use_cls_token: false
 segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers:
     - blocks.11
     - blocks.8

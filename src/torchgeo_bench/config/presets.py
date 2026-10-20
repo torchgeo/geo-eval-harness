@@ -103,6 +103,12 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
         for key in ("input", "classification", "segmentation")
     }
     effective = RunConfig.model_validate(merge_settings(defaults, config.model_dump_yaml()))
+    segmentation = effective.segmentation
+    if segmentation.lora_rank is not None and segmentation.lora_target_modules is None:
+        raise ValueError(
+            f"segmentation.lora_rank requires segmentation.lora_target_modules; "
+            f"{preset.name!r} does not define LoRA target modules"
+        )
     return effective, preset.model_copy(update={"input": effective.input})
 
 
