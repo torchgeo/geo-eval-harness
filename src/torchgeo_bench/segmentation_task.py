@@ -130,6 +130,19 @@ class SegmentationSolver:
             f"Unknown lr_scheduler {self.lr_scheduler_type!r}. Expected 'cosine' or 'none'."
         )
 
+    def _skip_small_batch(self, size: int, *, skip_logged: bool) -> bool:
+        """Return whether a training batch is too small for the head, logging the first skip."""
+        min_size = getattr(self.model.head, "min_train_batch_size", 1)
+        if size >= min_size:
+            return False
+        if not skip_logged:
+            logger.info(
+                "Skipping a training batch of %d samples; the head needs at least %d.",
+                size,
+                min_size,
+            )
+        return True
+
     def fit(
         self,
         train_loader: DataLoader,
@@ -140,7 +153,8 @@ class SegmentationSolver:
     ) -> float | None:
         """Train the segmentation probe.
 
-        A trainable backbone stays in eval mode except for its LoRA adapter modules.
+        A trainable backbone stays in eval mode except for its LoRA adapter modules. Training
+        batches smaller than the head's ``min_train_batch_size`` are skipped.
 
         Args:
             train_loader: Training data loader.
@@ -154,6 +168,7 @@ class SegmentationSolver:
         scheduler = self._make_scheduler(epochs)
         last_val_miou: float | None = None
         self.val_history = []
+        skip_logged = False
 
         for epoch in range(epochs):
             self.model.train()
@@ -173,6 +188,9 @@ class SegmentationSolver:
 
                 if masks.ndim == 4:
                     masks = masks.squeeze(1)
+                if self._skip_small_batch(len(images), skip_logged=skip_logged):
+                    skip_logged = True
+                    continue
 
                 self.optimizer.zero_grad()
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
@@ -227,7 +245,8 @@ class SegmentationSolver:
     ) -> float | None:
         """Train the segmentation head on cached backbone features.
 
-        Cached features go directly to ``self.model.head``; the backbone is not called.
+        Cached features go directly to ``self.model.head``; the backbone is not called. Training
+        batches smaller than the head's ``min_train_batch_size`` are skipped.
 
         Keep the full cache on the training device to avoid per-batch transfers and stacking.
         Pass a ``GPUTensorCache`` as ``train_cache`` or ``val_cache`` to reuse it across calls.
@@ -260,6 +279,7 @@ class SegmentationSolver:
         last_val_miou: float | None = None
         self.val_history = []
         num_batches = math.ceil(len(gpu_train) / batch_size)
+        skip_logged = False
 
         for epoch in range(epochs):
             self.model.train()
@@ -274,6 +294,9 @@ class SegmentationSolver:
                 disable=not verbose,
             )
             for features, masks in batches:
+                if self._skip_small_batch(len(masks), skip_logged=skip_logged):
+                    skip_logged = True
+                    continue
                 self.optimizer.zero_grad()
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                     logits = self.model.head(features, *input_hw)

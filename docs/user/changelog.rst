@@ -20,7 +20,7 @@ Added
   deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
   Downloadable with ``torchgeo-bench download aid``.  One of the three
   most-used benchmarks in the GFM literature.
-* ``segmentation.head: upernet``: a UPerNet decoder (pyramid pooling plus FPN fusion) built on the ``transformers`` reference implementation, for coarse-to-fine feature maps from any backbone.
+* ``segmentation.head: upernet``: a UPerNet decoder (pyramid pooling plus FPN fusion) built on the ``transformers`` reference implementation, for coarse-to-fine feature maps from any backbone. A final training batch of one sample is skipped because its pyramid pooling BatchNorm needs at least two.
 * LoRA fine-tuning for segmentation probes (``segmentation.lora_rank``, ``lora_target_modules``, ``lora_alpha``, ``backbone_learning_rate``), recorded as ``seg-<head>-lora``. Fourteen ViT, ConvNeXt, DOFA, Panopticon, TerraMind, OlmoEarth, and Swin V2 presets define target modules. Requires the new ``lora`` extra (``peft``).
 
 0.5.0 (2026-08-10)
