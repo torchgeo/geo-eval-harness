@@ -101,12 +101,14 @@ class GPUTensorCache:
         cls,
         cache: "CachedFeaturesDataset",
         device: torch.device | str,
+        target_dtype: torch.dtype = torch.long,
     ) -> "GPUTensorCache":
         """Move cached features and masks to ``device``.
 
         Args:
             cache: CPU-resident cached features.
             device: Target device.
+            target_dtype: Target dtype on the device.
 
         Returns:
             A :class:`GPUTensorCache` with all data on *device*.
@@ -115,7 +117,7 @@ class GPUTensorCache:
         # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
         dtype = torch.float16 if target_device.type == "cuda" else torch.float32
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
-        masks = cache.masks.to(target_device, dtype=torch.long)
+        masks = cache.masks.to(target_device, dtype=target_dtype)
         return cls(layer_tensors, masks, target_device)
 
     def shuffled_batches(
@@ -330,6 +332,7 @@ class SegmentationProbe(nn.Module):
         self,
         dataloader: "torch.utils.data.DataLoader",
         cache_dtype: torch.dtype = torch.float16,
+        target_dtype: torch.dtype = torch.long,
     ) -> "CachedFeaturesDataset":
         """Run the frozen backbone once over *dataloader* and cache features.
 
@@ -338,6 +341,7 @@ class SegmentationProbe(nn.Module):
             cache_dtype: Storage dtype for cached feature tensors. Use
                 ``torch.float16`` (default) to halve RAM, or ``torch.float32``
                 for full precision.
+            target_dtype: Storage dtype for dense targets.
 
         Returns:
             A :class:`CachedFeaturesDataset` with one entry per sample, pooling
@@ -364,7 +368,7 @@ class SegmentationProbe(nn.Module):
 
                 if masks.ndim == 4:
                     masks = masks.squeeze(1)
-                masks = masks.long()
+                masks = masks.to(dtype=target_dtype)
                 self._features.clear()
                 _ = self.backbone(images)
 

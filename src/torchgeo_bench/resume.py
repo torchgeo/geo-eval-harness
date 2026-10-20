@@ -202,6 +202,17 @@ def plan_dataset_run(
             skip_profile=True,
         )
 
+    if ds_cls.task == "pixelwise_regression":
+        regression_key = (ds_name, f"reg-{cfg.segmentation.head}", *model_key)
+        return DatasetRunPlan(
+            metric_name="RMSE",
+            skip_dataset=bool(cfg.output.resume and regression_key in completed_runs),
+            skip_knn=True,
+            skip_linear=True,
+            skip_id=True,
+            skip_profile=True,
+        )
+
     knn_key = (ds_name, f"knn{cfg.classification.knn_k}", *model_key)
     linear_key = (ds_name, "linear", *model_key)
     id_key = (ds_name, "intrinsic_dim", *model_key)

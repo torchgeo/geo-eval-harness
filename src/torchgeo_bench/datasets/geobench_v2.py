@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import ClassVar, Literal
 
@@ -18,6 +19,7 @@ V2_ROOT = Path("data/geobenchv2")
 
 _V2_REGISTRY: dict[str, str] = {
     "benv2": "GeoBenchBENV2",
+    "biomassters": "GeoBenchBioMassters",
     "burn_scars": "GeoBenchBurnScars",
     "caffe": "GeoBenchCaFFe",
     "cloudsen12": "GeoBenchCloudSen12",
@@ -82,7 +84,7 @@ class GeoBenchv2(Dataset):
         **kwargs: Additional keyword arguments forwarded to the upstream class.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - upstream adapter options.
         self,
         root: str | Path,
         dataset_name: str,
@@ -90,6 +92,7 @@ class GeoBenchv2(Dataset):
         *,
         band_order: object | None = None,
         transforms: Callable | None = None,
+        output_transform: Callable | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -122,12 +125,14 @@ class GeoBenchv2(Dataset):
         self._inner: Dataset = cls(**forward)
         self.dataset_name = dataset_name
         self.split = split
+        self.output_transform = output_transform
 
     def __len__(self) -> int:
         return len(self._inner)  # type: ignore[arg-type]
 
     def __getitem__(self, index: int) -> dict:
-        return self._inner[index]
+        sample = self._inner[index]
+        return self.output_transform(sample) if self.output_transform is not None else sample
 
 
 class _V2Dataset(BenchDataset):
@@ -162,12 +167,47 @@ class _V2Dataset(BenchDataset):
             return grouped
         return [spec.source_name for spec in specs]
 
+    def _channel_permutation(self, bands: tuple[str, ...] | None) -> tuple[int, ...]:
+        """Map the sensor-grouped upstream stack back to the requested band order."""
+        specs = self.select_band_specs(bands)
+        if self.band_order_strategy != "by_sensor":
+            return tuple(range(len(specs)))
+        sensor_order = list(dict.fromkeys(spec.sensor for spec in specs))
+        grouped_indices = [
+            index
+            for sensor in sensor_order
+            for index, spec in enumerate(specs)
+            if spec.sensor == sensor
+        ]
+        return tuple(grouped_indices.index(index) for index in range(len(specs)))
+
     def canonicalize_sample(self, sample: dict) -> dict:
         """Adapt an upstream sample to ``image`` and ``label``/``mask`` keys.
 
         The default is a no-op; override for image pairs or temporal stacks.
         """
         return sample
+
+    def finalize_sample(self, sample: dict) -> dict:
+        """Adapt the complete upstream output before returning it to the benchmark."""
+        return sample
+
+    def _finalize_and_reorder(self, sample: dict, *, channel_permutation: tuple[int, ...]) -> dict:
+        """Finalize a sample and restore the explicitly requested channel order."""
+        sample = self.finalize_sample(sample)
+        identity = tuple(range(len(channel_permutation)))
+        if channel_permutation != identity:
+            image: torch.Tensor = sample["image"]
+            indices = torch.tensor(channel_permutation, device=image.device)
+            sample["image"] = image.index_select(-3, indices)
+        return sample
+
+    def output_transform(self, bands: tuple[str, ...] | None) -> Callable[[dict], dict]:
+        """Return finalization with sensor-grouped channels restored to requested order."""
+        return partial(
+            self._finalize_and_reorder,
+            channel_permutation=self._channel_permutation(bands),
+        )
 
     def get_dataset(
         self,
@@ -205,6 +245,7 @@ class _V2Dataset(BenchDataset):
             split=split,
             band_order=band_order,
             transforms=_ChainedTransform(self.canonicalize_sample, transform),
+            output_transform=self.output_transform(bands),
             **kwargs,
         )
 

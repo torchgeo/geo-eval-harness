@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from tests.support.data import require_dataset_data
 from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
+from torchgeo_bench.datasets.biomassters import BioMassters
 from torchgeo_bench.datasets.burn_scars import BurnScars
 from torchgeo_bench.datasets.pastis import PASTIS
 
@@ -29,6 +30,7 @@ class MockV2Dataset:
         self.split = split
         self.transforms = transforms
         self.band_order = band_order
+        self.num_time_steps = int(kwargs.get("num_time_steps", 1))
 
         if isinstance(band_order, dict):
             self.c = sum(len(v) for v in band_order.values())
@@ -41,7 +43,33 @@ class MockV2Dataset:
     def __len__(self) -> int:
         return 10
 
+    def _biomassters_sample(self) -> dict[str, torch.Tensor]:
+        """Match upstream modality transforms and ``(C, T, H, W)`` stacking."""
+        assert isinstance(self.band_order, dict)
+        sample: dict[str, torch.Tensor] = {
+            "mask": torch.linspace(0, 1, self.h * self.w).reshape(self.h, self.w)
+        }
+        channel = 1
+        for sensor, bands in self.band_order.items():
+            values = torch.arange(channel, channel + len(bands), dtype=torch.float32) * 1000
+            image = values[:, None, None].expand(len(bands), self.h, self.w).clone()
+            if self.num_time_steps > 1:
+                image = image.unsqueeze(0).expand(self.num_time_steps, -1, -1, -1).clone()
+            sample[f"image_{sensor}"] = image
+            channel += len(bands)
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+        modalities = []
+        for sensor in self.band_order:
+            image = sample[f"image_{sensor}"]
+            if image.ndim == 4:
+                image = image.permute(1, 0, 2, 3)
+            modalities.append(image)
+        return {"image": torch.cat(modalities), "mask": sample["mask"]}
+
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        if self.root.name == "biomassters":
+            return self._biomassters_sample()
         channels = torch.arange(1, self.c + 1, dtype=torch.float32) * 1000
         image = channels[:, None, None].expand(self.c, self.h, self.w).clone()
         sample = {"image": image}
@@ -55,7 +83,11 @@ class MockV2Dataset:
 @pytest.fixture
 def mock_v2_env(monkeypatch: pytest.MonkeyPatch) -> dict[str, MagicMock]:
     upstream = {}
-    for dataset, name in {"benv2": "GeoBenchBENV2", "burn_scars": "GeoBenchBurnScars"}.items():
+    for dataset, name in {
+        "benv2": "GeoBenchBENV2",
+        "biomassters": "GeoBenchBioMassters",
+        "burn_scars": "GeoBenchBurnScars",
+    }.items():
         upstream[dataset] = MagicMock(side_effect=MockV2Dataset)
         monkeypatch.setattr(f"geobench_v2.datasets.{name}", upstream[dataset])
     return upstream
@@ -123,6 +155,47 @@ class TestV2Loading:
         assert batch["image"].shape == (2, 3, 32, 32)
         assert batch["mask"].shape == (2, 32, 32)
         assert batch["mask"].dtype == torch.long
+
+    def test_biomassters_pixelwise_regression(self, mock_v2_env: dict[str, MagicMock]) -> None:
+        _, train_dl, _ = get_datasets(
+            dataset_name="biomassters",
+            image_size=64,
+            time_steps=3,
+            batch_size=2,
+            return_val=False,
+            num_workers=0,
+        )
+
+        assert get_bench_dataset_class("biomassters").task == "pixelwise_regression"
+        batch = next(iter(train_dl))
+        assert batch["image"].shape == (2, 3, 3, 64, 64)
+        assert batch["mask"].shape == (2, 64, 64)
+        assert batch["mask"].dtype == torch.float32
+        assert 0 < batch["mask"][0, 1, 1] < batch["mask"][0, 2, 2]
+        for call in mock_v2_env["biomassters"].call_args_list:
+            assert call.kwargs["num_time_steps"] == 3
+
+    def test_biomassters_time_series_is_time_first(self) -> None:
+        sample = BioMassters().finalize_sample({"image": torch.zeros(6, 3, 8, 8)})
+        assert sample["image"].shape == (3, 6, 8, 8)
+
+    def test_interleaved_sensor_selection_preserves_requested_order(
+        self, mock_v2_env: dict[str, MagicMock]
+    ) -> None:
+        dataset, _, _ = get_datasets(
+            dataset_name="biomassters",
+            bands=["b04", "vv_asc", "b03"],
+            batch_size=2,
+            num_workers=0,
+        )
+
+        assert mock_v2_env["biomassters"].call_args.kwargs["band_order"] == {
+            "s2": ["B04", "B03"],
+            "s1": ["VV_asc"],
+        }
+        torch.testing.assert_close(
+            dataset[0]["image"][:, 0, 0], torch.tensor([1000.0, 3000.0, 2000.0])
+        )
 
     def test_partition_warning(self, mock_v2_env: dict[str, MagicMock]) -> None:
         with pytest.warns(UserWarning, match="does not support custom partitions"):

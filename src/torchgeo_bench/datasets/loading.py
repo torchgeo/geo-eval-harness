@@ -20,7 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 # Store (submodule, class name, task) so catalogs need no wrapper imports.
-_REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentation"]]] = {
+type DatasetTask = Literal["classification", "segmentation", "pixelwise_regression"]
+
+
+_REGISTRY_SPEC: dict[str, tuple[str, str, DatasetTask]] = {
     # V1 classification
     "m-eurosat": ("m_eurosat", "MEurosat", "classification"),
     "m-forestnet": ("m_forestnet", "MForestnet", "classification"),
@@ -33,6 +36,8 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "treesatai": ("treesatai", "TreeSatAI", "classification"),
     "so2sat": ("so2sat", "So2Sat", "classification"),
     "forestnet": ("forestnet", "Forestnet", "classification"),
+    # V2 pixelwise regression
+    "biomassters": ("biomassters", "BioMassters", "pixelwise_regression"),
     # V2 segmentation
     "caffe": ("caffe", "CaFFe", "segmentation"),
     "burn_scars": ("burn_scars", "BurnScars", "segmentation"),
@@ -84,7 +89,7 @@ def list_datasets() -> list[str]:
     return sorted(_REGISTRY_SPEC)
 
 
-def get_dataset_task(name: str) -> Literal["classification", "segmentation"]:
+def get_dataset_task(name: str) -> DatasetTask:
     """Return a registered dataset's task without importing its wrapper.
 
     Raises:
@@ -135,7 +140,9 @@ class _ResizeTransform:
                 img = img.squeeze(0)
             sample["image"] = img
         if "mask" in sample:
-            mask: torch.Tensor = sample["mask"].float()
+            mask: torch.Tensor = sample["mask"]
+            continuous = mask.is_floating_point()
+            mask = mask.float()
             h_m, w_m = mask.shape[-2], mask.shape[-1]
             if h_m != image_size or w_m != image_size:
                 if mask.ndim == 2:
@@ -150,11 +157,13 @@ class _ResizeTransform:
                 mask = F.interpolate(
                     resize_mask,
                     size=(image_size, image_size),
-                    mode="nearest",
+                    mode="bilinear" if continuous else "nearest",
+                    align_corners=False if continuous else None,
                 )
                 for _ in range(squeeze_dims):
                     mask = mask.squeeze(0)
-                mask = mask.long()
+                if not continuous:
+                    mask = mask.long()
                 sample["mask"] = mask
         return sample
 
@@ -198,8 +207,8 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         batch_size: Batch size for the returned dataloaders.
         return_val: If ``True``, also return a validation dataloader.
         num_workers: Number of dataloader worker processes.
-        image_size: If set, resize images (and masks, with nearest) to this
-            square size at sample time.
+        image_size: If set, resize images and targets to this square size at sample time.
+            Categorical masks use nearest-neighbor interpolation; continuous targets use bilinear.
         interpolation: Resize interpolation for images (``"area"``, ``"bicubic"``,
             ``"bilinear"``, ``"nearest"``).
         bands: ``"rgb"`` (use the dataset's ``rgb_bands``), ``"all"`` /

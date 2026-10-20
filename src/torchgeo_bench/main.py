@@ -46,6 +46,7 @@ from torchgeo_bench.results import (
     append_rows_atomic,
     bootstrap_accuracy,
     bootstrap_map,
+    bootstrap_mean,
     bootstrap_miou,
     model_results_path,
 )
@@ -62,6 +63,7 @@ from torchgeo_bench.resume import (
 from torchgeo_bench.utils import FeatureSplit, FeatureSplits, extract_features
 
 if TYPE_CHECKING:
+    import torchgeo_bench.pixelwise_regression_task
     import torchgeo_bench.segmentation_task
 
 logger = logging.getLogger(__name__)
@@ -710,6 +712,126 @@ def run_segmentation(
     yield [row]
 
 
+def evaluate_pixelwise_regression(
+    model: torch.nn.Module,
+    loaders: LoaderSplits,
+    cfg: RunConfig,
+    target_scale: float,
+) -> "tuple[torchgeo_bench.pixelwise_regression_task.RegressionMetrics, torch.Tensor, int, float, int]":
+    """Train a frozen spatial probe and evaluate physical-unit RMSE."""
+    from torchgeo_bench.pixelwise_regression_task import (
+        build_pixelwise_regression_probe_and_solver,
+    )
+
+    train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
+    device = torch.device(cfg.runtime.device)
+    dense_cfg = cfg.segmentation
+    probe, solver = build_pixelwise_regression_probe_and_solver(
+        model, dense_cfg, device, target_scale
+    )
+    cache_dtype = {"float16": torch.float16, "float32": torch.float32}[dense_cfg.cache_dtype]
+    if dense_cfg.cache_features and probe.freeze_backbone:
+        train_cache = probe.extract_segmentation_features(
+            train_loader, cache_dtype=cache_dtype, target_dtype=torch.float32
+        )
+        val_cache = probe.extract_segmentation_features(
+            val_loader, cache_dtype=cache_dtype, target_dtype=torch.float32
+        )
+        test_cache = probe.extract_segmentation_features(
+            test_loader, cache_dtype=cache_dtype, target_dtype=torch.float32
+        )
+        solver.fit_cached(
+            train_cache=train_cache,
+            val_cache=val_cache,
+            batch_size=dense_cfg.batch_size,
+            epochs=dense_cfg.epochs,
+            verbose=cfg.runtime.verbose,
+        )
+        metrics, per_image_rmse = solver.evaluate_cached(
+            test_cache, batch_size=dense_cfg.batch_size
+        )
+        actual_batch_size = dense_cfg.batch_size
+    else:
+        solver.fit(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=dense_cfg.epochs,
+            verbose=cfg.runtime.verbose,
+        )
+        metrics, per_image_rmse = solver.evaluate(test_loader)
+        actual_batch_size = int(train_loader.batch_size or 1)
+    return (
+        metrics,
+        per_image_rmse,
+        sum(probe.channels_list),
+        dense_cfg.learning_rate,
+        actual_batch_size,
+    )
+
+
+def run_pixelwise_regression(
+    cfg: RunConfig,
+    model: BenchModel,
+    loaders: LoaderSplits,
+    common_meta: ResultMetadata,
+    target_scale: float,
+) -> Iterator[list[dict]]:
+    """Yield the completed pixelwise regression measurement."""
+    train_dataset, val_dataset, test_dataset = (
+        loaders.train.dataset,
+        loaders.val.dataset,
+        loaders.test.dataset,
+    )
+    assert isinstance(train_dataset, Sized)
+    assert isinstance(val_dataset, Sized)
+    assert isinstance(test_dataset, Sized)
+    metrics, scores, feat_dim, learning_rate, batch_size = evaluate_pixelwise_regression(
+        model, loaders, cfg, target_scale
+    )
+    ci_lower, ci_upper = bootstrap_mean(
+        scores,
+        n_boot=cfg.classification.bootstrap_samples,
+        seed=cfg.runtime.seed,
+    )
+    regression_meta: ResultMetadata = {
+        **common_meta,
+        "merge_val": False,
+        "feature_dim": feat_dim,
+        "n_train": len(train_dataset),
+        "n_val": len(val_dataset),
+        "n_test": len(test_dataset),
+    }
+    row = EvaluationResult(
+        **regression_meta,
+        method=f"reg-{cfg.segmentation.head}",
+        metric_name="RMSE",
+        metric_value=metrics["RMSE"],
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
+        best_lr=learning_rate,
+        best_batch_size=batch_size,
+    ).to_row()
+    yield [row]
+
+
+def run_dense_task(  # noqa: PLR0913 - task dispatch preserves explicit inputs.
+    task: str,
+    cfg: RunConfig,
+    model: BenchModel,
+    loaders: LoaderSplits,
+    common_meta: ResultMetadata,
+    target_scale: float,
+) -> Iterator[list[dict]]:
+    """Dispatch a dense prediction task to its task-specific solver."""
+    if task == "segmentation":
+        yield from run_segmentation(cfg, model, loaders, common_meta)
+        return
+    if task == "pixelwise_regression":
+        yield from run_pixelwise_regression(cfg, model, loaders, common_meta, target_scale)
+        return
+    raise ValueError(f"Unsupported dense task {task!r}.")
+
+
 def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
     cfg: RunConfig,
     plan: DatasetRunPlan,
@@ -902,7 +1024,7 @@ def run_dataset(
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
-    if ds_cls.task != "segmentation" and not plan.skip_knn:
+    if ds_cls.task == "classification" and not plan.skip_knn:
         from torchgeo_bench.knn import resolve_knn_device
 
         plan = replace(
@@ -927,8 +1049,10 @@ def run_dataset(
     )
     common_meta["normalization"] = model.effective_normalization
     loaders = LoaderSplits(train_loader, val_loader, test_loader)
-    if ds_cls.task == "segmentation":
-        for rows in run_segmentation(cfg, model, loaders, common_meta):
+    if ds_cls.task != "classification":
+        for rows in run_dense_task(
+            ds_cls.task, cfg, model, loaders, common_meta, bench.target_scale
+        ):
             yield rows, [], []
         return
     for rows, id_rows, profile_rows in run_classification(

@@ -32,8 +32,9 @@ class BenchDataset(ABC):
 
     Attributes:
         name: Dataset identifier used on the command line (e.g. ``"m-eurosat"``).
-        task: ``"classification"`` or ``"segmentation"``.
+        task: ``"classification"``, ``"segmentation"``, or ``"pixelwise_regression"``.
         num_classes: Number of output classes.
+        target_scale: Scale that restores regression targets to their reported units.
         bands: Ordered list of all available spectral bands with statistics.
         rgb_bands: Short names of the bands to use for RGB-only mode.
         split_sizes: Number of samples per split for the *default* partition,
@@ -44,8 +45,9 @@ class BenchDataset(ABC):
     """
 
     name: str
-    task: Literal["classification", "segmentation"]
+    task: Literal["classification", "segmentation", "pixelwise_regression"]
     num_classes: int
+    target_scale: float = 1.0
     bands: ClassVar[list[BandSpec]]
     rgb_bands: ClassVar[list[str]]
     split_sizes: ClassVar[dict[str, int]]

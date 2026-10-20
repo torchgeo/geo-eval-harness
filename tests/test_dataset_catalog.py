@@ -26,13 +26,13 @@ if TYPE_CHECKING:
     from torch.utils.data import Dataset
 
 
-@pytest.fixture(params=["classification", "segmentation"])
+@pytest.fixture(params=["classification", "segmentation", "pixelwise_regression"])
 def registered_dataset(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> type[BenchDataset]:
     class TinyDataset(BenchDataset):
         name = "catalog-test"
-        task: Literal["classification", "segmentation"] = request.param
+        task: Literal["classification", "segmentation", "pixelwise_regression"] = request.param
         num_classes = 2
         bands: ClassVar[list[BandSpec]] = [BandSpec("aerial", "gray", "gray", 0, 1, 0, 1)]
         rgb_bands: ClassVar[list[str]] = ["gray"]

@@ -49,6 +49,7 @@ INDEX_NAME = "index.json"
 Status = Literal["extracted", "no_geo", "not_downloaded"]
 
 NO_GEO: dict[str, str] = {
+    "biomassters": "source GeoTIFFs are explicitly not georeferenced and publish no coordinates",
     "so2sat": "tortilla metadata has no lon/lat columns",
     "m-so2sat": "every sample has transform=None and crs=None",
     "resisc45": (

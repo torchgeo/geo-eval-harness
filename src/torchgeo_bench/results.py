@@ -214,6 +214,27 @@ def bootstrap_miou(
     )
 
 
+def bootstrap_mean(
+    values: torch.Tensor,
+    n_boot: int = 1000,
+    ci: float = 95.0,
+    seed: int | None = None,
+) -> tuple[float, float]:
+    """Bootstrap a confidence interval for a mean over held-out samples."""
+    if n_boot < 1:
+        return float("nan"), float("nan")
+    values = values.to(dtype=torch.float64, device="cpu").flatten()
+    if values.numel() == 0:
+        raise ValueError("Expected at least one value for bootstrap resampling.")
+    generator = torch.Generator().manual_seed(seed if seed is not None else 0)
+    indices = torch.randint(len(values), (n_boot, len(values)), generator=generator)
+    scores = values[indices].mean(dim=1)
+    lower = (100.0 - ci) / 2.0
+    return float(torch.quantile(scores, lower / 100.0)), float(
+        torch.quantile(scores, 1 - lower / 100.0)
+    )
+
+
 @dataclass(kw_only=True)
 class EvaluationResult:
     """Container for a single evaluation result row."""
