@@ -24,7 +24,7 @@ Added
 Fixed
 ^^^^^
 
-* Segmentation evaluates the best-validation-mIoU epoch for every head on loader and cached-feature paths, including all test metrics and bootstrap intervals. Training runs all epochs and retains the earliest maximum. Segmentation resume identities distinguish this protocol from final-epoch results; classification identities and CSV columns are unchanged. Existing segmentation results require new runs to obtain best-validation measurements.
+* Segmentation test metrics and bootstrap intervals use the earliest epoch with the highest validation mIoU. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 
 0.5.0 (2026-08-10)
 ------------------

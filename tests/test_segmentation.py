@@ -560,11 +560,14 @@ def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
 
 
 @pytest.mark.parametrize("cached", [False, True])
-@pytest.mark.parametrize("scores", [[0.3, 0.8, 0.2], [0.8, 0.8, 0.2]])
-def test_solver_restores_best_validation_state_and_resets_on_refit(
+@pytest.mark.parametrize(
+    "scores",
+    [[0.3, 0.8, 0.2], [0.8, 0.8, 0.2]],
+    ids=["earlier-maximum", "earliest-tie"],
+)
+def test_solver_restores_best_validation_parameters_and_buffers(
     monkeypatch: pytest.MonkeyPatch, scores: list[float], *, cached: bool
 ) -> None:
-    scores = list(scores)
     images = torch.randn(2, 3, 8, 8)
     loader = make_loader(images, torch.randint(0, NUM_CLASSES, (2, 8, 8)))
     backbone = nn.Sequential(nn.Conv2d(3, 4, 1), nn.BatchNorm2d(4))
@@ -579,27 +582,16 @@ def test_solver_restores_best_validation_state_and_resets_on_refit(
     def validation(*_args: object, **_kwargs: object) -> dict[str, float]:
         probe.eval()
         states.append({name: value.clone() for name, value in probe.state_dict().items()})
-        for tensor, saved in solver._best_state:
-            assert saved.device.type == "cpu"
-            assert not saved.requires_grad
-            assert saved.dtype == tensor.dtype
-            assert saved.data_ptr() != tensor.data_ptr()
-            assert all(tensor is not p for p in backbone.parameters() if not p.requires_grad)
         return {"mIoU": scores[len(states) - 1]}
 
     monkeypatch.setattr(solver, "_evaluate", validation)
+    if cached:
+        assert cache is not None
+        result = solver.fit_cached(cache, cache, epochs=len(scores), verbose=False)
+    else:
+        result = solver.fit(loader, loader, epochs=len(scores), verbose=False)
 
-    def fit(*, validation_enabled: bool, epochs: int) -> float | None:
-        if cached:
-            assert cache is not None
-            return solver.fit_cached(
-                cache, cache if validation_enabled else None, epochs=epochs, verbose=False
-            )
-        return solver.fit(
-            loader, loader if validation_enabled else None, epochs=epochs, verbose=False
-        )
-
-    assert fit(validation_enabled=True, epochs=len(scores)) == max(scores)
+    assert result == max(scores)
     selected = scores.index(max(scores))
     assert len(states) == len(scores)
     assert solver.val_history == scores
@@ -628,17 +620,64 @@ def test_solver_restores_best_validation_state_and_resets_on_refit(
         if name in frozen:
             torch.testing.assert_close(p, frozen[name], rtol=0, atol=0)
 
-    states.clear()
-    scores = [0.1]
-    assert fit(validation_enabled=True, epochs=1) == 0.1
-    assert solver.best_epoch == 1
-    assert solver.val_history == [0.1]
-    before = [p.clone() for p in probe.head.parameters()]
-    assert fit(validation_enabled=False, epochs=1) is None
-    assert solver.best_epoch is None
-    assert solver.best_val_miou is None
-    assert solver.val_history == []
-    assert any(not torch.equal(p, q) for p, q in zip(before, probe.head.parameters(), strict=True))
+
+def test_solver_snapshot_is_independent_and_excludes_frozen_weights() -> None:
+    backbone = nn.Sequential(nn.Conv2d(3, 4, 1), nn.BatchNorm2d(4))
+    backbone.register_buffer("runtime_count", torch.tensor(0), persistent=False)
+    probe = make_probe(backbone, ["1"]).double()
+    backbone[0].weight.requires_grad_(True)
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+
+    solver._select_epoch(1, 0.8, verbose=False)
+
+    captured = {id(tensor) for tensor, _ in solver._best_state}
+    assert all(id(p) in captured for p in probe.head.parameters())
+    assert all(id(buffer) in captured for buffer in probe.buffers())
+    for parameter in backbone.parameters():
+        assert (id(parameter) in captured) == parameter.requires_grad
+
+    with torch.no_grad():
+        for tensor, saved in solver._best_state:
+            assert saved.device.type == "cpu"
+            assert not saved.requires_grad
+            assert saved.dtype == tensor.dtype
+            assert saved.data_ptr() != tensor.data_ptr()
+            torch.testing.assert_close(saved, tensor, rtol=0, atol=0)
+            tensor.add_(1)
+            assert not torch.equal(saved, tensor)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(
+    "with_validation", [True, False], ids=["with-validation", "without-validation"]
+)
+def test_solver_refit_clears_previous_selection(
+    monkeypatch: pytest.MonkeyPatch, *, cached: bool, with_validation: bool
+) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    scores = iter([0.9, 0.8, 0.1])
+    monkeypatch.setattr(solver, "_evaluate", lambda *_args, **_kwargs: {"mIoU": next(scores)})
+    train_data = (
+        probe.extract_segmentation_features(loader, cache_dtype=torch.float32) if cached else loader
+    )
+    fit = solver.fit_cached if cached else solver.fit
+
+    assert fit(train_data, train_data, epochs=2, verbose=False) == 0.9
+    assert solver.val_history == [0.9, 0.8]
+    head_before_refit = [p.clone() for p in probe.head.parameters()]
+
+    result = fit(train_data, train_data if with_validation else None, epochs=1, verbose=False)
+
+    assert result == (0.1 if with_validation else None)
+    assert solver.best_epoch == (1 if with_validation else None)
+    assert solver.best_val_miou == result
+    assert solver.val_history == ([0.1] if with_validation else [])
+    assert any(
+        not torch.equal(before, after)
+        for before, after in zip(head_before_refit, probe.head.parameters(), strict=True)
+    )
 
 
 @pytest.mark.parametrize("cached", [False, True])
