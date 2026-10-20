@@ -15,6 +15,7 @@ from torchgeo_bench.models.segmentation_heads import (
     FPNHead,
     LinearHead,
     PatchLinearHead,
+    UPerNetHead,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,9 +149,9 @@ class SegmentationProbe(nn.Module):
         freeze_backbone: If ``True`` (default), backbone parameters are frozen
             and the backbone runs in eval mode during inference.
         head_type: Decoder architecture — one of ``"linear"``, ``"conv_block"``,
-            ``"fpn"``, ``"dpt"``, ``"patch_linear"``.
-        hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``, and
-            ``dpt`` heads (default 256).
+            ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``.
+        hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
+            ``dpt``, and ``upernet`` heads (default 256).
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -195,6 +196,8 @@ class SegmentationProbe(nn.Module):
             self.head = FPNHead(self.channels_list, num_classes, hidden_dim=hdim)
         elif head_type == "dpt":
             self.head = DPTHead(self.channels_list, num_classes, hidden_dim=hdim)
+        elif head_type == "upernet":
+            self.head = UPerNetHead(self.channels_list, num_classes, hidden_dim=hdim)
         elif head_type == "patch_linear":
             self.head = PatchLinearHead(self.channels_list, num_classes).to(self._backbone_device())
             dry_run_features = [
@@ -211,7 +214,7 @@ class SegmentationProbe(nn.Module):
         else:
             raise ValueError(
                 "Unknown head_type: "
-                f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear"
+                f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet"
             )
 
     def register_hooks(self) -> None:

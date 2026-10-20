@@ -8,7 +8,14 @@ from .interface import BenchModel
 from .olmoearth import OlmoEarthBenchModel
 from .rcf import RCFBench, RCFModelSettings
 from .sam3 import SAM3Encoder
-from .segmentation_heads import ConvBlockHead, DPTHead, FPNHead, LinearHead, PatchLinearHead
+from .segmentation_heads import (
+    ConvBlockHead,
+    DPTHead,
+    FPNHead,
+    LinearHead,
+    PatchLinearHead,
+    UPerNetHead,
+)
 from .terrafm import TerraFMBench
 from .terratorch_models import (
     TerraTorchClayBench,
@@ -57,5 +64,6 @@ __all__: list[str] = [
     "TorchGeoResNetBench",
     "TorchGeoScaleMAEBench",
     "TorchGeoSwinBench",
+    "UPerNetHead",
     "UniverSatBenchModel",
 ]

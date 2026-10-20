@@ -221,7 +221,6 @@ class TimmPatchBenchModel(BenchModel):
             return images
         return images[:, self._channel_perm, :, :]
 
-    @torch.no_grad()
     def _forward_patch_features(
         self,
         images: torch.Tensor,

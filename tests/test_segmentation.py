@@ -766,6 +766,49 @@ def test_probe_dpt_wrong_num_layers():
         make_probe(backbone, layers=["layer1", "layer2"], head_type="dpt", hidden_dim=16)
 
 
+def test_probe_upernet_head_decodes_coarse_to_fine_pyramid():
+    """The coarsest map, which has the most channels here, must reach the pyramid pooling module."""
+    from torchgeo_bench.models.segmentation_heads import UPerNetHead
+
+    probe = make_probe(
+        MockBackbone4Layer(),
+        layers=["layer4", "layer3", "layer2", "layer1"],
+        head_type="upernet",
+        hidden_dim=16,
+    )
+
+    assert isinstance(probe.head, UPerNetHead)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+
+
+def test_upernet_head_decodes_same_scale_vit_features():
+    from torchgeo_bench.models.segmentation_heads import UPerNetHead
+
+    head = UPerNetHead([32, 32, 32, 32], num_classes=NUM_CLASSES, hidden_dim=16)
+    features = [torch.randn(2, 32, 14, 14) for _ in range(4)]
+
+    assert head(features, 224, 224).shape == (2, NUM_CLASSES, 224, 224)
+
+
+def test_timm_wrapper_trains_through_probe_and_extracts_without_autograd():
+    """Unfrozen probes get backbone gradients; frozen feature extraction still yields arrays."""
+    from tests.support.models import bands
+    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from torchgeo_bench.utils import extract_features
+
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    images = torch.randn(2, 3, 224, 224)
+    probe = make_probe(model, ["blocks.11", "blocks.5"], head_type="fpn", freeze=False)
+
+    probe(images).sum().backward()
+
+    assert model.backbone.blocks[0].attn.qkv.weight.grad is not None
+    features, _ = extract_features(
+        model, [{"image": images, "label": torch.zeros(2)}], "cpu", description=None
+    )
+    assert features.shape == (2, model.backbone.num_features)
+
+
 def test_dpt_fusion_layer_shim_matches_reference():
     """These checks protect decoder behavior when transformers changes its private fusion API."""
     from transformers.models.dpt.modeling_dpt import DPTPreActResidualLayer

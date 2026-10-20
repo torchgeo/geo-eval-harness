@@ -25,6 +25,7 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``torchgeo-bench download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* ``segmentation.head: upernet``: a UPerNet decoder (pyramid pooling plus FPN fusion) built on the ``transformers`` reference implementation, for coarse-to-fine feature maps from any backbone.
 
 Fixed
 ^^^^^

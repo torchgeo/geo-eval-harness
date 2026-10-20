@@ -250,7 +250,7 @@ class ClassificationConfig(StrictModel):
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
-    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear"] = "fpn"
+    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet"] = "fpn"
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
