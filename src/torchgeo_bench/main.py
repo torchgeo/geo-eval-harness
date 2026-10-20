@@ -888,7 +888,7 @@ def run_dataset(
     ds_cls = get_bench_dataset_class(ds_name)
 
     cfg, model_cfg = resolve_run_config(cfg, ds_name)
-    config_hash = resume_config_hash(cfg, model_cfg)
+    config_hash = resume_config_hash(cfg, model_cfg, task=ds_cls.task)
     common_meta = dataset_metadata(cfg, ds_name, ds_cls, model_cfg, config_hash)
     plan = plan_dataset_run(cfg, ds_cls, common_meta, completed)
     if plan.skip_dataset:

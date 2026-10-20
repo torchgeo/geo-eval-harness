@@ -11,8 +11,11 @@ from torch.utils.data import DataLoader, Dataset
 from tests.support.runner import _chainable_model_mock, _compose_cfg, _resume_row
 from torchgeo_bench.config.presets import merge_settings
 from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import main, run_dataset
+from torchgeo_bench.main import LoaderSplits, evaluate_segmentation, main, run_dataset
+from torchgeo_bench.results import bootstrap_miou
 from torchgeo_bench.resume import ResumeState
+from torchgeo_bench.segmentation_probe import SegmentationProbe
+from torchgeo_bench.segmentation_task import SegmentationSolver
 
 
 class _SegmentationDataset(Dataset):
@@ -166,3 +169,104 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     build_mock.assert_not_called()
     df = pd.read_csv(out)
     assert int((df["method"] == "seg-fpn").sum()) == 1
+
+
+class _ChangingHead(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.bias = torch.nn.Parameter(torch.tensor(1.5))
+        self.register_buffer("batches", torch.tensor(0))
+
+    def forward(self, features: list[torch.Tensor], height: int, width: int) -> torch.Tensor:
+        if self.training:
+            self.batches.add_(1)
+        score = self.bias.expand(len(features[0]), height, width)
+        return torch.stack((score, -score), dim=1)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_runner_test_metrics_and_bootstrap_use_selected_epoch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+) -> None:
+    cfg = _cfg_for_segmentation(
+        tmp_path / "out.csv",
+        {"segmentation": {"cache_features": cached, "epochs": 3, "batch_size": 2}},
+    )
+    images = torch.ones(2, 3, 8, 8)
+    train = DataLoader(_SegmentationDataset(images, torch.ones(2, 8, 8).long()), batch_size=2)
+    test = DataLoader(_SegmentationDataset(images, torch.zeros(2, 8, 8).long()), batch_size=2)
+    probe = SegmentationProbe(
+        torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1)), ["0"], 2, head_type="linear"
+    )
+    probe.head = _ChangingHead()
+    solver = SegmentationSolver(probe, 2, lr=1.0, lr_scheduler="none", device="cpu")
+    evaluate = solver._evaluate
+    test_data = (
+        probe.extract_segmentation_features(test, cache_dtype=torch.float32) if cached else test
+    )
+    if cached:
+        from torchgeo_bench.segmentation_probe import GPUTensorCache
+
+        test_data = GPUTensorCache.from_cached(test_data, "cpu")
+    boundaries: list[tuple[dict[str, float], torch.Tensor]] = []
+
+    def controlled_validation(data, batch_size=64, *, collect_confusions=False):
+        if collect_confusions:
+            return evaluate(data, batch_size, collect_confusions=True)
+        result = evaluate(test_data, collect_confusions=True)
+        assert isinstance(result, tuple)
+        boundaries.append(result)
+        return {"mIoU": [0.9, 0.5, 0.2][len(boundaries) - 1]}
+
+    monkeypatch.setattr(solver, "_evaluate", controlled_validation)
+    monkeypatch.setattr(
+        "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+        lambda *_args: (probe, solver),
+    )
+    with mock.patch("torchgeo_bench.main.bootstrap_miou", wraps=bootstrap_miou) as bootstrap:
+        metrics, *_ = evaluate_segmentation(probe.backbone, LoaderSplits(train, test, test), cfg, 2)
+
+    assert len(boundaries) == 3
+    assert boundaries[0][0]["mIoU"] == 1.0
+    assert boundaries[-1][0]["mIoU"] == 0.0
+    for name, value in boundaries[0][0].items():
+        assert metrics[name] == value
+    torch.testing.assert_close(bootstrap.call_args.args[0], boundaries[0][1], rtol=0, atol=0)
+    assert (metrics["ci_lower"], metrics["ci_upper"]) == bootstrap_miou(
+        boundaries[0][1], n_boot=cfg.classification.bootstrap_samples, seed=cfg.runtime.seed
+    )
+    assert solver.best_epoch == 1
+    assert probe.head.batches.item() == 1
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_runner_invalid_validation_does_not_write_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+) -> None:
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        {
+            "segmentation": {
+                "cache_features": cached,
+                "epochs": 1,
+                "layers": ["0"],
+                "head": "linear",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "torchgeo_bench.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    monkeypatch.setattr(
+        "torchgeo_bench.main.instantiate_dataset_model",
+        lambda *_args: backbone,
+    )
+    monkeypatch.setattr(
+        SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": float("nan")}
+    )
+    with pytest.raises(ValueError, match="must be finite"):
+        main(cfg)
+    assert not out.exists()

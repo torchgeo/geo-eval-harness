@@ -28,7 +28,11 @@ SegMetrics = dict[str, float]
 
 
 class SegmentationSolver:
-    """Train and evaluate a segmentation probe."""
+    """Train a segmentation probe and restore its best-validation epoch.
+
+    ``best_epoch`` is one-based; ``best_val_miou`` is dataset-level macro mIoU.
+    Both are unset when fitting without validation.
+    """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
         self,
@@ -58,6 +62,9 @@ class SegmentationSolver:
         self.device = device
         self.lr_scheduler_type = lr_scheduler
         self.val_history: list[float] = []
+        self.best_epoch: int | None = None
+        self.best_val_miou: float | None = None
+        self._best_state: list[tuple[torch.Tensor, torch.Tensor]] = []
 
         self.ignore_index = ignore_index
         self.optimizer = torch.optim.AdamW(
@@ -121,6 +128,44 @@ class SegmentationSolver:
             f"Unknown lr_scheduler {self.lr_scheduler_type!r}. Expected 'cosine' or 'none'."
         )
 
+    def _reset_selection(self, epochs: int) -> None:
+        """Clear per-fit selection state and require completed training epochs."""
+        self.val_history = []
+        self.best_epoch = None
+        self.best_val_miou = None
+        self._best_state = []
+        if epochs < 1:
+            raise ValueError("Segmentation fitting requires at least one training epoch.")
+
+    def _select_epoch(self, epoch: int, miou: float, *, verbose: bool) -> None:
+        """Snapshot mutable evaluation state on strict validation improvement."""
+        if not math.isfinite(miou):
+            raise ValueError(
+                f"Segmentation validation mIoU must be finite; epoch {epoch} yielded {miou}."
+            )
+        self.val_history.append(miou)
+        if verbose:
+            logger.info("Epoch %d Val mIoU: %.17g", epoch, miou)
+        if self.best_val_miou is not None and miou <= self.best_val_miou:
+            return
+        tensors = [
+            *self.model.head.parameters(),
+            *(p for p in self.model.backbone.parameters() if p.requires_grad),
+            *self.model.buffers(),
+        ]
+        self._best_state = [(tensor, tensor.detach().to("cpu", copy=True)) for tensor in tensors]
+        self.best_epoch, self.best_val_miou = epoch, miou
+
+    @torch.no_grad()
+    def _restore_selection(self, *, verbose: bool) -> float | None:
+        """Restore into existing tensors without replacing modules or hooks."""
+        for tensor, saved in self._best_state:
+            tensor.copy_(saved)
+        self._best_state = []
+        if verbose and self.best_epoch is not None:
+            logger.info("Selected epoch %d Val mIoU: %.17g", self.best_epoch, self.best_val_miou)
+        return self.best_val_miou
+
     def fit(
         self,
         train_loader: DataLoader,
@@ -133,16 +178,16 @@ class SegmentationSolver:
 
         Args:
             train_loader: Training data loader.
-            val_loader: Optional validation data loader for per-epoch mIoU logging.
+            val_loader: Optional validation loader for best-epoch selection by macro mIoU.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
 
         Returns:
-            Val mIoU from the final epoch if val_loader is given, else None.
+            Best validation mIoU after restoring its state, else None (final-epoch state).
+            All epochs run; ties select the earliest epoch. ``val_history`` keeps every score.
         """
+        self._reset_selection(epochs)
         scheduler = self._make_scheduler(epochs)
-        last_val_miou: float | None = None
-        self.val_history = []
 
         for epoch in range(epochs):
             self.model.train()
@@ -173,15 +218,12 @@ class SegmentationSolver:
             if scheduler is not None:
                 scheduler.step()
 
-            if val_loader:
+            if val_loader is not None:
                 val_metrics = self.evaluate(val_loader)
                 assert isinstance(val_metrics, dict)
-                last_val_miou = val_metrics["mIoU"]
-                self.val_history.append(last_val_miou)
-                if verbose:
-                    logger.info("Epoch %d Val mIoU: %.17g", epoch + 1, last_val_miou)
+                self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
 
-        return last_val_miou
+        return self._restore_selection(verbose=verbose)
 
     def evaluate(
         self,
@@ -222,14 +264,16 @@ class SegmentationSolver:
         Args:
             train_cache: Pre-extracted training features from
                 :meth:`SegmentationProbe.extract_segmentation_features`, or a GPU cache.
-            val_cache: Optional validation cache for per-epoch mIoU logging.
+            val_cache: Optional validation cache for best-epoch selection by macro mIoU.
             batch_size: Batch size for iterating over cached data.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
 
         Returns:
-            Val mIoU from the final epoch if val_cache is given, else None.
+            Best validation mIoU after restoring its state, else None (final-epoch state).
+            All epochs run; ties select the earliest epoch. ``val_history`` keeps every score.
         """
+        self._reset_selection(epochs)
         gpu_train = (
             train_cache
             if isinstance(train_cache, GPUTensorCache)
@@ -244,8 +288,6 @@ class SegmentationSolver:
         scheduler = self._make_scheduler(epochs)
 
         input_hw: tuple[int, int] = (gpu_train.masks.shape[-2], gpu_train.masks.shape[-1])
-        last_val_miou: float | None = None
-        self.val_history = []
         num_batches = math.ceil(len(gpu_train) / batch_size)
 
         for epoch in range(epochs):
@@ -276,12 +318,9 @@ class SegmentationSolver:
             if gpu_val is not None:
                 val_metrics = self._evaluate(gpu_val, batch_size)
                 assert isinstance(val_metrics, dict)
-                last_val_miou = val_metrics["mIoU"]
-                self.val_history.append(last_val_miou)
-                if verbose:
-                    logger.info("Epoch %d Val mIoU: %.17g", epoch + 1, last_val_miou)
+                self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
 
-        return last_val_miou
+        return self._restore_selection(verbose=verbose)
 
     def evaluate_cached(
         self,
@@ -372,14 +411,20 @@ class SegmentationSolver:
             m.to(self.device)
 
         confusion_list: list[torch.Tensor] = []
+        has_batches = False
 
         for logits, masks in self._evaluation_batches(data, batch_size):
+            has_batches = True
             for m in self._all_metrics:
                 m.update(logits, masks)
             if collect_confusions:
                 predictions = logits.argmax(dim=1)
                 confusion_list.append(self._per_image_confusions(predictions, masks).cpu())
 
+        if not has_batches:
+            raise ValueError(
+                "Segmentation evaluation requires non-empty data (including validation)."
+            )
         metrics = self._compute_metrics()
         if collect_confusions:
             return metrics, torch.cat(confusion_list, dim=0)

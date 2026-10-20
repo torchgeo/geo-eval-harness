@@ -33,11 +33,12 @@ KEY_COLS = (
 )
 
 
-def resume_config_hash(config: RunConfig, model_cfg: ModelPreset) -> str:
+def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
     Excludes device and worker count, which only control execution. Includes batch size because
-    it can change floating-point results.
+    it can change floating-point results. ``task`` comes from the resolved dataset class;
+    only segmentation includes the best-validation model-selection protocol.
     """
     payload = {
         "schema_version": config.schema_version,
@@ -51,6 +52,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset) -> str:
         "segmentation": config.segmentation.model_dump(mode="json"),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
+    if task == "segmentation":
+        payload["segmentation"]["selection_protocol"] = "best-validation-miou-v1"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 

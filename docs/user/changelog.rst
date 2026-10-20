@@ -21,6 +21,11 @@ Added
   Downloadable with ``torchgeo-bench download aid``.  One of the three
   most-used benchmarks in the GFM literature.
 
+Fixed
+^^^^^
+
+* Segmentation evaluates the best-validation-mIoU epoch for every head on loader and cached-feature paths, including all test metrics and bootstrap intervals. Training runs all epochs and retains the earliest maximum. Segmentation resume identities distinguish this protocol from final-epoch results; classification identities and CSV columns are unchanged. Existing segmentation results require new runs to obtain best-validation measurements.
+
 0.5.0 (2026-08-10)
 ------------------
 

@@ -531,6 +531,8 @@ def test_solver_training_schedule_and_frozen_backbone(
 
     assert result is None
     assert solver.val_history == []
+    assert solver.best_epoch is None
+    assert solver.best_val_miou is None
     assert [*lrs, solver.optimizer.param_groups[0]["lr"]] == pytest.approx(expected_lrs)
     assert not backbone.training
     for name, value in backbone.state_dict().items():
@@ -543,7 +545,7 @@ def test_solver_training_schedule_and_frozen_backbone(
 
 
 def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
-    """fit returns the final epoch val mIoU when a val_loader is provided."""
+    """A single completed epoch is the selected validation epoch."""
     images, masks = dummy_data["image"], dummy_data["mask"]
     train_loader = make_loader(images, masks)
     val_loader = make_loader(images, masks)
@@ -553,6 +555,119 @@ def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
     assert isinstance(val_miou, float)
     assert 0.0 <= val_miou <= 1.0
     assert solver.val_history == [val_miou]
+    assert solver.best_epoch == 1
+    assert solver.best_val_miou == val_miou
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("scores", [[0.3, 0.8, 0.2], [0.8, 0.8, 0.2]])
+def test_solver_restores_best_validation_state_and_resets_on_refit(
+    monkeypatch: pytest.MonkeyPatch, scores: list[float], *, cached: bool
+) -> None:
+    scores = list(scores)
+    images = torch.randn(2, 3, 8, 8)
+    loader = make_loader(images, torch.randint(0, NUM_CLASSES, (2, 8, 8)))
+    backbone = nn.Sequential(nn.Conv2d(3, 4, 1), nn.BatchNorm2d(4))
+    probe = make_probe(backbone, ["1"], freeze=cached)
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr=0.1, lr_scheduler="none")
+    frozen = {name: p.clone() for name, p in backbone.named_parameters() if not p.requires_grad}
+    cache = (
+        probe.extract_segmentation_features(loader, cache_dtype=torch.float32) if cached else None
+    )
+    states: list[dict[str, torch.Tensor]] = []
+
+    def validation(*_args: object, **_kwargs: object) -> dict[str, float]:
+        probe.eval()
+        states.append({name: value.clone() for name, value in probe.state_dict().items()})
+        for tensor, saved in solver._best_state:
+            assert saved.device.type == "cpu"
+            assert not saved.requires_grad
+            assert saved.dtype == tensor.dtype
+            assert saved.data_ptr() != tensor.data_ptr()
+            assert all(tensor is not p for p in backbone.parameters() if not p.requires_grad)
+        return {"mIoU": scores[len(states) - 1]}
+
+    monkeypatch.setattr(solver, "_evaluate", validation)
+
+    def fit(*, validation_enabled: bool, epochs: int) -> float | None:
+        if cached:
+            assert cache is not None
+            return solver.fit_cached(
+                cache, cache if validation_enabled else None, epochs=epochs, verbose=False
+            )
+        return solver.fit(
+            loader, loader if validation_enabled else None, epochs=epochs, verbose=False
+        )
+
+    assert fit(validation_enabled=True, epochs=len(scores)) == max(scores)
+    selected = scores.index(max(scores))
+    assert len(states) == len(scores)
+    assert solver.val_history == scores
+    assert solver.best_epoch == selected + 1
+    assert solver.best_val_miou == max(scores)
+    for name, value in probe.state_dict().items():
+        torch.testing.assert_close(value, states[selected][name], rtol=0, atol=0)
+    assert any(
+        not torch.equal(states[selected][name], states[-1][name])
+        for name, _ in probe.head.named_parameters(prefix="head")
+    )
+    assert any(
+        not torch.equal(states[selected][name], states[-1][name])
+        for name, _ in probe.head.named_buffers(prefix="head")
+    )
+    if not cached:
+        assert any(
+            not torch.equal(states[selected][name], states[-1][name])
+            for name, _ in backbone.named_parameters(prefix="backbone")
+        )
+        assert any(
+            not torch.equal(states[selected][name], states[-1][name])
+            for name, _ in backbone.named_buffers(prefix="backbone")
+        )
+    for name, p in backbone.named_parameters():
+        if name in frozen:
+            torch.testing.assert_close(p, frozen[name], rtol=0, atol=0)
+
+    states.clear()
+    scores = [0.1]
+    assert fit(validation_enabled=True, epochs=1) == 0.1
+    assert solver.best_epoch == 1
+    assert solver.val_history == [0.1]
+    before = [p.clone() for p in probe.head.parameters()]
+    assert fit(validation_enabled=False, epochs=1) is None
+    assert solver.best_epoch is None
+    assert solver.best_val_miou is None
+    assert solver.val_history == []
+    assert any(not torch.equal(p, q) for p, q in zip(before, probe.head.parameters(), strict=True))
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("invalid", ["empty", "nan", "inf", "-inf"])
+def test_solver_rejects_invalid_validation(
+    monkeypatch: pytest.MonkeyPatch, invalid: str, *, cached: bool
+) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    if invalid != "empty":
+        monkeypatch.setattr(solver, "_compute_metrics", lambda: {"mIoU": float(invalid)})
+    if cached:
+        train = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        val = (
+            CachedFeaturesDataset([t[:0] for t in train.layer_tensors], train.masks[:0])
+            if invalid == "empty"
+            else train
+        )
+        with pytest.raises(ValueError, match=r"non-empty|must be finite"):
+            solver.fit_cached(train, val, epochs=1, verbose=False)
+    else:
+        val_loader = (
+            make_loader(torch.empty(0, 3, 8, 8), torch.empty(0, 8, 8, dtype=torch.long))
+            if invalid == "empty"
+            else loader
+        )
+        with pytest.raises(ValueError, match=r"non-empty|must be finite"):
+            solver.fit(loader, val_loader, epochs=1, verbose=False)
 
 
 class MockBackbone4Layer(nn.Module):

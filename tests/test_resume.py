@@ -1,5 +1,7 @@
 """Regression tests for resume hashing and metric completeness."""
 
+import hashlib
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -25,7 +27,7 @@ def _cfg(**sections) -> RunConfig:
 
 def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
     resolved, preset = resolve_run_config(config, dataset)
-    return resume_config_hash(resolved, preset)
+    return resume_config_hash(resolved, preset, task=get_bench_dataset_class(dataset).task)
 
 
 @pytest.mark.parametrize(
@@ -86,6 +88,44 @@ def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
 def test_config_hash_reflects_dataset_resolved_preset_overrides() -> None:
     config = _cfg(model={"name": "torchgeo/scalemae_large_fmow"})
     assert _hash(config, "m-eurosat") != _hash(config, "forestnet")
+
+
+@pytest.mark.parametrize("dataset", ["m-eurosat", "forestnet", "burn_scars"])
+def test_selection_protocol_changes_only_segmentation_identity(
+    dataset: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config, preset = resolve_run_config(_cfg(datasets=[dataset], output={"resume": True}), dataset)
+    ds_cls = get_bench_dataset_class(dataset)
+    payloads: list[dict] = []
+    dumps = json.dumps
+
+    def capture(payload: dict, **kwargs) -> str:
+        payloads.append(payload)
+        return dumps(payload, **kwargs)
+
+    monkeypatch.setattr("torchgeo_bench.resume.json.dumps", capture)
+    current_hash = resume_config_hash(config, preset, task=ds_cls.task)
+    payload = payloads[-1]
+    protocol = payload["segmentation"].pop("selection_protocol", None)
+    original_hash = hashlib.sha256(
+        dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()[:16]
+    if ds_cls.task == "classification":
+        assert protocol is None
+        assert current_hash == original_hash
+        return
+
+    assert protocol == "best-validation-miou-v1"
+    assert current_hash != original_hash
+    metadata = _resume_row(config, method=f"seg-{config.segmentation.head}", metric_name="mIoU")
+    assert metadata["config_hash"] == current_hash
+    path = tmp_path / "results.csv"
+    pd.DataFrame([{**metadata, "config_hash": original_hash}]).to_csv(path, index=False)
+    previous = ResumeState(*load_completed(str(path)))
+    assert not plan_dataset_run(config, ds_cls, metadata, previous).skip_dataset
+    pd.DataFrame([metadata]).to_csv(path, index=False)
+    current = ResumeState(*load_completed(str(path)))
+    assert plan_dataset_run(config, ds_cls, metadata, current).skip_dataset
 
 
 def test_resume_keys_require_the_requested_metric(tmp_path: Path) -> None:

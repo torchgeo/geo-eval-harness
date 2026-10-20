@@ -277,13 +277,14 @@ Training & evaluation (all heads)
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
   (``segmentation.scheduler``); ``none`` disables.
+* **Model selection:** train for all configured epochs, then restore the completed epoch with the highest validation dataset-level macro mIoU, retaining the earliest epoch on ties. Selection uses no test metrics. The solver exposes one-based ``best_epoch``, ``best_val_miou``, and the complete chronological ``val_history``. Head parameters and buffers, trainable backbone parameters, and backbone buffers are restored together from one independent CPU snapshot; frozen backbone weights are not copied. Without validation, direct solver calls retain the final epoch and leave selection metadata unset. Empty validation or non-finite validation mIoU raises an error.
 * **Metric:** mean Intersection-over-Union (mIoU) via
   ``torchmetrics.MulticlassJaccardIndex``.  Frequency-weighted IoU plus
   macro precision / recall / F1 are also reported in the result row
   (see :doc:`results-format`).
 * **Uncertainty:** 95% bootstrap confidence intervals resample held-out
   images and recompute dataset-level mIoU from their aggregated confusion
-  matrices.
+  matrices. All test metrics and confusion matrices use the restored best-validation model, on both loader and cached-feature paths.
 
 Segmentation knobs
 ------------------

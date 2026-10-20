@@ -91,7 +91,7 @@ def feature_manifest(level: int, datasets: list[str]) -> dict:
             "num_classes": bench.num_classes,
             "multilabel": bench.multilabel,
             "split_sizes": bench.split_sizes,
-            "config_hash": resume_config_hash(cfg, preset),
+            "config_hash": resume_config_hash(cfg, preset, task=bench.task),
         }
     return result
 
