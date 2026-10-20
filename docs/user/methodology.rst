@@ -269,10 +269,22 @@ A DPT-style reassemble + fusion-transformer decoder
 backbone layers in coarse-to-fine order; otherwise structurally
 similar to the FPN probe but with deeper fusion blocks.
 
+UPerNet probe
+^^^^^^^^^^^^^
+
+**Method name:** ``seg-upernet`` (YAML ``segmentation: {head: upernet}``).
+A UPerNet decoder (:class:`~torchgeo_bench.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a run whose training set leaves a final batch of one sample is rejected before training.
+
+LoRA fine-tuning
+^^^^^^^^^^^^^^^^
+
+**Method name:** ``seg-<head>-lora`` (YAML ``segmentation.lora_rank``).
+Any head can train together with low-rank adapters on backbone ``nn.Linear`` layers selected by ``segmentation.lora_target_modules``; all pretrained backbone weights stay frozen. Adapters come from PEFT with its default initialisation (Kaiming-uniform ``A``, zero ``B``, no dropout), so training starts from the pretrained model. torchvision's Swin attention reads its ``qkv`` and ``proj`` weights directly instead of calling those layers, so those two projections receive an equivalent weight parametrization instead of a PEFT adapter. Presets target transformer attention and MLP projections (ConvNeXt: MLP projections only); embedding layers, DOFA's wavelength weight generator, and unused decoders are not adapted. The head trains at ``learning_rate`` and the adapters at ``backbone_learning_rate``. During training the backbone stays in eval mode except for its adapters, so pretrained dropout, stochastic depth, and normalisation statistics behave as at inference. Test metrics use the weights from the final epoch, as for frozen probes.
+
 Training & evaluation (all heads)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* **Optimiser:** AdamW, applied **only** to unfrozen probe parameters.
+* **Optimiser:** AdamW over the probe head and, with LoRA, the backbone adapters; frozen backbone weights are never updated.
 * **Loss:** ``CrossEntropyLoss(ignore_index=255)`` so unlabeled pixels
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
@@ -311,6 +323,8 @@ Head type
      - FPN top-down pathway.  Layers must be coarse-to-fine.
    * - ``dpt``
      - DPT-style reassemble + fusion-transformer decoder.
+   * - ``upernet``
+     - Pyramid pooling on the coarsest layer + FPN fusion.  Layers must be coarse-to-fine.
 
 Training knobs
 ^^^^^^^^^^^^^^
@@ -339,7 +353,19 @@ Training knobs
      - Unlabeled mask value excluded by cross entropy and segmentation metrics.
    * - ``batch_size``
      - ``64``
-     - Batch size when training the probe head.
+     - Batch size when training the probe head on cached features.
+   * - ``lora_rank``
+     - ``null``
+     - LoRA rank; ``null`` keeps the backbone frozen.
+   * - ``lora_target_modules``
+     - *(per model)*
+     - Regular expression selecting the adapted backbone ``nn.Linear`` layers.
+   * - ``lora_alpha``
+     - ``16.0``
+     - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
+   * - ``backbone_learning_rate``
+     - ``null``
+     - Learning rate for LoRA adapters; required with ``lora_rank``.
 
 Feature caching
 ^^^^^^^^^^^^^^^

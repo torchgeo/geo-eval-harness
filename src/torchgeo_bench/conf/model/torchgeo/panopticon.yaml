@@ -7,6 +7,7 @@ kwargs:
   auto_resize: true
   target_size: 224
 segmentation:
+  lora_target_modules: 'model\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers:
     - model.blocks.11
     - model.blocks.8

@@ -16,6 +16,7 @@ from torchmetrics.classification import (
 from tqdm.auto import tqdm
 
 from .config.schema import SegmentationConfig
+from .segmentation_lora import apply_lora, set_lora_train_mode
 from .segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -40,6 +41,7 @@ class SegmentationSolver:
         criterion: nn.Module | None = None,
         lr_scheduler: str = "cosine",
         ignore_index: int = 255,
+        backbone_lr: float | None = None,
     ) -> None:
         """Configure the optimizer, loss, and segmentation metrics.
 
@@ -52,6 +54,8 @@ class SegmentationSolver:
             criterion: Loss module. Defaults to CrossEntropyLoss with ignore_index.
             lr_scheduler: LR schedule: "cosine" (CosineAnnealingLR) or "none" (constant LR).
             ignore_index: Label value to ignore in loss and metrics (default: 255).
+            backbone_lr: Learning rate for trainable backbone parameters, such as LoRA adapters.
+                ``None`` trains all parameters at ``lr``.
         """
         self.model = model.to(device)
         self.num_classes = num_classes
@@ -60,11 +64,16 @@ class SegmentationSolver:
         self.val_history: list[float] = []
 
         self.ignore_index = ignore_index
-        self.optimizer = torch.optim.AdamW(
-            filter(lambda p: p.requires_grad, self.model.parameters()),
-            lr=lr,
-            weight_decay=weight_decay,
-        )
+        params = filter(lambda p: p.requires_grad, self.model.parameters())
+        if backbone_lr is not None:
+            params = [
+                {"params": [p for p in self.model.head.parameters() if p.requires_grad]},
+                {
+                    "params": [p for p in self.model.backbone.parameters() if p.requires_grad],
+                    "lr": backbone_lr,
+                },
+            ]
+        self.optimizer = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay)
 
         self.criterion = (
             criterion
@@ -131,6 +140,8 @@ class SegmentationSolver:
     ) -> float | None:
         """Train the segmentation probe.
 
+        A trainable backbone stays in eval mode except for its LoRA adapter modules.
+
         Args:
             train_loader: Training data loader.
             val_loader: Optional validation data loader for per-epoch mIoU logging.
@@ -148,6 +159,8 @@ class SegmentationSolver:
             self.model.train()
             if self.model.freeze_backbone:
                 self.model.backbone.eval()
+            else:
+                set_lora_train_mode(self.model.backbone)
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(train_loader, desc=desc, disable=not verbose)
@@ -392,19 +405,26 @@ def build_seg_probe_and_solver(
     config: SegmentationConfig,
     device: torch.device,
 ) -> tuple[SegmentationProbe, SegmentationSolver]:
-    """Build the frozen-backbone probe and solver from validated segmentation settings."""
+    """Build the probe and solver from validated segmentation settings.
+
+    The backbone is frozen unless ``config.lora_rank`` adds LoRA adapters, which then train at
+    ``config.backbone_learning_rate``.
+    """
     layer_names = config.layers
     if not layer_names:
         raise ValueError(
             "Segmentation evaluation requires segmentation.layers to name "
             "spatial backbone layers. Refusing to probe the global backbone output."
         )
+    if config.lora_rank is not None:
+        assert config.lora_target_modules is not None
+        apply_lora(model, config.lora_target_modules, config.lora_rank, config.lora_alpha)
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,
         num_classes=num_classes,
         head_type=config.head,
-        freeze_backbone=True,
+        freeze_backbone=config.lora_rank is None,
         temporal_pool=config.temporal_pool,
     )
     criterion = nn.CrossEntropyLoss(ignore_index=config.ignore_index)
@@ -416,5 +436,6 @@ def build_seg_probe_and_solver(
         criterion=criterion,
         lr_scheduler=config.scheduler,
         ignore_index=config.ignore_index,
+        backbone_lr=config.backbone_learning_rate,
     )
     return probe, solver

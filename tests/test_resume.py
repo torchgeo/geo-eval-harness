@@ -74,6 +74,23 @@ def test_config_hash_changes_with_result_affecting_settings(overrides: dict) -> 
     assert _hash(_cfg()) != _hash(_cfg(**overrides))
 
 
+def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
+    def vit(**segmentation: object) -> RunConfig:
+        return _cfg(model={"name": "timm/vit/vit_base_patch16_224"}, segmentation=segmentation)
+
+    lora = {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(lora_target_modules="blocks")) == _hash(vit())
+    assert _hash(vit(**lora)) != _hash(vit())
+    assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+
+
+def test_frozen_probe_hash_matches_existing_results() -> None:
+    """Golden value from before LoRA settings existed; preset LoRA targets must not change it."""
+    config = _cfg(model={"name": "torchgeo/dofa_base"}, datasets=["burn_scars"])
+    assert _hash(config, "burn_scars") == "59fb50d2860d1712"
+
+
 def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
     custom = _cfg(model={"name": "custom", "target": "example.Model", "kwargs": {"width": 4}})
     wider = _cfg(model={"name": "custom", "target": "example.Model", "kwargs": {"width": 8}})

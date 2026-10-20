@@ -12,6 +12,7 @@ kwargs:
 input:
   image_size: null
 segmentation:
+  lora_target_modules: 'encoder_model\.encoder\.blocks\.\d+\.(attn\.(q|k|v|proj)|mlp\.fc[12])'
   layers:
     - encoder_model.encoder.blocks.11
     - encoder_model.encoder.blocks.8

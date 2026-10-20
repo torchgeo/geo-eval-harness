@@ -189,3 +189,42 @@ def test_upernet_rejects_a_final_training_batch_of_one_before_training(tmp_path:
 
     probe.extract_segmentation_features.assert_not_called()
     solver.fit_cached.assert_not_called()
+
+
+def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": {
+                "name": "tiny-vit",
+                "target": "torchgeo_bench.models.TimmPatchBenchModel",
+                "kwargs": {
+                    "model_name": "vit_tiny_patch16_224",
+                    "pretrained": False,
+                    "auto_resize": True,
+                },
+            },
+            "segmentation": {
+                "head": "upernet",
+                "layers": ["blocks.11", "blocks.8", "blocks.5", "blocks.2"],
+                "epochs": 1,
+                "lora_rank": 4,
+                "lora_target_modules": r"blocks\.\d+\.attn\.qkv",
+                "backbone_learning_rate": 1e-4,
+            },
+            "output": {"resume": True},
+        },
+    )
+
+    with mock.patch(
+        "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+    ):
+        main(cfg)
+    with mock.patch("torchgeo_bench.main.get_datasets") as data_mock:
+        main(cfg)
+
+    data_mock.assert_not_called()
+    df = pd.read_csv(out)
+    assert df["method"].tolist() == ["seg-upernet-lora"]
+    assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
