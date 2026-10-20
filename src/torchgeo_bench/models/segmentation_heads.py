@@ -249,13 +249,16 @@ class UPerNetHead(nn.Module):
 
     Convolutions use the ``N(0, 0.02)`` initialisation of ``UperNetForSemanticSegmentation``.
     The pool-scale-1 branch applies BatchNorm to a ``1x1`` map, so training batches need at
-    least two samples.
+    least two samples; :class:`~torchgeo_bench.segmentation_task.SegmentationSolver` skips
+    smaller ones (``min_train_batch_size``).
 
     Args:
         channels_list: Channel count for each hooked feature layer (coarse-to-fine).
         num_classes: Number of segmentation output classes.
         hidden_dim: Channel width of the pyramid pooling and FPN layers (default 256).
     """
+
+    min_train_batch_size = 2
 
     def __init__(self, channels_list: list[int], num_classes: int, hidden_dim: int = 256) -> None:
         super().__init__()

@@ -619,14 +619,6 @@ def evaluate_segmentation(
         if use_cache and probe.freeze_backbone
         else int(train_loader.batch_size or 1)
     )
-    assert isinstance(train_loader.dataset, Sized)
-    n_train = len(train_loader.dataset)
-    if seg_cfg.head == "upernet" and n_train % actual_batch_size == 1:
-        raise ValueError(
-            f"UPerNet cannot train on a final batch of one sample ({n_train} training samples, "
-            f"batch size {actual_batch_size}); its pyramid pooling BatchNorm needs at least two. "
-            "Change segmentation.batch_size (cached features) or runtime.batch_size."
-        )
     collect_confusions = cfg.classification.bootstrap_samples > 0
     if use_cache and probe.freeze_backbone:
         logger.info("Caching backbone features for train and val splits...")
