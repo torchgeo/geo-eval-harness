@@ -1,7 +1,9 @@
 """HOTOSM VHR building segmentation, from the Humanitarian OpenStreetMap Team on Hugging Face."""
 
+import hashlib
 import io
 import logging
+import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import ClassVar, Self
@@ -20,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 # Benchmark split name -> upstream parquet shard prefix.
 UPSTREAM_SPLITS: dict[str, str] = {"train": "train", "val": "validation", "test": "test"}
+
+_TRAIN_PARTITION = re.compile(r"train_([1-9][0-9]*)(k?)")
 
 _SCHEMA = pa.schema(
     [
@@ -96,6 +100,39 @@ def convert_hotosm_split(src_files: Iterable[Path], dst: Path, *, expected_rows:
     return rows
 
 
+def train_partition_rows(path: Path, partition: str) -> list[int] | None:
+    """Return the sorted row indices of a fixed-size training partition, or ``None`` for all rows.
+
+    ``train_<N>`` (or ``train_<N>k`` for thousands) keeps the N rows with the lowest SHA-256 of
+    ``"<project_id>:<tile_id>"``, which is unique per row. The subset is independent of file row
+    order and library versions, and smaller partitions are nested in larger ones.
+
+    Raises:
+        ValueError: If *partition* is not ``default`` or ``train_<N>[k]`` within the split size.
+    """
+    if partition == "default":
+        return None
+    match = _TRAIN_PARTITION.fullmatch(partition)
+    if match is None:
+        raise ValueError(
+            f"Unknown HOTOSM buildings partition {partition!r}. "
+            "Expected 'default' or 'train_<N>' / 'train_<N>k', e.g. 'train_10k'."
+        )
+    size = int(match[1]) * (1000 if match[2] else 1)
+    keys = pq.read_table(path, columns=["project_id", "tile_id"])
+    if size > keys.num_rows:
+        raise ValueError(
+            f"HOTOSM buildings partition {partition!r} needs {size} rows; train has {keys.num_rows}."
+        )
+    digests = [
+        hashlib.sha256(f"{project}:{tile}".encode()).digest()
+        for project, tile in zip(
+            keys["project_id"].to_pylist(), keys["tile_id"].to_pylist(), strict=True
+        )
+    ]
+    return sorted(sorted(range(keys.num_rows), key=digests.__getitem__)[:size])
+
+
 class HOTOSMBuildings(BenchDataset, Dataset):
     """Building footprint segmentation (2 classes) on VHR OpenAerialMap imagery.
 
@@ -107,6 +144,8 @@ class HOTOSMBuildings(BenchDataset, Dataset):
     Mask values: 0 background, 1 building, 255 nodata (transparent image pixels).
     Source: https://huggingface.co/datasets/hotosm/vhr-building-segmentation.
     Imagery CC-BY 4.0 (OpenAerialMap); labels ODbL 1.0 (OpenStreetMap).
+    Partitions ``train_<N>`` / ``train_<N>k`` select a fixed training subset
+    (see :ref:`data-partitions`).
 
     :meth:`get_dataset` returns an instance holding one split's encoded image
     and mask bytes in RAM; the bare instance carries only metadata.
@@ -118,7 +157,7 @@ class HOTOSMBuildings(BenchDataset, Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 57890, "val": 7237, "test": 7236}
-    supports_partitions = False
+    supports_partitions = True
 
     # Train-split statistics from scripts/compute_band_statistics.py.
     bands: ClassVar[list[BandSpec]] = [
@@ -134,12 +173,20 @@ class HOTOSMBuildings(BenchDataset, Dataset):
     ]
 
     def __init__(
-        self, path: Path | None = None, transform: Callable[[dict], dict] | None = None
+        self,
+        path: Path | None = None,
+        transform: Callable[[dict], dict] | None = None,
+        rows: list[int] | None = None,
     ) -> None:
-        """Load the converted split at *path*, or no samples when it is ``None``."""
+        """Load the converted split at *path*, or no samples when it is ``None``.
+
+        *rows* keeps only those row indices, as returned by ``train_partition_rows``.
+        """
         table = _SCHEMA.empty_table()
         if path is not None:
             table = pq.read_table(path, columns=["image", "mask"])
+            if rows is not None:
+                table = table.take(rows)
             # The allocator keeps parquet read buffers (about 2x the data) unless released.
             pa.default_memory_pool().release_unused()
         # Arrow buffers carry no per-item refcounts, so forked workers share them copy-on-write.
@@ -183,8 +230,11 @@ class HOTOSMBuildings(BenchDataset, Dataset):
         bands: tuple[str, ...] | None = None,
         transform: Callable[[dict], dict] | None = None,
     ) -> Self:
-        """Return a new instance holding *split*."""
-        del partition
+        """Return a new instance holding *split*.
+
+        ``partition`` selects a fixed training subset (see :ref:`data-partitions`);
+        val and test always hold the full split.
+        """
         if split not in UPSTREAM_SPLITS:
             raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
         specs = self.select_band_specs(bands)
@@ -195,4 +245,5 @@ class HOTOSMBuildings(BenchDataset, Dataset):
                 f"HOTOSM buildings split not found: {path}. "
                 "Run `torchgeo-bench download hotosm_buildings` first."
             )
-        return type(self)(path, select_bands(indices, len(self.bands), transform))
+        rows = train_partition_rows(path, partition) if split == "train" else None
+        return type(self)(path, select_bands(indices, len(self.bands), transform), rows)

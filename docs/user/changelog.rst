@@ -25,6 +25,7 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``torchgeo-bench download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* ``hotosm_buildings`` training partitions ``train_<N>`` / ``train_<N>k`` (e.g. ``--partition train_10k``): a fixed, nested subset chosen by hashing each tile's project and tile ID.
 
 Fixed
 ^^^^^

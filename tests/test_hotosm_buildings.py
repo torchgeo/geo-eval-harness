@@ -13,7 +13,11 @@ import torch
 from PIL import Image
 
 from torchgeo_bench import download
-from torchgeo_bench.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
+from torchgeo_bench.datasets.hotosm_buildings import (
+    HOTOSMBuildings,
+    convert_hotosm_split,
+    train_partition_rows,
+)
 
 RGB = (11, 22, 33)
 
@@ -184,3 +188,58 @@ def test_spawn_serialization_requires_zero_workers(converted: Path) -> None:
     batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=3, num_workers=0)))
     assert batch["image"].shape == (3, 3, 8, 8)
     torch.testing.assert_close(batch["mask"][1, :2], torch.full((2, 8), 255))
+
+
+@pytest.fixture
+def partitioned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.chdir(tmp_path)
+    shard = tmp_path / "upstream" / "train-00000.parquet"
+    _write_upstream_shard(shard, [f"t{index:02d}" for index in range(20)])
+    root = tmp_path / "data" / "hotosm_buildings"
+    root.mkdir(parents=True)
+    for split in ("train", "val"):
+        convert_hotosm_split([shard], root / f"{split}.parquet", expected_rows=20)
+    return root
+
+
+def test_train_partition_is_a_fixed_nested_subset(partitioned: Path) -> None:
+    """Pinned rows guard the selection rule; smaller partitions nest in larger ones."""
+    train = partitioned / "train.parquet"
+    five = train_partition_rows(train, "train_5")
+
+    assert five == [0, 7, 8, 10, 12]
+    assert set(train_partition_rows(train, "train_3") or []) < set(five or [])
+    assert train_partition_rows(train, "default") is None
+    assert len(HOTOSMBuildings().get_dataset("train", partition="train_5")) == 5
+    assert len(HOTOSMBuildings().get_dataset("val", partition="train_5")) == 20
+
+
+def test_train_partition_ignores_row_order(partitioned: Path) -> None:
+    train = partitioned / "train.parquet"
+    table = pq.read_table(train)
+    reversed_path = partitioned / "reversed.parquet"
+    pq.write_table(table.take(list(reversed(range(table.num_rows)))), reversed_path)
+
+    def tiles(path: Path) -> set[str]:
+        rows = train_partition_rows(path, "train_5")
+        assert rows is not None
+        return set(pq.read_table(path, columns=["tile_id"]).take(rows)["tile_id"].to_pylist())
+
+    assert tiles(reversed_path) == tiles(train)
+
+
+@pytest.mark.parametrize(
+    ("partition", "message"),
+    [
+        ("train_21", "needs 21 rows"),
+        ("train_1k", "needs 1000 rows"),
+        ("train_0", "Unknown HOTOSM"),
+        ("0.01x_train", "Unknown HOTOSM"),
+        ("train_1.5k", "Unknown HOTOSM"),
+    ],
+)
+def test_train_partition_rejects_invalid_names(
+    partitioned: Path, partition: str, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        HOTOSMBuildings().get_dataset("train", partition=partition)

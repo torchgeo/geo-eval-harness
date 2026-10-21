@@ -82,8 +82,9 @@ Required class-level attributes:
 * ``multilabel`` — ``True`` for multi-hot labels (``m-bigearthnet``, ``benv2``, ``treesatai``).
   Selects micro-mAP over accuracy as the reported metric, so getting it wrong
   silently reports the wrong number.
-* ``supports_partitions`` — ``True`` only for V1 GeoBench datasets, which ship
-  partition JSON files.  When ``False``, ``get_datasets`` warns and ignores a
+* ``supports_partitions`` — ``True`` for V1 GeoBench datasets, which ship
+  partition JSON files, and ``hotosm_buildings``, which derives fixed training
+  subsets.  When ``False``, ``get_datasets`` warns and ignores a
   non-default ``input.partition``.
 
 The ``get_dataset`` method takes ``split`` (``"train"``, ``"val"``, or

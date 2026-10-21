@@ -113,7 +113,7 @@ Column               Description
 ``normalization``    Strategy applied by the model wrapper (see table above).
 ``image_size``       Input resize size (``None`` if no resizing).
 ``interpolation``    Resize interpolation mode.
-``partition``        GeoBench V1 partition name (``default`` for V2).
+``partition``        Training partition name (``default`` unless set; see :ref:`data-partitions`).
 ``bands``            ``rgb`` / ``all`` / a sorted comma-joined list.
 ``num_classes``      Dataset label count. It is also part of the resume key so
                      label-schema changes cannot reuse stale rows.

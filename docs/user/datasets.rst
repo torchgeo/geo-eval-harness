@@ -243,7 +243,7 @@ than being silently omitted.
 
    $ torchgeo-bench run --model imagestats --dataset ucmerced --device cpu
 
-``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``torchgeo-bench download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model.
+``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``torchgeo-bench download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model. ``--partition train_<N>`` (or ``train_<N>k``, e.g. ``train_10k``) trains on a fixed subset of the train split; see :ref:`data-partitions`.
 
 Selecting datasets
 ------------------
@@ -306,12 +306,14 @@ Model compatibility
   Sentinel-2 RGB wavelengths — see
   `#15 <https://github.com/torchgeo/torchgeo-bench/issues/15>`__.
 
-Data partitions (V1 only)
--------------------------
+.. _data-partitions:
+
+Data partitions
+---------------
 
 V1 datasets honour the ``--partition`` argument (which selects one
 of the partition JSON files distributed with each dataset).  V2 datasets
-ignore it.
+ignore it.  ``hotosm_buildings`` accepts ``train_<N>`` or ``train_<N>k``.
 
 .. code-block:: console
 
@@ -322,3 +324,9 @@ Common partition values: ``default``, ``0.01x_train``, ``0.02x_train``,
 ``0.05x_train``, ``0.10x_train``, ``0.20x_train``, ``0.50x_train``,
 ``1.00x_train``.  The exact set available depends on which partition
 JSON files ship with the dataset.
+
+HOTOSM partitions keep the N training rows with the lowest SHA-256 of ``<project_id>:<tile_id>``, which is unique per tile, so a partition is the same on every machine and independent of file row order; smaller partitions are nested in larger ones. Validation and test always use the full splits.
+
+.. code-block:: console
+
+   $ torchgeo-bench run --model timm/vit/vit_base_patch16_224 --dataset hotosm_buildings --partition train_10k --output results/hotosm-10k.csv
