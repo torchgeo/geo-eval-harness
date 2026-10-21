@@ -31,13 +31,17 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
 
 
 def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str:
-    """Reproduce the shared hash payload before segmentation selected an epoch."""
+    """Reproduce the frozen-probe hash payload before segmentation selected an epoch."""
+    assert config.segmentation.lora_rank is None
     payload = {
         "schema_version": config.schema_version,
         "model": {"name": preset.name, "target": preset.target, "kwargs": preset.kwargs},
         "input": config.input.model_dump(mode="json"),
         "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
-        "segmentation": config.segmentation.model_dump(mode="json"),
+        "segmentation": config.segmentation.model_dump(
+            mode="json",
+            exclude={"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"},
+        ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
@@ -88,6 +92,27 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
 )
 def test_config_hash_changes_with_result_affecting_settings(overrides: dict) -> None:
     assert _hash(_cfg()) != _hash(_cfg(**overrides))
+
+
+def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
+    def vit(**segmentation: object) -> RunConfig:
+        return _cfg(model={"name": "timm/vit/vit_base_patch16_224"}, segmentation=segmentation)
+
+    lora = {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(lora_target_modules="blocks")) == _hash(vit())
+    assert _hash(vit(**lora)) != _hash(vit())
+    assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+
+
+def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:
+    config = _cfg(model={"name": "torchgeo/dofa_base"}, datasets=["burn_scars"])
+    changed = _cfg(
+        model={"name": "torchgeo/dofa_base"},
+        datasets=["burn_scars"],
+        segmentation={"lora_target_modules": "another.target"},
+    )
+    assert _hash(config, "burn_scars") == _hash(changed, "burn_scars")
 
 
 def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:

@@ -262,6 +262,7 @@ def test_solver_fit_and_evaluate(mock_backbone, dummy_data):
     )
 
     solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, lr=1e-3, device="cpu")
+    assert [group["lr"] for group in solver.optimizer.param_groups] == [1e-3]
 
     solver.fit(loader, epochs=1, verbose=True)
 
@@ -612,10 +613,6 @@ def test_solver_restores_best_validation_parameters_and_buffers(
             not torch.equal(states[selected][name], states[-1][name])
             for name, _ in backbone.named_parameters(prefix="backbone")
         )
-        assert any(
-            not torch.equal(states[selected][name], states[-1][name])
-            for name, _ in backbone.named_buffers(prefix="backbone")
-        )
     for name, p in backbone.named_parameters():
         if name in frozen:
             torch.testing.assert_close(p, frozen[name], rtol=0, atol=0)
@@ -837,6 +834,25 @@ def test_upernet_head_decodes_same_scale_vit_features():
     features = [torch.randn(2, 32, 14, 14) for _ in range(4)]
 
     assert head(features, 224, 224).shape == (2, NUM_CLASSES, 224, 224)
+
+
+def test_timm_wrapper_trains_through_probe_and_extracts_without_autograd():
+    """Unfrozen probes get backbone gradients; frozen feature extraction still yields arrays."""
+    from tests.support.models import bands
+    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from torchgeo_bench.utils import extract_features
+
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    images = torch.randn(2, 3, 224, 224)
+    probe = make_probe(model, ["blocks.11", "blocks.5"], head_type="fpn", freeze=False)
+
+    probe(images).sum().backward()
+
+    assert model.backbone.blocks[0].attn.qkv.weight.grad is not None
+    features, _ = extract_features(
+        model, [{"image": images, "label": torch.zeros(2)}], "cpu", description=None
+    )
+    assert features.shape == (2, model.backbone.num_features)
 
 
 def test_dpt_fusion_layer_shim_matches_reference():

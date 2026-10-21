@@ -594,9 +594,9 @@ def evaluate_segmentation(
     cfg: RunConfig,
     num_classes: int,
 ) -> "tuple[torchgeo_bench.segmentation_task.SegMetrics, int, float | None, int | None]":
-    """Train a segmentation head on a frozen backbone and evaluate test mIoU.
+    """Train a segmentation head, optionally with LoRA backbone adapters, and evaluate test mIoU.
 
-    Backbone features can be cached to avoid recomputing them each epoch.
+    Frozen-backbone features can be cached to avoid recomputing them each epoch.
 
     Returns:
         Tuple of (metrics, feature_dim, lr, batch_size).
@@ -695,7 +695,7 @@ def run_segmentation(
     }
     row = EvaluationResult(
         **segmentation_meta,
-        method=f"seg-{cfg.segmentation.head}",
+        method=cfg.segmentation.method,
         metric_name="mIoU",
         metric_value=metrics.get("mIoU", float("nan")),
         ci_lower=metrics.get("ci_lower", float("nan")),

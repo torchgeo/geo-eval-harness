@@ -67,6 +67,7 @@ optional-dependencies.all = [
   "torchgeo-bench[dev]",
   "torchgeo-bench[docs]",
   "torchgeo-bench[id]",
+  "torchgeo-bench[lora]",
   "torchgeo-bench[olmoearth]",
   "torchgeo-bench[terratorch]",
 ]
@@ -74,7 +75,7 @@ optional-dependencies.coordbench = [
   "rshf>=0.2", # Required by SatCLIP, GeoCLIP, Climplicit, and SINR.
 ]
 optional-dependencies.dev = [
-  "evaluma>=0.3",        # Ranking backend for scripts/regen_leaderboard.py.
+  "evaluma>=0.3",         # Ranking backend for scripts/regen_leaderboard.py.
   "mdformat>=0.7.22",
   "pre-commit>=4.3",
   "pyproject-fmt>=2.21",
@@ -83,6 +84,7 @@ optional-dependencies.dev = [
   "pytest-cov>=7",
   "pytest-xdist>=3.6",
   "ruff==0.15.10",
+  "torchgeo-bench[lora]", # Tests exercise the optional LoRA segmentation path.
   "ty>=0.0.21",
   "types-pyyaml>=6",
 ]
@@ -96,6 +98,9 @@ optional-dependencies.docs = [
 ]
 optional-dependencies.id = [
   "torchid>=0.3; python_version>='3.13'",
+]
+optional-dependencies.lora = [
+  "peft>=0.21", # LoRA segmentation fine-tuning.
 ]
 optional-dependencies.olmoearth = [
   "olmoearth-pretrain-minimal>=0.0.6", # OlmoEarth v1.2 weights require this version.

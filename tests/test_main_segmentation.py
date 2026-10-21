@@ -242,6 +242,37 @@ def test_upernet_with_a_cached_batch_size_of_one_fails_without_a_result(tmp_path
     assert not out.exists() or pd.read_csv(out).empty
 
 
+def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "lora_rank": 4,
+                "lora_target_modules": r"blocks\.\d+\.attn\.qkv",
+                "backbone_learning_rate": 1e-4,
+            },
+            "output": {"resume": True},
+        },
+    )
+
+    with mock.patch(
+        "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+    ):
+        main(cfg)
+    with mock.patch("torchgeo_bench.main.get_datasets") as data_mock:
+        main(cfg)
+
+    data_mock.assert_not_called()
+    df = pd.read_csv(out)
+    assert df["method"].tolist() == ["seg-upernet-lora"]
+    assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
+
+
 class _ChangingHead(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

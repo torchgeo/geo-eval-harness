@@ -260,6 +260,27 @@ class SegmentationConfig(StrictModel):
     ignore_index: StrictInt = 255
     cache_features: StrictBool = True
     cache_dtype: Literal["float16", "float32"] = "float16"
+    lora_rank: StrictInt | None = Field(default=None, gt=0)
+    lora_target_modules: StrictStr | None = None
+    lora_alpha: StrictFloat = Field(default=16.0, gt=0)
+    backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "SegmentationConfig":
+        """Pair LoRA settings with ``lora_rank``; target modules may come from a model preset."""
+        if self.lora_rank is not None and self.backbone_learning_rate is None:
+            raise ValueError("lora_rank requires backbone_learning_rate")
+        if self.lora_rank is None and (
+            self.backbone_learning_rate is not None
+            or self.lora_alpha != type(self).model_fields["lora_alpha"].default
+        ):
+            raise ValueError("backbone_learning_rate and lora_alpha require lora_rank")
+        return self
+
+    @property
+    def method(self) -> str:
+        """Return the result method name, ``seg-<head>`` with a ``-lora`` suffix for LoRA."""
+        return f"seg-{self.head}" if self.lora_rank is None else f"seg-{self.head}-lora"
 
 
 class RuntimeConfig(StrictModel):

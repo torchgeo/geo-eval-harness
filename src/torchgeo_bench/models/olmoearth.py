@@ -548,7 +548,6 @@ class OlmoEarthBenchModel(BenchModel):
 
         return g_nhwtc
 
-    @torch.no_grad()
     def _forward_patch_features(
         self,
         images: torch.Tensor,

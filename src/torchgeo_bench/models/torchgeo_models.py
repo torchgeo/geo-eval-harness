@@ -441,7 +441,6 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
         self.backbone.head = nn.Identity()
         self._prepare_input_conv("features.0.0", weights_member)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
@@ -591,7 +590,6 @@ class TorchGeoDOFABench(_TorchGeoBackboneBench):
         )
         self.wavelengths = _resolve_dofa_wavelengths(bands, wavelengths)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
@@ -935,7 +933,6 @@ class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
         chn_ids = _resolve_panopticon_chn_ids(bands)
         self.register_buffer("_chn_ids", torch.tensor(chn_ids, dtype=torch.float32))
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)

@@ -191,6 +191,10 @@ Segmentation
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
+     lora_rank: null
+     lora_target_modules: null
+     lora_alpha: 16.0
+     backbone_learning_rate: null
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
@@ -208,6 +212,15 @@ configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
 See :ref:`segmentation-model-selection` for the validation requirements and model-selection policy.
+
+Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. Without ``lora_rank``, ``backbone_learning_rate`` and ``lora_alpha`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
+
+.. code-block:: yaml
+
+   segmentation:
+     head: upernet
+     lora_rank: 8
+     backbone_learning_rate: 1e-4
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

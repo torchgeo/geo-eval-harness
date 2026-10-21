@@ -198,3 +198,39 @@ def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
         "cuda",
         "cuda:1",
     ]
+
+
+@pytest.mark.parametrize(
+    ("segmentation", "message"),
+    [
+        ({"lora_rank": 8}, "lora_rank requires backbone_learning_rate"),
+        ({"backbone_learning_rate": 1e-4}, "require lora_rank"),
+        ({"lora_alpha": 32.0}, "require lora_rank"),
+    ],
+)
+def test_lora_settings_require_each_other(segmentation: dict, message: str) -> None:
+    config = valid_config()
+    config["segmentation"] = segmentation
+    with pytest.raises(ValidationError, match=message):
+        validate_run_config(config)
+
+
+def test_lora_targets_alone_keep_the_frozen_probe_and_name_lora_runs() -> None:
+    config = valid_config()
+    config["segmentation"] = {"head": "upernet", "lora_target_modules": "blocks"}
+    frozen = validate_run_config(config).segmentation
+    config["segmentation"] |= {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    lora = validate_run_config(config).segmentation
+
+    assert frozen.method == "seg-upernet"
+    assert lora.method == "seg-upernet-lora"
+
+
+def test_lora_requires_targets_from_the_preset_or_config() -> None:
+    from torchgeo_bench.config.presets import resolve_run_config
+
+    config = valid_config()
+    config["datasets"] = ["burn_scars"]
+    config["segmentation"] = {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    with pytest.raises(ValueError, match="does not define LoRA target modules"):
+        resolve_run_config(validate_run_config(config), "burn_scars")

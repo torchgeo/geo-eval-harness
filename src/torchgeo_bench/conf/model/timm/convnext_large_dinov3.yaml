@@ -5,6 +5,7 @@ kwargs:
   pretrained: true
   global_pool: avg
 segmentation:
+  lora_target_modules: 'stages\.\d+\.blocks\.\d+\.mlp\.fc[12]'
   layers:
     - stages.3
     - stages.2

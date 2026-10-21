@@ -32,14 +32,20 @@ KEY_COLS = (
     "config_hash",
 )
 
+_LORA_FIELDS = {"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"}
+
 
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
     Excludes device and worker count, which only control execution. Includes batch size because
-    it can change floating-point results. ``task`` comes from the resolved dataset class;
+    it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
+    LoRA, so preset LoRA targets do not change frozen-probe hashes.
+    ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
+    segmentation = config.segmentation
+    segmentation_exclude = _LORA_FIELDS if segmentation.lora_rank is None else None
     payload = {
         "schema_version": config.schema_version,
         "model": {
@@ -49,7 +55,7 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         },
         "input": config.input.model_dump(mode="json"),
         "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
-        "segmentation": config.segmentation.model_dump(mode="json"),
+        "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
     if task == "segmentation":
@@ -192,7 +198,7 @@ def plan_dataset_run(
     completed_runs, completed_metrics = completed.completed_runs, completed.completed_metrics
 
     if ds_cls.task == "segmentation":
-        seg_key = (ds_name, f"seg-{cfg.segmentation.head}", *model_key)
+        seg_key = (ds_name, cfg.segmentation.method, *model_key)
         return DatasetRunPlan(
             metric_name="mIoU",
             skip_dataset=bool(cfg.output.resume and seg_key in completed_runs),
