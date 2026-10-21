@@ -273,7 +273,7 @@ UPerNet probe
 ^^^^^^^^^^^^^
 
 **Method name:** ``seg-upernet`` (YAML ``segmentation: {head: upernet}``).
-A UPerNet decoder (:class:`~torchgeo_bench.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped.
+A UPerNet decoder (:class:`~torchgeo_bench.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped. A training batch size below two is rejected before training, and a run fails if any epoch has no usable training batch (for example, a one-sample training split) rather than reporting an untrained head.
 
 Training & evaluation (all heads)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

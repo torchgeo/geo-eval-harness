@@ -250,7 +250,7 @@ class UPerNetHead(nn.Module):
     Convolutions use the ``N(0, 0.02)`` initialisation of ``UperNetForSemanticSegmentation``.
     The pool-scale-1 branch applies BatchNorm to a ``1x1`` map, so training batches need at
     least two samples; :class:`~torchgeo_bench.segmentation_task.SegmentationSolver` skips
-    smaller ones (``min_train_batch_size``).
+    smaller ones (``min_train_batch_size``) and rejects a training batch size below it.
 
     Args:
         channels_list: Channel count for each hooked feature layer (coarse-to-fine).

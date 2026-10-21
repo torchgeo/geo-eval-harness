@@ -214,6 +214,34 @@ def test_upernet_skips_a_final_training_batch_of_one(
     assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
 
 
+def test_upernet_with_a_cached_batch_size_of_one_fails_without_a_result(tmp_path: Path):
+    """Every batch would be skipped, so the run must not record an untrained head's score."""
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "cache_features": True,
+                "batch_size": 1,
+            },
+        },
+    )
+
+    with (
+        mock.patch(
+            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+        ),
+        pytest.raises(ValueError, match="below the UPerNetHead minimum of 2"),
+    ):
+        main(cfg)
+
+    assert not out.exists() or pd.read_csv(out).empty
+
+
 class _ChangingHead(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

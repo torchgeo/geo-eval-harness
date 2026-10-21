@@ -781,6 +781,55 @@ def test_probe_upernet_head_decodes_coarse_to_fine_pyramid():
     assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
 
 
+def _upernet_solver_and_data(n_samples: int, batch_size: int):
+    loader = DataLoader(
+        TensorDataset(
+            torch.randn(n_samples, 3, 32, 32),
+            torch.randint(0, NUM_CLASSES, (n_samples, 32, 32)),
+        ),
+        batch_size=batch_size,
+    )
+    probe = make_probe(
+        MockBackbone4Layer(),
+        layers=["layer4", "layer3", "layer2", "layer1"],
+        head_type="upernet",
+        hidden_dim=16,
+    )
+    return probe, SegmentationSolver(probe, NUM_CLASSES, device="cpu"), loader
+
+
+def _fit_upernet(solver, probe, loader, batch_size: int, *, cached: bool) -> None:
+    if cached:
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        solver.fit_cached(cache, batch_size=batch_size, epochs=2, verbose=False)
+    else:
+        solver.fit(loader, epochs=2, verbose=False)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_upernet_rejects_a_training_batch_size_below_its_minimum(*, cached: bool) -> None:
+    probe, solver, loader = _upernet_solver_and_data(n_samples=4, batch_size=1)
+    initial_state = {name: tensor.clone() for name, tensor in probe.state_dict().items()}
+
+    with pytest.raises(ValueError, match="batch size 1 is below the UPerNetHead minimum of 2"):
+        _fit_upernet(solver, probe, loader, batch_size=1, cached=cached)
+
+    assert not solver.optimizer.state
+    for name, tensor in probe.state_dict().items():
+        torch.testing.assert_close(tensor, initial_state[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_upernet_rejects_an_epoch_without_a_usable_training_batch(*, cached: bool) -> None:
+    """A one-sample training split passes the batch-size check but cannot train UPerNet."""
+    probe, solver, loader = _upernet_solver_and_data(n_samples=1, batch_size=2)
+
+    with pytest.raises(ValueError, match="epoch 1 had no usable training batch"):
+        _fit_upernet(solver, probe, loader, batch_size=2, cached=cached)
+
+    assert not solver.optimizer.state
+
+
 def test_upernet_head_decodes_same_scale_vit_features():
     from torchgeo_bench.models.segmentation_heads import UPerNetHead
 
