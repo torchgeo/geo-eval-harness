@@ -242,6 +242,7 @@ def test_profile_rejects_invalid_and_unknown_settings(values: dict[str, Any]) ->
         ("unknown", "m-eurosat", "Unknown model"),
         ("rcf", "unknown", "unknown dataset"),
         ("sincos", "m-eurosat", "coordinate encoder"),
+        ("aef", "m-eurosat", "precomputed embedding"),
     ],
 )
 def test_profile_rejects_unknown_or_incompatible_selection(
