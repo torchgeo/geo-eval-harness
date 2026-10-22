@@ -9,8 +9,10 @@ import pytest
 
 from tests.support.embeddings import ToyBench, ToyProduct
 from tests.support.runner import _compose_cfg
+from geo_eval_harness import datasets
 from geo_eval_harness.cli import main as cli
 from geo_eval_harness.embeddings.download import download
+from geo_eval_harness.embeddings.products import PRODUCTS
 from geo_eval_harness.main import main
 
 pytestmark = pytest.mark.integration
@@ -47,6 +49,17 @@ def test_cli_reduces_a_collection_and_rejects_unknown_products(tmp_path: Path) -
     assert metadata["splits"]["train"]["samples"] == 12
     with pytest.raises(SystemExit, match="unknown product 'nope'"):
         cli(["embeddings", "download", "--product", "nope", "--dataset", "m-eurosat"])
+
+
+def test_cli_downloads_a_registered_product(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(PRODUCTS, "toy", ToyProduct)
+    monkeypatch.setattr(datasets, "get_bench_dataset_class", lambda name: lambda: ToyBench(name))
+    cli(["embeddings", "download", "--product", "toy", "--dataset", "m-eurosat", "--split",
+         "train", "--limit", "2", "--root", str(tmp_path)])  # fmt: skip
+    assert len(list((tmp_path / "aef" / "m-eurosat" / "train").glob("*.npz"))) == 2
+    assert not (tmp_path / "aef" / "m-eurosat" / "val").exists()
 
 
 def test_run_evaluates_stored_embeddings_like_a_model(

@@ -198,7 +198,7 @@ class _V2Dataset(BenchDataset):
     #: Whether the upstream loader accepts a time axis (``num_time_steps``).
     multi_temporal: ClassVar[bool] = False
 
-    #: Upstream asset (``tortilla:id``) whose grid and time define :meth:`footprint`.
+    #: Upstream asset (``tortilla:id``) whose grid and time define ``footprint()``.
     footprint_asset: ClassVar[str | None] = None
 
     @classmethod

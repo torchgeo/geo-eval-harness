@@ -210,11 +210,13 @@ python-version = "3.12"
 preset = "default"
 # Optional extras are checked when installed.
 ignore-missing-imports = [
+  "icechunk",
   "olmoearth_pretrain_minimal",
   "olmoearth_pretrain_minimal.*",
   "rshf.*",
   "terratorch.*",
   "torchid",
+  "zarr",
 ]
 
 [tool.pytest]

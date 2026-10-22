@@ -1,5 +1,8 @@
 """Offline tests for embedding footprints, grids, products, PCA and the model."""
 
+import shutil
+import sys
+import urllib.request
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +19,7 @@ from tests.support.embeddings import UTM, utm_footprint
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import Footprint
 from geo_eval_harness.datasets.geobench_v2 import GeoBenchv2, stac_footprint
-from geo_eval_harness.embeddings.dataset import embedding_bands
+from geo_eval_harness.embeddings.dataset import EmbeddingDataset, embedding_bands
 from geo_eval_harness.embeddings.download import save_sample, write_metadata
 from geo_eval_harness.embeddings.grid import bounds, coarsen, ground_shape, paste, utm_zone
 from geo_eval_harness.embeddings.pca import fit_pca, pca_collection, project
@@ -61,6 +64,10 @@ def test_v2_footprints_use_each_dataset_reference_asset() -> None:
 
     with pytest.raises(NotImplementedError, match="no geographic footprint"):
         get_bench_dataset_class("m-eurosat")().footprint([], 0)
+    with pytest.raises(NotImplementedError, match="no geographic footprint"):
+        get_bench_dataset_class("so2sat")().footprint(benv2, 0)
+    with pytest.raises(TypeError, match="Expected a dataset"):
+        get_bench_dataset_class("benv2")().footprint([], 0)
     with pytest.raises(ValueError, match="no unique 'planet_0'"):
         get_bench_dataset_class("dynamic_earthnet")().footprint(spacenet, 0)
 
@@ -105,15 +112,70 @@ def test_decoders_mark_nodata_as_nan() -> None:
 def test_aef_reads_a_south_up_tile_onto_a_north_up_grid(tmp_path: Path) -> None:
     rows = np.arange(16, dtype=np.int8).reshape(16, 1).repeat(16, axis=1)
     codes = np.repeat(rows[None], 64, axis=0)
-    tile = tmp_path / "tile.tif"
+    tile, far = tmp_path / "tile.tif", tmp_path / "far.tif"
     profile = {"driver": "GTiff", "count": 64, "dtype": "int8", "crs": UTM, "nodata": -128}
     south_up = Affine(10, 0, 1000, 0, 10, 4840)
     with rasterio.open(tile, "w", width=16, height=16, transform=south_up, **profile) as dst:
         dst.write(codes)
+    with rasterio.open(far, "w", width=16, height=16, transform=Affine(10, 0, 9e5, 0, 10, 0),
+                       **profile) as dst:  # fmt: skip
+        dst.write(codes)
     product = AEF(root=tmp_path)
-    product.tile_urls = lambda _: [str(tile)]  # type: ignore[method-assign]
+    product.max_open_tiles = 1
+    product.tile_urls = lambda _: [str(far), str(tile)]  # type: ignore[method-assign]
     out = product.read(Footprint(UTM, (10.0, 0.0, 1000.0, 0.0, -10.0, 5000.0), (16, 16), 2020))
     assert np.allclose(out[0, :, 0], decode_aef(rows[::-1, :1][None])[0, :, 0])
+    assert list(product._tiles) == [str(tile)]
+
+
+def test_aef_downloads_the_index_once_and_selects_overlapping_tiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote = tmp_path / "remote.parquet"
+    pd.DataFrame(
+        {
+            "path": ["s3://bucket/hit.tif", "s3://bucket/other-year.tif", "s3://bucket/far.tif"],
+            "year": [2020, 2019, 2020],
+            "wgs84_west": [8.0, 8.0, 20.0],
+            "wgs84_south": [49.0, 49.0, 49.0],
+            "wgs84_east": [10.0, 10.0, 21.0],
+            "wgs84_north": [50.0, 50.0, 50.0],
+        }
+    ).to_parquet(remote)
+    fetched = []
+
+    def fetch(url: str, path: Path) -> None:
+        fetched.append(url)
+        shutil.copy(remote, path)
+
+    monkeypatch.setattr(urllib.request, "urlretrieve", fetch)
+    grid = utm_footprint(500_000.0)
+    for _ in range(2):
+        assert AEF(root=tmp_path / "cache").tile_urls(grid) == [AEF.base_url + "bucket/hit.tif"]
+    assert fetched == [AEF.index_url]
+
+
+def test_tessera_opens_the_fixed_snapshot_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened = []
+
+    def open_repository(storage: dict) -> SimpleNamespace:
+        opened.append(storage)
+        return SimpleNamespace(
+            readonly_session=lambda snapshot_id: SimpleNamespace(store=snapshot_id)
+        )
+
+    icechunk = SimpleNamespace(
+        s3_storage=lambda **storage: storage,
+        Repository=SimpleNamespace(open=open_repository),
+    )
+    zarr = SimpleNamespace(open_group=lambda store, mode: {"32N": (store, mode)})
+    monkeypatch.setitem(sys.modules, "icechunk", icechunk)
+    monkeypatch.setitem(sys.modules, "zarr", zarr)
+    product = Tessera()
+    assert product.zone("32N") == product.zone("32N") == (Tessera.snapshot, "r")
+    assert len(opened) == 1
+    assert opened[0]["bucket"] == Tessera.bucket
+    assert opened[0]["anonymous"]
 
 
 def test_tessera_reads_the_year_window_of_the_centre_zone() -> None:
@@ -139,6 +201,8 @@ def test_tessera_reads_the_year_window_of_the_centre_zone() -> None:
     assert (product.read(grid) == 2).all()
     assert requested == ["31N"]
     assert np.isnan(product.read(replace(grid, year=2017))).all()
+    outside = replace(grid, transform=(10.0, 0.0, 100_000.0, 0.0, -10.0, 120.0))
+    assert np.isnan(product.read(outside)).all()
 
 
 def _write_collection(root: Path, values: dict[str, np.ndarray]) -> Path:
@@ -172,6 +236,12 @@ def test_pca_fits_train_cells_only_and_keeps_missing_cells(tmp_path: Path) -> No
     pca = fit_pca(files, 2, 1_000, seed=0)
     assert np.allclose(pca.mean_, train.transpose(0, 2, 3, 1).reshape(-1, 4).mean(0), atol=1e-2)
     assert np.allclose(project(train[0], pca), project(train[0], fit_pca(files, 2, 1_000, 0)))
+    with pytest.raises(ValueError, match="valid training cells"):
+        fit_pca(files, 100, 1_000, seed=0)
+    with pytest.raises(FileNotFoundError, match="No training embeddings"):
+        pca_collection("tessera", "toy", 2, root=tmp_path)
+    with pytest.raises(FileNotFoundError, match="No train embeddings"):
+        EmbeddingDataset(tmp_path / "tessera" / "toy", "train")
 
 
 def test_model_pools_valid_cells_and_exposes_a_filled_feature_map() -> None:
