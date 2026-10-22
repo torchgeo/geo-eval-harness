@@ -71,7 +71,7 @@ Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed 
 
 ## Embedding products
 
-Precomputed embedding products such as AlphaEarth Foundations (AEF) and TESSERA are evaluated like models. `geo-eval-harness embeddings download` stores a product's embeddings with the labels of a GeoBench V2 dataset, `geo-eval-harness embeddings pca` optionally reduces them to fewer channels, and `geo-eval-harness run --model aef` evaluates them with the existing KNN, linear and segmentation probes. See the [embedding products guide](docs/user/embedding-products.md).
+Precomputed embedding products such as AlphaEarth Foundations (AEF), TESSERA and OlmoEarth v1.3 are evaluated like models. `geo-eval-harness embeddings download` stores a product's embeddings with the labels of a GeoBench V2 dataset, `geo-eval-harness embeddings pca` optionally reduces them to fewer channels, and `geo-eval-harness run --model aef` evaluates them with the existing KNN, linear and segmentation probes. See the [embedding products guide](docs/user/embedding-products.md).
 
 ## Run a basic experiment
 

@@ -25,7 +25,16 @@ from .grid import bounds, lonlat, paste, source_window, utm_zone
 if TYPE_CHECKING:
     import pandas as pd
 
-__all__ = ["AEF", "PRODUCTS", "EmbeddingProduct", "Tessera", "decode_aef", "decode_tessera"]
+__all__ = [
+    "AEF",
+    "PRODUCTS",
+    "EmbeddingProduct",
+    "OlmoEarth",
+    "OlmoEarth64",
+    "Tessera",
+    "decode_signed_square",
+    "decode_tessera",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +68,11 @@ class EmbeddingProduct(ABC):
         """
 
 
-def decode_aef(codes: np.ndarray) -> np.ndarray:
-    """Decode AEF int8 codes ``(C, H, W)``: ``sign(x) * (x / 127.5)^2``; ``-128`` is nodata."""
+def decode_signed_square(codes: np.ndarray) -> np.ndarray:
+    """Decode signed-square int8 codes ``(C, H, W)``: ``sign(x) * (x / 127.5)^2``.
+
+    ``-128`` is nodata. AEF and OlmoEarth both quantize this way.
+    """
     values = codes.astype(np.float32) / 127.5
     values = np.sign(values) * values**2
     values[:, (codes == -128).any(axis=0)] = np.nan
@@ -150,7 +162,7 @@ class AEF(EmbeddingProduct):
                     continue
                 region = Window.from_slices(*window)
                 codes = tile.read(window=region)
-                paste(out, grid, decode_aef(codes), crs, tile.window_transform(region))
+                paste(out, grid, decode_signed_square(codes), crs, tile.window_transform(region))
         return out
 
 
@@ -210,4 +222,66 @@ class Tessera(EmbeddingProduct):
         return out
 
 
-PRODUCTS: dict[str, type[EmbeddingProduct]] = {"aef": AEF, "tessera": Tessera}
+class OlmoEarth(EmbeddingProduct):
+    """OlmoEarth v1.3 annual embeddings from the Source Cooperative Zarr store.
+
+    Needs the ``embeddings`` extra. Each UTM zone group ``utmNN`` holds
+    ``embeddings[time, band, y, x]`` int8 codes on a 10 m grid in the zone's northern
+    CRS. Bands ``0:64`` form a complete Matryoshka embedding on their own.
+    """
+
+    name = "olmoearth-v1-3"
+    channels = 128
+    years = range(2017, 2026)
+
+    url = "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
+
+    def __init__(self) -> None:
+        self._root: Any = None
+
+    def zone(self, number: int) -> Any:
+        """Return the zarr group of one UTM zone, opening the store once."""
+        if self._root is None:
+            import zarr
+            from zarr.storage import FsspecStore
+
+            # Fetch only the requested chunks rather than merging nearby byte ranges.
+            zarr.config.set({"array.sharding_coalesce_max_gap_bytes": 0})
+            self._root = zarr.open_group(FsspecStore.from_url(self.url, read_only=True), mode="r")
+        return self._root[f"utm{number:02d}"]
+
+    def read(self, grid: Footprint) -> np.ndarray:
+        """Read the first ``channels`` bands from the zone containing the grid centre."""
+        out = self.empty(grid)
+        group = self.zone(int(utm_zone(*lonlat(grid))[0][:2]))
+        years = np.asarray(group["time"][:])
+        if grid.year not in years:
+            return out
+        crs, transform = (
+            str(group.attrs["proj:code"]),
+            Affine(*group.attrs["spatial:transform"][:6]),
+        )
+        window = source_window(grid, crs, transform, tuple(group.attrs["spatial:shape"]))
+        if window is None:
+            return out
+        rows, cols = window
+        time = int(np.flatnonzero(years == grid.year)[0])
+        codes = np.asarray(group["embeddings"][time, : self.channels, rows, cols])
+        origin = rasterio.windows.transform(Window.from_slices(rows, cols), transform)
+        paste(out, grid, decode_signed_square(codes), crs, origin)
+        return out
+
+
+class OlmoEarth64(OlmoEarth):
+    """The 64-dimensional Matryoshka prefix of :class:`OlmoEarth`, at half the download."""
+
+    name = "olmoearth-v1-3-64"
+    channels = 64
+
+
+PRODUCTS: dict[str, type[EmbeddingProduct]] = {
+    "aef": AEF,
+    "tessera": Tessera,
+    "olmoearth-v1-3": OlmoEarth,
+    "olmoearth-v1-3-64": OlmoEarth64,
+}
