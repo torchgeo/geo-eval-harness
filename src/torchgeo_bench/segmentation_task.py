@@ -232,10 +232,10 @@ class SegmentationSolver:
     ) -> float | None:
         """Train the segmentation probe.
 
-        A frozen backbone stays in eval mode, and a LoRA-adapted backbone stays in eval mode
-        except for its adapter modules. Training batches smaller than the head's
-        ``min_train_batch_size`` are skipped. A loader batch size below that minimum, or an epoch
-        without any usable batch, raises ``ValueError``.
+        A frozen backbone stays in eval mode, and a LoRA-adapted backbone keeps only its adapter
+        modules in train mode. Training batches smaller than the head's ``min_train_batch_size``
+        are skipped. A loader batch size below that minimum, or an epoch without any usable batch,
+        raises ``ValueError``.
 
         Args:
             train_loader: Training data loader.
