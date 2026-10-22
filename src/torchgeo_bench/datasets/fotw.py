@@ -20,6 +20,7 @@ class FieldsOfTheWorld(_V2Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 4000, "val": 1000, "test": 2000}
+    footprint_asset = "win_b"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [

@@ -17,6 +17,8 @@ class DynamicEarthNet(_V2Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["r", "g", "b"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 700, "val": 100, "test": 200}
+    # The first daily image shares the grid and the month of the monthly label.
+    footprint_asset = "planet_0"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [

@@ -20,6 +20,8 @@ class BENV2(_V2Dataset):
     multilabel = True
     rgb_bands: ClassVar[list[str]] = ["b04", "b03", "b02"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 20000, "val": 4000, "test": 4000}
+    # The S2 header can carry a stale 60 m spacing; the paired S1 grid is the true 10 m grid.
+    footprint_asset = "s1"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [

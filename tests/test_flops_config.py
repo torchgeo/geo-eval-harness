@@ -107,7 +107,7 @@ def test_every_packaged_image_preset_resolves_without_construction() -> None:
     for name in list_model_configs():
         config = FlopsConfig(model=ModelConfig(name=name))
         if load_model_preset(config.model).track != "image":
-            with pytest.raises(ValueError, match="coordinate encoder"):
+            with pytest.raises(ValueError, match=r"coordinate encoder|precomputed embedding"):
                 config.resolve()
         else:
             resolved, preset = config.resolve()

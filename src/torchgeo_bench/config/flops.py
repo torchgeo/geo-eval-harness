@@ -128,6 +128,10 @@ class FlopsConfig(StrictModel):
         preset = load_model_preset(self.model, seed=self.runtime.seed).for_dataset(
             self.input.band_source
         )
+        if preset.track == "embedding":
+            raise ValueError(
+                f"{self.model.name!r} is a precomputed embedding product, not an encoder"
+            )
         if preset.track != "image":
             raise ValueError(f"{self.model.name!r} is a coordinate encoder; use 'coord'")
         # Explicit constructor options also take precedence over dataset overrides.

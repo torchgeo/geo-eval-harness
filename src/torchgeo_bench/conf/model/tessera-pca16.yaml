@@ -1,0 +1,12 @@
+name: tessera-pca16
+target: torchgeo_bench.models.PrecomputedEmbedding
+track: embedding
+kwargs:
+  product: tessera-pca16
+input:
+  bands: all
+  image_size: null
+  normalization: none
+segmentation:
+  layers:
+    - feature_map

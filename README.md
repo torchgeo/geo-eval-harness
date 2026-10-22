@@ -67,6 +67,10 @@ V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merc
 
 Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/torchgeo_bench/checksums/`](src/torchgeo_bench/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
 
+## Embedding products
+
+Precomputed embedding products such as AlphaEarth Foundations (AEF) and TESSERA are evaluated like models. `torchgeo-bench embeddings download` stores a product's embeddings with the labels of a GeoBench V2 dataset, `torchgeo-bench embeddings pca` optionally reduces them to fewer channels, and `torchgeo-bench run --model aef` evaluates them with the existing KNN, linear and segmentation probes. See the [embedding products guide](docs/user/embedding-products.md).
+
 ## Run a basic experiment
 
 ```bash

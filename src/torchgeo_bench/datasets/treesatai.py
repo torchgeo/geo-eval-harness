@@ -23,6 +23,7 @@ class TreeSatAI(_V2Dataset):
     multilabel = True
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 4000, "val": 1000, "test": 2000}
+    footprint_asset = "aerial"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
