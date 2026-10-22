@@ -12,7 +12,7 @@ import pytest
 import torch
 from PIL import Image
 
-from torchgeo_bench import download
+from torchgeo_bench import download, hub
 from torchgeo_bench.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
 
 RGB = (11, 22, 33)
@@ -125,12 +125,13 @@ def test_missing_split_points_to_download(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(HOTOSMBuildings, "split_sizes", {"train": 2, "val": 1, "test": 1})
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: {})
 
     def fake_snapshot(*, local_dir: Path, **_: object) -> None:
         for prefix, ids in (("train", ["a", "b"]), ("validation", ["v"]), ("test", ["t"])):
             _write_upstream_shard(local_dir / "data" / f"{prefix}-00000-of-00001.parquet", ids)
 
-    with mock.patch.object(download, "snapshot_download", side_effect=fake_snapshot) as snapshot:
+    with mock.patch.object(hub, "snapshot_download", side_effect=fake_snapshot) as snapshot:
         download.download_datasets(["hotosm_buildings"], tmp_path)
 
     root = tmp_path / "hotosm_buildings"
@@ -138,8 +139,9 @@ def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.M
         repo_id="hotosm/vhr-building-segmentation",
         repo_type="dataset",
         revision=download.HOTOSM_REVISION,
-        allow_patterns=["data/*.parquet"],
         local_dir=root / "upstream",
+        allow_patterns=["data/*.parquet"],
+        cache_dir=None,
     )
     assert sorted(path.name for path in root.iterdir()) == [
         "test.parquet",
@@ -150,7 +152,10 @@ def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.M
 
 
 @pytest.mark.parametrize("existing_split", [False, True])
-def test_download_rejects_row_count_mismatch(tmp_path: Path, *, existing_split: bool) -> None:
+def test_download_rejects_row_count_mismatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, existing_split: bool
+) -> None:
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: {})
     target = tmp_path / "hotosm_buildings" / "train.parquet"
     if existing_split:
         target.parent.mkdir(parents=True)
@@ -160,7 +165,7 @@ def test_download_rejects_row_count_mismatch(tmp_path: Path, *, existing_split: 
         _write_upstream_shard(local_dir / "data" / "train-00000-of-00001.parquet", ["a"])
 
     with (
-        mock.patch.object(download, "snapshot_download", side_effect=fake_snapshot),
+        mock.patch.object(hub, "snapshot_download", side_effect=fake_snapshot),
         pytest.raises(ValueError, match="expected 57890 rows, got 1"),
     ):
         download.download_hotosm_buildings(tmp_path)

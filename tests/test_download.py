@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import re
 import tarfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -11,10 +12,11 @@ from unittest import mock
 import numpy as np
 import pytest
 
+from torchgeo_bench import hub
 from torchgeo_bench.datasets import _v1_webdataset as v1
-from torchgeo_bench.datasets import geobench_v1, get_bench_dataset_class, list_datasets
+from torchgeo_bench.datasets import geobench_v1, geobench_v2, get_bench_dataset_class, list_datasets
 from torchgeo_bench.datasets.geobench_v1 import _V1Dataset
-from torchgeo_bench.datasets.geobench_v2 import list_v2_datasets
+from torchgeo_bench.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
 from torchgeo_bench.download import (
     DEFAULT_V2_DATASETS,
     download_datasets,
@@ -46,7 +48,7 @@ def v1_download(monkeypatch: pytest.MonkeyPatch) -> Iterator[mock.MagicMock]:
         f"{name}/shard_00000.tar": hashlib.sha256(payload).hexdigest()
         for name in ("m-eurosat", "m-forestnet")
     }
-    monkeypatch.setattr(v1, "_shard_checksums", lambda: checksums)
+    monkeypatch.setattr(v1, "load_checksums", lambda manifest: checksums)
 
     def download(*, local_dir: Path, allow_patterns: list[str], **kwargs: object) -> None:
         for pattern in allow_patterns:
@@ -59,7 +61,7 @@ def v1_download(monkeypatch: pytest.MonkeyPatch) -> Iterator[mock.MagicMock]:
                 json.dumps({split: ["sample"] for split in ("train", "valid", "test")})
             )
 
-    with mock.patch.object(v1, "snapshot_download", side_effect=download) as download_mock:
+    with mock.patch.object(hub, "snapshot_download", side_effect=download) as download_mock:
         yield download_mock
 
 
@@ -90,7 +92,7 @@ def test_v1_download_rejects_corrupt_cached_archives(
     download_geobench_v1(tmp_path, datasets=["m-eurosat"])
     archive = tmp_path / "classification_v1.0_wds/m-eurosat/shard_00000.tar"
     archive.write_bytes(b"corrupt cached download")
-    with pytest.raises(ValueError, match="archive checksum mismatch"):
+    with pytest.raises(ValueError, match="checksum mismatch"):
         download_geobench_v1(tmp_path, datasets=["m-eurosat"])
 
 
@@ -132,7 +134,7 @@ def test_v1_requires_explicit_download_before_loading(
 
 
 def test_v1_archive_checksums_cover_the_published_suite() -> None:
-    checksums = v1._shard_checksums()
+    checksums = hub.load_checksums("geobench_v1.sha256")
     datasets = {
         name for name in list_datasets() if issubclass(get_bench_dataset_class(name), _V1Dataset)
     }
@@ -154,7 +156,7 @@ def test_named_v1_downloads_use_the_verified_json_backend(
 
     path = tmp_path / "classification_v1.0_wds/m-eurosat/shard_00000.tar"
     path.write_bytes(b"corrupt cached download")
-    with pytest.raises(SystemExit, match="archive checksum mismatch"):
+    with pytest.raises(SystemExit, match="checksum mismatch"):
         main(arguments)
 
 
@@ -182,15 +184,86 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
         download_geobench_v2(tmp_path, datasets=["not-a-dataset"])
 
 
-def test_download_geobench_v2_uses_dataset_specific_huggingface_root(tmp_path: Path) -> None:
-    with mock.patch("torchgeo_bench.download.snapshot_download") as snapshot:
+@pytest.mark.parametrize(
+    "manifest",
+    ["aid.sha256", "geobench_v1.sha256", "geobench_v2.sha256", "hotosm_buildings.sha256"],
+)
+def test_checksum_manifests_are_well_formed(manifest: str) -> None:
+    text = (Path(hub.__file__).parent / "checksums" / manifest).read_text().splitlines()
+    checksums = hub.load_checksums(manifest)
+    assert len(checksums) == len(text)
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in checksums.values())
+
+
+def test_v2_pins_cover_every_dataset_and_archive() -> None:
+    assert set(V2_REVISIONS) == set(list_v2_datasets())
+    assert all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in V2_REVISIONS.values())
+    assert all(v2_checksums(name) for name in V2_REVISIONS)
+    assert len(v2_checksums("pastis")) == len(v2_checksums("dynamic_earthnet")) == 3
+
+
+@pytest.fixture
+def v2_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    payload = b"pinned tortilla bytes"
+    name = "geobench_burn_scars.tortilla"
+    digest = hashlib.sha256(payload).hexdigest()
+    monkeypatch.setattr(
+        geobench_v2, "load_checksums", lambda manifest: {f"burn_scars/{name}": digest}
+    )
+    target = tmp_path / "burn_scars"
+    target.mkdir()
+    path = target / name
+    path.write_bytes(payload)
+    return path
+
+
+def test_download_geobench_v2_uses_dataset_specific_huggingface_root(
+    tmp_path: Path, v2_archive: Path
+) -> None:
+    with mock.patch.object(hub, "snapshot_download") as snapshot:
         download_geobench_v2_dataset("burn_scars", tmp_path)
     assert (tmp_path / "burn_scars").is_dir()
     snapshot.assert_called_once_with(
         repo_id="aialliance/burn_scars",
         repo_type="dataset",
+        revision="a31f44bd17e4889c33777576068a14461c9e436a",
         local_dir=tmp_path / "burn_scars",
+        allow_patterns=None,
+        cache_dir=None,
     )
+
+
+@pytest.mark.parametrize("failure", ["checksum", "missing", "extra"])
+def test_v2_download_rejects_invalid_cached_bytes(
+    tmp_path: Path, v2_archive: Path, failure: str
+) -> None:
+    if failure == "checksum":
+        v2_archive.write_bytes(b"x" * v2_archive.stat().st_size)
+    elif failure == "missing":
+        v2_archive.unlink()
+    else:
+        (v2_archive.parent / "stale.part.tortilla").write_bytes(b"x")
+    error = FileNotFoundError if failure == "missing" else ValueError
+    message = {
+        "checksum": "checksum mismatch",
+        "missing": "tortilla",
+        "extra": "Unexpected",
+    }[failure]
+    with (
+        mock.patch.object(hub, "snapshot_download"),
+        pytest.raises(error, match=message),
+    ):
+        download_geobench_v2_dataset("burn_scars", tmp_path)
+
+
+def test_v2_direct_download_rejects_unknown_name_before_writing(tmp_path: Path) -> None:
+    with (
+        mock.patch.object(hub, "snapshot_download") as snapshot,
+        pytest.raises(ValueError, match="Unknown GeoBench V2"),
+    ):
+        download_geobench_v2_dataset("../unknown", tmp_path)
+    snapshot.assert_not_called()
+    assert not list(tmp_path.iterdir())
 
 
 def test_download_eurosat_creates_target_and_downloads_splits(tmp_path: Path) -> None:

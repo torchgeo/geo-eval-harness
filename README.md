@@ -65,6 +65,8 @@ V1 uses the pickle-free [JSON-metadata mirror](https://huggingface.co/datasets/c
 
 V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`torchgeo-bench download geobench_v2`, `torchgeo-bench download eurosat`, `torchgeo-bench download resisc45`, `torchgeo-bench download ucmerced`, `torchgeo-bench download hotosm_buildings`). See the [documentation](https://torchgeo.org/torchgeo-bench/user/datasets.html) for all options.
 
+Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/torchgeo_bench/checksums/`](src/torchgeo_bench/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
+
 ## Run a basic experiment
 
 ```bash
