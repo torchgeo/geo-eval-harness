@@ -96,6 +96,15 @@ def apply_lora(model: nn.Module, target_modules: str, rank: int, alpha: float) -
     return sorted(linear)
 
 
+def _is_lora_module(name: str, module: nn.Module) -> bool:
+    return name.rpartition(".")[2].startswith("lora_") or isinstance(module, _LoRAWeightDelta)
+
+
+def has_lora_adapters(model: nn.Module) -> bool:
+    """Return whether :func:`apply_lora` added adapter modules to ``model``."""
+    return any(_is_lora_module(name, module) for name, module in model.named_modules())
+
+
 def set_lora_train_mode(model: nn.Module) -> None:
     """Put LoRA adapter modules in train mode and every other module in eval mode.
 
@@ -104,5 +113,5 @@ def set_lora_train_mode(model: nn.Module) -> None:
     """
     model.eval()
     for name, module in model.named_modules():
-        if name.rpartition(".")[2].startswith("lora_") or isinstance(module, _LoRAWeightDelta):
+        if _is_lora_module(name, module):
             module.train()

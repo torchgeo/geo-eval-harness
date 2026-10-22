@@ -16,7 +16,7 @@ from torchgeo_bench.config.presets import NORMALIZATIONS, build_model, load_mode
 from torchgeo_bench.config.schema import ModelConfig, SegmentationConfig
 from torchgeo_bench.datasets import get_bench_dataset_class
 from torchgeo_bench.models.timm import TimmPatchBenchModel
-from torchgeo_bench.segmentation_lora import apply_lora
+from torchgeo_bench.segmentation_lora import apply_lora, has_lora_adapters
 from torchgeo_bench.segmentation_probe import SegmentationProbe
 from torchgeo_bench.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
 
@@ -157,6 +157,34 @@ class _TinyAdapterBackbone(nn.Module):
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         features = self.attn(self.embed(images).permute(0, 2, 3, 1))
         return self.spatial(features.permute(0, 3, 1, 2))
+
+
+@pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])
+def test_has_lora_adapters_detects_both_adapter_kinds(model_kind: str) -> None:
+    backbone = _TinyAdapterBackbone(model_kind)
+    assert not has_lora_adapters(backbone)
+    apply_lora(
+        backbone, r"attn\.(qkv|proj)" if model_kind == "torchvision_swin" else "attn", 2, 4.0
+    )
+    assert has_lora_adapters(backbone)
+
+
+def test_solver_keeps_an_unfrozen_backbone_without_adapters_in_train_mode() -> None:
+    backbone = _TinyAdapterBackbone("peft")
+    probe = SegmentationProbe(
+        backbone, ["spatial"], num_classes=3, freeze_backbone=False, head_type="linear"
+    )
+    solver = SegmentationSolver(probe, 3, lr=0.1, lr_scheduler="none", device="cpu")
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 8, 8), torch.randint(0, 3, (2, 8, 8))),
+        batch_size=2,
+    )
+    modes: list[bool] = []
+    backbone.register_forward_pre_hook(lambda module, _args: modes.append(module.training))
+
+    solver.fit(loader, epochs=1, verbose=False)
+
+    assert modes == [True]
 
 
 @pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])

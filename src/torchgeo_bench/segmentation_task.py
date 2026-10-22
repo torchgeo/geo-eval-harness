@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
 from .config.schema import SegmentationConfig
-from .segmentation_lora import apply_lora, set_lora_train_mode
+from .segmentation_lora import apply_lora, has_lora_adapters, set_lora_train_mode
 from .segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -176,6 +176,14 @@ class SegmentationSolver:
             )
         return True
 
+    def _set_train_mode(self) -> None:
+        """Train the head; a frozen or LoRA-adapted backbone stays in eval mode except adapters."""
+        self.model.train()
+        if self.model.freeze_backbone:
+            self.model.backbone.eval()
+        elif has_lora_adapters(self.model.backbone):
+            set_lora_train_mode(self.model.backbone)
+
     def _reset_selection(self, epochs: int) -> None:
         """Clear per-fit selection state and require completed training epochs."""
         self.val_history = []
@@ -224,12 +232,10 @@ class SegmentationSolver:
     ) -> float | None:
         """Train the segmentation probe.
 
-        A trainable backbone stays in eval mode except for its LoRA adapter modules. Training
-        batches smaller than the head's ``min_train_batch_size`` are skipped. A loader batch
-        size below that minimum, or an epoch without any usable batch, raises ``ValueError``.
-        Training batches smaller than the head's ``min_train_batch_size`` are skipped. A loader
-        batch size below that minimum, or an epoch without any usable batch, raises
-        ``ValueError``.
+        A frozen backbone stays in eval mode, and a LoRA-adapted backbone stays in eval mode
+        except for its adapter modules. Training batches smaller than the head's
+        ``min_train_batch_size`` are skipped. A loader batch size below that minimum, or an epoch
+        without any usable batch, raises ``ValueError``.
 
         Args:
             train_loader: Training data loader.
@@ -248,11 +254,7 @@ class SegmentationSolver:
         skip_logged = False
 
         for epoch in range(epochs):
-            self.model.train()
-            if self.model.freeze_backbone:
-                self.model.backbone.eval()
-            else:
-                set_lora_train_mode(self.model.backbone)
+            self._set_train_mode()
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(train_loader, desc=desc, disable=not verbose)
@@ -362,9 +364,7 @@ class SegmentationSolver:
         skip_logged = False
 
         for epoch in range(epochs):
-            self.model.train()
-            if self.model.freeze_backbone:
-                self.model.backbone.eval()
+            self._set_train_mode()
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(
