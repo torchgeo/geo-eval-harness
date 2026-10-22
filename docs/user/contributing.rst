@@ -34,7 +34,7 @@ Use uv 0.13.5 or newer. CI installs the version bundled in the pinned ``setup-uv
 
 Run ``uv audit --locked`` to check every locked dependency, including optional extras and packages for other platforms, against current advisories. CI runs this check on pushes and pull requests. Malware checks are also enabled during uv installs. These checks cover published advisories; they do not establish that a package is safe.
 
-Security minimums in :file:`pyproject.toml` also protect pip installs, including explicit constraints on the transitive Certifi, PyTorch Lightning, and Virtualenv dependencies. To apply a security update, use ``uv lock --upgrade-package <package>``, raise any affected minimum, and rerun the audit, tests, pre-commit hooks, and docs build. Keep :file:`projects/cleanlab/requirements.txt` consistent when it declares the same dependency.
+Direct dependencies declare security minimums in :file:`pyproject.toml`. Certifi, PyTorch Lightning, and Virtualenv remain transitive dependencies with minimum versions in ``tool.uv.constraint-dependencies``; these constraints apply to this repository's uv resolution and are not propagated to pip consumers. To apply a security update, use ``uv lock --upgrade-package <package>``, raise any affected minimum, and rerun the audit, tests, pre-commit hooks, and docs build. Keep :file:`projects/cleanlab/requirements.txt` consistent when it declares the same dependency.
 
 External GitHub Actions, pre-commit hooks, and the TerraTorch Git dependency use full commit SHAs. Verify an upstream release before changing a pin, and retain its version comment. Dependabot proposes weekly updates for the uv lockfile, Actions, hooks, and Cleanlab requirements; updates require review and passing CI.
 

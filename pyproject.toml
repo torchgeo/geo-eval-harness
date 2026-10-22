@@ -37,7 +37,6 @@ classifiers = [
   "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
-  "certifi>=2026.10.19",
   "faissknn[cpu]>=0.4; sys_platform!='linux' or platform_machine!='x86_64'",
   "faissknn[cuda]>=0.4; sys_platform=='linux' and platform_machine=='x86_64'",
   "filelock>=3.20.3",
@@ -51,7 +50,6 @@ dependencies = [
   # Required for CoordBench's Parquet files.
   "pyarrow>=14.0.1",
   "pydantic>=2.4",
-  "pytorch-lightning>=2.6.6",
   "pyyaml>=6",
   # Loads MIND's location-model weights.
   "safetensors>=0.4",
@@ -89,7 +87,6 @@ optional-dependencies.dev = [
   "ruff==0.15.10",
   "ty>=0.0.21",
   "types-pyyaml>=6",
-  "virtualenv>=21.14.9",
 ]
 optional-dependencies.docs = [
   "linkify-it-py>=2",
@@ -115,6 +112,11 @@ urls.Repository = "https://github.com/torchgeo/geo-eval-harness"
 scripts.geo-eval-harness = "geo_eval_harness.cli:main"
 
 [tool.uv]
+constraint-dependencies = [
+  "certifi>=2026.10.19",
+  "pytorch-lightning>=2.6.6",
+  "virtualenv>=21.14.9",
+]
 build-backend.source-exclude = [ "/docs/_build" ]
 build-backend.source-include = [ "docs/**" ]
 audit.malware-check = true
