@@ -1,6 +1,6 @@
 # Embedding products
 
-Precomputed embedding products, such as [AlphaEarth Foundations](https://source.coop/tge-labs/aef) (AEF, 64 channels) and [TESSERA](https://github.com/ucam-eo/tessera) (128 channels), are evaluated like models. You download a product once for a dataset, which pairs every sample's embeddings with the label that image models see. `torchgeo-bench run` then evaluates the stored embeddings with the usual KNN, linear and segmentation probes, and each product is reported as a model.
+Precomputed embedding products, such as [AlphaEarth Foundations](https://source.coop/tge-labs/aef) (AEF, 64 channels), [TESSERA](https://github.com/ucam-eo/tessera) (128 channels) and [OlmoEarth v1.3](https://source.coop/olmoearth/olmoearth-v1-3-embeddings) (128 channels), are evaluated like models. You download a product once for a dataset, which pairs every sample's embeddings with the label that image models see. `torchgeo-bench run` then evaluates the stored embeddings with the usual KNN, linear and segmentation probes, and each product is reported as a model.
 
 ```bash
 # Read the product for every sample and store it with its label.
@@ -12,7 +12,7 @@ uv run torchgeo-bench run --model aef --dataset benv2
 uv run torchgeo-bench run --model aef-pca16 --dataset fotw
 ```
 
-TESSERA needs the `embeddings` extra (`pip install 'torchgeo-bench[embeddings]'`). Downloads read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. An interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check.
+TESSERA and OlmoEarth need the `embeddings` extra (`pip install 'torchgeo-bench[embeddings]'`). Downloads read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. An interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check.
 
 ## Supported datasets
 
@@ -22,11 +22,23 @@ Embeddings need each sample's location and year. These come from the dataset's o
 
 1. **Footprint.** The dataset gives the sample's CRS, pixel grid and observation year.
 2. **Embedding grid.** The footprint is divided into cells of about 10 m, matching the products' native resolution. Every sample of a dataset uses the cell count of the first training sample, so samples batch together. The grid keeps the sample's CRS, extent and row order, so embedding cells line up with label pixels.
-3. **Year.** AEF and TESSERA are annual products covering 2017 to 2025. Each sample uses its own observation year, clamped to that range; for example, TreeSatAI's 2016 samples use 2017.
-4. **Read.** The product is resampled onto the grid with nearest-neighbour lookup, mosaicking tiles where needed. Cells the product does not cover are stored as NaN.
+3. **Year.** AEF, TESSERA and OlmoEarth are annual products covering 2017 to 2025. Each sample uses its own observation year, clamped to that range; for example, TreeSatAI's 2016 samples use 2017.
+4. **Read.** The product is resampled onto the grid with nearest-neighbour lookup, mosaicking tiles where needed. TESSERA and OlmoEarth read only the UTM zone that contains the sample centre. Cells the product does not cover are stored as NaN.
 5. **Label.** The label or mask comes from the same dataset wrapper that image models use.
 
 Classification probes average the valid cells of each sample. Segmentation heads receive the full embedding map, with missing cells set to zero, and upsample it to the mask like any coarse encoder feature map.
+
+## OlmoEarth v1.3
+
+OlmoEarth v1.3 has three presets:
+
+- `olmoearth-v1-3`: the full 128-dimensional embedding.
+- `olmoearth-v1-3-64`: the first 64 dimensions, which form a complete embedding on their own (Matryoshka training) and download in half the time. Download it as its own product with `--product olmoearth-v1-3-64`.
+- `olmoearth-v1-3-pca16`: `embeddings pca --product olmoearth-v1-3`, a 16-component PCA of the 128-dimensional collection.
+
+As of the initial release, only 2023 to 2025 are global; 2017 to 2022 cover selected countries and are being backfilled upstream. Samples from years that are not yet filled at their location are stored as missing and counted in `empty_samples`. Because downloads resume by skipping existing files, delete a collection directory and download it again once the backfill is complete.
+
+The embeddings are released under the [OlmoEarth Artifact License](https://source.coop/olmoearth/olmoearth-v1-3-embeddings/LICENSE.txt), which restricts military and extractive uses and requires citing Ai2 when redistributing derivatives.
 
 ## Stored collections
 

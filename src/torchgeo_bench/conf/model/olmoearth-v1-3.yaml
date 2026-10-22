@@ -1,0 +1,12 @@
+name: olmoearth-v1-3
+target: torchgeo_bench.models.PrecomputedEmbedding
+track: embedding
+kwargs:
+  product: olmoearth-v1-3
+input:
+  bands: all
+  image_size: null
+  normalization: none
+segmentation:
+  layers:
+    - feature_map

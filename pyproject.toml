@@ -219,6 +219,7 @@ ignore-missing-imports = [
   "terratorch.*",
   "torchid",
   "zarr",
+  "zarr.*",
 ]
 
 [tool.pytest]

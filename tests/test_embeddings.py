@@ -23,7 +23,14 @@ from torchgeo_bench.embeddings.dataset import EmbeddingDataset, embedding_bands
 from torchgeo_bench.embeddings.download import save_sample, write_metadata
 from torchgeo_bench.embeddings.grid import bounds, coarsen, ground_shape, paste, utm_zone
 from torchgeo_bench.embeddings.pca import fit_pca, pca_collection, project
-from torchgeo_bench.embeddings.products import AEF, Tessera, decode_aef, decode_tessera
+from torchgeo_bench.embeddings.products import (
+    AEF,
+    OlmoEarth,
+    OlmoEarth64,
+    Tessera,
+    decode_signed_square,
+    decode_tessera,
+)
 from torchgeo_bench.models.embedding import PrecomputedEmbedding
 from torchgeo_bench.segmentation_probe import SegmentationProbe
 
@@ -101,7 +108,7 @@ def test_paste_fills_missing_cells_from_successive_tiles() -> None:
 
 def test_decoders_mark_nodata_as_nan() -> None:
     codes = np.array([[[-128, 127]], [[0, -64]]], dtype=np.int8)
-    aef = decode_aef(codes)
+    aef = decode_signed_square(codes)
     assert np.isnan(aef[:, 0, 0]).all()
     assert np.allclose(aef[:, 0, 1], [(127 / 127.5) ** 2, -((64 / 127.5) ** 2)])
     tessera = decode_tessera(codes, np.array([[0.0, 0.5]], dtype=np.float32))
@@ -124,7 +131,7 @@ def test_aef_reads_a_south_up_tile_onto_a_north_up_grid(tmp_path: Path) -> None:
     product.max_open_tiles = 1
     product.tile_urls = lambda _: [str(far), str(tile)]  # type: ignore[method-assign]
     out = product.read(Footprint(UTM, (10.0, 0.0, 1000.0, 0.0, -10.0, 5000.0), (16, 16), 2020))
-    assert np.allclose(out[0, :, 0], decode_aef(rows[::-1, :1][None])[0, :, 0])
+    assert np.allclose(out[0, :, 0], decode_signed_square(rows[::-1, :1][None])[0, :, 0])
     assert list(product._tiles) == [str(tile)]
 
 
@@ -203,6 +210,55 @@ def test_tessera_reads_the_year_window_of_the_centre_zone() -> None:
     assert np.isnan(product.read(replace(grid, year=2017))).all()
     outside = replace(grid, transform=(10.0, 0.0, 100_000.0, 0.0, -10.0, 120.0))
     assert np.isnan(product.read(outside)).all()
+
+
+def test_olmoearth_reads_the_year_and_band_prefix_of_the_centre_zone() -> None:
+    codes = np.full((2, 128, 16, 16), -128, dtype=np.int8)
+    codes[1, :, 4:12, 4:12] = np.arange(128, dtype=np.int8)[:, None, None] - 64
+
+    class Zone(dict):
+        attrs: ClassVar = {
+            "proj:code": UTM,
+            "spatial:transform": [10, 0, 0, 0, -10, 160],
+            "spatial:shape": [16, 16],
+        }
+
+    zone = Zone(time=np.array([2019, 2020], dtype=np.int32), embeddings=codes)
+    requested = []
+    full, prefix = OlmoEarth(), OlmoEarth64()
+    for product in (full, prefix):
+        product.zone = lambda number: requested.append(number) or zone  # type: ignore[method-assign]
+    grid = Footprint(UTM, (10.0, 0.0, 40.0, 0.0, -10.0, 120.0), (8, 8), 2020)
+    out = full.read(grid)
+    expected = decode_signed_square(codes[1, :, 4:12, 4:12])
+    assert np.array_equal(out, expected)
+    assert np.array_equal(prefix.read(grid), out[:64])
+    assert requested == [31, 31]
+    assert np.isnan(full.read(replace(grid, year=2017))).all()
+    outside = replace(grid, transform=(10.0, 0.0, 100_000.0, 0.0, -10.0, 120.0))
+    assert np.isnan(full.read(outside)).all()
+    nodata = full.read(replace(grid, transform=(10.0, 0.0, 0.0, 0.0, -10.0, 160.0)))
+    assert np.isnan(nodata[:, :4, :4]).all()
+    assert np.isfinite(nodata[:, 4:, 4:]).all()
+
+
+def test_olmoearth_opens_the_store_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened, settings = [], []
+    storage = SimpleNamespace(FsspecStore=SimpleNamespace(from_url=lambda url, read_only: url))
+
+    def open_group(store: str, mode: str) -> dict:
+        opened.append((store, mode))
+        return {"utm32": "zone 32"}
+
+    zarr = SimpleNamespace(
+        config=SimpleNamespace(set=settings.append), open_group=open_group, storage=storage
+    )
+    monkeypatch.setitem(sys.modules, "zarr", zarr)
+    monkeypatch.setitem(sys.modules, "zarr.storage", storage)
+    product = OlmoEarth()
+    assert product.zone(32) == product.zone(32) == "zone 32"
+    assert opened == [(OlmoEarth.url, "r")]
+    assert settings == [{"array.sharding_coalesce_max_gap_bytes": 0}]
 
 
 def _write_collection(root: Path, values: dict[str, np.ndarray]) -> Path:

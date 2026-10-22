@@ -9,7 +9,7 @@ def add_embeddings_arguments(parser: argparse.ArgumentParser) -> None:
     download = commands.add_parser(
         "download", help="Read a product for every dataset sample and store it with its label"
     )
-    download.add_argument("--product", required=True, help="Embedding product: aef or tessera")
+    download.add_argument("--product", required=True, help="Embedding product: aef, tessera, olmoearth-v1-3 or olmoearth-v1-3-64")
     download.add_argument("--dataset", "--datasets", dest="datasets", nargs="+", required=True)
     download.add_argument(
         "--split", dest="splits", nargs="+", choices=("train", "val", "test"),
