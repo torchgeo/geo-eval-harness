@@ -78,4 +78,8 @@ def resolve_profile_config(config: ProfileConfig) -> tuple[ProfileConfig, ModelP
         }
     )
     effective, preset = resolve_run_config(run, config.dataset)
+    if preset.track == "embedding":
+        raise ValueError(
+            f"{config.model.name!r} is a precomputed embedding product, not an encoder"
+        )
     return config.model_copy(update={"input": effective.input}), preset

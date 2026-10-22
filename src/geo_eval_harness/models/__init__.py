@@ -2,6 +2,7 @@
 
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy
+from .embedding import PrecomputedEmbedding
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
@@ -47,6 +48,7 @@ __all__: list[str] = [
     "NormalizationStrategy",
     "OlmoEarthBenchModel",
     "PatchLinearHead",
+    "PrecomputedEmbedding",
     "RCFBench",
     "RCFModelSettings",
     "SAM3Encoder",

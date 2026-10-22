@@ -47,7 +47,7 @@ Linux x86_64 the install automatically includes GPU-accelerated FAISS KNN
 (CUDA 12, driver R525+, also works on GPU-less machines); other platforms get
 CPU FAISS.
 
-The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. Update imports, commands, and fully qualified `model.target` values when migrating from `torchgeo-bench`. Stored result CSVs and resume hashes remain usable without rewriting them. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
+The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. Update imports, commands, and fully qualified `model.target` values when migrating from `geo-eval-harness`. Stored result CSVs and resume hashes remain usable without rewriting them. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
 
 ## Download a dataset
 
@@ -68,6 +68,10 @@ V1 uses the pickle-free [JSON-metadata mirror](https://huggingface.co/datasets/c
 V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`geo-eval-harness download geobench_v2`, `geo-eval-harness download eurosat`, `geo-eval-harness download resisc45`, `geo-eval-harness download ucmerced`, `geo-eval-harness download hotosm_buildings`). See the [documentation](https://torchgeo.org/geo-eval-harness/user/datasets.html) for all options.
 
 Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
+
+## Embedding products
+
+Precomputed embedding products such as AlphaEarth Foundations (AEF) and TESSERA are evaluated like models. `geo-eval-harness embeddings download` stores a product's embeddings with the labels of a GeoBench V2 dataset, `geo-eval-harness embeddings pca` optionally reduces them to fewer channels, and `geo-eval-harness run --model aef` evaluates them with the existing KNN, linear and segmentation probes. See the [embedding products guide](docs/user/embedding-products.md).
 
 ## Run a basic experiment
 

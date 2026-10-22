@@ -1,0 +1,49 @@
+# Embedding products
+
+Precomputed embedding products, such as [AlphaEarth Foundations](https://source.coop/tge-labs/aef) (AEF, 64 channels) and [TESSERA](https://github.com/ucam-eo/tessera) (128 channels), are evaluated like models. You download a product once for a dataset, which pairs every sample's embeddings with the label that image models see. `geo-eval-harness run` then evaluates the stored embeddings with the usual KNN, linear and segmentation probes, and each product is reported as a model.
+
+```bash
+# Read the product for every sample and store it with its label.
+uv run geo-eval-harness embeddings download --product aef --dataset benv2 fotw
+# Optional: fit a 16-component PCA on training cells and store it as product "aef-pca16".
+uv run geo-eval-harness embeddings pca --product aef --dataset benv2 fotw --components 16
+# Evaluate; results go to results/models/aef.csv and aef-pca16.csv.
+uv run geo-eval-harness run --model aef --dataset benv2
+uv run geo-eval-harness run --model aef-pca16 --dataset fotw
+```
+
+TESSERA needs the `embeddings` extra (`pip install 'geo-eval-harness[embeddings]'`). Downloads read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. An interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check.
+
+## Supported datasets
+
+Embeddings need each sample's location and year. These come from the dataset's own metadata through `BenchDataset.footprint`, which is implemented for `benv2`, `treesatai`, `spacenet7`, `fotw`, `kuro_siwo` and `dynamic_earthnet`.
+
+## How samples are paired
+
+1. **Footprint.** The dataset gives the sample's CRS, pixel grid and observation year.
+2. **Embedding grid.** The footprint is divided into cells of about 10 m, matching the products' native resolution. Every sample of a dataset uses the cell count of the first training sample, so samples batch together. The grid keeps the sample's CRS, extent and row order, so embedding cells line up with label pixels.
+3. **Year.** AEF and TESSERA are annual products covering 2017 to 2025. Each sample uses its own observation year, clamped to that range; for example, TreeSatAI's 2016 samples use 2017.
+4. **Read.** The product is resampled onto the grid with nearest-neighbour lookup, mosaicking tiles where needed. Cells the product does not cover are stored as NaN.
+5. **Label.** The label or mask comes from the same dataset wrapper that image models use.
+
+Classification probes average the valid cells of each sample. Segmentation heads receive the full embedding map, with missing cells set to zero, and upsample it to the mask like any coarse encoder feature map.
+
+## Stored collections
+
+```
+data/embeddings/<product>/<dataset>/
+  metadata.json           # product, channels, samples per split, mean valid fraction, empty samples
+  train/000000.npz        # embedding (C, H, W) float16, label or mask, year, valid_fraction
+  val/...
+  test/...
+```
+
+`metadata.json` reports per-split coverage. Samples without product coverage are kept, so every product is evaluated on the same samples as the image models, but they show up in `empty_samples`. A PCA collection also records its source product, seed and explained variance ratios.
+
+## Adding a product
+
+Subclass `EmbeddingProduct` in `geo_eval_harness/embeddings/products.py`. Set `name`, `channels` and `years`, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `geo_eval_harness.embeddings.grid.paste` resamples a source window onto the grid. Then register the class in `PRODUCTS` and add a preset like `conf/model/aef.yaml`.
+
+## Adding a dataset
+
+Implement `footprint(dataset, index)` on the dataset wrapper. For GeoBench V2 datasets, setting `footprint_asset` to the name of the upstream asset whose STAC grid and time describe the sample is usually enough. Override `footprint` only when that header is wrong, as SpaceNet7 does for its positive y spacing.

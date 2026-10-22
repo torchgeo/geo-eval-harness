@@ -2,15 +2,19 @@
 
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
 from ..hub import load_checksums
-from .base import BenchDataset
+from .base import BenchDataset, Footprint
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +162,23 @@ class GeoBenchv2(Dataset):
     def __getitem__(self, index: int) -> dict:
         return self._inner[index]
 
+    def assets(self, index: int) -> "pd.DataFrame":
+        """Return the upstream asset table (one row per file, with STAC fields) of a sample."""
+        return self._inner.data_df.read(index)  # type: ignore[attr-defined]
+
+
+def stac_footprint(row: "pd.Series") -> Footprint:
+    """Build a footprint from one asset row's ``stac:*`` fields.
+
+    ``stac:geotransform`` is in GDAL order; ``stac:time_start`` is either an
+    integer year or POSIX seconds.
+    """
+    x0, a, b, y0, d, e = (float(value) for value in row["stac:geotransform"])
+    height, width = (int(value) for value in row["stac:raster_shape"])
+    time = float(row["stac:time_start"])
+    year = int(time) if time < 10_000 else datetime.fromtimestamp(time, UTC).year
+    return Footprint(str(row["stac:crs"]), (a, b, x0, d, e, y0), (height, width), year)
+
 
 class _V2Dataset(BenchDataset):
     """Base class for every GeoBench V2 wrapper.
@@ -176,6 +197,9 @@ class _V2Dataset(BenchDataset):
 
     #: Whether the upstream loader accepts a time axis (``num_time_steps``).
     multi_temporal: ClassVar[bool] = False
+
+    #: Upstream asset (``tortilla:id``) whose grid and time define :meth:`footprint`.
+    footprint_asset: ClassVar[str | None] = None
 
     @classmethod
     def data_root(cls) -> Path:
@@ -197,6 +221,18 @@ class _V2Dataset(BenchDataset):
         The default is a no-op; override for image pairs or temporal stacks.
         """
         return sample
+
+    def footprint(self, dataset: Dataset, index: int) -> Footprint:
+        """Read the footprint of :attr:`footprint_asset` from the upstream STAC metadata."""
+        if self.footprint_asset is None:
+            return super().footprint(dataset, index)
+        if not isinstance(dataset, GeoBenchv2):
+            raise TypeError(f"Expected a dataset from {type(self).__name__}.get_dataset")
+        assets = dataset.assets(index)
+        rows = assets[assets["tortilla:id"] == self.footprint_asset]
+        if len(rows) != 1:
+            raise ValueError(f"{self.name}[{index}] has no unique {self.footprint_asset!r} asset")
+        return stac_footprint(rows.iloc[0])
 
     def get_dataset(
         self,

@@ -880,6 +880,42 @@ def dataset_metadata(
     }
 
 
+def load_model_and_data(
+    cfg: RunConfig, model_cfg: ModelPreset, ds_cls: type[BenchDataset]
+) -> tuple[BenchModel, LoaderSplits]:
+    """Load the three splits and build the model for their channels.
+
+    Embedding products read their stored collection instead of dataset imagery.
+    """
+    device = torch.device(cfg.runtime.device)
+    if model_cfg.track == "embedding":
+        from geo_eval_harness.embeddings.dataset import embedding_bands, embedding_loaders
+
+        train_dataset, *loaders = embedding_loaders(
+            model_cfg.kwargs["product"],
+            ds_cls.name,
+            batch_size=cfg.runtime.batch_size,
+            num_workers=cfg.runtime.workers,
+        )
+        bands = embedding_bands(train_dataset[0]["image"].shape[0])
+        model: BenchModel = build_model(model_cfg, bands=bands)
+        model.to(device).eval()
+        return model, LoaderSplits(*loaders)
+    train_dataset, *loaders = get_datasets(
+        dataset_name=ds_cls.name,
+        partition_name=cfg.input.partition,
+        batch_size=cfg.runtime.batch_size,
+        num_workers=cfg.runtime.workers,
+        return_val=True,
+        image_size=cfg.input.image_size,
+        interpolation=cfg.input.interpolation,
+        bands=cfg.input.bands,
+        time_steps=cfg.input.time_steps,
+    )
+    model = instantiate_dataset_model(cfg, model_cfg, ds_cls(), train_dataset, device)
+    return model, LoaderSplits(*loaders)
+
+
 def run_dataset(
     cfg: RunConfig,
     ds_name: str,
@@ -911,24 +947,8 @@ def run_dataset(
             plan,
             knn_device=resolve_knn_device(cfg.classification.knn_device, cfg.runtime.device),
         )
-    train_dataset, train_loader, val_loader, test_loader = get_datasets(
-        dataset_name=ds_name,
-        partition_name=cfg.input.partition,
-        batch_size=cfg.runtime.batch_size,
-        num_workers=cfg.runtime.workers,
-        return_val=True,
-        image_size=cfg.input.image_size,
-        interpolation=cfg.input.interpolation,
-        bands=cfg.input.bands,
-        time_steps=cfg.input.time_steps,
-    )
-
-    bench = ds_cls()
-    model = instantiate_dataset_model(
-        cfg, model_cfg, bench, train_dataset, torch.device(cfg.runtime.device)
-    )
+    model, loaders = load_model_and_data(cfg, model_cfg, ds_cls)
     common_meta["normalization"] = model.effective_normalization
-    loaders = LoaderSplits(train_loader, val_loader, test_loader)
     if ds_cls.task == "segmentation":
         for rows in run_segmentation(cfg, model, loaders, common_meta):
             yield rows, [], []
