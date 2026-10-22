@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.10
+    rev: b831c3dc5d27d9da294ae4e915773b99aa24a7c5  # v0.15.10
     hooks:
       - id: ruff
         exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/legacy_run\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
@@ -9,7 +9,7 @@ repos:
         exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/legacy_run\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
 
   - repo: https://github.com/facebook/pyrefly-pre-commit
-    rev: 1.2.0
+    rev: 4c4bc90ba8bfd4e1609063a467d8e8146a913e44  # 1.2.0
     hooks:
       - id: pyrefly-check
         language: system
@@ -18,7 +18,7 @@ repos:
         always_run: true
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # v6.0.0
     hooks:
       - id: check-yaml
       - id: check-json
@@ -36,7 +36,7 @@ repos:
       - id: requirements-txt-fixer
 
   - repo: https://github.com/tox-dev/pyproject-fmt
-    rev: v2.21.0
+    rev: 50e0f3aee9dc5747a5f173f79a7417403c18dda6  # v2.30.3
     hooks:
       - id: pyproject-fmt
 

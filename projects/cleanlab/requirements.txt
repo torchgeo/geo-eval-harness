@@ -1,4 +1,4 @@
 cleanlab>=2.7
 imagehash>=4.3
 matplotlib>=3.5
-pillow>=9
+pillow>=13

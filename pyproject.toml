@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "uv_build"
-requires = [ "uv-build>=0.11.6,<0.12" ]
+requires = [ "uv-build==0.13.5" ]
 
 [project]
 name = "geo-eval-harness"
@@ -37,28 +37,31 @@ classifiers = [
   "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
+  "certifi>=2026.10.19",
   "faissknn[cpu]>=0.4; sys_platform!='linux' or platform_machine!='x86_64'",
   "faissknn[cuda]>=0.4; sys_platform=='linux' and platform_machine=='x86_64'",
-  "filelock>=3.12",
+  "filelock>=3.20.3",
   "geobenchv2>=0.9",
   "h5py>=3.8",
   "huggingface-hub>=0.20",
   "lazy-loader>=0.4",
   "numpy>=1.24",
   "pandas>=2",
+  "pillow>=13",
   # Required for CoordBench's Parquet files.
-  "pyarrow>=14",
-  "pydantic>=2",
+  "pyarrow>=14.0.1",
+  "pydantic>=2.4",
+  "pytorch-lightning>=2.6.6",
   "pyyaml>=6",
   # Loads MIND's location-model weights.
   "safetensors>=0.4",
-  "scikit-learn>=1.3",
+  "scikit-learn>=1.5",
   "timm>=0.9",
-  "torch>=2",
+  "torch>=2.13",
   "torchgeo>=0.10,<0.11",
   "torchmetrics>=1.4",
   "torchvision>=0.15",
-  "tqdm>=4.66",
+  "tqdm>=4.66.3",
   # SAM3 (Sam3Model / Sam3Config) and the DPT segmentation head.
   "transformers>=5.14",
 ]
@@ -78,14 +81,15 @@ optional-dependencies.dev = [
   "geo-eval-harness[lora]", # Tests exercise the optional LoRA segmentation path.
   "mdformat>=0.7.22",
   "pre-commit>=4.3",
-  "pyproject-fmt>=2.21",
+  "pyproject-fmt>=2.30.3",
   "pyrefly==1.2",
-  "pytest>=8.2",
+  "pytest>=9.0.3",
   "pytest-cov>=7",
   "pytest-xdist>=3.6",
   "ruff==0.15.10",
   "ty>=0.0.21",
   "types-pyyaml>=6",
+  "virtualenv>=21.14.9",
 ]
 optional-dependencies.docs = [
   "linkify-it-py>=2",
@@ -113,6 +117,7 @@ scripts.geo-eval-harness = "geo_eval_harness.cli:main"
 [tool.uv]
 build-backend.source-exclude = [ "/docs/_build" ]
 build-backend.source-include = [ "docs/**" ]
+audit.malware-check = true
 
 [tool.ruff]
 target-version = "py312"
@@ -187,8 +192,12 @@ lint.per-file-ignores."projects/cleanlab/**/*.py" = [ "D" ]
 lint.per-file-ignores."src/geo_eval_harness/cli.py" = [ "T201" ]  # CLI payloads go to stdout
 lint.per-file-ignores."src/geo_eval_harness/commands/**/*.py" = [ "T201" ]
 lint.per-file-ignores."tests/**/*.py" = [ "ARG", "D" ]
-lint.flake8-tidy-imports.banned-api."__future__.annotations".msg = "Use ordinary annotations or quoted forward references."
-lint.flake8-tidy-imports.banned-api."contextlib.suppress".msg = "Let errors propagate or use an explicit except clause with a reason."
+lint.flake8-tidy-imports.banned-api."__future__.annotations".msg = """\
+  Use ordinary annotations or quoted forward references.\
+  """
+lint.flake8-tidy-imports.banned-api."contextlib.suppress".msg = """\
+  Let errors propagate or use an explicit except clause with a reason.\
+  """
 lint.mccabe.max-complexity = 10
 lint.pycodestyle.max-doc-length = 100
 lint.pydocstyle.convention = "google"
@@ -197,11 +206,12 @@ lint.pylint.max-branches = 12
 lint.pylint.max-returns = 6
 lint.pylint.max-statements = 50
 
+[tool.pyproject-fmt]
+max_supported_python = "3.14"
+
 [tool.pyrefly]
 project-includes = [ "src/geo_eval_harness/**/*.py" ]
 search-path = [ "src" ]
-python-version = "3.12"
-preset = "default"
 # Optional extras are checked when installed.
 ignore-missing-imports = [
   "olmoearth_pretrain_minimal",
@@ -210,8 +220,11 @@ ignore-missing-imports = [
   "terratorch.*",
   "torchid",
 ]
+preset = "default"
 
 [tool.pytest]
+ini_options.testpaths = [ "tests" ]
+ini_options.pythonpath = [ "src", "." ]
 ini_options.addopts = [
   "--strict-config",
   "--strict-markers",
@@ -222,12 +235,10 @@ ini_options.addopts = [
   "--cov-report=xml",
   "-m not slow and not accuracy_check",
 ]
-ini_options.testpaths = [ "tests" ]
-ini_options.pythonpath = [ "src", "." ]
 ini_options.markers = [
+  "accuracy_check: per-class model accuracy regression tests (use -m accuracy_check to run)",
   "integration: offline workflows using toy data and real application components (included by default)",
   "slow: optional tests requiring downloaded datasets or pretrained weights (use -m slow to include)",
-  "accuracy_check: per-class model accuracy regression tests (use -m accuracy_check to run)",
 ]
 
 [tool.coverage]
