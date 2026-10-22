@@ -137,30 +137,18 @@ def test_terramind_alias_applies_during_harmonization() -> None:
     assert set(out["base_model"]) == {"tt_terramind_v1_base"}
 
 
-def test_alias_collision_raises_before_coverage_selection() -> None:
-    # Multispectral bands so the TerraMind off-modality filter (bands=="rgb"
-    # only) doesn't remove the plain config's rows before the collision check.
+def test_alias_collision_raises_before_coverage_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A synthetic alias, because both TerraMind directions are dropped as off-modality first.
+    monkeypatch.setattr(rl, "MODEL_ALIASES", {"peer_variant": "peer"})
     rows = []
     for dataset in DATASETS:
         rows.extend(
             [
+                _row("peer", dataset, "linear", "blue,green,red,nir", 0.8, "bandspec_zscore"),
                 _row(
-                    "tt_terramind_v1_base",
-                    dataset,
-                    "linear",
-                    "blue,green,red,nir",
-                    0.8,
-                    "model_native",
+                    "peer_variant", dataset, "linear", "blue,green,red,nir", 0.7, "bandspec_zscore"
                 ),
-                _row(
-                    "tt_terramind_v1_base_rgb",
-                    dataset,
-                    "linear",
-                    "blue,green,red,nir",
-                    0.7,
-                    "model_native",
-                ),
-                _row("peer", dataset, "linear", "blue,green,red,nir", 0.6, "bandspec_zscore"),
+                _row("other", dataset, "linear", "blue,green,red,nir", 0.6, "bandspec_zscore"),
             ]
         )
     with pytest.raises(ValueError, match="Duplicate leaderboard cells"):
@@ -168,16 +156,17 @@ def test_alias_collision_raises_before_coverage_selection() -> None:
 
 
 def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
-    """The plain config's incidental bands=rgb sweep is an off-modality artifact.
+    """Each TerraMind config's sweep outside its own modality is an off-modality artifact.
 
-    The dedicated ``_rgb`` config's row survives, and the plain config's
-    ``bands=all`` (multispectral) row is untouched.
+    The plain config's ``bands=rgb`` row and the ``_rgb`` config's ``bands=all`` row are
+    dropped, so each band class keeps only its authoritative config.
     """
     raw = pd.DataFrame(
         [
             _row("tt_terramind_v1_base", "d1", "linear", "rgb", 0.5, "model_native"),
             _row("tt_terramind_v1_base_rgb", "d1", "linear", "rgb", 0.8, "model_native"),
             _row("tt_terramind_v1_base", "d1", "linear", "all", 0.7, "model_native"),
+            _row("tt_terramind_v1_base_rgb", "d1", "linear", "all", 0.6, "model_native"),
             _row("tt_terramind_v1_large", "d1", "linear", "rgb", 0.4, "model_native"),
         ]
     )

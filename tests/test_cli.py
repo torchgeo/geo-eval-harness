@@ -320,7 +320,7 @@ def test_download_rejects_mixed_collection_targets(names: list[str]) -> None:
 def test_download_named_dataset_rejects_unknown_before_backend(monkeypatch, invalid: str) -> None:
     calls: list[object] = []
     monkeypatch.setattr(
-        "torchgeo_bench.download.snapshot_download", lambda *args, **kwargs: calls.append(args)
+        "torchgeo_bench.hub.snapshot_download", lambda *args, **kwargs: calls.append(args)
     )
     with pytest.raises(SystemExit, match="Unknown dataset"):
         cli_main(["download", "m-eurosat", invalid])

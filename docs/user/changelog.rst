@@ -7,6 +7,7 @@ Unreleased
 Added
 ^^^^^
 
+* Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``torchgeo-bench download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
   torchgeo's published 18,900 / 6,300 / 6,300 split.  Downloadable with
@@ -20,6 +21,11 @@ Added
   deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
   Downloadable with ``torchgeo-bench download aid``.  One of the three
   most-used benchmarks in the GFM literature.
+* HOTOSM building segmentation (``hotosm_buildings``) from Hugging Face
+  ``hotosm/vhr-building-segmentation``: 72,363 RGB tiles at about 0.3 m with
+  OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
+  ``torchgeo-bench download hotosm_buildings`` converts the upstream parquet
+  into compact per-split files held in RAM.
 
 Fixed
 ^^^^^

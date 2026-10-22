@@ -291,11 +291,13 @@ Training & evaluation (all heads)
   (``segmentation.scheduler``); ``none`` disables.
 * **Metric:** mean Intersection-over-Union (mIoU) via
   ``torchmetrics.MulticlassJaccardIndex``.  Frequency-weighted IoU plus
-  macro precision / recall / F1 are also reported in the result row
+  Boundary IoU and macro precision / recall / F1 are also reported in the result row
   (see :doc:`results-format`).
 * **Uncertainty:** 95% bootstrap confidence intervals resample held-out
   images and recompute dataset-level mIoU from their aggregated confusion
   matrices.
+
+Boundary IoU measures overlap within each class's inner contour band, following `Cheng et al. (CVPR 2021) <https://arxiv.org/abs/2103.16562>`__. The band width is 2% of the image diagonal, rounded to at least one pixel. Intersections and unions accumulate over the dataset before averaging across classes with a nonempty union. Pixels within one band width of an ignored target are excluded so predictions in unlabeled regions cannot alter the score. Image borders count as contours.
 
 .. _segmentation-model-selection:
 

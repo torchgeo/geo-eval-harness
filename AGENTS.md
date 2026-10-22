@@ -22,6 +22,7 @@ src/torchgeo_bench/        # Main source package (importable as torchgeo_bench)
   ├── resume.py            # config_hash-based resume/skip logic
   ├── results.py            # EvaluationResult schema + atomic per-model CSV writes
   ├── download.py          # Dataset downloads (geobench_v1/v2 + torchgeo eurosat)
+  ├── hub.py               # Exact-commit Hugging Face downloads verified against checksums/*.sha256
   ├── datasets/            # Per-dataset BenchDataset wrappers + V1/V2 base classes
   ├── linear.py            # Custom LogisticRegression (PyTorch-based)
   ├── knn.py               # FAISS-backed KNN via faissknn

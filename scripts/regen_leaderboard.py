@@ -42,7 +42,7 @@ DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln"})
 
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
-RGB_ONLY_DATASETS = frozenset({"aid", "resisc45", "ucmerced"})
+RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "resisc45", "ucmerced"})
 
 # The plain (S2L2A) TerraMind configs were additionally swept with
 # ``dataset.bands=rgb``, which forces their S2L2A-modality pathway onto
@@ -50,6 +50,9 @@ RGB_ONLY_DATASETS = frozenset({"aid", "resisc45", "ucmerced"})
 # dedicated ``_rgb`` config. For the RGB cell, only the ``_rgb`` config's row
 # is authoritative; drop this off-modality artifact before alias resolution.
 TERRAMIND_OFF_MODALITY = frozenset({"tt_terramind_v1_base", "tt_terramind_v1_large"})
+# The mirror case: the RGB-modality ``_rgb`` configs swept with ``bands=all``. For the
+# Multispectral cell, only the plain config's row is authoritative.
+TERRAMIND_RGB_CONFIGS = frozenset({"tt_terramind_v1_base_rgb", "tt_terramind_v1_large_rgb"})
 
 # Raw metric name -> canonical name registered in the evaluma metric registry.
 METRIC_MAP = {"accuracy": "accuracy", "micro_mAP": "map", "mIoU": "miou"}
@@ -140,6 +143,7 @@ DATASET_DISPLAY = {
     "fotw": "Fields of the World · V2",
     "kuro_siwo": "Kuro Siwo · V2",
     "pastis": "PASTIS · V2",
+    "hotosm_buildings": "HOTOSM Buildings",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.
@@ -192,7 +196,10 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
     name = df["name"].astype(str)
 
-    off_modality = name.isin(TERRAMIND_OFF_MODALITY) & (df["bands"].astype(str) == "rgb")
+    is_rgb_sweep = df["bands"].astype(str) == "rgb"
+    off_modality = (name.isin(TERRAMIND_OFF_MODALITY) & is_rgb_sweep) | (
+        name.isin(TERRAMIND_RGB_CONFIGS) & ~is_rgb_sweep
+    )
     df = df[~off_modality].copy()
     name = df["name"].astype(str)
 

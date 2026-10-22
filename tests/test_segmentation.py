@@ -16,6 +16,7 @@ from torchmetrics.functional.classification import (
 )
 
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
+from torchgeo_bench.boundary_iou import MulticlassBoundaryIoU
 from torchgeo_bench.config.schema import SegmentationConfig
 from torchgeo_bench.results import bootstrap_miou
 from torchgeo_bench.segmentation_probe import (
@@ -269,8 +270,18 @@ def test_solver_fit_and_evaluate(mock_backbone, dummy_data):
     metrics = solver.evaluate(loader)
 
     assert isinstance(metrics, dict)
-    assert set(metrics.keys()) == {"mIoU", "fw_IoU", "precision", "recall", "f1"}
+    assert metrics.keys() == {
+        "mIoU",
+        "fw_IoU",
+        "precision",
+        "recall",
+        "f1",
+        "boundary_IoU",
+        "boundary_IoU_width",
+    }
     assert 0.0 <= metrics["mIoU"] <= 1.0
+    assert 0.0 <= metrics["boundary_IoU"] <= 1.0
+    assert metrics["boundary_IoU_width"] >= 1.0
 
 
 @pytest.mark.parametrize("collect_confusions", [False, True])
@@ -349,6 +360,11 @@ def test_solver_evaluation_parity(
         "recall": multiclass_recall(predictions, masks, average="macro", **metric_args).item(),
         "f1": multiclass_f1_score(predictions, masks, average="macro", **metric_args).item(),
     }
+    boundary = MulticlassBoundaryIoU(**metric_args)
+    boundary.update(predictions, masks)
+    expected_metrics.update(
+        boundary_IoU=boundary.compute().item(), boundary_IoU_width=boundary.boundary_width
+    )
     if collect_confusions:
         expected_confusions = torch.stack(
             [

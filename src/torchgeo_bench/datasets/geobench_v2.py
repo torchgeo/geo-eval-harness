@@ -9,6 +9,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+from ..hub import load_checksums
 from .base import BenchDataset
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,24 @@ _V2_REGISTRY: dict[str, str] = {
     "treesatai": "GeoBenchTreeSatAI",
 }
 
+# Pinned ``aialliance/<name>`` commits; archive digests are in checksums/geobench_v2.sha256.
+V2_REVISIONS: dict[str, str] = {
+    "benv2": "20ac91314d2959d585faef744e07a2beb219759d",
+    "burn_scars": "a31f44bd17e4889c33777576068a14461c9e436a",
+    "caffe": "9c8b0e8886cbb9a91c4ef90d8676df9462d9afbd",
+    "cloudsen12": "7b72e755b787231c2263ad70c9d04eba38bdbb93",
+    "dynamic_earthnet": "b5374f7ad00aeedf8436029aab09d23362e319cd",
+    "flair2": "e81a78d922f6e60953e5bab6404b1fc21896fdd1",
+    "forestnet": "06c344cebeba8cc176688dceb48ff1a0b98327d4",
+    "fotw": "53840eaa234c6e9dee8a21776b872b208998a946",
+    "kuro_siwo": "25997dc683df721de44fe6f68a4ce1b36f4562eb",
+    "pastis": "b4918975bf6650250715a0f922fd496266737a96",
+    "so2sat": "dcaca83bf7acb78d92e5161499a1bb5d09716536",
+    "spacenet2": "6e31423205fe0f4d11f7c3f29b2ab9590d0f97c1",
+    "spacenet7": "fd2305b12db018e365c0d9831041e4a9e395d4bf",
+    "treesatai": "f3305edc75e6bb4679129f068f877dbff04e6e43",
+}
+
 # KuroSiwo expects "val"; the other upstream loaders expect "validation".
 _V2_VAL_AS_VAL: frozenset[str] = frozenset({"kuro_siwo"})
 
@@ -40,6 +59,16 @@ _V2_VAL_AS_VAL: frozenset[str] = frozenset({"kuro_siwo"})
 def list_v2_datasets() -> list[str]:
     """Return the sorted set of dataset names handled by the V2 adapter."""
     return sorted(_V2_REGISTRY)
+
+
+def v2_checksums(dataset: str) -> dict[str, str]:
+    """Return one dataset's archive digests, keyed by file name within its directory."""
+    prefix = f"{dataset}/"
+    return {
+        name.removeprefix(prefix): digest
+        for name, digest in load_checksums("geobench_v2.sha256").items()
+        if name.startswith(prefix)
+    }
 
 
 class _ChainedTransform:

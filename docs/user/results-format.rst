@@ -128,6 +128,8 @@ Column               Description
 ``f1``               Macro F1 (segmentation only).
 ==================== ============================================================
 
+Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal).
+
 Atomic appends
 --------------
 

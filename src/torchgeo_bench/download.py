@@ -8,22 +8,29 @@ Targets:
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
+- ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
+  into compact per-split files under ``<output>/hotosm_buildings``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
 Use ``--datasets`` to select a GeoBench subset.
 """
 
-import hashlib
 import logging
+import shutil
 import zipfile
 from pathlib import Path
 
-from huggingface_hub import snapshot_download
 from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, UCMerced
 
 from torchgeo_bench.datasets._v1_webdataset import download_sharded_root
-from torchgeo_bench.datasets.geobench_v2 import list_v2_datasets
+from torchgeo_bench.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
+from torchgeo_bench.datasets.hotosm_buildings import (
+    UPSTREAM_SPLITS,
+    HOTOSMBuildings,
+    convert_hotosm_split,
+)
+from torchgeo_bench.hub import fetch_pinned, load_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +38,9 @@ GEOBENCH_V2_REPO_PREFIX = "aialliance"
 
 AID_REPO = "isaaccorley/aid"
 AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
-AID_ZIP_SHA256 = "79345ef1766e85f7b92cf556c809c4f32ff24228ae71aadf96780f74f48c26a4"
-AID_SPLIT_SHA256: dict[str, str] = {
-    "train": "807a725d2c07c77c0fd3014b341825f76aacfb47bd90485f8c222502945d4149",
-    "val": "b1bdacc9f5a406715b2b1e40648e5d4bc8929cadde4646c2fc5b2e3b6a3ead21",
-    "test": "84b08edcfd4d34bc62340ff0aebc0e07426865323bfd6c38868dc2bc8c70111b",
-}
+
+HOTOSM_REPO = "hotosm/vhr-building-segmentation"
+HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
@@ -49,7 +53,7 @@ V1_DATASETS: tuple[str, ...] = (
     "m-bigearthnet",
 )
 TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
-DIRECT_DATASETS: tuple[str, ...] = ("aid",)
+DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
 )
@@ -84,15 +88,15 @@ def download_geobench_v1(output_dir: Path, datasets: list[str] | None = None) ->
 
 
 def download_geobench_v2_dataset(name: str, v2_root: Path) -> None:
-    """Download a single GeoBench V2 dataset into ``v2_root/<name>``."""
+    """Download and verify a pinned GeoBench V2 dataset into ``v2_root/<name>``."""
+    if name not in V2_REVISIONS:
+        raise ValueError(f"Unknown GeoBench V2 dataset: {name}")
     target = v2_root / name
     target.mkdir(parents=True, exist_ok=True)
     repo_id = f"{GEOBENCH_V2_REPO_PREFIX}/{name}"
-    logger.info("Downloading %s -> %s", repo_id, target)
-    snapshot_download(
-        repo_id=repo_id,
-        repo_type="dataset",
-        local_dir=target,
+    logger.info("Downloading %s@%s -> %s", repo_id, V2_REVISIONS[name], target)
+    fetch_pinned(
+        repo_id, V2_REVISIONS[name], target, v2_checksums(name), complete_glob="*.tortilla"
     )
 
 
@@ -149,31 +153,41 @@ def download_resisc45(output_dir: Path) -> None:
     logger.info("RESISC45 download complete.")
 
 
-def _verify_sha256(path: Path, expected: str) -> None:
-    """Raise ``ValueError`` if ``path`` does not hash to ``expected``."""
-    with path.open("rb") as stream:
-        actual = hashlib.file_digest(stream, "sha256").hexdigest()
-    if actual != expected:
-        raise ValueError(
-            f"AID checksum mismatch: {path} (expected {expected}, got {actual}). "
-            "Remove this file and retry the download."
-        )
-
-
 def download_aid(output_dir: Path) -> None:
     """Download the pinned ``isaaccorley/aid`` rehost into ``output_dir/aid``."""
     target = Path(output_dir) / "aid"
     target.mkdir(parents=True, exist_ok=True)
     logger.info("Downloading %s@%s -> %s", AID_REPO, AID_REVISION, target)
-    snapshot_download(
-        repo_id=AID_REPO, repo_type="dataset", revision=AID_REVISION, local_dir=target
-    )
-    _verify_sha256(target / "AID.zip", AID_ZIP_SHA256)
-    for split, expected in AID_SPLIT_SHA256.items():
-        _verify_sha256(target / f"aid-{split}.txt", expected)
+    fetch_pinned(AID_REPO, AID_REVISION, target, load_checksums("aid.sha256"))
     with zipfile.ZipFile(target / "AID.zip") as archive:
         archive.extractall(target)
     logger.info("AID download complete.")
+
+
+def download_hotosm_buildings(output_dir: Path) -> None:
+    """Download the pinned HOTOSM parquet and convert it into ``output_dir/hotosm_buildings``.
+
+    The upstream shards (5.9 GB) are deleted after conversion (about 1.3 GB).
+    """
+    target = Path(output_dir) / "hotosm_buildings"
+    upstream = target / "upstream"
+    logger.info("Downloading %s@%s -> %s", HOTOSM_REPO, HOTOSM_REVISION, upstream)
+    fetch_pinned(
+        HOTOSM_REPO,
+        HOTOSM_REVISION,
+        upstream,
+        load_checksums("hotosm_buildings.sha256"),
+        allow_patterns=["data/*.parquet"],
+    )
+    for split, prefix in UPSTREAM_SPLITS.items():
+        rows = convert_hotosm_split(
+            (upstream / "data").glob(f"{prefix}-*.parquet"),
+            target / f"{split}.parquet",
+            expected_rows=HOTOSMBuildings.split_sizes[split],
+        )
+        logger.info("Converted HOTOSM buildings %s split (%d rows).", split, rows)
+    shutil.rmtree(upstream)
+    logger.info("HOTOSM buildings download complete.")
 
 
 def download_ucmerced(output_dir: Path) -> None:
@@ -211,3 +225,5 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_aid(output_dir)
     if "ucmerced" in selected:
         download_ucmerced(output_dir)
+    if "hotosm_buildings" in selected:
+        download_hotosm_buildings(output_dir)

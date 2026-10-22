@@ -11,35 +11,26 @@ Index byte offsets once; each worker opens its own file descriptors for fork-saf
 Output matches :class:`~torchgeo_bench.datasets.geobench_v1.GeoBenchv1`.
 """
 
-import hashlib
 import io
 import json
 import logging
 import os
 import tarfile
 from collections.abc import Callable
-from functools import cache
-from importlib.resources import files
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
 from torch.utils.data import Dataset
 
+from ..hub import fetch_pinned, load_checksums
 from ._metadata import decode_metadata
 
 logger = logging.getLogger(__name__)
 
 V1_HF_REPO_ID = "calebrob6/geobenchv1-webdataset"
 V1_HF_REVISION = "18c293d3a963c73e8e055a2fef6fca9e029c6e95"
-
-
-@cache
-def _shard_checksums() -> dict[str, str]:
-    with files("torchgeo_bench.datasets").joinpath("_v1_checksums.sha256").open("r") as stream:
-        return {name: checksum for checksum, name in (line.split() for line in stream)}
 
 
 def download_sharded_root(
@@ -55,7 +46,7 @@ def download_sharded_root(
         datasets: Dataset names, or ``None`` for the full classification suite.
         cache_dir: Optional Hugging Face download cache.
     """
-    checksums = _shard_checksums()
+    checksums = load_checksums("geobench_v1.sha256")
     available = {name.split("/", 1)[0] for name in checksums}
     names = sorted(available) if datasets is None else list(dict.fromkeys(datasets))
     if not names:
@@ -66,26 +57,14 @@ def download_sharded_root(
     sharded_root = Path(sharded_root)
     sharded_root.mkdir(parents=True, exist_ok=True)
     logger.info("Downloading GeoBench V1 from %s -> %s", V1_HF_REPO_ID, sharded_root)
-    snapshot_download(
-        repo_id=V1_HF_REPO_ID,
-        repo_type="dataset",
-        revision=V1_HF_REVISION,
-        local_dir=sharded_root,
+    fetch_pinned(
+        V1_HF_REPO_ID,
+        V1_HF_REVISION,
+        sharded_root,
+        {name: digest for name, digest in checksums.items() if name.split("/", 1)[0] in names},
         allow_patterns=[f"{name}/*" for name in names],
         cache_dir=Path(cache_dir) if cache_dir is not None else None,
     )
-    logger.info("Verifying GeoBench V1 archive checksums.")
-    for name, expected in checksums.items():
-        if name.split("/", 1)[0] not in names:
-            continue
-        path = sharded_root / name
-        with path.open("rb") as stream:
-            actual = hashlib.file_digest(stream, "sha256").hexdigest()
-        if actual != expected:
-            raise ValueError(
-                f"GeoBench V1 archive checksum mismatch: {path}. "
-                "Remove this file and retry the download."
-            )
     logger.info("GeoBench V1 download complete.")
 
 

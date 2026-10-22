@@ -125,6 +125,8 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
             "precision": 0.6,
             "recall": 0.7,
             "f1": 0.65,
+            "boundary_IoU": 0.3,
+            "boundary_IoU_width": 1,
         },
         torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
     )
@@ -149,6 +151,8 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     )
     df = pd.read_csv(out)
     assert df.loc[0, "best_batch_size"] == 3
+    assert df.loc[0, "boundary_iou"] == 0.3
+    assert df.loc[0, "boundary_iou_width"] == 1
 
 
 def test_segmentation_resume_skips_complete_run(tmp_path: Path):

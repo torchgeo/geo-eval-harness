@@ -5,6 +5,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from torchgeo_bench.datasets import list_datasets
@@ -64,6 +66,28 @@ def test_extract_geography_requires_imagery(
 
     with pytest.raises(FileNotFoundError, match="`torchgeo-bench download geobench_v1`"):
         extract_geography("m-eurosat")
+
+
+def test_extract_geography_reads_hotosm_splits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "data" / "hotosm_buildings"
+    root.mkdir(parents=True)
+    points = [(-77.0, -12.0, "Peru"), (31.0, -26.0, "Eswatini"), (139.0, 35.0, "Japan")]
+    for split, (lon, lat, country) in zip(("train", "val", "test"), points, strict=True):
+        pq.write_table(
+            pa.table({"lon": [lon], "lat": [lat], "country": [country]}), root / f"{split}.parquet"
+        )
+
+    record = extract_geography("hotosm_buildings")
+
+    assert record.status == "extracted"
+    assert record.version == "hotosm"
+    assert record.n == 3
+    assert record.points == [list(point) for point in points]
+    assert record.bbox == [-77.0, -26.0, 139.0, 35.0]
+    assert sum(count for _, _, count in record.bins) == 3
 
 
 def test_build_index_weights_continents_by_sample_count(tmp_path: Path) -> None:

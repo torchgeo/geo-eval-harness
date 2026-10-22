@@ -255,6 +255,8 @@ class EvaluationResult:
     precision: float | None = None
     recall: float | None = None
     f1: float | None = None
+    boundary_iou: float | None = None
+    boundary_iou_width: int | None = None
     # Calibration metrics for KNN / Linear Probing (None for segmentation rows)
     ece: float | None = None
     rms_ce: float | None = None

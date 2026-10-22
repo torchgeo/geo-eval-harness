@@ -23,10 +23,10 @@ from tests.support.data import (
     write_torchgeo_download_files,
     write_v1_shards,
 )
-from torchgeo_bench import download
+from torchgeo_bench import hub
 from torchgeo_bench.cli import main
 from torchgeo_bench.datasets import _v1_webdataset as v1
-from torchgeo_bench.datasets import get_datasets
+from torchgeo_bench.datasets import geobench_v2, get_datasets
 
 pytestmark = pytest.mark.integration
 
@@ -47,6 +47,9 @@ def local_download_sources(
     source = tmp_path / "source"
     v1_directory = write_v1_shards(source)
     v2_directory = write_caffe_files(source)
+    v2_archive = v2_directory / "geobench_caffe.tortilla"
+    v2_checksums = {f"caffe/{v2_archive.name}": _sha256(v2_archive)}
+    monkeypatch.setattr(geobench_v2, "load_checksums", lambda manifest: v2_checksums)
     euro_directory = write_torchgeo_download_files(source, "eurosat")
     resisc_directory = write_torchgeo_download_files(source, "resisc45")
     calls = []
@@ -60,14 +63,14 @@ def local_download_sources(
             shutil.copytree(v1_directory, target / "m-eurosat", dirs_exist_ok=True)
         else:
             assert kwargs["repo_id"] == "aialliance/caffe"
+            assert kwargs["revision"] == geobench_v2.V2_REVISIONS["caffe"]
             shutil.copytree(v2_directory, target, dirs_exist_ok=True)
         assert kwargs["repo_type"] == "dataset"
         return str(target)
 
-    monkeypatch.setattr(v1, "snapshot_download", snapshot_download)
-    monkeypatch.setattr(download, "snapshot_download", snapshot_download)
+    monkeypatch.setattr(hub, "snapshot_download", snapshot_download)
     checksums = {"m-eurosat/shard_00000.tar": _sha256(v1_directory / "shard_00000.tar")}
-    monkeypatch.setattr(v1, "_shard_checksums", lambda: checksums)
+    monkeypatch.setattr(v1, "load_checksums", lambda manifest: checksums)
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(_FixtureHandler, directory=str(source)))
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -171,5 +174,5 @@ def test_download_rejects_corrupted_snapshot_bytes(
     destination = tmp_path / "corrupt-download"
     destination.mkdir()
     monkeypatch.chdir(destination)
-    with pytest.raises(SystemExit, match="archive checksum mismatch"):
+    with pytest.raises(SystemExit, match="checksum mismatch"):
         main(["download", "m-eurosat"])

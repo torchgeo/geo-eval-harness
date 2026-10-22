@@ -51,6 +51,8 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "ucmerced": ("ucmerced", "UCMerced", "classification"),
     # other classification
     "aid": ("aid", "AID", "classification"),
+    # other segmentation
+    "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
 }
 
 
@@ -97,7 +99,7 @@ def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
     if name.startswith("m-"):
         return f"torchgeo-bench download geobench_v1 --datasets {name}"
-    if name in {"eurosat", "eurosat-spatial", "resisc45", "ucmerced", "aid"}:
+    if name in {"eurosat", "eurosat-spatial", "resisc45", "ucmerced", "aid", "hotosm_buildings"}:
         return f"torchgeo-bench download {name.removesuffix('-spatial')}"
     return f"torchgeo-bench download geobench_v2 --datasets {name}"
 

@@ -72,4 +72,6 @@ torchgeo wrappers
 
 .. autoclass:: AID
 
+.. autoclass:: HOTOSMBuildings
+
 .. autoclass:: UCMerced

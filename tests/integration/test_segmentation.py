@@ -167,6 +167,8 @@ def _assert_segmentation_results(output: Path, *, cached: bool) -> None:
     assert row["n_val"] == 4
     assert row["n_test"] == 4
     assert row["metric_value"] == 1
+    assert row["boundary_iou"] == 1
+    assert row["boundary_iou_width"] == 1
     assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
     assert row["ci_lower"] == row["ci_upper"] == 1
     assert row["feature_dim"] == 64

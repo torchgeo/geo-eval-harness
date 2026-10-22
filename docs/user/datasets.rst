@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``torchgeo-bench`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, and AID (rehosted from Hugging Face). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), and HOTOSM building segmentation (Hugging Face). All datasets share the
 :class:`~torchgeo_bench.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -40,6 +40,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``ucmerced``
      - ``data/ucmerced/``
      - torchgeo's ``UCMerced`` downloader
+   * - ``hotosm_buildings``
+     - ``data/hotosm_buildings/``
+     - Hugging Face ``hotosm/vhr-building-segmentation``, pinned commit, converted to per-split parquet
 
 Downloading
 -----------
@@ -58,6 +61,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ torchgeo-bench download aid                                      # isaaccorley/aid rehost
 
    $ torchgeo-bench download ucmerced                                 # torchgeo UC Merced
+   $ torchgeo-bench download hotosm_buildings                         # HOTOSM VHR buildings
    $ torchgeo-bench download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -220,6 +224,7 @@ CLI name             Class
 ``aid``              :class:`~torchgeo_bench.datasets.AID`  (30-class aerial scenes, RGB)
 
 ``ucmerced``         :class:`~torchgeo_bench.datasets.UCMerced`  (21-class aerial land use, RGB)
+``hotosm_buildings`` :class:`~torchgeo_bench.datasets.HOTOSMBuildings`  (building segmentation, RGB)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
@@ -237,6 +242,8 @@ than being silently omitted.
 .. code-block:: console
 
    $ torchgeo-bench run --model imagestats --dataset ucmerced --device cpu
+
+``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``torchgeo-bench download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model.
 
 Selecting datasets
 ------------------

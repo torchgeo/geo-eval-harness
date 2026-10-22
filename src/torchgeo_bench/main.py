@@ -706,6 +706,8 @@ def run_segmentation(
         precision=metrics.get("precision"),
         recall=metrics.get("recall"),
         f1=metrics.get("f1"),
+        boundary_iou=metrics["boundary_IoU"],
+        boundary_iou_width=int(metrics["boundary_IoU_width"]),
     ).to_row()
     yield [row]
 
