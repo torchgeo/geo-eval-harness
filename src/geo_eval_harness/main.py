@@ -20,6 +20,7 @@ from geo_eval_harness.config.presets import (
     NORMALIZATIONS,
     ModelPreset,
     build_model,
+    recorded_normalization,
     resolve_run_config,
 )
 from geo_eval_harness.config.run import RunConfig
@@ -856,7 +857,7 @@ def dataset_metadata(
 ) -> ResultMetadata:
     """Collect result metadata before loading data or initializing the model."""
     linear = cfg.classification.linear
-    normalization = NORMALIZATIONS[cfg.input.normalization]
+    normalization = recorded_normalization(model_cfg, NORMALIZATIONS[cfg.input.normalization])
     bands_value = normalize_bands_value(cfg.input.bands)
     return {
         "dataset": ds_name,

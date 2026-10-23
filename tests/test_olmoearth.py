@@ -1,16 +1,22 @@
 """Tests for OlmoEarth sensor routing, normalization, and embeddings."""
 
 import sys
+from collections.abc import Iterator
 from importlib.util import find_spec
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest import mock
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
+from geo_eval_harness.config.presets import NORMALIZATIONS
+from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.main import main
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
 
 olmoearth_available = find_spec("olmoearth_pretrain_minimal") is not None
@@ -128,6 +134,42 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     assert tiny_olmoearth["encoder_kwargs"] == {"patch_size": 4, "input_res": 10, "fast_pass": True}
     assert tiny_olmoearth["loads"] == [("nano", True)]
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
+
+
+def test_resume_skips_a_run_whose_row_records_olmoearth_normalization(
+    tiny_olmoearth: dict[str, Any], tmp_path: Path
+) -> None:
+    out = tmp_path / "out.csv"
+    cfg = RunConfig.model_validate(
+        {
+            "model": {"name": "olmoearth_nano"},
+            "datasets": ["burn_scars"],
+            "runtime": {"device": "cpu", "workers": 0},
+            "output": {"file": str(out), "resume": True},
+        }
+    )
+
+    def build(cfg: RunConfig, *_args: object) -> OlmoEarthBenchModel:
+        normalization = NORMALIZATIONS[cfg.input.normalization]
+        return OlmoEarthBenchModel(_rgb_bands(), model_size="nano", normalization=normalization)
+
+    def evaluate(
+        cfg: RunConfig, _model: object, _loaders: object, meta: dict[str, Any], *_rest: object
+    ) -> Iterator[list[dict[str, Any]]]:
+        yield [{**meta, "method": f"seg-{cfg.segmentation.head}", "metric_name": "mIoU"}]
+
+    with (
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=(None,) * 4),
+        mock.patch("geo_eval_harness.main.instantiate_dataset_model", side_effect=build) as built,
+        mock.patch("geo_eval_harness.main.run_segmentation", side_effect=evaluate),
+    ):
+        main(cfg)
+        main(cfg)
+
+    assert built.call_count == 1
+    rows = pd.read_csv(out)
+    assert len(rows) == 1
+    assert rows.loc[0, "normalization"] == "model_native"
 
 
 @pytest.mark.parametrize("normalization", ["auto", False])

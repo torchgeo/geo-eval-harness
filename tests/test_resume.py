@@ -7,8 +7,16 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from geo_eval_harness.config.presets import ModelPreset, merge_settings, resolve_run_config
+from geo_eval_harness.config.catalog import list_model_configs
+from geo_eval_harness.config.presets import (
+    ModelPreset,
+    load_model_preset,
+    merge_settings,
+    recorded_normalization,
+    resolve_run_config,
+)
 from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.resume import (
     ResumeState,
@@ -251,3 +259,21 @@ def test_load_completed_canonicalizes_csv_numbers_and_legacy_columns(tmp_path: P
         "accuracy": {("m-eurosat", "224", "")},
         "micro_mAP": {("m-forestnet", "", "")},
     }
+
+
+def test_only_olmoearth_presets_record_a_normalization_other_than_requested() -> None:
+    changed = {}
+    for name in list_model_configs():
+        preset = load_model_preset(ModelConfig(name=name))
+        if preset.track != "image":
+            continue
+        for requested in ("bandspec_zscore", "model_native"):
+            recorded = recorded_normalization(preset, requested)
+            if recorded != requested:
+                changed[name, requested] = recorded
+
+    assert changed
+    assert {name for name, _ in changed} == {
+        name for name in list_model_configs() if name.startswith("olmoearth")
+    }
+    assert set(changed.values()) == {"model_native"}
