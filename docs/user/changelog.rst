@@ -32,6 +32,7 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* Infra-Bench CLS (``infrabench-cls``): 18,756 Sentinel-2 + Sentinel-1 tiles of OpenStreetMap critical infrastructure, 13 classes across seven regions and four sectors, on the paper's spatially blocked 13,087 / 2,856 / 2,813 split. Download with ``geo-eval-harness download infrabench-cls``. The coverage map reads its tile centres from per-cell ``manifest.json`` records.
 
 Fixed
 ^^^^^
