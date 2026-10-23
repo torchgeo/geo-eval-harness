@@ -1,0 +1,10 @@
+_target_: torchgeo_bench.models.TorchGeoResNetBench
+factory: resnet18
+weights_class: ResNet18_Weights
+weights_member: LANDSAT_TM_TOA_MOCO
+auto_resize: false
+target_size: 224
+name: tgeo_resnet18_l45_tm_toa_moco
+eval:
+  segmentation:
+    layers: ["layer4", "layer3", "layer2", "layer1"]
