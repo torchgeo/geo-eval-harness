@@ -246,19 +246,21 @@ report.show_missing = true
 min_confidence = 60
 paths = [ "src", "scripts", "experiments", "projects", "docs", "tests" ]
 exclude = [
-  "docs/conf.py",                                  # Sphinx reads these names by convention, not by reference.
-  "docs/examples",                                 # standalone, read-only usage snippets
+  "docs/conf.py",                                    # Sphinx reads these names by convention, not by reference.
+  "docs/examples",                                   # standalone, read-only usage snippets
   "src/geo_eval_harness/models/contrib_template.py", # template for new model wrappers, never instantiated
 ]
 ignore_decorators = [ "@field_validator", "@model_validator" ]  # called by Pydantic, not by name
 ignore_names = [
-  "__dir__",           # PEP 562 lazy-module hook, called by the import system
-  "__getattr__",       # PEP 562 lazy-module hook, called by the import system
-  "construct_mapping", # yaml.SafeLoader override, called by PyYAML
+  "__dir__",            # PEP 562 lazy-module hook, called by the import system
+  "__getattr__",        # PEP 562 lazy-module hook, called by the import system
+  "construct_mapping",  # yaml.SafeLoader override, called by PyYAML
   # EvaluationResult / CoordBenchResult / ResultMetadata fields read only via
   # dict/row access (CSV columns), not by a bare Python-level reference.
   # Add a new field here if vulture flags it.
   "best_batch_size",
+  "boundary_iou",
+  "boundary_iou_width",
   "c_range_num",
   "c_range_start",
   "c_range_stop",
@@ -269,4 +271,9 @@ ignore_names = [
   "n_folds",
   "rms_ce",
   "rms_ce_ts",
+  # torchmetrics.Metric class attributes and a HF UperNetConfig field, read by the libraries.
+  "full_state_update",
+  "higher_is_better",
+  "is_differentiable",
+  "num_labels",
 ]
