@@ -13,6 +13,12 @@ Changed
 Added
 ^^^^^
 
+* Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
+  seven African cities, cut into 512x512 chips on each scene's native grid (0.02-0.20 m GSD).
+  Train/val/test are assigned per 500 m geographic block and fixed in a packaged index
+  (76,818 / 11,236 / 22,408 chips). Download with ``geo-eval-harness download open_cities``.
+* ``scripts/compute_band_statistics.py --ignore-index`` leaves nodata mask pixels out of the
+  band statistics.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
