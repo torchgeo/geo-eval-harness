@@ -14,6 +14,7 @@ import pytest
 import rasterio
 import torch
 from affine import Affine
+from rasterio.errors import RasterioIOError
 
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import Footprint
@@ -133,6 +134,50 @@ def test_aef_reads_a_south_up_tile_onto_a_north_up_grid(tmp_path: Path) -> None:
     out = product.read(Footprint(UTM, (10.0, 0.0, 1000.0, 0.0, -10.0, 5000.0), (16, 16), 2020))
     assert np.allclose(out[0, :, 0], decode_signed_square(rows[::-1, :1][None])[0, :, 0])
     assert list(product._tiles) == [str(tile)]
+
+
+class _FailingTile:
+    """Wrap an open tile so its reads fail like an interrupted S3 range request."""
+
+    def __init__(self, dataset: rasterio.DatasetReader) -> None:
+        self._dataset = dataset
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._dataset, name)
+
+    def read(self, **_: object) -> np.ndarray:
+        raise RasterioIOError("Read failed")
+
+
+@pytest.mark.parametrize("failures", [1, AEF.read_attempts])
+def test_aef_reopens_a_tile_after_a_failed_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failures: int
+) -> None:
+    codes = np.arange(64, dtype=np.int8).reshape(64, 1, 1).repeat(4, axis=1).repeat(4, axis=2)
+    tile = tmp_path / "tile.tif"
+    with rasterio.open(tile, "w", driver="GTiff", count=64, dtype="int8", crs=UTM, nodata=-128,
+                       width=4, height=4, transform=Affine(10, 0, 0, 0, -10, 40)) as dst:  # fmt: skip
+        dst.write(codes)
+    opened = []
+
+    def flaky_open(path: str) -> object:
+        dataset = real_open(path)
+        opened.append(dataset)
+        return _FailingTile(dataset) if len(opened) <= failures else dataset
+
+    real_open = rasterio.open
+    monkeypatch.setattr(rasterio, "open", flaky_open)
+    product = AEF(root=tmp_path)
+    product.retry_delay = 0.0
+    product.tile_urls = lambda _: [str(tile)]  # type: ignore[method-assign]
+    grid = Footprint(UTM, (10.0, 0.0, 0.0, 0.0, -10.0, 40.0), (4, 4), 2020)
+    if failures == AEF.read_attempts:
+        with pytest.raises(RasterioIOError):
+            product.read(grid)
+    else:
+        assert np.allclose(product.read(grid), decode_signed_square(codes))
+    assert all(dataset.closed for dataset in opened[:-1])
+    assert len(opened) == min(failures + 1, AEF.read_attempts)
 
 
 def test_aef_downloads_the_index_once_and_selects_overlapping_tiles(
