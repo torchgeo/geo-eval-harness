@@ -54,7 +54,7 @@ data/embeddings/<product>/<dataset>/
 
 ## Adding a product
 
-Subclass `EmbeddingProduct` in `torchgeo_bench/embeddings/products.py`. Set `name`, `channels` and `years`, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `torchgeo_bench.embeddings.grid.paste` resamples a source window onto the grid. Then register the class in `PRODUCTS` and add a preset like `conf/model/aef.yaml`.
+Each product has its own module in `torchgeo_bench/embeddings/products/` (`aef.py`, `tessera.py`, `olmo_earth.py`). Add a new module that subclasses `EmbeddingProduct` from `products/base.py`. Set `name`, `channels` and `years`, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `torchgeo_bench.embeddings.grid.paste` resamples a source window onto the grid. Then register the class in `PRODUCTS` in `products/__init__.py` and add a preset like `conf/model/aef.yaml`.
 
 ## Adding a dataset
 
