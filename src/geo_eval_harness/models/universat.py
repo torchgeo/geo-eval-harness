@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
+from ._band_mapping import wavelengths_um
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -86,7 +87,8 @@ def _build_sensor_groups(
 
     Returns one dict per sensor (first-seen order) with keys ``modality``,
     ``indices`` (channel positions in ``bands``), ``wavelengths`` (floats, or
-    s1 sensor codes), ``input_res``, and ``subpatch``. ``modality`` / ``input_res``
+    s1 sensor codes; bands without ``wavelength_um`` use the S2 band of the same
+    name), ``input_res``, and ``subpatch``. ``modality`` / ``input_res``
     overrides apply only when the input has a single sensor.
     """
     sensor_to_indices: dict[str, list[int]] = defaultdict(list)
@@ -118,14 +120,7 @@ def _build_sensor_groups(
         if mod == "s1":
             wavelengths: list[float | str] = [_sar_code(b.name) for b in group_bands]
         else:
-            band_wavelengths = [b.wavelength_um for b in group_bands]
-            if any(w is None for w in band_wavelengths):
-                missing = [b.name for b in group_bands if b.wavelength_um is None]
-                raise ValueError(
-                    f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
-                    f"have wavelength_um=None."
-                )
-            wavelengths = [w for w in band_wavelengths if w is not None]
+            wavelengths = [*wavelengths_um(group_bands)]
         res = input_res if (input_res is not None and single_sensor) else _MODALITY_INPUT_RES[mod]
         groups.append(
             {
