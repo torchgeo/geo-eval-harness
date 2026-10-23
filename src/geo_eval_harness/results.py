@@ -29,8 +29,6 @@ from geo_eval_harness.resume import KEY_COLS, _canonical_key_cell
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = "results/models"
-DEFAULT_PROFILE_RESULTS_DIR = "results/profiles"
-DEFAULT_INTRINSIC_DIM_RESULTS_DIR = "results/intrinsic_dim"
 
 # The resume key minus ``config_hash`` (that column is exactly what fragments
 # legacy rows, written before it existed, from later hashed reruns of the same
