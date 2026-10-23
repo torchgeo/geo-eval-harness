@@ -21,7 +21,6 @@ from geo_eval_harness.models.torchgeo_models import (
     _DEO_RGB_STD,
     _DEO_S2_MEAN,
     _DEO_S2_STD,
-    _DOFA_SAR_WAVELENGTH_UM,
     TorchGeoCromaBench,
     TorchGeoDEOBench,
     TorchGeoDOFABench,
