@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 
 from . import __version__, commands
 from .commands.coord_arguments import add_coord_arguments
+from .commands.embeddings_arguments import add_embeddings_arguments
 from .commands.flops_arguments import add_flops_arguments
 from .commands.profile_arguments import add_profile_arguments
 from .commands.run_arguments import add_run_arguments
@@ -62,6 +63,8 @@ def _setup_parser() -> argparse.ArgumentParser:
     # Coordinate benchmarks
     coord = subcommands.add_parser("coord", help="Run coordinate encoder benchmarks")
     add_coord_arguments(coord)
+    embeddings = subcommands.add_parser("embeddings", help="Download embedding products or reduce them with PCA")
+    add_embeddings_arguments(embeddings)
     return parser
 
 
@@ -108,6 +111,8 @@ def main(argv: list[str] | None = None) -> None:
         commands.flops(args)
     elif args.command == "coord":
         commands.coord(args)
+    elif args.command == "embeddings":
+        commands.embeddings(args)
     else:
         raise SystemExit(f"{args.command} is not implemented by the image CLI yet")
 

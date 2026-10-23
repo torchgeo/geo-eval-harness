@@ -10,11 +10,12 @@ Public API
 .. autofunction:: list_datasets
 .. autoclass:: BandSpec
 .. autoclass:: BenchDataset
+.. autoclass:: Footprint
 """
 
 from importlib import import_module
 
-from .base import BandSpec, BenchDataset
+from .base import BandSpec, BenchDataset, Footprint
 from .loading import (
     get_bench_dataset_class,
     get_dataset_task,
@@ -37,6 +38,7 @@ __all__ = [
     "EuroSAT",
     "EuroSATSpatial",
     "FieldsOfTheWorld",
+    "Footprint",
     "Forestnet",
     "HOTOSMBuildings",
     "KuroSiwo",

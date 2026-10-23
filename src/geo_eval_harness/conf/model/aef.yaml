@@ -1,0 +1,12 @@
+name: aef
+target: geo_eval_harness.models.PrecomputedEmbedding
+track: embedding
+kwargs:
+  product: aef
+input:
+  bands: all
+  image_size: null
+  normalization: none
+segmentation:
+  layers:
+    - feature_map

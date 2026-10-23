@@ -9,6 +9,7 @@ Torch is imported only for type checking so metadata stays available without loa
 
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
 
@@ -19,9 +20,26 @@ if TYPE_CHECKING:
 
     from torch.utils.data import Dataset
 
-__all__ = ["BandSpec", "BenchDataset"]
+__all__ = ["BandSpec", "BenchDataset", "Footprint"]
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Footprint:
+    """Where and when a sample was observed: its pixel grid and calendar year.
+
+    Attributes:
+        crs: Coordinate reference system, e.g. ``"EPSG:32632"``.
+        transform: Affine pixel-to-CRS transform in rasterio order ``(a, b, c, d, e, f)``.
+        shape: Raster ``(height, width)`` in pixels.
+        year: Calendar year of the observation.
+    """
+
+    crs: str
+    transform: tuple[float, float, float, float, float, float]
+    shape: tuple[int, int]
+    year: int
 
 
 class BenchDataset(ABC):
@@ -130,3 +148,10 @@ class BenchDataset(ABC):
             bands: Tuple of canonical band names to load. ``None`` loads all.
             transform: Optional sample transform callable.
         """
+
+    def footprint(self, dataset: "Dataset", index: int) -> Footprint:
+        """Return the footprint of sample *index* of a split from :meth:`get_dataset`.
+
+        Datasets without georeferenced samples do not override this.
+        """
+        raise NotImplementedError(f"{self.name} samples have no geographic footprint")
