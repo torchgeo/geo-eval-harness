@@ -240,7 +240,7 @@ def test_unknown_timm_model_name_raises_clearly() -> None:
 
 
 def test_create_kwargs_reach_timm_so_a_vit_accepts_other_sizes() -> None:
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = _rgb_bands(mins=(0.0, 0.0, 0.0), maxs=(1.0, 1.0, 1.0))
     model = TimmPatchBenchModel(
