@@ -17,6 +17,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from threadpoolctl import threadpool_limits
 
 from torchgeo_bench.results import load_results
 
@@ -622,16 +623,20 @@ def assemble(
         if bench is None or len(bench.models_) < 2:
             continue
         aggregation_blocks: dict[str, object] = {}
-        for aggregation, meta in AGG_META.items():
-            ranked = _ranked_rows(
-                bench, aggregation, n_bootstrap=n_bootstrap, random_state=random_state
-            )
-            aggregation_blocks[aggregation] = {
-                "rows": _enrich_rows(bench, ranked, compute, view["bandclass"]),
-                "overall_meta": meta,
-                "dataset_meta": dataset_meta(harmonized, list(bench.datasets_)),
-                "excluded": excluded,
-            }
+        # The ELO bootstrap fits thousands of tiny logistic regressions, which
+        # multithreaded BLAS/OpenMP slow down ~15x.  Enter the limit after
+        # build_view imports evaluma: threadpoolctl only limits loaded libraries.
+        with threadpool_limits(1):
+            for aggregation, meta in AGG_META.items():
+                ranked = _ranked_rows(
+                    bench, aggregation, n_bootstrap=n_bootstrap, random_state=random_state
+                )
+                aggregation_blocks[aggregation] = {
+                    "rows": _enrich_rows(bench, ranked, compute, view["bandclass"]),
+                    "overall_meta": meta,
+                    "dataset_meta": dataset_meta(harmonized, list(bench.datasets_)),
+                    "excluded": excluded,
+                }
         rankings.setdefault(view["task"], {}).setdefault(view["probe"], {})[view["bandclass"]] = (
             aggregation_blocks
         )
@@ -640,7 +645,9 @@ def assemble(
 
     if not rankings:
         raise ValueError("No ranking views contain at least two complete models.")
-    return rankings, sensitivity_matrix(views, benches), _default_slice(rankings)
+    with threadpool_limits(1):
+        sensitivity = sensitivity_matrix(views, benches)
+    return rankings, sensitivity, _default_slice(rankings)
 
 
 def inline_into_html(html_text: str, blocks: dict[str, object]) -> str:
