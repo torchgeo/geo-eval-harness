@@ -938,3 +938,34 @@ class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
             images = _auto_resize(images, self.target_size)
         chn_ids = self._chn_ids.unsqueeze(0).expand(images.shape[0], -1)
         return self.backbone({"imgs": images, "chn_ids": chn_ids})
+
+
+class TorchGeoTileNetBench(_TorchGeoBackboneBench):
+    """Tile2Vec ResNet-22 model."""
+
+    def __init__(
+        self,
+        bands: list[BandSpec],
+        *,
+        factory: str = "tilenet",
+        weights_class: str = "TileNet_Weights",
+        weights_member: str = "NAIP_ALL_TILE2VEC",
+        auto_resize: bool = False,
+        target_size: int | None = 224,
+        normalization_input_unit: str | None = None,
+        skip_weight_normalize: int = 0,
+        input_unit_check: str = "warn",
+        **_kwargs: Any,
+    ) -> None:
+        super().__init__(
+            bands=bands,
+            factory=factory,
+            weights_class=weights_class,
+            weights_member=weights_member,
+            auto_resize=auto_resize,
+            target_size=target_size,
+            normalization_input_unit=normalization_input_unit,
+            skip_weight_normalize=skip_weight_normalize,
+            input_unit_check=input_unit_check,
+            **_kwargs,
+        )

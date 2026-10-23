@@ -1,0 +1,13 @@
+_target_: torchgeo_bench.models.TorchGeoTileNetBench
+factory: tilenet
+weights_class: TileNet_Weights
+weights_member: NAIP_ALL_TILE2VEC
+auto_resize: false
+target_size: 224
+name: tgeo_tilenet_naip_tile2vec
+dataset:
+  bands:
+    - red
+    - green
+    - blue
+    - nir
