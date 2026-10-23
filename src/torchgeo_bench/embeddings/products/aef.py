@@ -1,6 +1,7 @@
 """AlphaEarth Foundations (AEF) annual embeddings."""
 
 import logging
+import time
 import urllib.request
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -8,6 +9,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 import numpy as np
 import rasterio
 import rasterio.warp
+from rasterio.errors import RasterioIOError
 from rasterio.windows import Window
 
 from torchgeo_bench.datasets.base import Footprint
@@ -37,6 +39,10 @@ class AEF(EmbeddingProduct):
     base_url = "https://s3.us-west-2.amazonaws.com/"
     index_url = base_url + "us-west-2.opendata.source.coop/tge-labs/aef/v1/annual/aef_index.parquet"
     max_open_tiles = 16
+    #: Range requests to S3 occasionally fail with no response or a 503, which
+    #: surfaces as a ZSTD decode error; a reopened tile reads cleanly.
+    read_attempts = 4
+    retry_delay = 2.0
     #: Fetch the 64 band-interleaved blocks of a window in parallel over HTTP/2.
     gdal_options: ClassVar[dict[str, str]] = {
         "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
@@ -99,6 +105,18 @@ class AEF(EmbeddingProduct):
                 if window is None:
                     continue
                 region = Window.from_slices(*window)
-                codes = tile.read(window=region)
-                paste(out, grid, decode_signed_square(codes), crs, tile.window_transform(region))
+                transform = tile.window_transform(region)
+                codes = self._read_window(url, region)
+                paste(out, grid, decode_signed_square(codes), crs, transform)
         return out
+
+    def _read_window(self, url: str, region: Window) -> np.ndarray:
+        """Read *region*, reopening the tile after a failed read."""
+        for attempt in range(1, self.read_attempts):
+            try:
+                return self._open(url).read(window=region)
+            except RasterioIOError as error:  # allow-except: S3 range requests fail transiently
+                logger.warning("Retrying %s (attempt %d): %s", url, attempt, error)
+                self._tiles.pop(url).close()
+                time.sleep(self.retry_delay * attempt)
+        return self._open(url).read(window=region)
