@@ -14,9 +14,11 @@ import torch
 from rasterio.transform import from_origin
 from torch.utils.data import DataLoader
 
+from geo_eval_harness import download
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets import open_cities as oc
 from geo_eval_harness.download import download_open_cities, fetch_open_cities_file
+from geo_eval_harness.hub import load_checksums
 
 CHIP = oc.CHIP_SIZE
 ORIGIN = (500_000.0, 9_250_000.0)  # UTM 37S, near Dar es Salaam
@@ -212,10 +214,9 @@ def test_upstream_url_points_labels_to_their_stac_item() -> None:
 
 
 def test_download_rejects_checksum_mismatch(scene: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        oc, "load_checksums", lambda: {"dar/abc123.tif": hashlib.sha256(b"other").hexdigest()}
-    )
-    with pytest.raises(ValueError, match="Checksum mismatch"):
+    checksums = {"dar/abc123.tif": hashlib.sha256(b"other").hexdigest()}
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
+    with pytest.raises(ValueError, match="SHA-256 checksum mismatch"):
         download_open_cities(scene.parent)
 
 
@@ -224,7 +225,7 @@ def test_download_builds_masks_and_checks_them_against_the_index(
 ) -> None:
     files = ("dar/abc123.tif", "dar/abc123.geojson")
     checksums = {f: hashlib.sha256((scene / f).read_bytes()).hexdigest() for f in files}
-    monkeypatch.setattr(oc, "load_checksums", lambda: checksums)
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
     monkeypatch.setattr(oc, "load_index", lambda: index.assign(building_frac=[0.0, 0.0]))
     with pytest.raises(ValueError, match="train: mask building fraction"):
         download_open_cities(scene.parent)
@@ -268,5 +269,5 @@ class TestCommittedIndex:
 
     def test_checksums_cover_every_indexed_scene(self, committed: pd.DataFrame) -> None:
         scenes = {f"{c}/{s}" for c, s in zip(committed.city, committed.scene, strict=True)}
-        listed = {path.rsplit(".", 1)[0] for path in oc.load_checksums()}
+        listed = {path.rsplit(".", 1)[0] for path in load_checksums("open_cities.sha256")}
         assert scenes <= listed
