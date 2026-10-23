@@ -13,6 +13,7 @@ Changed
 Added
 ^^^^^
 
+* OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on

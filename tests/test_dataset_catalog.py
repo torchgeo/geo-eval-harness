@@ -130,11 +130,13 @@ def test_unknown_dataset_task_raises() -> None:
         ["datasets"],
         ["datasets", "m-eurosat"],
         ["datasets", "burn_scars"],
+        ["datasets", "openearthmap-sar"],
         ["datasets", "catalog-test"],
         ["models"],
         ["models", "rcf"],
         ["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "catalog-test", "--device", "cpu", "--dry-run"],
+        ["run", "--model", "rcf", "--dataset", "openearthmap-sar", "--dry-run"],
     ],
 )
 def test_catalog_queries_do_not_import_wrappers_or_ml(arguments: list[str]) -> None:

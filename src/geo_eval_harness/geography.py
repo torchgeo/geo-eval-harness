@@ -16,12 +16,13 @@ Three statuses:
 * ``no_geo`` — no coordinates are available; see :attr:`GeoRecord.reason` and :data:`NO_GEO`.
 * ``not_downloaded`` — registered, but no data files were found locally.
 
-Three coordinate sources are handled:
+Coordinate sources:
 
 * **V2**: read coordinates and place labels from ``.tortilla`` metadata, not imagery.
 * **V1**: reproject JSON affine/CRS origins from shards or HDF5 to EPSG:4326.
 * **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
+* **GeoTIFF**: reproject image header origins to EPSG:4326.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -85,8 +86,8 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, or ``"hotosm"``.
-            ``None`` when nothing was read.
+        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
+            ``"geotiff"``. ``None`` when nothing was read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -243,8 +244,6 @@ def _v1_shard_origins(path: str) -> list[tuple[float | None, float | None, str]]
 
 def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     """Extract and reproject raster origins for every sample of a V1 dataset."""
-    from pyproj import Transformer
-
     with ProcessPoolExecutor(max_workers=workers) as pool:
         if files and files[0].endswith(".tar"):
             results = [origin for shard in pool.map(_v1_shard_origins, files) for origin in shard]
@@ -264,9 +263,22 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     if not usable:
         return None
 
-    # A dataset can span several coordinate systems; reproject each group separately.
+    lon, lat = reproject_origins(usable)
+    ok = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    return {
+        "lon": lon[ok],
+        "lat": lat[ok],
+        "place": np.full(int(ok.sum()), None, dtype=object),
+        "version": "v1",
+    }
+
+
+def reproject_origins(origins: list[tuple[float, float, str]]) -> tuple[np.ndarray, np.ndarray]:
+    """Group raster origins by CRS and transform each group to longitude/latitude."""
+    from pyproj import Transformer
+
     by_crs: dict[str, list[tuple[float, float]]] = {}
-    for x, y, epsg in usable:
+    for x, y, epsg in origins:
         by_crs.setdefault(epsg, []).append((x, y))
 
     lons: list[np.ndarray] = []
@@ -283,14 +295,28 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
         lons.append(np.asarray(lon))
         lats.append(np.asarray(lat))
 
-    lon = np.concatenate(lons)
-    lat = np.concatenate(lats)
-    ok = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    return np.concatenate(lons), np.concatenate(lats)
+
+
+def extract_geotiffs(paths: list[Path]) -> dict | None:
+    """Read image origins from GeoTIFF headers, omitting images without georeferencing."""
+    import rasterio
+
+    origins = []
+    for path in paths:
+        with rasterio.open(path) as raster:
+            if raster.crs is not None and not raster.transform.is_identity:
+                origins.append((raster.transform.c, raster.transform.f, raster.crs.to_string()))
+    if not origins:
+        return None
+    lon, lat = reproject_origins(origins)
+    if not (np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)).all():
+        raise ValueError("GeoTIFF origins do not map to valid lon/lat")
     return {
-        "lon": lon[ok],
-        "lat": lat[ok],
-        "place": np.full(int(ok.sum()), None, dtype=object),
-        "version": "v1",
+        "lon": lon,
+        "lat": lat,
+        "place": np.full(len(lon), None, dtype=object),
+        "version": "geotiff",
     }
 
 
@@ -415,26 +441,27 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
     hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    geotiffs = sorted(directory.glob("*/sar_images/*.tif"))
 
     if tortillas:
         data = _extract_v2(tortillas)
-        if data is None:
-            return GeoRecord(
-                name=name, status="no_geo", reason="tortilla metadata has no lon/lat columns"
-            )
+        reason = "tortilla metadata has no lon/lat columns"
     elif shards or hdf5s:
         data = _extract_v1(name, shards or hdf5s, workers)
-        if data is None:
-            return GeoRecord(
-                name=name, status="no_geo", reason="no sample carries a usable transform/crs"
-            )
+        reason = "no sample carries a usable transform/crs"
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
+        reason = "split files have no lon/lat columns"
+    elif geotiffs:
+        data = extract_geotiffs(geotiffs)
+        reason = "no image carries a usable GeoTIFF transform/crs"
     else:
         raise FileNotFoundError(
-            f"No .tortilla, V1 shard, or .hdf5 files under {directory}. Run `{command}`."
+            f"No .tortilla, V1 shard, .hdf5, or SAR .tif files under {directory}. Run `{command}`."
         )
 
+    if data is None:
+        return GeoRecord(name=name, status="no_geo", reason=reason)
     if len(data["lon"]) == 0:
         return GeoRecord(name=name, status="no_geo", reason="all coordinates were non-finite")
 

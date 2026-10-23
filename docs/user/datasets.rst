@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), and HOTOSM building segmentation (Hugging Face). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), and OpenEarthMap-SAR segmentation. All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -43,6 +43,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``hotosm_buildings``
      - ``data/hotosm_buildings/``
      - Hugging Face ``hotosm/vhr-building-segmentation``, pinned commit, converted to per-split parquet
+   * - ``openearthmap-sar``
+     - ``data/openearthmap-sar/``
+     - Four checksum-verified DFC2025 Track I Zenodo archives
 
 Downloading
 -----------
@@ -62,6 +65,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
    $ geo-eval-harness download hotosm_buildings                         # HOTOSM VHR buildings
+   $ geo-eval-harness download openearthmap-sar                        # standalone SAR segmentation
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -211,6 +215,44 @@ CLI name             #cls   bands notes                                        C
 ``spacenet2``        2      9     WorldView 8-band + pan                       :class:`~geo_eval_harness.datasets.SpaceNet2`
 ``spacenet7``        2      3                                                  :class:`~geo_eval_harness.datasets.SpaceNet7`
 ==================== ====== ===== ============================================ ==============================================================
+
+Standalone segmentation: OpenEarthMap-SAR
+------------------------------------------
+
+``openearthmap-sar`` (:class:`~geo_eval_harness.datasets.OpenEarthMapSAR`) uses the official IEEE GRSS Data Fusion Contest 2025 Track I splits: **4,333 training, 210 validation, and 490 test** image/label pairs. Images are single-band ``uint8`` SAR GeoTIFFs at **1024 x 1024** pixels, with published GSD of **0.15-0.5 m**.
+
+The eight classes, in model output order, are bareland, grass/rangeland, pavement/developed space, road, tree, water, cropland/agricultural land, and building. Native labels ``1..8`` map to model classes ``0..7``; native ``0`` maps to ``255`` and is ignored in both training loss and mIoU. This deliberately differs from the official baseline, which trains a ninth background output but excludes it from foreground mIoU.
+
+Only the single ``sar`` band is installed and exposed. Training RGB is intentionally excluded because validation and test inputs are SAR-only. The default ``rgb`` selector resolves to ``sar``, following the grayscale dataset convention. The adapter emits raw float32 values in ``0..255`` units, without scaling, augmentation, or cropping. Dataset normalization uses statistics measured over all 4,333 native-resolution training SAR images; the runner owns resizing and the model owns normalization. The official baseline instead scales bytes to ``[0, 1]`` and uses random 512-pixel training crops.
+
+.. code-block:: text
+
+   data/openearthmap-sar/
+     train/
+       sar_images/TrainArea_001.tif ... TrainArea_4333.tif
+       labels/TrainArea_001.tif ... TrainArea_4333.tif
+     val/
+       sar_images/ValArea_001.tif ... ValArea_210.tif
+       labels/ValArea_001.tif ... ValArea_210.tif
+     test/
+       sar_images/TestArea_001.tif ... TestArea_490.tif
+       labels/TestArea_001.tif ... TestArea_490.tif
+
+Membership is fixed, paired by basename, and ordered numerically. Missing or unexpected TIFFs, invalid raster dimensions/dtypes, and labels outside ``0..8`` are errors. Custom partitions are unsupported.
+
+.. code-block:: console
+
+   $ geo-eval-harness download openearthmap-sar
+   $ geo-eval-harness run --config docs/examples/openearthmap-sar-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/openearthmap-sar-run.yaml
+
+The :download:`example config </examples/openearthmap-sar-run.yaml>` uses a randomly initialized ResNet-18 with a linear segmentation head as a no-weight-download smoke configuration, not a published accuracy baseline.
+
+The downloader retrieves about **9.29 GB** across four immutable archives: ``dfc25_track1_trainval.zip`` from `record 14622048 <https://zenodo.org/records/14622048>`__, ``dfc25_track1_test.zip`` from `record 14948851 <https://zenodo.org/records/14948851>`__, and ``dfc25_track1_val_labels.zip`` / ``dfc25_track1_test_labels.zip`` from `record 14950559 <https://zenodo.org/records/14950559>`__. It verifies published MD5 digests and byte counts, extracts only expected SAR/label TIFFs, and retains the ZIPs. Re-running the download revalidates the cached archives and repairs extracted files without repeating the network transfer.
+
+Geography is read from SAR GeoTIFF headers without requiring label files. The release provides usable locations for **210 of 5,033 samples**, all in the validation split; training and test SAR files have no usable georeferencing. Images without a CRS or with an identity transform are omitted from location counts, not assigned guessed coordinates. Raster read errors and invalid projected coordinates are errors.
+
+Sources and attribution: `OpenEarthMap-SAR <https://github.com/cliffbb/OpenEarthMap-SAR>`__, the `official DFC2025 baseline <https://github.com/cliffbb/DFC2025-OEM-SAR-Baseline>`__, and the `dataset paper <https://arxiv.org/abs/2501.10891v2>`__. Zenodo identifies the Umbra Open Data Program SAR imagery as CC BY 4.0. Optical-source and label licensing varies by source; consult the release and source-specific terms rather than treating the whole installed benchmark as uniformly CC BY 4.0.
 
 Other
 -----
