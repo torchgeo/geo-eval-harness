@@ -15,7 +15,6 @@ import rasterio
 import torch
 from affine import Affine
 
-from tests.support.embeddings import UTM, utm_footprint
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import Footprint
 from geo_eval_harness.datasets.geobench_v2 import GeoBenchv2, stac_footprint
@@ -33,6 +32,7 @@ from geo_eval_harness.embeddings.products import (
 )
 from geo_eval_harness.models.embedding import PrecomputedEmbedding
 from geo_eval_harness.segmentation_probe import SegmentationProbe
+from tests.support.embeddings import UTM, utm_footprint
 
 
 def _asset(name: str, geotransform: list[float], time: float, *, crs: str = UTM) -> dict:

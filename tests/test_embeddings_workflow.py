@@ -7,13 +7,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tests.support.embeddings import ToyBench, ToyProduct
-from tests.support.runner import _compose_cfg
 from geo_eval_harness import datasets
 from geo_eval_harness.cli import main as cli
 from geo_eval_harness.embeddings.download import download
 from geo_eval_harness.embeddings.products import PRODUCTS
 from geo_eval_harness.main import main
+from tests.support.embeddings import ToyBench, ToyProduct
+from tests.support.runner import _compose_cfg
 
 pytestmark = pytest.mark.integration
 
