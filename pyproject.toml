@@ -3,7 +3,7 @@ build-backend = "uv_build"
 requires = [ "uv-build>=0.11.6,<0.12" ]
 
 [project]
-name = "torchgeo-bench"
+name = "geo-eval-harness"
 version = "0.5.0"
 description = "Lightweight benchmarking framework for geospatial models"
 readme = "README.md"
@@ -15,7 +15,8 @@ keywords = [
   "machine learning",
   "remote sensing",
 ]
-license = { text = "MIT" }
+license = "MIT"
+license-files = [ "LICENSE" ]
 authors = [
   { name = "Caleb Robinson", email = "calebrob6@gmail.com" },
   { name = "Isaac Corley", email = "isaac.a.corley@gmail.com" },
@@ -25,7 +26,6 @@ requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
@@ -63,19 +63,19 @@ dependencies = [
   "transformers>=5.14",
 ]
 optional-dependencies.all = [
-  "torchgeo-bench[coordbench]",
-  "torchgeo-bench[dev]",
-  "torchgeo-bench[docs]",
-  "torchgeo-bench[id]",
-  "torchgeo-bench[lora]",
-  "torchgeo-bench[olmoearth]",
-  "torchgeo-bench[terratorch]",
+  "geo-eval-harness[coordbench]",
+  "geo-eval-harness[dev]",
+  "geo-eval-harness[docs]",
+  "geo-eval-harness[id]",
+  "geo-eval-harness[lora]",
+  "geo-eval-harness[olmoearth]",
 ]
 optional-dependencies.coordbench = [
   "rshf>=0.2", # Required by SatCLIP, GeoCLIP, Climplicit, and SINR.
 ]
 optional-dependencies.dev = [
-  "evaluma>=0.3",         # Ranking backend for scripts/regen_leaderboard.py.
+  "evaluma>=0.3",           # Ranking backend for scripts/regen_leaderboard.py.
+  "geo-eval-harness[lora]", # Tests exercise the optional LoRA segmentation path.
   "mdformat>=0.7.22",
   "pre-commit>=4.3",
   "pyproject-fmt>=2.21",
@@ -84,7 +84,6 @@ optional-dependencies.dev = [
   "pytest-cov>=7",
   "pytest-xdist>=3.6",
   "ruff==0.15.10",
-  "torchgeo-bench[lora]", # Tests exercise the optional LoRA segmentation path.
   "ty>=0.0.21",
   "types-pyyaml>=6",
 ]
@@ -105,17 +104,11 @@ optional-dependencies.lora = [
 optional-dependencies.olmoearth = [
   "olmoearth-pretrain-minimal>=0.0.6", # OlmoEarth v1.2 weights require this version.
 ]
-optional-dependencies.terratorch = [
-  "terratorch @ git+https://github.com/torchgeo/terratorch.git@main",
-]
-urls.Documentation = "https://torchgeo.org/torchgeo-bench/"
-urls.Homepage = "https://github.com/torchgeo/torchgeo-bench"
-urls.Issues = "https://github.com/torchgeo/torchgeo-bench/issues"
-urls.Repository = "https://github.com/torchgeo/torchgeo-bench"
-scripts.torchgeo-bench = "torchgeo_bench.cli:main"
-
-[tool.hatch]
-build.targets.wheel.packages = [ "src/torchgeo_bench" ]
+urls.Documentation = "https://torchgeo.org/geo-eval-harness/"
+urls.Homepage = "https://github.com/torchgeo/geo-eval-harness"
+urls.Issues = "https://github.com/torchgeo/geo-eval-harness/issues"
+urls.Repository = "https://github.com/torchgeo/geo-eval-harness"
+scripts.geo-eval-harness = "geo_eval_harness.cli:main"
 
 [tool.uv]
 build-backend.source-exclude = [ "/docs/_build" ]
@@ -135,11 +128,11 @@ exclude = [
   "outputs",
 ]
 extend-exclude = [
-  "src/torchgeo_bench/cli.py",
-  "src/torchgeo_bench/commands",
-  "src/torchgeo_bench/config/schema.py",
-  "src/torchgeo_bench/legacy_run.py",
-  "src/torchgeo_bench/preprocessing.py",
+  "src/geo_eval_harness/cli.py",
+  "src/geo_eval_harness/commands",
+  "src/geo_eval_harness/config/schema.py",
+  "src/geo_eval_harness/legacy_run.py",
+  "src/geo_eval_harness/preprocessing.py",
 ]
 lint.select = [
   "A",       # builtin shadowing
@@ -191,8 +184,8 @@ lint.ignore = [
   "TRY003", # allow concise messages at the raise site
 ]
 lint.per-file-ignores."projects/cleanlab/**/*.py" = [ "D" ]
-lint.per-file-ignores."src/torchgeo_bench/cli.py" = [ "T201" ]  # CLI payloads go to stdout
-lint.per-file-ignores."src/torchgeo_bench/commands/**/*.py" = [ "T201" ]
+lint.per-file-ignores."src/geo_eval_harness/cli.py" = [ "T201" ]  # CLI payloads go to stdout
+lint.per-file-ignores."src/geo_eval_harness/commands/**/*.py" = [ "T201" ]
 lint.per-file-ignores."tests/**/*.py" = [ "ARG", "D" ]
 lint.flake8-tidy-imports.banned-api."__future__.annotations".msg = "Use ordinary annotations or quoted forward references."
 lint.flake8-tidy-imports.banned-api."contextlib.suppress".msg = "Let errors propagate or use an explicit except clause with a reason."
@@ -205,7 +198,7 @@ lint.pylint.max-returns = 6
 lint.pylint.max-statements = 50
 
 [tool.pyrefly]
-project-includes = [ "src/torchgeo_bench/**/*.py" ]
+project-includes = [ "src/geo_eval_harness/**/*.py" ]
 search-path = [ "src" ]
 python-version = "3.12"
 preset = "default"
@@ -241,6 +234,6 @@ ini_options.markers = [
 run.branch = true
 run.patch = [ "subprocess" ]
 run.relative_files = true
-run.source = [ "torchgeo_bench" ]
+run.source = [ "geo_eval_harness" ]
 report.precision = 2
 report.show_missing = true

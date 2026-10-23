@@ -34,22 +34,22 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.presets import (
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.presets import (
     NORMALIZATIONS,
     load_model_preset,
     merge_settings,
     resolve_run_config,
 )
-from torchgeo_bench.config.run import RunConfig, load_run_config
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
-from torchgeo_bench.datasets.base import BandSpec, BenchDataset
-from torchgeo_bench.devices import resolve_device
-from torchgeo_bench.linear import LogisticRegression
-from torchgeo_bench.main import embed_split, instantiate_dataset_model
-from torchgeo_bench.results import DEFAULT_RESULTS_DIR, load_results
-from torchgeo_bench.utils import FeatureSplit
+from geo_eval_harness.config.run import RunConfig, load_run_config
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
+from geo_eval_harness.datasets.base import BandSpec, BenchDataset
+from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.linear import LogisticRegression
+from geo_eval_harness.main import embed_split, instantiate_dataset_model
+from geo_eval_harness.results import DEFAULT_RESULTS_DIR, load_results
+from geo_eval_harness.utils import FeatureSplit
 
 logger = logging.getLogger(__name__)
 

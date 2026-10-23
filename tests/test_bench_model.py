@@ -3,8 +3,8 @@
 import pytest
 import torch
 
+from geo_eval_harness.models.interface import BenchModel
 from tests.support.models import bands as _bands
-from torchgeo_bench.models.interface import BenchModel
 
 
 class _Toy(BenchModel):

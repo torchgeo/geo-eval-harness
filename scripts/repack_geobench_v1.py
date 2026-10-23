@@ -25,7 +25,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from torchgeo_bench.datasets._metadata import decode_metadata, read_hdf5_metadata
+from geo_eval_harness.datasets._metadata import decode_metadata, read_hdf5_metadata
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

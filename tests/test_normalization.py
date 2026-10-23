@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._input_units import InputUnit
-from torchgeo_bench.models._normalization import UnsupportedNormalizationError, build_normalizer
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._input_units import InputUnit
+from geo_eval_harness.models._normalization import UnsupportedNormalizationError, build_normalizer
 
 
 def _bands(

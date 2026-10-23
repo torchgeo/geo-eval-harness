@@ -5,8 +5,8 @@ import argparse
 import pytest
 import yaml
 
-from torchgeo_bench.cli import _parse_args, main
-from torchgeo_bench.commands._config import parse_image_size
+from geo_eval_harness.cli import _parse_args, main
+from geo_eval_harness.commands._config import parse_image_size
 
 
 @pytest.mark.parametrize(

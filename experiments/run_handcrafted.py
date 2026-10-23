@@ -20,12 +20,12 @@ from pathlib import Path
 import torch
 from _runner import Job, add_devices_argument, run_jobs
 
-from torchgeo_bench.config.presets import NORMALIZATIONS, build_model, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import InputConfig, ModelConfig
-from torchgeo_bench.datasets import get_bench_dataset_class, list_datasets
-from torchgeo_bench.datasets.loading import get_dataset_task
-from torchgeo_bench.resume import resume_config_hash
+from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import InputConfig, ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class, list_datasets
+from geo_eval_harness.datasets.loading import get_dataset_task
+from geo_eval_harness.resume import resume_config_hash
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +47,9 @@ def run_config(level: int, dataset: str) -> RunConfig:
         raise ValueError("The study level must be 0, 1, 2 or 3.")
     model = ModelConfig(name=model_name(level))
     if level == 0:
-        model = ModelConfig(name=model_name(level), target="torchgeo_bench.models.ImageStatsBench")
+        model = ModelConfig(
+            name=model_name(level), target="geo_eval_harness.models.ImageStatsBench"
+        )
     return RunConfig(
         model=model,
         datasets=[dataset],

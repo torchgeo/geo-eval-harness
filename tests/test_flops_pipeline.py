@@ -11,15 +11,14 @@ import torch
 from pydantic import ValidationError
 from torch import nn
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench import flops_pipeline
-from torchgeo_bench.bands import BandCompatibilityError
-from torchgeo_bench.config.flops import FlopsConfig, FlopsSegmentationConfig
-from torchgeo_bench.config.presets import ModelPreset, build_model, load_model_preset
-from torchgeo_bench.config.schema import ModelConfig, SegmentationConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.flops_pipeline import (
+from geo_eval_harness import flops_pipeline
+from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.config.flops import FlopsConfig, FlopsSegmentationConfig
+from geo_eval_harness.config.presets import ModelPreset, build_model, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.flops_pipeline import (
     _MODALITY_FOR_BAND_CONFIG,
     _build_model,
     _build_seg_probe,
@@ -29,7 +28,8 @@ from torchgeo_bench.flops_pipeline import (
     _seg_head_gflops,
     main,
 )
-from torchgeo_bench.model_profile import ProfileTiming, _count_gflops
+from geo_eval_harness.model_profile import ProfileTiming, _count_gflops
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 CPU = torch.device("cpu")
 
@@ -275,7 +275,7 @@ def test_build_model_skips_explicit_band_incompatibility(monkeypatch, caplog):
     def incompatible(config, **kwargs):
         raise BandCompatibilityError("unsupported selection")
 
-    monkeypatch.setattr("torchgeo_bench.flops_pipeline.build_model", incompatible)
+    monkeypatch.setattr("geo_eval_harness.flops_pipeline.build_model", incompatible)
     cfg = ModelPreset(target="example.Model", name="example")
     assert _build_model(cfg, [], "identity", "rgb") is None
     assert "unsupported selection" in caplog.text
@@ -295,7 +295,7 @@ def test_build_model_propagates_real_failures(error, monkeypatch):
     def broken(config, **kwargs):
         raise error
 
-    monkeypatch.setattr("torchgeo_bench.flops_pipeline.build_model", broken)
+    monkeypatch.setattr("geo_eval_harness.flops_pipeline.build_model", broken)
     cfg = ModelPreset(target="example.Model", name="example")
     with pytest.raises(type(error)) as exc:
         _build_model(cfg, [], "identity", "rgb")
@@ -328,7 +328,7 @@ def test_completed_profile_survives_incompatible_segmentation_head(
     import pandas as pd
 
     monkeypatch.setattr(
-        "torchgeo_bench.flops_pipeline.build_model", lambda *args, **kwargs: _TinyConvNet()
+        "geo_eval_harness.flops_pipeline.build_model", lambda *args, **kwargs: _TinyConvNet()
     )
     flops_config.segmentation = FlopsSegmentationConfig(
         heads=["dpt"], probe=SegmentationConfig(layers=["stem"])
@@ -361,7 +361,7 @@ def test_forward_pass_only_skips_explicit_band_errors(flops_config, monkeypatch,
             raise error
 
     monkeypatch.setattr(
-        "torchgeo_bench.flops_pipeline.build_model", lambda *args, **kwargs: BrokenForward()
+        "geo_eval_harness.flops_pipeline.build_model", lambda *args, **kwargs: BrokenForward()
     )
     if isinstance(error, BandCompatibilityError):
         main(flops_config)

@@ -24,7 +24,9 @@ jobs:
           enable-cache: true
       - name: Build distributions
         # uv builds in an isolated environment; avoid installing extra packages on the runner.
-        run: uv build
+        run: uv build --no-sources
+      - name: Validate release artifacts and tag
+        run: uv run --no-project python scripts/check_distributions.py --tag "$GITHUB_REF_NAME"
       - name: Upload distributions
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
@@ -40,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/torchgeo-bench
+      url: https://pypi.org/p/geo-eval-harness
     permissions:
       id-token: write   # Authenticate with PyPI without a stored token.
     steps:

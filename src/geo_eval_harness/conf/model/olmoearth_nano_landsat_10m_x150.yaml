@@ -1,0 +1,12 @@
+name: olmoearth_v1_nano_lsat_10m_x150
+target: geo_eval_harness.models.OlmoEarthBenchModel
+kwargs:
+  model_size: nano
+  patch_size: 8
+  input_res: 10
+  time_steps: 1
+  std_multiplier: 2.0
+  normalize: false
+  landsat_scale_factor: 3.825
+input:
+  image_size: null

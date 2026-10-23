@@ -1,7 +1,0 @@
-name: efficientnetv2_s
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: tf_efficientnetv2_s
-  pretrained: true
-  global_pool: avg
-  auto_resize: true

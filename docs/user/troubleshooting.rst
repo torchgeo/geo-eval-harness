@@ -5,14 +5,14 @@ Troubleshooting
 -----------------------------------------------
 
 Datasets must live under ``./data/`` from the directory where you run
-``torchgeo-bench``.  The runner does **not** honour ``GEOBENCH_ROOT``
+``geo-eval-harness``.  The runner does **not** honour ``GEOBENCH_ROOT``
 or ``GEOBENCH_V2_ROOT`` environment variables — paths are fixed:
 
 * V1: :file:`data/classification_v1.0/<name>/`
 * V2: :file:`data/geobenchv2/<name>/`
 * EuroSAT: :file:`data/eurosat/`
 
-Re-run ``torchgeo-bench download …`` to fetch missing data.  If your
+Re-run ``geo-eval-harness download …`` to fetch missing data.  If your
 data lives elsewhere, symlink ``data/`` to the real location.
 
 ``ModuleNotFoundError: geobench``
@@ -20,7 +20,7 @@ data lives elsewhere, symlink ``data/`` to the real location.
 
 The legacy ``geobench`` package is no longer a dependency.  V1 datasets
 are read directly from HDF5 (the internal ``GeoBenchv1`` loader in
-:file:`src/torchgeo_bench/datasets/geobench_v1.py`); V2 dispatches to
+:file:`src/geo_eval_harness/datasets/geobench_v1.py`); V2 dispatches to
 upstream ``geobench_v2.datasets.GeoBench<X>``.  Make sure your
 environment matches the pinned ``geobenchv2`` version in
 :file:`pyproject.toml`.
@@ -30,9 +30,9 @@ CUDA out of memory
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --batch-size 32
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --batch-size 32
    $ # or run on CPU
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu
 
 For segmentation, also try
 
@@ -66,7 +66,7 @@ Either way you can fall back to CPU (slower, but always works):
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu
 
 CPU is fine for the small V1 splits, but large V2 datasets (e.g. ``benv2`` /
 BigEarthNet) can take far longer — prefer a working GPU for those.
@@ -82,7 +82,7 @@ datasets.
 ``eurosat-spatial`` reports ``Dataset not found``
 -------------------------------------------------
 
-``torchgeo-bench download eurosat`` fetches the shared EuroSAT images and
+``geo-eval-harness download eurosat`` fetches the shared EuroSAT images and
 both the standard and spatial train/val/test splits. If an older download
 is missing the spatial split files, rerun this command before benchmarking
 ``eurosat-spatial``.
@@ -94,7 +94,7 @@ Old V1 downloads contain ``.meta.pkl`` shard members or HDF5 ``pickle`` attribut
 
 .. code-block:: console
 
-   $ torchgeo-bench download geobench_v1 --datasets m-eurosat
+   $ geo-eval-harness download geobench_v1 --datasets m-eurosat
 
 Omit ``--datasets`` to replace the full V1 suite. Downloads and V1 slow tests both use ``data/classification_v1.0_wds/``. Tests skip absent datasets, but present legacy or malformed data fails visibly.
 

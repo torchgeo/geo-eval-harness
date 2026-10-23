@@ -9,14 +9,14 @@ import torch.nn as nn
 from torchvision.transforms import Normalize
 from torchvision.transforms.v2 import Normalize as NormalizeV2
 
-from torchgeo_bench.bands import BandCompatibilityError
-from torchgeo_bench.datasets.base import BandSpec, BenchDataset
-from torchgeo_bench.datasets.m_eurosat import MEurosat
-from torchgeo_bench.datasets.m_forestnet import MForestnet
-from torchgeo_bench.datasets.m_so2sat import MSo2Sat
-from torchgeo_bench.datasets.resisc45 import RESISC45
-from torchgeo_bench.models._input_units import InputUnit
-from torchgeo_bench.models.torchgeo_models import (
+from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.datasets.base import BandSpec, BenchDataset
+from geo_eval_harness.datasets.m_eurosat import MEurosat
+from geo_eval_harness.datasets.m_forestnet import MForestnet
+from geo_eval_harness.datasets.m_so2sat import MSo2Sat
+from geo_eval_harness.datasets.resisc45 import RESISC45
+from geo_eval_harness.models._input_units import InputUnit
+from geo_eval_harness.models.torchgeo_models import (
     TorchGeoCromaBench,
     TorchGeoDOFABench,
     TorchGeoPanopticonBench,
@@ -88,7 +88,7 @@ def test_weights_resolution_failure(monkeypatch: pytest.MonkeyPatch) -> None:
         meta: ClassVar[dict[str, Any]] = {}
         REAL = object()
 
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(tg_models.tgm, "FakeWeights", _FakeWeights, raising=False)
     with pytest.raises(ValueError, match="has no member"):
@@ -144,7 +144,7 @@ def test_normalize_transform_none_when_absent() -> None:
 def install_tiny_scalemae_factory(
     monkeypatch: pytest.MonkeyPatch, transforms: nn.Module | None = None
 ) -> list[tuple[dict[str, Any], nn.Module]]:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _PatchEmbed(nn.Module):
         def __init__(self) -> None:
@@ -209,7 +209,7 @@ def test_scalemae_pooling_cls_and_mean(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_scalemae_constructs_selected_grid_without_adapting_rgb_projection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     calls = install_tiny_scalemae_factory(monkeypatch)
     monkeypatch.setattr(
@@ -251,7 +251,7 @@ def test_scalemae_uses_bandspec_zscore_instead_of_checkpoint_transform(
 
 
 def test_torchgeo_resnet_removes_classifier(monkeypatch: pytest.MonkeyPatch) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyResNet(nn.Module):
         def __init__(self) -> None:
@@ -302,7 +302,7 @@ def test_torchgeo_backbone_construction_ignores_input_unit_outside_model_native(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Unit detection is unnecessary outside model_native and can reject mixed-scale sensors."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: nn.Identity()
@@ -330,7 +330,7 @@ def test_dofa_wavelengths_still_raises_for_non_sar_missing_wavelength() -> None:
 
 def test_dofa_wavelengths_fall_back_to_s2_table_for_landsat_bands() -> None:
     """For Landsat bands with no wavelength metadata, use the S2 table as an approximation."""
-    from torchgeo_bench.models._band_mapping import S2_WAVELENGTHS_UM
+    from geo_eval_harness.models._band_mapping import S2_WAVELENGTHS_UM
 
     landsat_bands = [
         BandSpec(
@@ -351,7 +351,7 @@ def test_dofa_wavelengths_fall_back_to_s2_table_for_landsat_bands() -> None:
 
 
 def test_torchgeo_dofa_forwards_wavelengths_and_resizes(monkeypatch: pytest.MonkeyPatch) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyDOFA(nn.Module):
         def forward_features(self, images: torch.Tensor, wavelengths: list[float]) -> torch.Tensor:
@@ -393,7 +393,7 @@ def test_torchgeo_dofa_forwards_wavelengths_and_resizes(monkeypatch: pytest.Monk
 def test_torchgeo_croma_pools_optical_tokens_then_applies_head(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyCroma(nn.Module):
         def __init__(self) -> None:
@@ -433,7 +433,7 @@ def test_torchgeo_croma_pools_optical_tokens_then_applies_head(
 def test_torchgeo_panopticon_forwards_batched_wavelength_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyPanopticon(nn.Module):
         def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -480,7 +480,7 @@ def test_resolve_panopticon_chn_ids_raises_for_unknown_polarization() -> None:
 
 def test_torchgeo_panopticon_model_native_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """Panopticon has no pretrained normalization stats, so model_native must fail."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: nn.Identity()
@@ -502,7 +502,7 @@ def test_torchgeo_panopticon_model_native_raises(monkeypatch: pytest.MonkeyPatch
 def test_channel_mismatch_preserves_tiled_normalize_chain(
     monkeypatch: pytest.MonkeyPatch, normalize_cls: type[nn.Module]
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyResNet(nn.Module):
         def __init__(self) -> None:
@@ -561,7 +561,7 @@ def test_resnet_can_convert_to_reflectance_before_skipping_weight_scale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Raw S2 should skip a checkpoint's uint8 scale before ImageNet z-score."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyResNet(nn.Module):
         def __init__(self) -> None:
@@ -607,7 +607,7 @@ def test_resnet_native_normalization_converts_source_units(
     value: float,
     normalize_cls: type[nn.Module],
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyResNet(nn.Module):
         def __init__(self) -> None:
@@ -688,7 +688,7 @@ def test_weights_normalize_only_applies_under_model_native(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """dataset.normalization must not be silently overridden by the weights transform."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinyResNet(nn.Module):
         def __init__(self) -> None:
@@ -732,7 +732,7 @@ def test_weights_normalize_only_applies_under_model_native(
 
 def test_expected_input_unit_is_derived_per_instance(monkeypatch: pytest.MonkeyPatch) -> None:
     """Derived units must neither mutate classes nor overwrite declared units."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     class _TinySwin(nn.Module):
         def __init__(self) -> None:
@@ -812,15 +812,15 @@ def test_satlas_s2_presets_scale_dn_like_tci(
     backbone: type[nn.Module],
 ) -> None:
     """Satlas S2 RGB checkpoints divide L1C TCI by 255; TCI saturates at DN 3558."""
-    import torchgeo_bench.models.torchgeo_models as tg_models
-    from torchgeo_bench.config.presets import load_model_preset
-    from torchgeo_bench.config.schema import ModelConfig
+    import geo_eval_harness.models.torchgeo_models as tg_models
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: backbone()
     )
     preset = load_model_preset(ModelConfig(name=name), seed=0)
-    assert preset.target == f"torchgeo_bench.models.{wrapper.__name__}"
+    assert preset.target == f"geo_eval_harness.models.{wrapper.__name__}"
     model = wrapper(bands=_rgb_bands(), normalization="model_native", **preset.kwargs)
 
     images = torch.tensor([1779.0, 3558.0, 10000.0]).view(1, 3, 1, 1)
@@ -838,8 +838,8 @@ _SATLAS_MS_PRESETS = [
 _SATLAS_WRAPPERS: dict[
     str, tuple[type[TorchGeoResNetBench | TorchGeoSwinBench], type[nn.Module]]
 ] = {
-    "torchgeo_bench.models.TorchGeoResNetBench": (TorchGeoResNetBench, _TinySatlasResNet),
-    "torchgeo_bench.models.TorchGeoSwinBench": (TorchGeoSwinBench, _TinySatlasSwin),
+    "geo_eval_harness.models.TorchGeoResNetBench": (TorchGeoResNetBench, _TinySatlasResNet),
+    "geo_eval_harness.models.TorchGeoSwinBench": (TorchGeoSwinBench, _TinySatlasSwin),
 }
 
 
@@ -849,9 +849,9 @@ def _satlas_ms_model(
     bands: list[BandSpec],
     normalization: str,
 ) -> TorchGeoResNetBench | TorchGeoSwinBench:
-    import torchgeo_bench.models.torchgeo_models as tg_models
-    from torchgeo_bench.config.presets import load_model_preset
-    from torchgeo_bench.config.schema import ModelConfig
+    import geo_eval_harness.models.torchgeo_models as tg_models
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
 
     preset = load_model_preset(ModelConfig(name=name), seed=0)
     wrapper, backbone = _SATLAS_WRAPPERS[preset.target]
@@ -918,7 +918,7 @@ def test_rejects_other_multiband_satlas_checkpoints(
     weights_class: str,
     weights_member: str,
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: backbone()
@@ -930,7 +930,7 @@ def test_rejects_other_multiband_satlas_checkpoints(
 def test_non_satlas_multiband_checkpoints_keep_first_conv_adaptation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import torchgeo_bench.models.torchgeo_models as tg_models
+    import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()

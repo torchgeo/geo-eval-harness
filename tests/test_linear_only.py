@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from geo_eval_harness.main import main
 from tests.support.runner import (
     _chainable_model_mock,
     _compose_cfg,
@@ -16,7 +17,6 @@ from tests.support.runner import (
     _resume_row,
     _synthetic_loaders,
 )
-from torchgeo_bench.main import main
 
 
 def _embeddings(kind: str) -> list[tuple[np.ndarray, np.ndarray]]:
@@ -49,16 +49,18 @@ def test_only_linear_runs_and_resumes_without_knn(tmp_path: Path, kind: str) -> 
         },
     )
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=_chainable_model_mock()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_embeddings(kind)),
-        mock.patch("torchgeo_bench.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=_chainable_model_mock()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_embeddings(kind)),
         mock.patch(
-            "torchgeo_bench.knn.resolve_knn_device",
+            "geo_eval_harness.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")
+        ),
+        mock.patch(
+            "geo_eval_harness.knn.resolve_knn_device",
             side_effect=AssertionError("KNN device resolved"),
         ),
         mock.patch(
-            "torchgeo_bench.knn.KNNClassifier", side_effect=AssertionError("KNN constructed")
+            "geo_eval_harness.knn.KNNClassifier", side_effect=AssertionError("KNN constructed")
         ),
     ):
         main(config, strict=True)
@@ -71,7 +73,7 @@ def test_only_linear_runs_and_resumes_without_knn(tmp_path: Path, kind: str) -> 
 
     config.output.resume = True
     with mock.patch(
-        "torchgeo_bench.main.get_datasets", side_effect=AssertionError("resume loaded data")
+        "geo_eval_harness.main.get_datasets", side_effect=AssertionError("resume loaded data")
     ):
         main(config, strict=True)
     assert len(pd.read_csv(output)) == 1
@@ -86,7 +88,7 @@ def test_linear_resume_reuses_existing_linear_row_without_knn(tmp_path: Path) ->
     )
     config.output.resume = True
     with mock.patch(
-        "torchgeo_bench.main.get_datasets", side_effect=AssertionError("resume loaded data")
+        "geo_eval_harness.main.get_datasets", side_effect=AssertionError("resume loaded data")
     ):
         main(config)
     assert pd.read_csv(config.output.file)["method"].tolist() == ["linear"]
@@ -104,10 +106,12 @@ def test_completed_knn_alone_does_not_satisfy_linear_only_resume(tmp_path: Path)
         config.output.file, index=False
     )
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=_chainable_model_mock()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_embeddings("binary")),
-        mock.patch("torchgeo_bench.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=_chainable_model_mock()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_embeddings("binary")),
+        mock.patch(
+            "geo_eval_harness.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")
+        ),
     ):
         main(config, strict=True)
     assert pd.read_csv(config.output.file)["method"].tolist() == ["knn5", "linear"]
@@ -117,13 +121,15 @@ def test_linear_only_failure_never_writes_fabricated_knn_row(tmp_path: Path) -> 
     output = tmp_path / "linear.csv"
     config = _compose_cfg(output, {"classification": {"methods": ["linear"]}})
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=_chainable_model_mock()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_embeddings("binary")),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=_chainable_model_mock()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_embeddings("binary")),
         mock.patch(
-            "torchgeo_bench.main.evaluate_logistic", side_effect=RuntimeError("linear failed")
+            "geo_eval_harness.main.evaluate_logistic", side_effect=RuntimeError("linear failed")
         ),
-        mock.patch("torchgeo_bench.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")),
+        mock.patch(
+            "geo_eval_harness.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")
+        ),
         pytest.raises(RuntimeError, match="linear failed"),
     ):
         main(config, strict=True)
@@ -139,13 +145,13 @@ from unittest.mock import patch
 
 class BlockKNN(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
-        if fullname in {'faiss', 'faissknn', 'torchgeo_bench.knn'}:
+        if fullname in {'faiss', 'faissknn', 'geo_eval_harness.knn'}:
             raise AssertionError(f'unselected backend imported: {fullname}')
 sys.meta_path.insert(0, BlockKNN())
 
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import dataset_metadata, run_dataset
-from torchgeo_bench.resume import ResumeState
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import dataset_metadata, run_dataset
+from geo_eval_harness.resume import ResumeState
 from tests.support.runner import _synthetic_loaders, _synthetic_embeddings, _chainable_model_mock
 config = RunConfig.model_validate({
     'model': {'name': 'rcf'}, 'datasets': ['m-eurosat'],
@@ -153,7 +159,7 @@ config = RunConfig.model_validate({
     'classification': {'methods': ['linear'], 'knn_device': 'cuda:999', 'bootstrap_samples': 2,
         'linear': {'c_log10_start': -2.0, 'c_log10_stop': -1.0, 'c_count': 2}},
 })
-module = importlib.import_module('torchgeo_bench.main')
+module = importlib.import_module('geo_eval_harness.main')
 with (
     patch.object(module, 'get_datasets', return_value=_synthetic_loaders()),
     patch.object(module, 'build_model', return_value=_chainable_model_mock()),

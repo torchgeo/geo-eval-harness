@@ -9,19 +9,19 @@ import pytest
 import torch
 import yaml
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.config.presets import (
+from geo_eval_harness.cli import main
+from geo_eval_harness.config.presets import (
     NORMALIZATIONS,
     ModelPreset,
     build_model,
     load_model_preset,
     resolve_run_config,
 )
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.errors import UnsupportedNormalizationError
-from torchgeo_bench.models import RCFBench
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.errors import UnsupportedNormalizationError
+from geo_eval_harness.models import RCFBench
 
 
 @pytest.mark.parametrize(
@@ -87,7 +87,7 @@ def test_dataset_defaults_are_validated(
         }
     )
     monkeypatch.setattr(
-        "torchgeo_bench.config.presets.load_model_preset", lambda *args, **kwargs: preset
+        "geo_eval_harness.config.presets.load_model_preset", lambda *args, **kwargs: preset
     )
     with pytest.raises(SystemExit) as error:
         main(
@@ -118,7 +118,7 @@ def test_validation_respects_precedence_without_materializing_defaults(
         }
     )
     monkeypatch.setattr(
-        "torchgeo_bench.config.presets.load_model_preset", lambda *args, **kwargs: preset
+        "geo_eval_harness.config.presets.load_model_preset", lambda *args, **kwargs: preset
     )
     path = tmp_path / "run.yaml"
     values = {
@@ -212,7 +212,7 @@ def test_runtime_only_normalization_errors_use_config_error_presentation(
     def fail(config: RunConfig, *, strict: bool) -> None:
         raise UnsupportedNormalizationError("custom model has no pretrained statistics")
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", fail)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", fail)
     with pytest.raises(SystemExit) as error:
         main(["run", "--model", "rcf", "--dataset", "m-eurosat"])
     assert error.value.code == 2

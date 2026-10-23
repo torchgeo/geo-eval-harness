@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torchgeo_bench.models.terratorch_models import _maybe_resize, _reduce_to_vec
+from geo_eval_harness.models.terratorch_models import _maybe_resize, _reduce_to_vec
 
 
 def test_maybe_resize_none_is_noop() -> None:

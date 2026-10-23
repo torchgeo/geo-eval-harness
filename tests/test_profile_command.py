@@ -19,13 +19,13 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from torchgeo_bench import commands
-from torchgeo_bench.commands import _profile_runtime
-from torchgeo_bench.commands._profile import profile
-from torchgeo_bench.commands.profile_arguments import add_profile_arguments, load_profile_config
-from torchgeo_bench.config.presets import NORMALIZATIONS, ModelPreset
-from torchgeo_bench.config.profile import ProfileConfig
-from torchgeo_bench.config.schema import ModelConfig
+from geo_eval_harness import commands
+from geo_eval_harness.commands import _profile_runtime
+from geo_eval_harness.commands._profile import profile
+from geo_eval_harness.commands.profile_arguments import add_profile_arguments, load_profile_config
+from geo_eval_harness.config.presets import NORMALIZATIONS, ModelPreset
+from geo_eval_harness.config.profile import ProfileConfig
+from geo_eval_harness.config.schema import ModelConfig
 
 
 class _Loader:

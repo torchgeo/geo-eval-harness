@@ -2,7 +2,7 @@ Results format
 ==============
 
 All evaluation runs append rows to per-model CSV files.  Each row is a
-flattened :class:`~torchgeo_bench.main.EvaluationResult` describing a single
+flattened :class:`~geo_eval_harness.main.EvaluationResult` describing a single
 ``(dataset, method, model, config)`` measurement.  Rows are split by *kind*
 across three directories, keyed by ``<model name>.csv``:
 
@@ -35,12 +35,12 @@ Sample rows
 .. code-block:: text
 
    dataset,method,metric_name,metric_value,ci_lower,ci_upper,feature_dim,best_c,n_train,n_val,n_test,seed,model,name,normalization,image_size,interpolation,partition,bands,num_classes
-   m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,torchgeo_bench.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,torchgeo_bench.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,torchgeo_bench.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,3
+   m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
+   m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
+   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,3
 
 Datasets emit unnormalized tensors; each model wrapper normalises inside
-:meth:`~torchgeo_bench.models.BenchModel.normalize_inputs` according to
+:meth:`~geo_eval_harness.models.BenchModel.normalize_inputs` according to
 the strategy selected by ``input.normalization``. The CSV retains the internal
 names below: ``dataset`` maps to ``bandspec_zscore``, ``model`` to ``model_native``,
 and ``none`` to ``identity``.
@@ -133,7 +133,7 @@ Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``bounda
 Atomic appends
 --------------
 
-Rows are appended via :func:`~torchgeo_bench.main.append_rows_atomic`,
+Rows are appended via :func:`~geo_eval_harness.main.append_rows_atomic`,
 which uses ``fcntl`` advisory file locking (available on Linux and
 macOS).  This makes it safe to point multiple parallel jobs (e.g. one
 per GPU or per dataset) at the same output file without corrupting it.
@@ -168,4 +168,4 @@ as incomplete by resume mode. The checked-in SpaceNet2/7 rows produced under
 the old three-class task were removed; they remain available from the 0.4.0 tag.
 
 CoordBench uses a separate schema and output path. See :doc:`coordbench` and
-:class:`~torchgeo_bench.coordbench.CoordResult`.
+:class:`~geo_eval_harness.coordbench.CoordResult`.

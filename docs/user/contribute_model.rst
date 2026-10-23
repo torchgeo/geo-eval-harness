@@ -2,8 +2,8 @@ Contribute a model (Stage 2)
 ============================
 
 This guide covers everything a pull request needs to add a new frozen
-pretrained model to ``torchgeo-bench``.  Before continuing, complete
-:doc:`eval_own_model` which demonstrates how to implement your new model to work with the torchgeo-bench pipeline and verify your model produces sensible results
+pretrained model to ``geo-eval-harness``.  Before continuing, complete
+:doc:`eval_own_model` which demonstrates how to implement your new model to work with the geo-eval-harness pipeline and verify your model produces sensible results
 on the applicable datasets.
 
 .. _contrib-prerequisites:
@@ -15,15 +15,15 @@ The setup steps are the same as Stage 1:
 
 .. code-block:: console
 
-   $ git clone https://github.com/torchgeo/torchgeo-bench.git
-   $ cd torchgeo-bench
+   $ git clone https://github.com/torchgeo/geo-eval-harness.git
+   $ cd geo-eval-harness
    $ uv sync --extra dev
 
 Then fork the repository on GitHub and create a feature branch:
 
 .. code-block:: console
 
-   $ git remote add fork https://github.com/<your-username>/torchgeo-bench.git
+   $ git remote add fork https://github.com/<your-username>/geo-eval-harness.git
    $ git checkout -b add-<model-name>
 
 For the model implementation and YAML config steps, follow
@@ -36,15 +36,15 @@ tests, and the PR submission.
 Integrate into the package
 --------------------------
 
-Once your model class is working locally, move it into torchgeo-bench and expose its import path to the model preset loader.
+Once your model class is working locally, move it into geo-eval-harness and expose its import path to the model preset loader.
 
-**1. Place the module** under :file:`src/torchgeo_bench/models/`:
+**1. Place the module** under :file:`src/geo_eval_harness/models/`:
 
 .. code-block:: console
 
-   $ mv new_model.py src/torchgeo_bench/models/new_model.py
+   $ mv new_model.py src/geo_eval_harness/models/new_model.py
 
-**2. Export the class** from :file:`src/torchgeo_bench/models/__init__.py`:
+**2. Export the class** from :file:`src/geo_eval_harness/models/__init__.py`:
 
 .. code-block:: python
 
@@ -60,7 +60,7 @@ Once your model class is working locally, move it into torchgeo-bench and expose
 .. code-block:: yaml
 
    name: new_model
-   target: torchgeo_bench.models.NewModel
+   target: geo_eval_harness.models.NewModel
    track: image
    kwargs:
      pretrained: true
@@ -91,7 +91,7 @@ Weights
 
 * Pretrained weights must be **publicly accessible without authentication**.
   `HuggingFace Hub <https://huggingface.co/models>`_ is the preferred host.
-* The model must load after a fresh ``pip install 'torchgeo-bench[<newextra>]'``
+* The model must load after a fresh ``pip install 'geo-eval-harness[<newextra>]'``
   with no manual file placement.  Use
   `huggingface_hub.hf_hub_download <https://huggingface.co/docs/huggingface_hub/>`_
   or an equivalent auto-download call inside your ``__init__``.
@@ -112,8 +112,8 @@ Create :file:`tests/test_<model>.py`.  Every added code path must be covered.
    import pytest
    import torch
 
-   from torchgeo_bench.datasets.base import BandSpec
-   from torchgeo_bench.models.new_model import NewModel
+   from geo_eval_harness.datasets.base import BandSpec
+   from geo_eval_harness.models.new_model import NewModel
 
 
    def _bands(n: int = 3) -> list[BandSpec]:
@@ -178,7 +178,7 @@ Run the benchmark on datasets applicable to your model's sensor coverage. The de
 
 .. code-block:: console
 
-   $ uv run torchgeo-bench run --model new_model --device cuda:0 \
+   $ uv run geo-eval-harness run --model new_model --device cuda:0 \
        --dataset m-eurosat --dataset m-so2sat --dataset m-bigearthnet \
        --dataset m-brick-kiln --dataset m-forestnet --dataset m-pv4ger
 
@@ -186,7 +186,7 @@ For V2 datasets:
 
 .. code-block:: console
 
-   $ uv run torchgeo-bench run --model new_model --device cuda:0 \
+   $ uv run geo-eval-harness run --model new_model --device cuda:0 \
        --dataset benv2 --dataset treesatai --dataset so2sat --dataset forestnet --resume
 
 Use ``--device cpu`` without a CUDA device. Record the selected bands and normalization, and list unsupported datasets with a reason rather than silently skipping them. For a longer dataset list or segmentation options, submit the run YAML and invoke it with ``--config`` as shown in :doc:`eval_own_model`. Commit only the new model's result file.

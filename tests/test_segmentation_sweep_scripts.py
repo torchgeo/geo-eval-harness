@@ -8,8 +8,8 @@ from types import ModuleType
 
 import pytest
 
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import load_run_config
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import load_run_config
 
 ROOT = Path(__file__).parents[1]
 
@@ -37,7 +37,7 @@ def test_representative_sweep_passes_seed_and_rejects_unknown_metadata(
     sweep = load_script("run_segmentation_representative_sweep.py")
     config = sweep.SweepConfig(
         root=ROOT,
-        cli=tmp_path / "torchgeo-bench",
+        cli=tmp_path / "geo-eval-harness",
         output=tmp_path / "results.csv",
         state_dir=tmp_path / "state",
         gpus=[0],
@@ -49,7 +49,7 @@ def test_representative_sweep_passes_seed_and_rejects_unknown_metadata(
     runner = sweep.SweepRunner(config)
 
     command = runner._command(runner.jobs[0], gpu=0, attempt=1)
-    assert command[:4] == [sys.executable, "-m", "torchgeo_bench", "run"]
+    assert command[:4] == [sys.executable, "-m", "geo_eval_harness", "run"]
     assert command[command.index("--seed") + 1] == "17"
     settings = load_run_config(command[command.index("--config") + 1])
     assert settings.model.name == runner.jobs[0].model.config
@@ -82,7 +82,7 @@ def test_protocol_study_passes_configured_seed(
     study = load_script("run_segmentation_protocol_study.py")
     config = study.StudyConfig(
         root=ROOT,
-        cli=tmp_path / "torchgeo-bench",
+        cli=tmp_path / "geo-eval-harness",
         raw_dir=tmp_path / "raw",
         state_dir=tmp_path / "state",
         combined_output=tmp_path / "combined.csv",
@@ -94,7 +94,7 @@ def test_protocol_study_passes_configured_seed(
     runner = study.StudyRunner(config)
 
     command = runner._command(runner.jobs[0], gpu=0, attempt=1)
-    assert command[:4] == [sys.executable, "-m", "torchgeo_bench", "run"]
+    assert command[:4] == [sys.executable, "-m", "geo_eval_harness", "run"]
     assert command[command.index("--seed") + 1] == "23"
     settings = load_run_config(command[command.index("--config") + 1])
     job = runner.jobs[0]

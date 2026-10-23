@@ -10,15 +10,15 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import swin_v2_t
 from torchvision.models.swin_transformer import ShiftedWindowAttentionV2
 
+from geo_eval_harness.config.catalog import list_model_configs
+from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.models.timm import TimmPatchBenchModel
+from geo_eval_harness.segmentation_lora import apply_lora, has_lora_adapters
+from geo_eval_harness.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
 from tests.support.models import bands
-from torchgeo_bench.config.catalog import list_model_configs
-from torchgeo_bench.config.presets import NORMALIZATIONS, build_model, load_model_preset
-from torchgeo_bench.config.schema import ModelConfig, SegmentationConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.models.timm import TimmPatchBenchModel
-from torchgeo_bench.segmentation_lora import apply_lora, has_lora_adapters
-from torchgeo_bench.segmentation_probe import SegmentationProbe
-from torchgeo_bench.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
 
 VIT_TARGETS = r"blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
 SWIN_TARGETS = r"features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])"
@@ -76,7 +76,7 @@ def test_apply_lora_rejects_missing_or_non_linear_targets(targets: str, message:
 def test_apply_lora_names_the_extra_when_peft_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "peft", None)
     model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
-    with pytest.raises(ImportError, match=re.escape("torchgeo-bench[lora]")):
+    with pytest.raises(ImportError, match=re.escape("geo-eval-harness[lora]")):
         apply_lora(model, VIT_TARGETS, rank=4, alpha=8.0)
 
 

@@ -22,7 +22,7 @@ declaration of a final winner.
 Rankings are summaries: choose the task (classification or segmentation), how
 datasets are combined, then the probe and input bands whose results are being
 summarized. If a result is wrong, missing, or implausible, please `open an
-issue <https://github.com/torchgeo/torchgeo-bench/issues>`__ with the model,
+issue <https://github.com/torchgeo/geo-eval-harness/issues>`__ with the model,
 view, and any supporting evidence. General feedback is welcome too.
 
 The aggregation choices answer different questions:

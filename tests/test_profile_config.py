@@ -11,14 +11,14 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.commands._profile import profile
-from torchgeo_bench.commands.profile_arguments import add_profile_arguments, load_profile_config
-from torchgeo_bench.config import presets
-from torchgeo_bench.config.presets import ModelPreset, resolve_run_config
-from torchgeo_bench.config.profile import ProfileConfig, resolve_profile_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.commands._profile import profile
+from geo_eval_harness.commands.profile_arguments import add_profile_arguments, load_profile_config
+from geo_eval_harness.config import presets
+from geo_eval_harness.config.presets import ModelPreset, resolve_run_config
+from geo_eval_harness.config.profile import ProfileConfig, resolve_profile_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
 
 
 @pytest.fixture
@@ -318,13 +318,13 @@ def test_profile_dry_run_round_trip_is_lightweight(
     assert "count_flops: false" in output
     code = f"""
 import argparse, sys
-from torchgeo_bench.commands._profile import profile
-from torchgeo_bench.commands.profile_arguments import add_profile_arguments
+from geo_eval_harness.commands._profile import profile
+from geo_eval_harness.commands.profile_arguments import add_profile_arguments
 parser = argparse.ArgumentParser()
 add_profile_arguments(parser)
 profile(parser.parse_args({json.dumps(flags)}))
-assert not set(("torch", "torchgeo", "numpy", "omegaconf", "torchgeo_bench.main",
-                "torchgeo_bench.commands._profile_runtime")) & sys.modules.keys()
+assert not set(("torch", "torchgeo", "numpy", "omegaconf", "geo_eval_harness.main",
+                "geo_eval_harness.commands._profile_runtime")) & sys.modules.keys()
 """
     result = subprocess.run(
         [sys.executable, "-c", code], check=True, capture_output=True, text=True

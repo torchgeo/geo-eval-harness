@@ -1,18 +1,18 @@
 Evaluation
 ==========
 
-The evaluation pipeline lives in :mod:`torchgeo_bench.main` and a few
+The evaluation pipeline lives in :mod:`geo_eval_harness.main` and a few
 focused sub-modules.  Each evaluation method (KNN-5, linear probe,
 segmentation, intrinsic dimension) consumes per-split feature embeddings
 or raw images and produces one :class:`EvaluationResult` row per metric.
 Image orchestration accepts
-:class:`~torchgeo_bench.config.run.RunConfig`; see :doc:`cli` for loading,
+:class:`~geo_eval_harness.config.run.RunConfig`; see :doc:`cli` for loading,
 preset resolution, and the separate standalone measurement schemas.
 
 Result schema
 -------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 
 .. autoclass:: EvaluationResult
 
@@ -32,28 +32,28 @@ KNN-5 evaluation
 
 .. autofunction:: evaluate_knn
 
-.. currentmodule:: torchgeo_bench.knn
+.. currentmodule:: geo_eval_harness.knn
 .. autoclass:: KNNClassifier
 
 Linear probing
 --------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_logistic
 
-.. currentmodule:: torchgeo_bench.linear
+.. currentmodule:: geo_eval_harness.linear
 .. autoclass:: LogisticRegression
 
 Segmentation
 ------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_segmentation
 
-.. currentmodule:: torchgeo_bench.segmentation_probe
+.. currentmodule:: geo_eval_harness.segmentation_probe
 .. autoclass:: SegmentationProbe
 
-.. currentmodule:: torchgeo_bench.segmentation_task
+.. currentmodule:: geo_eval_harness.segmentation_task
 .. autoclass:: SegmentationSolver
 .. autoclass:: SegMetrics
 
@@ -61,9 +61,9 @@ Intrinsic dimension
 -------------------
 
 See :doc:`intrinsic_dim` for the standalone module API; the orchestration
-function lives in :mod:`torchgeo_bench.main`:
+function lives in :mod:`geo_eval_harness.main`:
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_intrinsic_dim
 
 Result I/O

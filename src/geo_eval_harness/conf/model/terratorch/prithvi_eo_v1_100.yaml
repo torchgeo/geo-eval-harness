@@ -1,0 +1,12 @@
+name: tt_prithvi_eo_v1_100
+target: geo_eval_harness.models.TerraTorchPrithviBench
+kwargs:
+  backbone_name: prithvi_eo_v1_100
+  pretrained: true
+  target_size: 224
+segmentation:
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2

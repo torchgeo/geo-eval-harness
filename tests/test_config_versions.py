@@ -3,11 +3,11 @@
 import pytest
 from pydantic import ValidationError
 
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.profile import ProfileConfig
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import InputConfig, StrictModel
-from torchgeo_bench.coordbench.config import CoordConfig
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.profile import ProfileConfig
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import InputConfig, StrictModel
+from geo_eval_harness.coordbench.config import CoordConfig
 
 
 @pytest.mark.parametrize(

@@ -19,7 +19,7 @@ small CPU example evaluates one regression benchmark with two random folds:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model sincos --dataset california_housing \
+   $ geo-eval-harness coord --model sincos --dataset california_housing \
        --methods linear --folds 2 --device cpu \
        --output results/coordbench_quickstart.csv
 
@@ -28,7 +28,7 @@ Unlike image-run resume, this key does not include a configuration hash;
 use a separate output file when changing encoder kwargs or evaluation
 settings that are not part of the key.
 
-``python -m torchgeo_bench coord`` and ``python -m torchgeo_bench.cli coord``
+``python -m geo_eval_harness coord`` and ``python -m geo_eval_harness.cli coord``
 are equivalent entry points. The former ``run mode=coord`` and dotted
 ``key=value`` overrides are no longer supported.
 
@@ -51,14 +51,14 @@ Install the optional reference encoders from PyPI with:
 
 .. code-block:: console
 
-   $ pip install "torchgeo-bench[coordbench]"
+   $ pip install "geo-eval-harness[coordbench]"
 
 For example, run SatCLIP on its five downstream benchmarks with random and
 spatial-block cross-validation:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model satclip --dataset satclip --split both
+   $ geo-eval-harness coord --model satclip --dataset satclip --split both
 
 Benchmarks and probes
 ---------------------
@@ -100,7 +100,7 @@ bootstrapped confidence intervals.
 YAML configuration
 ------------------
 
-Pass a file to ``torchgeo-bench coord --config my-coord.yaml``:
+Pass a file to ``geo-eval-harness coord --config my-coord.yaml``:
 
 .. code-block:: yaml
 
@@ -134,7 +134,7 @@ remote tables:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --config docs/examples/coord-run.yaml --dry-run
+   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
 
 The coordinate schema deliberately has no image ``input``, ``segmentation``,
 or ``classification`` sections. See :doc:`/api/coordbench` for
@@ -143,7 +143,7 @@ or ``classification`` sections. See :doc:`/api/coordbench` for
 Add a location encoder
 ----------------------
 
-A custom encoder subclasses :class:`~torchgeo_bench.coordbench.LocationEncoder`
+A custom encoder subclasses :class:`~geo_eval_harness.coordbench.LocationEncoder`
 and implements ``_encode(lon, lat, year)``. The method receives one batch of
 NumPy arrays and returns a finite ``(N, D)`` feature matrix.
 
@@ -169,10 +169,10 @@ root using :file:`docs/examples/coord-run.yaml`:
 
 .. code-block:: console
 
-   $ PYTHONPATH=. uv run torchgeo-bench coord --config docs/examples/coord-run.yaml
+   $ PYTHONPATH=. uv run geo-eval-harness coord --config docs/examples/coord-run.yaml
 
 For a reusable integration, place the class in an installed package and add a
-model preset under :file:`src/torchgeo_bench/conf/model/`:
+model preset under :file:`src/geo_eval_harness/conf/model/`:
 
 .. code-block:: yaml
 
@@ -195,5 +195,5 @@ random and spatial holdouts:
 
 .. code-block:: console
 
-   $ python -m torchgeo_bench.coordbench.leaderboard \
+   $ python -m geo_eval_harness.coordbench.leaderboard \
        results/coordbench_results.csv --method linear

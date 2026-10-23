@@ -1,7 +1,7 @@
-torchgeo_bench.utils
-====================
+geo_eval_harness.utils
+======================
 
-.. module:: torchgeo_bench.utils
+.. module:: geo_eval_harness.utils
 
 General-purpose helpers shared across the framework.
 

@@ -1,5 +1,0 @@
-name: climplicit
-target: torchgeo_bench.coordbench.models.ClimplicitLocationEncoder
-track: coord
-kwargs:
-  repo: Jobedo/climplicit

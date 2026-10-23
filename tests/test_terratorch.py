@@ -7,8 +7,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models.terratorch_models import (
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
@@ -69,7 +69,7 @@ def mock_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         state["instances"].append(instance)
         return instance
 
-    monkeypatch.setattr("torchgeo_bench.models.terratorch_models._build_backbone", _fake_build)
+    monkeypatch.setattr("geo_eval_harness.models.terratorch_models._build_backbone", _fake_build)
     return state
 
 

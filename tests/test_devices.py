@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 import torch
 
-from torchgeo_bench.devices import resolve_device
+from geo_eval_harness.devices import resolve_device
 
 
 @pytest.mark.parametrize("requested", ["cpu", "cpu:0", "meta", "mps"])

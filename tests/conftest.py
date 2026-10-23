@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for torchgeo-bench tests."""
+"""Pytest configuration and fixtures for geo-eval-harness tests."""
 
 import os
 from collections.abc import Iterator

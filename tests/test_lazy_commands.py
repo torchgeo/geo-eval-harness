@@ -9,40 +9,40 @@ import pytest
 @pytest.mark.parametrize(
     ("module", "arguments"),
     [
-        ("torchgeo_bench.cli", ["--help"]),
-        ("torchgeo_bench.cli", ["--version"]),
-        ("torchgeo_bench.cli", ["run", "--help"]),
-        ("torchgeo_bench.cli", ["run", "--config-help"]),
-        ("torchgeo_bench.cli", ["models"]),
-        ("torchgeo_bench.cli", ["datasets"]),
-        ("torchgeo_bench.cli", ["models", "rcf"]),
-        ("torchgeo_bench.cli", ["datasets", "m-eurosat"]),
-        ("torchgeo_bench.cli", ["datasets", "burn_scars"]),
+        ("geo_eval_harness.cli", ["--help"]),
+        ("geo_eval_harness.cli", ["--version"]),
+        ("geo_eval_harness.cli", ["run", "--help"]),
+        ("geo_eval_harness.cli", ["run", "--config-help"]),
+        ("geo_eval_harness.cli", ["models"]),
+        ("geo_eval_harness.cli", ["datasets"]),
+        ("geo_eval_harness.cli", ["models", "rcf"]),
+        ("geo_eval_harness.cli", ["datasets", "m-eurosat"]),
+        ("geo_eval_harness.cli", ["datasets", "burn_scars"]),
         (
-            "torchgeo_bench.cli",
+            "geo_eval_harness.cli",
             ["run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run"],
         ),
-        ("torchgeo_bench.cli", ["download", "--help"]),
-        ("torchgeo_bench.cli", ["profile", "--help"]),
+        ("geo_eval_harness.cli", ["download", "--help"]),
+        ("geo_eval_harness.cli", ["profile", "--help"]),
         (
-            "torchgeo_bench.cli",
+            "geo_eval_harness.cli",
             ["profile", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run"],
         ),
-        ("torchgeo_bench.cli", ["flops", "--help"]),
-        ("torchgeo_bench.cli", ["flops", "--config-help"]),
-        ("torchgeo_bench.cli", ["flops", "--model", "rcf", "--dry-run"]),
-        ("torchgeo_bench.cli", ["coord", "--help"]),
+        ("geo_eval_harness.cli", ["flops", "--help"]),
+        ("geo_eval_harness.cli", ["flops", "--config-help"]),
+        ("geo_eval_harness.cli", ["flops", "--model", "rcf", "--dry-run"]),
+        ("geo_eval_harness.cli", ["coord", "--help"]),
         (
-            "torchgeo_bench.cli",
+            "geo_eval_harness.cli",
             ["coord", "--model", "sincos", "--dataset", "california_housing", "--dry-run"],
         ),
-        ("torchgeo_bench.config", []),
-        ("torchgeo_bench.config.catalog", []),
-        ("torchgeo_bench.config.schema", []),
-        ("torchgeo_bench.config.presets", []),
-        ("torchgeo_bench.config.profile", []),
-        ("torchgeo_bench.config.flops", []),
-        ("torchgeo_bench.config.run", []),
+        ("geo_eval_harness.config", []),
+        ("geo_eval_harness.config.catalog", []),
+        ("geo_eval_harness.config.schema", []),
+        ("geo_eval_harness.config.presets", []),
+        ("geo_eval_harness.config.profile", []),
+        ("geo_eval_harness.config.flops", []),
+        ("geo_eval_harness.config.run", []),
     ],
 )
 def test_cli_queries_do_not_import_heavy_modules(module: str, arguments: list[str]) -> None:
@@ -76,16 +76,16 @@ assert not blocked & sys.modules.keys()
 def test_config_catalog_does_not_import_schemas() -> None:
     code = """
 import sys
-from torchgeo_bench.config import list_model_configs, model_config_path
+from geo_eval_harness.config import list_model_configs, model_config_path
 assert "rcf" in list_model_configs()
 assert model_config_path("rcf").is_file()
 assert not {"pydantic", "yaml"} & sys.modules.keys()
 assert not {
-    "torchgeo_bench.config.schema",
-    "torchgeo_bench.config.presets",
-    "torchgeo_bench.config.profile",
-    "torchgeo_bench.config.flops",
-    "torchgeo_bench.config.run",
+    "geo_eval_harness.config.schema",
+    "geo_eval_harness.config.presets",
+    "geo_eval_harness.config.profile",
+    "geo_eval_harness.config.flops",
+    "geo_eval_harness.config.run",
 } & sys.modules.keys()
 """
     subprocess.run(
@@ -101,7 +101,7 @@ def test_command_logging_uses_standard_logging() -> None:
     code = """
 import logging
 import sys
-from torchgeo_bench.commands._common import setup_logging
+from geo_eval_harness.commands._common import setup_logging
 setup_logging(verbose=True)
 logging.getLogger("test").warning("sample message")
 assert "rich" not in sys.modules
@@ -138,12 +138,12 @@ blocked = {'olmoearth_pretrain_minimal', 'terratorch', 'rshf'}
 class BlockRuntime:
     def find_spec(self, fullname, path=None, target=None):
         if (fullname.split('.')[0] in blocked
-            or fullname.startswith('torchgeo_bench.models')
-            or fullname == 'torchgeo_bench.commands._run_runtime'):
+            or fullname.startswith('geo_eval_harness.models')
+            or fullname == 'geo_eval_harness.commands._run_runtime'):
             raise AssertionError(f'Unexpected runtime import: {fullname}')
 sys.meta_path.insert(0, BlockRuntime())
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets.base import BenchDataset
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets.base import BenchDataset
 def no_dataset(*args, **kwargs):
     raise AssertionError('Metadata validation must not construct datasets')
 BenchDataset.__init__ = no_dataset

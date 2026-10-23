@@ -1,0 +1,14 @@
+name: tgeo_croma_base
+target: geo_eval_harness.models.TorchGeoCromaBench
+kwargs:
+  factory: croma_base
+  weights_class: CROMABase_Weights
+  weights_member: CROMA_VIT
+  auto_resize: true
+  target_size: 120
+segmentation:
+  layers:
+    - s2_encoder.transformer.layers.11.1
+    - s2_encoder.transformer.layers.8.1
+    - s2_encoder.transformer.layers.5.1
+    - s2_encoder.transformer.layers.2.1

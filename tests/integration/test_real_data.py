@@ -11,9 +11,9 @@ import pandas as pd
 import pytest
 import yaml
 
+from geo_eval_harness.datasets import get_bench_dataset_class
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import require_dataset_data
-from torchgeo_bench.datasets import get_bench_dataset_class
 
 pytestmark = pytest.mark.slow
 

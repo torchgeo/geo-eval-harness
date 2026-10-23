@@ -1,0 +1,12 @@
+name: swin_tiny_patch4_window7_224
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: swin_tiny_patch4_window7_224
+  pretrained: true
+  global_pool: avg
+segmentation:
+  layers:
+    - layers.3
+    - layers.2
+    - layers.1
+    - layers.0

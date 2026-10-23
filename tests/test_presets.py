@@ -5,18 +5,18 @@ import sys
 
 import pytest
 
-from torchgeo_bench.config import list_model_configs, model_config_path
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.presets import (
+from geo_eval_harness.config import list_model_configs, model_config_path
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import (
     ModelPreset,
     build_model,
     load_model_preset,
     resolve_run_config,
 )
-from torchgeo_bench.config.profile import ProfileConfig, resolve_profile_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig, load_yaml
-from torchgeo_bench.models.torchgeo_models import TorchGeoScaleMAEBench
+from geo_eval_harness.config.profile import ProfileConfig, resolve_profile_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig, load_yaml
+from geo_eval_harness.models.torchgeo_models import TorchGeoScaleMAEBench
 
 
 @pytest.mark.parametrize("name", ["timm/resnet5", "RCF", "not-a-model", "../model/rcf"])
@@ -143,9 +143,9 @@ def test_model_dataset_overrides_are_isolated_and_fall_back() -> None:
 def test_configuration_import_and_resolution_do_not_import_omegaconf() -> None:
     code = """
 import sys
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.config.presets import load_model_preset
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.config.presets import load_model_preset
 for name in list_model_configs():
     load_model_preset(ModelConfig(name=name))
 assert not set(('omegaconf', 'torch', 'torchgeo', 'numpy', 'pandas')) & sys.modules.keys()
@@ -174,7 +174,7 @@ def test_scalemae_constructor_uses_resolved_dataset_grid(
             received.update(kwargs)
             return object()
 
-    monkeypatch.setattr("torchgeo_bench.models.TorchGeoScaleMAEBench", constructor)
+    monkeypatch.setattr("geo_eval_harness.models.TorchGeoScaleMAEBench", constructor)
     build_model(preset, bands=[], normalization="identity")
     assert received["image_size"] == effective.input.image_size == (image_size or 64)
     assert received["res"] == 3.5
@@ -183,7 +183,7 @@ def test_scalemae_constructor_uses_resolved_dataset_grid(
 def test_flops_scalemae_constructor_grid_follows_explicit_synthetic_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from torchgeo_bench.config.flops import FlopsConfig
+    from geo_eval_harness.config.flops import FlopsConfig
 
     config = FlopsConfig.model_validate(
         {
@@ -201,7 +201,7 @@ def test_flops_scalemae_constructor_grid_follows_explicit_synthetic_size(
             received.update(kwargs)
             return object()
 
-    monkeypatch.setattr("torchgeo_bench.models.TorchGeoScaleMAEBench", constructor)
+    monkeypatch.setattr("geo_eval_harness.models.TorchGeoScaleMAEBench", constructor)
     build_model(preset, bands=[], normalization="identity")
     assert received["image_size"] == effective.input.image_size == 96
 
@@ -249,7 +249,7 @@ def test_typed_preset_learning_rate_and_head_defaults_have_lower_precedence(monk
         }
     )
     monkeypatch.setattr(
-        "torchgeo_bench.config.presets.load_model_preset", lambda *args, **kwargs: preset
+        "geo_eval_harness.config.presets.load_model_preset", lambda *args, **kwargs: preset
     )
     config = RunConfig.model_validate({"model": {"name": "custom"}, "datasets": ["caffe"]})
     effective, _ = resolve_run_config(config, "caffe")

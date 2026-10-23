@@ -1,5 +1,0 @@
-name: satclip
-target: torchgeo_bench.coordbench.models.SatCLIPLocationEncoder
-track: coord
-kwargs:
-  repo: MVRL/satclip-loc-enc-vit16-l40

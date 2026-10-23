@@ -1,0 +1,6 @@
+name: swin_large_patch4_window7_224
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: swin_large_patch4_window7_224
+  pretrained: true
+  global_pool: avg

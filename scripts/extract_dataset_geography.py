@@ -21,8 +21,8 @@ import logging
 import os
 import warnings
 
-from torchgeo_bench.datasets import list_datasets
-from torchgeo_bench.geography import (
+from geo_eval_harness.datasets import list_datasets
+from geo_eval_harness.geography import (
     STORE_DIR,
     build_index,
     extract_geography,

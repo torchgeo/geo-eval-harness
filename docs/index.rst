@@ -1,7 +1,7 @@
-.. module:: torchgeo_bench
+.. module:: geo_eval_harness
 
-torchgeo-bench
-==============
+geo-eval-harness
+================
 
 A lightweight benchmarking framework for frozen geospatial foundation models.
 Choose your path below.

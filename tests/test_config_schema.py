@@ -9,10 +9,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from torchgeo_bench.config.flops import FlopsRuntimeConfig
-from torchgeo_bench.config.profile import ProfileRuntimeConfig
-from torchgeo_bench.config.run import RunConfig, load_run_config, validate_run_config
-from torchgeo_bench.coordbench.config import CoordRuntimeConfig
+from geo_eval_harness.config.flops import FlopsRuntimeConfig
+from geo_eval_harness.config.profile import ProfileRuntimeConfig
+from geo_eval_harness.config.run import RunConfig, load_run_config, validate_run_config
+from geo_eval_harness.coordbench.config import CoordRuntimeConfig
 
 _RUNTIME_SECTIONS = (CoordRuntimeConfig, FlopsRuntimeConfig, ProfileRuntimeConfig)
 
@@ -227,7 +227,7 @@ def test_lora_targets_alone_keep_the_frozen_probe_and_name_lora_runs() -> None:
 
 
 def test_lora_requires_targets_from_the_preset_or_config() -> None:
-    from torchgeo_bench.config.presets import resolve_run_config
+    from geo_eval_harness.config.presets import resolve_run_config
 
     config = valid_config()
     config["datasets"] = ["burn_scars"]

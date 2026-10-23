@@ -9,6 +9,9 @@ import pytest
 import torch
 from torchgeo.datasets import DatasetNotFoundError
 
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import validate_run_config
+from geo_eval_harness.main import LinearProbeDivergedError, main
 from tests.support.runner import (
     _chainable_model_mock,
     _compose_cfg,
@@ -17,9 +20,6 @@ from tests.support.runner import (
     _synthetic_embeddings,
     _synthetic_loaders,
 )
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import validate_run_config
-from torchgeo_bench.main import LinearProbeDivergedError, main
 
 
 def test_dataset_override_routes_recipe_and_changes_resume_key(tmp_path: Path) -> None:
@@ -39,12 +39,12 @@ def test_dataset_override_routes_recipe_and_changes_resume_key(tmp_path: Path) -
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()
         ) as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
     ):
@@ -66,11 +66,11 @@ def test_dataset_override_routes_recipe_and_changes_resume_key(tmp_path: Path) -
     changed_cfg.output.resume = True
     changed_cfg.model.kwargs["pool"] = "mean"
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=model),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=model),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ) as knn_mock,
     ):
@@ -89,11 +89,11 @@ def test_knn_row_preserves_metrics_and_metadata(tmp_path: Path, normalization: s
     model.effective_normalization = normalization
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=model),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=model),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
     ):
@@ -117,7 +117,7 @@ def test_knn_row_preserves_metrics_and_metadata(tmp_path: Path, normalization: s
 
 
 def test_implicit_gpu_knn_fallback_reaches_evaluator_as_cpu(tmp_path: Path, monkeypatch):
-    import torchgeo_bench.knn as knn
+    import geo_eval_harness.knn as knn
 
     out = tmp_path / "out.csv"
     cfg = _compose_cfg(
@@ -133,11 +133,11 @@ def test_implicit_gpu_knn_fallback_reaches_evaluator_as_cpu(tmp_path: Path, monk
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=model),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=model),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ) as knn_mock,
     ):
@@ -172,15 +172,17 @@ def test_device_resolution_and_resume(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    monkeypatch.setattr("torchgeo_bench.knn.gpu_faiss_available", lambda: False)
+    monkeypatch.setattr("geo_eval_harness.knn.gpu_faiss_available", lambda: False)
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()) as data,
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()) as data,
         mock.patch(
-            "torchgeo_bench.main.build_model", return_value=_chainable_model_mock()
+            "geo_eval_harness.main.build_model", return_value=_chainable_model_mock()
         ) as build,
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()) as embed,
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()
+        ) as embed,
+        mock.patch(
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
     ):
@@ -218,8 +220,8 @@ def test_direct_main_rejects_invalid_cuda_before_loading(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data,
-        mock.patch("torchgeo_bench.main.build_model") as build,
+        mock.patch("geo_eval_harness.main.get_datasets") as data,
+        mock.patch("geo_eval_harness.main.build_model") as build,
         pytest.raises(ValueError, match=message),
     ):
         main(cfg)
@@ -239,8 +241,8 @@ def test_auto_cpu_resumes_existing_cpu_results(tmp_path: Path) -> None:
     cfg.output.resume = True
     with (
         mock.patch.object(torch.cuda, "is_available", return_value=False),
-        mock.patch("torchgeo_bench.main.get_datasets") as data,
-        mock.patch("torchgeo_bench.main.build_model") as build,
+        mock.patch("geo_eval_harness.main.get_datasets") as data,
+        mock.patch("geo_eval_harness.main.build_model") as build,
     ):
         main(cfg)
     data.assert_not_called()
@@ -250,7 +252,7 @@ def test_auto_cpu_resumes_existing_cpu_results(tmp_path: Path) -> None:
 
 
 def test_explicit_gpu_knn_without_gpu_faiss_fails_before_data_loading(tmp_path: Path, monkeypatch):
-    import torchgeo_bench.knn as knn
+    import geo_eval_harness.knn as knn
 
     out = tmp_path / "out.csv"
     cfg = _compose_cfg(
@@ -260,7 +262,7 @@ def test_explicit_gpu_knn_without_gpu_faiss_fails_before_data_loading(tmp_path: 
     monkeypatch.setattr(knn, "gpu_faiss_available", lambda: False)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data_mock,
+        mock.patch("geo_eval_harness.main.get_datasets") as data_mock,
         pytest.raises(RuntimeError, match="explicit KNN device 'cuda'"),
     ):
         main(cfg)
@@ -285,14 +287,14 @@ def test_completed_knn_survives_later_linear_failure(
     outcome = pytest.raises(RuntimeError, match="linear probe failed") if raises else nullcontext()
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=_chainable_model_mock()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=_chainable_model_mock()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.evaluate_logistic", side_effect=error),
+        mock.patch("geo_eval_harness.main.evaluate_logistic", side_effect=error),
         outcome,
     ):
         main(cfg, strict=strict)
@@ -316,8 +318,8 @@ def test_resume_complete_preflight_skips_data_loading_and_model_init(tmp_path: P
     ).to_csv(out, index=False)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as get_datasets_mock,
-        mock.patch("torchgeo_bench.main.build_model") as instantiate_mock,
+        mock.patch("geo_eval_harness.main.get_datasets") as get_datasets_mock,
+        mock.patch("geo_eval_harness.main.build_model") as instantiate_mock,
     ):
         main(cfg)
 
@@ -334,13 +336,13 @@ def test_resume_partial_completion_still_runs_missing_work(tmp_path: Path):
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()
         ) as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
-        mock.patch("torchgeo_bench.main.evaluate_knn") as knn_mock,
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.evaluate_knn") as knn_mock,
         mock.patch(
-            "torchgeo_bench.main.evaluate_logistic",
+            "geo_eval_harness.main.evaluate_logistic",
             return_value=(
                 0.6,
                 0.52,
@@ -370,12 +372,12 @@ def test_non_resume_still_runs_even_with_matching_existing_rows(tmp_path: Path):
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()
         ) as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ) as knn_mock,
     ):
@@ -408,13 +410,13 @@ def test_model_eval_overrides_do_not_change_classification_resume_semantics(tmp_
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()
         ) as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
-        mock.patch("torchgeo_bench.main.evaluate_knn") as knn_mock,
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.evaluate_knn") as knn_mock,
         mock.patch(
-            "torchgeo_bench.main.evaluate_logistic",
+            "geo_eval_harness.main.evaluate_logistic",
             return_value=(
                 0.6,
                 0.52,
@@ -462,8 +464,8 @@ def test_resume_skips_when_image_size_read_as_float(tmp_path: Path):
     df.to_csv(out, index=False)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.evaluate_knn") as knn_mock,
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.evaluate_knn") as knn_mock,
     ):
         main(cfg)
 
@@ -488,10 +490,10 @@ def test_resume_reruns_when_evaluation_config_changes(tmp_path: Path):
     )
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ) as knn_mock,
     ):
@@ -512,7 +514,7 @@ def test_missing_dataset_raises(
     def missing_dataset(**_kwargs: object) -> None:
         raise error
 
-    monkeypatch.setattr("torchgeo_bench.main.get_datasets", missing_dataset)
+    monkeypatch.setattr("geo_eval_harness.main.get_datasets", missing_dataset)
     with pytest.raises(type(error)) as exc_info:
         main(cfg)
     assert exc_info.value is error

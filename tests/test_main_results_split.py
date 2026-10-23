@@ -10,17 +10,17 @@ import pandas as pd
 import pytest
 import yaml
 
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.config.presets import merge_settings
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import main
+from geo_eval_harness.results import model_results_path
 from tests.support.runner import (
     _chainable_model_mock,
     _compose_cfg,
     _synthetic_embeddings,
     _synthetic_loaders,
 )
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.config.presets import merge_settings
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import main
-from torchgeo_bench.results import model_results_path
 
 
 def _compose_default_routing_cfg(tmp_path: Path, overrides: dict | None = None) -> RunConfig:
@@ -85,14 +85,14 @@ def test_routing_splits_by_kind_unless_output_is_explicit(
     }
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
-        mock.patch("torchgeo_bench.main.measure_profile", return_value=profile_metrics),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
+        mock.patch("geo_eval_harness.main.measure_profile", return_value=profile_metrics),
     ):
         cli_main(flags)
 
@@ -140,16 +140,16 @@ def test_completed_intrinsic_dim_survives_profile_failure(
         metrics_path = id_path = Path(cfg.output.file)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.build_model", return_value=_chainable_model_mock()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.build_model", return_value=_chainable_model_mock()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
         mock.patch(
-            "torchgeo_bench.main.measure_profile", side_effect=RuntimeError("profile failed")
+            "geo_eval_harness.main.measure_profile", side_effect=RuntimeError("profile failed")
         ),
         pytest.raises(RuntimeError, match="profile failed"),
     ):
@@ -190,14 +190,14 @@ def test_default_routing_resume_reads_all_three_files(tmp_path: Path):
     }
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim", side_effect=_mock_compute),
-        mock.patch("torchgeo_bench.main.measure_profile", return_value=profile_metrics),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", side_effect=_mock_compute),
+        mock.patch("geo_eval_harness.main.measure_profile", return_value=profile_metrics),
     ):
         main(cfg)
 
@@ -209,10 +209,10 @@ def test_default_routing_resume_reads_all_three_files(tmp_path: Path):
     id_rows_after_first = len(pd.read_csv(id_path))
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.evaluate_knn") as knn_mock,
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim") as id_mock,
-        mock.patch("torchgeo_bench.main.measure_profile") as profile_mock,
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.evaluate_knn") as knn_mock,
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim") as id_mock,
+        mock.patch("geo_eval_harness.main.measure_profile") as profile_mock,
     ):
         main(cfg)
 

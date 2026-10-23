@@ -2,8 +2,8 @@
 
 import pytest
 
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.datasets.base import BenchDataset
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets.base import BenchDataset
 
 
 @pytest.fixture(params=["m-eurosat", "so2sat", "caffe", "kuro_siwo", "treesatai", "pastis"])

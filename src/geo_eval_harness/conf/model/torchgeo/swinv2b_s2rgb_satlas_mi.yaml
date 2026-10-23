@@ -1,0 +1,16 @@
+name: tgeo_swinv2b_s2rgb_satlas_mi
+target: geo_eval_harness.models.TorchGeoSwinBench
+kwargs:
+  factory: swin_v2_b
+  weights_class: Swin_V2_B_Weights
+  weights_member: SENTINEL2_MI_RGB_SATLAS
+  normalization_input_unit: s2_tci_div255
+  auto_resize: true
+  target_size: 256
+segmentation:
+  lora_target_modules: 'features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])'
+  layers:
+    - features.7
+    - features.5
+    - features.3
+    - features.1

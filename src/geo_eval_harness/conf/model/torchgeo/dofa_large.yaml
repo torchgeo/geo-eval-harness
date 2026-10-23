@@ -1,0 +1,15 @@
+name: tgeo_dofa_large
+target: geo_eval_harness.models.TorchGeoDOFABench
+kwargs:
+  factory: dofa_large_patch16_224
+  weights_class: DOFALarge16_Weights
+  weights_member: DOFA_MAE
+  auto_resize: true
+  target_size: 224
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - blocks.23
+    - blocks.17
+    - blocks.11
+    - blocks.5

@@ -1,11 +1,11 @@
-"""Tests for extract_features in torchgeo_bench.utils."""
+"""Tests for extract_features in geo_eval_harness.utils."""
 
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from torchgeo_bench.utils import extract_features
+from geo_eval_harness.utils import extract_features
 
 
 class _IdentityModel(torch.nn.Module):

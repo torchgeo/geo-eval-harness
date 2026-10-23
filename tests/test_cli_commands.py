@@ -13,11 +13,11 @@ from unittest import mock
 import pytest
 import yaml
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.commands._config import set_path
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import validate_run_config
+from geo_eval_harness.cli import main
+from geo_eval_harness.commands._config import set_path
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import validate_run_config
 
 
 def test_dry_run_applies_explicit_flags_and_preserves_false_values(
@@ -100,7 +100,7 @@ def test_missing_model_or_dataset_fails_before_execution(selection: list[str]) -
 
 def test_non_dry_run_calls_typed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     received = []
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.run", received.append)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.run", received.append)
     main(["run", "--model", "rcf", "--dataset", "m-eurosat"])
     assert received[0].model.name == "rcf"
 
@@ -114,7 +114,7 @@ def test_runtime_preserves_typed_schema(
         assert strict is True
         received.append(config)
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", capture)
     config = validate_run_config(
         {
             "model": {"name": "rcf"},
@@ -129,7 +129,7 @@ def test_runtime_preserves_typed_schema(
             "classification": {"methods": ["knn"]},
         }
     )
-    from torchgeo_bench.commands._run_runtime import run
+    from geo_eval_harness.commands._run_runtime import run
 
     run(config)
     assert received[0].runtime.device == "cpu"
@@ -150,8 +150,8 @@ def test_runtime_rejects_invalid_cuda_before_loading(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data,
-        mock.patch("torchgeo_bench.main.build_model") as build,
+        mock.patch("geo_eval_harness.main.get_datasets") as data,
+        mock.patch("geo_eval_harness.main.build_model") as build,
         pytest.raises(ValueError, match=message),
     ):
         main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", device])
@@ -168,7 +168,7 @@ def test_runtime_preserves_model_and_segmentation_overrides(
         assert strict is True
         received.append(config)
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", capture)
     config = validate_run_config(
         {
             "model": {"name": "torchgeo/scalemae_large_fmow", "kwargs": {"res": 1.0}},
@@ -178,7 +178,7 @@ def test_runtime_preserves_model_and_segmentation_overrides(
             "segmentation": {"layers": ["layer1"]},
         }
     )
-    from torchgeo_bench.commands._run_runtime import run
+    from geo_eval_harness.commands._run_runtime import run
 
     run(config)
     effective, preset = resolve_run_config(received[0], "m-eurosat")
@@ -197,7 +197,7 @@ def test_runtime_preserves_preset_layers_when_schema_omits_them(
         assert strict is True
         received.append(config)
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", capture)
     config = validate_run_config(
         {
             "model": {"name": "torchgeo/resnet50_s2rgb_satlas_si"},
@@ -205,7 +205,7 @@ def test_runtime_preserves_preset_layers_when_schema_omits_them(
             "runtime": {"device": "cpu"},
         }
     )
-    from torchgeo_bench.commands._run_runtime import run
+    from geo_eval_harness.commands._run_runtime import run
 
     run(config)
     effective, _ = resolve_run_config(received[0], "burn_scars")
@@ -226,7 +226,7 @@ def test_runtime_explicit_empty_layers_clear_preset(
         assert strict is True
         received.append(config)
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", capture)
     config = validate_run_config(
         {
             "model": {"name": "torchgeo/resnet50_s2rgb_satlas_si"},
@@ -235,7 +235,7 @@ def test_runtime_explicit_empty_layers_clear_preset(
             "segmentation": {"layers": []},
         }
     )
-    from torchgeo_bench.commands._run_runtime import run
+    from geo_eval_harness.commands._run_runtime import run
 
     run(config)
     effective, _ = resolve_run_config(received[0], "burn_scars")
@@ -244,7 +244,7 @@ def test_runtime_explicit_empty_layers_clear_preset(
 
 def test_linear_only_reaches_typed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
     received = []
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.run", received.append)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.run", received.append)
     main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--methods", "linear"])
     assert received[0].classification.methods == ["linear"]
 
@@ -267,7 +267,7 @@ def test_runtime_failure_propagates_from_cli(
     def fail(_: object, *, strict: bool) -> None:
         raise error_type("benchmark failed")
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", fail)
+    monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", fail)
     with pytest.raises(error_type, match="benchmark failed"):
         main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu"])
 
@@ -296,7 +296,7 @@ def test_config_errors_exit_without_tracebacks(
         [
             sys.executable,
             "-m",
-            "torchgeo_bench.cli",
+            "geo_eval_harness.cli",
             "run",
             "--config",
             str(path),
@@ -491,7 +491,7 @@ def test_main_rejects_unknown_parser_command(monkeypatch: pytest.MonkeyPatch) ->
     import argparse
 
     monkeypatch.setattr(
-        "torchgeo_bench.cli._parse_args",
+        "geo_eval_harness.cli._parse_args",
         lambda _: argparse.Namespace(command="other"),
     )
     with pytest.raises(SystemExit, match="not implemented"):
@@ -526,7 +526,7 @@ def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
 
 
 def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    from torchgeo_bench import commands
+    from geo_eval_harness import commands
 
     received = []
     monkeypatch.setattr(commands, "download", received.append)
@@ -553,7 +553,7 @@ def test_auto_device_resolves_once_before_dataset_execution(
         received.append(cfg)
         return ()
 
-    monkeypatch.setattr("torchgeo_bench.main.run_dataset", dataset_run)
+    monkeypatch.setattr("geo_eval_harness.main.run_dataset", dataset_run)
     with mock.patch.object(torch.cuda, "is_available", return_value=available) as query:
         main(
             [
@@ -578,7 +578,7 @@ def test_auto_device_resolves_once_before_dataset_execution(
 def test_dry_run_reload_preserves_preset_settings(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
-    from torchgeo_bench.commands import _run_runtime
+    from geo_eval_harness.commands import _run_runtime
 
     received = []
     monkeypatch.setattr(
@@ -597,7 +597,7 @@ def test_dry_run_reload_preserves_preset_settings(
 
 
 def test_image_size_override_reaches_model_construction(monkeypatch: pytest.MonkeyPatch) -> None:
-    from torchgeo_bench.commands import _run_runtime
+    from geo_eval_harness.commands import _run_runtime
 
     received = []
     monkeypatch.setattr(_run_runtime, "main", lambda cfg, **kwargs: received.append(cfg))

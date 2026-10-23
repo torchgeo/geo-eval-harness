@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from torchgeo_bench.datasets.resisc45 import RESISC45
+from geo_eval_harness.datasets.resisc45 import RESISC45
 
 
 class _FakeRESISC45:
@@ -28,7 +28,7 @@ class _FakeRESISC45:
 
 @pytest.fixture
 def patched(monkeypatch: pytest.MonkeyPatch) -> RESISC45:
-    import torchgeo_bench.datasets.resisc45 as mod
+    import geo_eval_harness.datasets.resisc45 as mod
 
     monkeypatch.setattr(mod, "TGRESISC45", _FakeRESISC45)
     return RESISC45()
@@ -47,7 +47,7 @@ class TestMetadata:
 
     def test_statistics_are_uint8_scale(self) -> None:
         """Stats must stay in raw sensor units so ``model_native`` detects uint8."""
-        from torchgeo_bench.models._input_units import InputUnit, detect_input_unit
+        from geo_eval_harness.models._input_units import InputUnit, detect_input_unit
 
         assert detect_input_unit(RESISC45().bands) is InputUnit.UINT8
 

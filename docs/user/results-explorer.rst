@@ -12,7 +12,7 @@ Results explorer
      </a>
    </p>
 
-A self-contained HTML page for browsing a snapshot of ``torchgeo-bench``
+A self-contained HTML page for browsing a snapshot of ``geo-eval-harness``
 benchmark results. The committed page is regenerated from
 ``results/models/*.csv``, ``results/profiles/*.csv``,
 ``results/intrinsic_dim/*.csv``, ``results/compute_cost.csv``, and the

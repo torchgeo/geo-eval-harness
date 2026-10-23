@@ -8,8 +8,8 @@ import pytest
 import torch
 from transformers import Sam3Config, Sam3Model, Sam3VisionConfig, Sam3VisionModel, Sam3ViTConfig
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models.sam3 import SAM3Encoder
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models.sam3 import SAM3Encoder
 
 
 def _bands(n: int) -> list[BandSpec]:

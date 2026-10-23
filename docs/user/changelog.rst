@@ -4,14 +4,20 @@ Changelog
 Unreleased
 ----------
 
+Changed
+^^^^^^^
+
+* Package, CLI, and repository name: ``geo-eval-harness``. Python imports and fully qualified model targets use ``geo_eval_harness``. Stored results and resume hashes remain compatible; update custom imports and YAML targets as described in :doc:`installation`.
+* TerraTorch models use a separate source installation because the published backend's TorchGeo requirement is incompatible. See :doc:`installation` for the pinned command.
+
 Added
 ^^^^^
 
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
-* UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``torchgeo-bench download ucmerced``.
+* UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
   torchgeo's published 18,900 / 6,300 / 6,300 split.  Downloadable with
-  ``torchgeo-bench download resisc45``.  It is the most-divergent benchmark in
+  ``geo-eval-harness download resisc45``.  It is the most-divergent benchmark in
   the GFM literature, so having it under a fixed protocol is the point.
 * ``scripts/compute_band_statistics.py`` computes the per-band ``BandSpec``
   statistics a new dataset needs, from its train split only.
@@ -19,12 +25,12 @@ Added
   checksum-verified): 10,000 RGB scenes, 30 classes.  No official split
   exists upstream, so ``scripts/generate_aid_splits.py`` derives a
   deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
-  Downloadable with ``torchgeo-bench download aid``.  One of the three
+  Downloadable with ``geo-eval-harness download aid``.  One of the three
   most-used benchmarks in the GFM literature.
 * HOTOSM building segmentation (``hotosm_buildings``) from Hugging Face
   ``hotosm/vhr-building-segmentation``: 72,363 RGB tiles at about 0.3 m with
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
-  ``torchgeo-bench download hotosm_buildings`` converts the upstream parquet
+  ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
 
 Fixed
@@ -42,7 +48,7 @@ Added
   cross-validation, KNN and ridge-linear probes, MIND and sine/cosine encoders,
   optional SatCLIP/GeoCLIP/Climplicit/SINR wrappers, checked-in results, and a
   mean-rank leaderboard.
-* A dedicated ``torchgeo-bench flops`` pipeline for per-sample backbone, head,
+* A dedicated ``geo-eval-harness flops`` pipeline for per-sample backbone, head,
   and probe compute, with a checked-in compute-cost table.
 * OlmoEarth v1.2 Nano, Tiny, Small, and Base presets, including Landsat-as-S2
   routes for ``m-forestnet``.
@@ -80,10 +86,10 @@ task were removed. They remain available through the 0.4.0 tag but are not
 comparable to current two-class runs. Other pre-0.5 rows do not carry
 ``num_classes`` and therefore cannot satisfy the new resume key.
 
-`Full 0.4.0 to 0.5.0 diff <https://github.com/torchgeo/torchgeo-bench/compare/v0.4.0...v0.5.0>`__
+`Full 0.4.0 to 0.5.0 diff <https://github.com/torchgeo/geo-eval-harness/compare/v0.4.0...v0.5.0>`__
 
 Older releases
 --------------
 
 Earlier release notes remain available on
-`GitHub Releases <https://github.com/torchgeo/torchgeo-bench/releases>`__.
+`GitHub Releases <https://github.com/torchgeo/geo-eval-harness/releases>`__.

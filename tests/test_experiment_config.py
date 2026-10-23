@@ -9,15 +9,15 @@ import pytest
 import torch
 import yaml
 
+from geo_eval_harness.config.presets import ModelPreset, load_model_preset, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.models._normalization import UnsupportedNormalizationError
 from scripts import (
     audit_model_native,
     introspect_seg_layers,
     tune_dataloader,
 )
-from torchgeo_bench.config.presets import ModelPreset, load_model_preset, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.models._normalization import UnsupportedNormalizationError
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -49,9 +49,9 @@ def test_native_audit_only_classifies_unsupported_normalization(
 ) -> None:
     model_dir = tmp_path / "model"
     model_dir.mkdir()
-    (model_dir / "rcf.yaml").write_text("target: torchgeo_bench.models.RCFBench\nname: rcf\n")
+    (model_dir / "rcf.yaml").write_text("target: geo_eval_harness.models.RCFBench\nname: rcf\n")
     output = tmp_path / "audit.json"
-    monkeypatch.setattr("torchgeo_bench.config.catalog.CONF_DIR", tmp_path)
+    monkeypatch.setattr("geo_eval_harness.config.catalog.CONF_DIR", tmp_path)
     monkeypatch.setattr("sys.argv", ["audit_model_native.py", "--out", str(output)])
 
     def fail(config: object, **kwargs: object) -> None:
@@ -127,14 +127,14 @@ def test_tuner_preserves_dataset_overrides_and_empirical_dataset(
         yaml.safe_dump(
             {
                 "name": "rcf",
-                "target": "torchgeo_bench.models.RCFBench",
+                "target": "geo_eval_harness.models.RCFBench",
                 "seed_from_run": True,
                 "kwargs": {"mode": "empirical", "features": 512},
                 "dataset_overrides": {"m-eurosat": {"kwargs": {"features": 8}}},
             }
         )
     )
-    monkeypatch.setattr("torchgeo_bench.config.catalog.CONF_DIR", tmp_path)
+    monkeypatch.setattr("geo_eval_harness.config.catalog.CONF_DIR", tmp_path)
     bands = audit_model_native.band_specs("m-eurosat", "rgb")
     dataset = torch.utils.data.TensorDataset(torch.zeros(1, 3, 8, 8))
 
@@ -174,7 +174,7 @@ def test_inprocess_experiments_use_typed_constructors(
     model = script.instantiate_model(
         ModelConfig(
             name="custom-rcf",
-            target="torchgeo_bench.models.RCFBench",
+            target="geo_eval_harness.models.RCFBench",
             kwargs={"features": 8, "seed": 17},
         ),
         bands,
@@ -219,7 +219,7 @@ def test_resize_experiment_keeps_all_normalization_policies_and_null_resize(
         assert len(matching) == 13
         assert sum(config.input.image_size is None for config in matching) == 1
         for config in matching:
-            assert config.model.target == "torchgeo_bench.models.TimmPatchBenchModel"
+            assert config.model.target == "geo_eval_harness.models.TimmPatchBenchModel"
             assert config.model.name == f"resnet18_{normalization}"
             assert config.model.kwargs["model_name"] == "resnet18"
             assert config.segmentation.layers == ["layer4", "layer3", "layer2", "layer1"]

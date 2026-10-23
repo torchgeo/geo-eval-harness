@@ -1,0 +1,17 @@
+name: tgeo_scalemae_large_fmow_cls
+target: geo_eval_harness.models.TorchGeoScaleMAEBench
+kwargs:
+  factory: scalemae_large_patch16
+  weights_class: ScaleMAELarge16_Weights
+  weights_member: FMOW_RGB
+  auto_resize: false
+  res: 1.0
+  pool: cls
+input:
+  interpolation: area
+segmentation:
+  layers:
+    - blocks.23
+    - blocks.17
+    - blocks.11
+    - blocks.5

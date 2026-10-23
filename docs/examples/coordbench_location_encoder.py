@@ -2,7 +2,7 @@
 
 Run from the repository root:
 
-    PYTHONPATH=. uv run torchgeo-bench coord --config docs/examples/coord-run.yaml
+    PYTHONPATH=. uv run geo-eval-harness coord --config docs/examples/coord-run.yaml
 
 The YAML selects this class through ``model.target`` and passes
 ``num_frequencies`` under ``model.kwargs``. Add ``--dry-run`` to validate
@@ -11,7 +11,7 @@ configuration without loading the remote benchmark table.
 
 import numpy as np
 
-from torchgeo_bench.coordbench import LocationEncoder
+from geo_eval_harness.coordbench import LocationEncoder
 
 
 class FourierLocationEncoder(LocationEncoder):

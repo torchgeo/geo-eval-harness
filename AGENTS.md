@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Guidelines for AI coding agents working in the torchgeo-bench repository.
+Guidelines for AI coding agents working in the geo-eval-harness repository.
 
 ## Project Overview
 
-**torchgeo-bench** is a Python benchmarking framework for evaluating geospatial foundation models on GeoBench datasets (V1 and V2) and location encoders on CoordBench. It uses PyTorch and strict Pydantic configuration with explicit CLI flags and YAML, and provides KNN-5, linear probing, and segmentation (mIoU) evaluation with bootstrapped confidence intervals. Legacy `key=value` and `+key=value` overrides are rejected.
+**geo-eval-harness** is a Python benchmarking framework for evaluating geospatial foundation models on GeoBench datasets (V1 and V2) and location encoders on CoordBench. It uses PyTorch and strict Pydantic configuration with explicit CLI flags and YAML, and provides KNN-5, linear probing, and segmentation (mIoU) evaluation with bootstrapped confidence intervals. Legacy `key=value` and `+key=value` overrides are rejected.
 
 ### Key Features
 - **Resume Mode**: Skip already-computed experiments when interrupted/restarted
@@ -14,7 +14,7 @@ Guidelines for AI coding agents working in the torchgeo-bench repository.
 ### Key Directories
 
 ```
-src/torchgeo_bench/        # Main source package (importable as torchgeo_bench)
+src/geo_eval_harness/        # Main source package (importable as geo_eval_harness)
   ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/coord
   ├── main.py              # Benchmark runner (classification + segmentation)
   ├── config/              # Python schemas, preset resolution, and catalog discovery
@@ -110,7 +110,7 @@ Two supported workflows — pick **one** (they manage *separate* environments):
 uv sync --extra dev
 
 # Option B — conda (matches the Makefile). Create the env with `make install`, then install editable:
-conda activate torchgeo-bench
+conda activate geo-eval-harness
 pip install -e ".[dev]"
 ```
 
@@ -154,47 +154,47 @@ A second local hook, `explicit-except`, rejects any `except` clause that does no
 ### Downloading Datasets
 
 ```bash
-torchgeo-bench download geobench_v1                       # GeoBench V1 -> data/classification_v1.0_wds/
-torchgeo-bench download geobench_v2                       # all benchmark V2 datasets -> data/geobenchv2/<name>
-torchgeo-bench download geobench_v2 --datasets benv2,burn_scars  # subset
-torchgeo-bench download eurosat                           # torchgeo EuroSAT -> data/eurosat
-torchgeo-bench download resisc45                          # torchgeo RESISC45 -> data/resisc45
+geo-eval-harness download geobench_v1                       # GeoBench V1 -> data/classification_v1.0_wds/
+geo-eval-harness download geobench_v2                       # all benchmark V2 datasets -> data/geobenchv2/<name>
+geo-eval-harness download geobench_v2 --datasets benv2,burn_scars  # subset
+geo-eval-harness download eurosat                           # torchgeo EuroSAT -> data/eurosat
+geo-eval-harness download resisc45                          # torchgeo RESISC45 -> data/resisc45
 ```
 
 ### Running the Benchmark
 
 ```bash
 # Basic usage
-torchgeo-bench run --model timm/resnet50 --dataset m-eurosat
+geo-eval-harness run --model timm/resnet50 --dataset m-eurosat
 
 # Quick eval (skip linear probing, minimal bootstrap)
-torchgeo-bench run --model rcf --dataset m-eurosat --methods knn --bootstrap-samples 100
+geo-eval-harness run --model rcf --dataset m-eurosat --methods knn --bootstrap-samples 100
 
 # Linear-only evaluation
-torchgeo-bench run --model rcf --dataset m-eurosat --methods linear
+geo-eval-harness run --model rcf --dataset m-eurosat --methods linear
 
 # Resume a previously interrupted run (skips completed experiments)
-torchgeo-bench run --config docs/examples/image-run.yaml --resume
+geo-eval-harness run --config docs/examples/image-run.yaml --resume
 
 # Evaluate segmentation datasets (V2)
-torchgeo-bench run --model timm/resnet50 --dataset burn_scars --dataset pastis --dataset flair2
+geo-eval-harness run --model timm/resnet50 --dataset burn_scars --dataset pastis --dataset flair2
 
 # Select specific GPU device
-torchgeo-bench run --model rcf --dataset m-eurosat --device cuda:1
+geo-eval-harness run --model rcf --dataset m-eurosat --device cuda:1
 
 # Measure per-sample compute cost (GFLOPs, params, throughput) -> results/compute_cost.csv
-torchgeo-bench flops --model timm/resnet50
+geo-eval-harness flops --model timm/resnet50
 
 # Measure a fixed real batch -> JSON stdout
-torchgeo-bench profile --model rcf --dataset m-eurosat --device cpu
+geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu
 
 # Coordinate-only linear probe
-torchgeo-bench coord --model sincos --dataset california_housing --methods linear
+geo-eval-harness coord --model sincos --dataset california_housing --methods linear
 ```
 
 ## Configuration Architecture
 
-- The installed CLI, `python -m torchgeo_bench`, and `python -m torchgeo_bench.cli` dispatch the same commands. Do not reintroduce a legacy override parser or a second configuration engine.
+- The installed CLI, `python -m geo_eval_harness`, and `python -m geo_eval_harness.cli` dispatch the same commands. Do not reintroduce a legacy override parser or a second configuration engine.
 - `config/` groups Python configuration code; `conf/` contains packaged YAML. `config/run.py` defines `RunConfig` and `load_run_config`; `config/schema.py` holds shared configuration sections and safe YAML loading. Unknown fields, duplicate YAML keys, and wrong types are errors. Profile, FLOPs, and CoordBench have their own typed schemas.
 - Benchmark commands declare flags in `commands/<name>_arguments.py` and dispatch directly through `commands.<name>` from `cli.py`. The run handler is `commands/_run.py`, with execution in `commands/_run_runtime.py`.
 - A run selects `model: {name: rcf}` or a custom `model: {name: my-model, target: my_package.MyModel, kwargs: {...}}`. Presets in `conf/model/` use `name`, `target`, `track`, `seed_from_run`, `kwargs`, `input`, `classification`, `segmentation`, and `dataset_overrides`. Metadata is never a constructor kwarg.
@@ -206,7 +206,7 @@ torchgeo-bench coord --model sincos --dataset california_housing --methods linea
 
 - Each model writes to its own `results/models/<model name>.csv` (not one shared file), so re-running one model only touches that file. Rows are appended, never rewritten in place.
 - `--resume` skips a (dataset, method, bands, normalization, ...) combo only if an existing row's `config_hash` matches the current run's config. Changing a hashed config field invalidates the match. Additive `profile` and `intrinsic_dim` settings do not invalidate equivalent classification results; their own metric completeness is checked separately.
-- One-time, hardware-dependent measurements (`torchgeo-bench flops`, intrinsic-dimension probes) live in their own side files — `results/compute_cost.csv`, `results/profiles/<model name>.csv`, and `results/intrinsic_dim/<model name>.csv` — so a routine metrics rerun doesn't touch them.
+- One-time, hardware-dependent measurements (`geo-eval-harness flops`, intrinsic-dimension probes) live in their own side files — `results/compute_cost.csv`, `results/profiles/<model name>.csv`, and `results/intrinsic_dim/<model name>.csv` — so a routine metrics rerun doesn't touch them.
 - `--output-dir` / `output.directory` sets one root for all command outputs. Image runs use `models/`, `profiles/`, and `intrinsic_dim/` beneath it; `flops` and `coord` use `compute_cost.csv` and `coordbench_results.csv`. `--output` / `output.file` overrides the root and combines image-run measurements in one CSV. Standalone `profile` defaults to JSON stdout, or writes `profile.json` under an explicit root. CoordBench retains its own CSV schema/resume key.
 - Don't hand-edit `config_hash`/`KEY_COLS` logic without checking `resume.py`'s docstring first; it's easy to silently invalidate every existing row across `results/models/`.
 
@@ -226,7 +226,7 @@ All datasets are loaded from `./data/<canonical-subdir>` relative to the current
 ### torchgeo template
 `eurosat` and `eurosat-spatial` (load via `torchgeo.datasets.EuroSAT`), and `resisc45`
 
-**Note:** V1 datasets use the `m-` prefix (e.g., `m-eurosat`), V2 datasets use no prefix. `torchgeo-bench datasets` prints the registry, which is the authoritative list.
+**Note:** V1 datasets use the `m-` prefix (e.g., `m-eurosat`), V2 datasets use no prefix. `geo-eval-harness datasets` prints the registry, which is the authoritative list.
 
 ## Code Style Guidelines
 
@@ -246,7 +246,7 @@ from dataclasses import dataclass
 import numpy as np                      # 2. Third-party
 import torch
 
-from torchgeo_bench.datasets import get_datasets   # 3. Local imports
+from geo_eval_harness.datasets import get_datasets   # 3. Local imports
 
 logger = logging.getLogger(__name__)
 ```
@@ -371,7 +371,7 @@ class TestGeoBenchDatasetBasics:
 
 Core (see `pyproject.toml` for the authoritative list): `torch>=2`, `torchvision>=0.15`, `numpy>=1.24`, `scikit-learn>=1.3`, `timm>=0.9`, `torchgeo>=0.10`, `torchmetrics>=1.4`, `pydantic>=2`, `pyyaml>=6`, `h5py>=3.8`, `faissknn` (CPU or CUDA variant, picked by platform), `huggingface-hub>=0.20`, `geobenchv2>=0.9`, `pandas>=2`, `pyarrow>=14`, `safetensors>=0.4`, `filelock>=3.12`, `lazy-loader>=0.4`, `tqdm>=4.66`, `transformers>=5.14` (SAM 3 encoder and the DPT segmentation head).
 
-Optional extras (`pip install 'torchgeo-bench[extra]'`, or `[all]` for everything): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `olmoearth`, `terratorch`. Model wrappers behind an extra (OlmoEarth, terratorch-backed models) import that dependency lazily — don't add a top-level import for one at module scope.
+Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
 
 ## Common Gotchas
 

@@ -2,7 +2,7 @@ Models
 ======
 
 This page is the operator-facing tour of the model backbones bundled
-with ``torchgeo-bench``: which presets exist, how to invoke them, and
+with ``geo-eval-harness``: which presets exist, how to invoke them, and
 how to add a new one.  For the abstract base class and the full class
 reference, see :doc:`/api/models`.
 
@@ -11,7 +11,7 @@ reference, see :doc:`/api/models`.
 Available presets
 -----------------
 
-Every preset under :file:`src/torchgeo_bench/conf/model/` becomes a
+Every preset under :file:`src/geo_eval_harness/conf/model/` becomes a
 ``--model`` selector. A preset's ``target`` is an importable class; constructor
 options live in ``kwargs``, separate from input and evaluation defaults.
 
@@ -33,12 +33,12 @@ The wrapper uses dataset band statistics because upstream does not publish pretr
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.RCFBench`. Gaussian or empirical random
+:class:`~geo_eval_harness.models.RCFBench`. Gaussian or empirical random
 features in the spirit of MOSAIKS.
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat
+   $ geo-eval-harness run --model rcf --dataset m-eurosat
 
 For empirical features, pass this YAML through ``--config``:
 
@@ -50,17 +50,17 @@ For empirical features, pass this YAML through ``--config``:
 Image statistics baseline
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.ImageStatsBench`. A trivial baseline that
+:class:`~geo_eval_harness.models.ImageStatsBench`. A trivial baseline that
 returns per-channel mean / std as the feature vector.
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model imagestats --dataset m-eurosat
+   $ geo-eval-harness run --model imagestats --dataset m-eurosat
 
 Handcrafted baseline
 ^^^^^^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.HandcraftedBench` is a deterministic,
+:class:`~geo_eval_harness.models.HandcraftedBench` is a deterministic,
 zero-learned-parameter baseline for arbitrary input channels and positive
 spatial dimensions. It includes every raw channel (including SAR), plus
 available sensor-local optical index maps. It has no weights to download,
@@ -68,8 +68,8 @@ feature selection, random initialization, image gradients or training state.
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model handcrafted_level2 --dataset eurosat --bands all --normalization none
-   $ torchgeo-bench run --model handcrafted_level3 --dataset resisc45 --bands all --normalization none
+   $ geo-eval-harness run --model handcrafted_level2 --dataset eurosat --bands all --normalization none
+   $ geo-eval-harness run --model handcrafted_level3 --dataset resisc45 --bands all --normalization none
    $ python experiments/run_handcrafted.py --levels 1 2 3
 
 The sweep script selects classification datasets from the current catalog, including AID. ``--dataset all`` also includes segmentation tasks, which this patch-feature baseline does not support.
@@ -167,17 +167,17 @@ inherit ``input.image_size: 224`` and bilinear interpolation.
 timm — ImageNet-pretrained CNNs and ViTs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.TimmPatchBenchModel`.  Configs under
-:file:`src/torchgeo_bench/conf/model/timm/` cover ResNet, ConvNeXt,
+:class:`~geo_eval_harness.models.TimmPatchBenchModel`.  Configs under
+:file:`src/geo_eval_harness/conf/model/timm/` cover ResNet, ConvNeXt,
 EfficientNet, DenseNet, RegNet, MobileNetV3, VGG, MaxViT, and more.
 ViT / DeiT / Swin variants live under :file:`timm/vit/`.
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 --dataset m-eurosat
-   $ torchgeo-bench run --model timm/convnext_base --dataset m-eurosat
-   $ torchgeo-bench run --model timm/vit/vit_base_patch16_224 --dataset m-eurosat --image-size 224
-   $ torchgeo-bench run --model timm/vit/swin_base_patch4_window7_224 --dataset m-eurosat --methods knn
+   $ geo-eval-harness run --model timm/resnet50 --dataset m-eurosat
+   $ geo-eval-harness run --model timm/convnext_base --dataset m-eurosat
+   $ geo-eval-harness run --model timm/vit/vit_base_patch16_224 --dataset m-eurosat --image-size 224
+   $ geo-eval-harness run --model timm/vit/swin_base_patch4_window7_224 --dataset m-eurosat --methods knn
 
 ViT-style backbones expect a fixed spatial resolution.  Set
 ``--image-size 224`` (``bilinear`` by default; switch to
@@ -204,53 +204,53 @@ they work with ``--bands all`` out of the box (pretrained
 torchgeo foundation models
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Configs under :file:`src/torchgeo_bench/conf/model/torchgeo/`.  Most are
+Configs under :file:`src/geo_eval_harness/conf/model/torchgeo/`.  Most are
 RGB-only self-supervised checkpoints from torchgeo's model hub.
 
 .. code-block:: console
 
    $ # Sentinel-2 RGB SSL
-   $ torchgeo-bench run --model torchgeo/resnet50_s2rgb_moco --dataset m-eurosat
-   $ torchgeo-bench run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat
-   $ torchgeo-bench run --model torchgeo/resnet50_fmow_gassl --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/resnet50_s2rgb_moco --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/resnet50_fmow_gassl --dataset m-eurosat
 
    $ # ScaleMAE on fMoW RGB
-   $ torchgeo-bench run --model torchgeo/scalemae_large_fmow --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/scalemae_large_fmow --dataset m-eurosat
 
    $ # DOFA — band-agnostic (currently configured for Sentinel-2 RGB wavelengths)
-   $ torchgeo-bench run --model torchgeo/dofa_base --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/dofa_base --dataset m-eurosat
 
    $ # Satlas Swin-V2 (NAIP / Sentinel-2 RGB)
-   $ torchgeo-bench run --model torchgeo/swinv2b_naip_satlas_mi --dataset m-eurosat
-   $ torchgeo-bench run --model torchgeo/swinv2b_s2rgb_satlas_mi --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/swinv2b_naip_satlas_mi --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/swinv2b_s2rgb_satlas_mi --dataset m-eurosat
 
    $ # EarthLoc place-recognition descriptor
-   $ torchgeo-bench run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.OlmoEarthBenchModel`.  Requires the
+:class:`~geo_eval_harness.models.OlmoEarthBenchModel`.  Requires the
 optional ``olmoearth`` extra:
 
 .. code-block:: console
 
-   $ pip install 'torchgeo-bench[olmoearth]'
+   $ pip install 'geo-eval-harness[olmoearth]'
 
    $ # OlmoEarth v1 (Nano / Tiny / Base / Large)
-   $ torchgeo-bench run --model olmoearth_nano --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_base --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_large --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model olmoearth_nano --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_base --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_large --dataset m-eurosat --bands all
 
    $ # OlmoEarth v1.1 (Nano / Tiny / Base)
-   $ torchgeo-bench run --model olmoearth_v1_1_nano --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_v1_1_tiny --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_v1_1_base --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_1_nano --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_1_tiny --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_1_base --dataset m-eurosat
 
    $ # OlmoEarth v1.2 (Nano / Tiny / Small / Base)
-   $ torchgeo-bench run --model olmoearth_v1_2_nano --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_v1_2_small --dataset m-eurosat
-   $ torchgeo-bench run --model olmoearth_v1_2_base --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_2_nano --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_2_small --dataset m-eurosat
+   $ geo-eval-harness run --model olmoearth_v1_2_base --dataset m-eurosat
 
 OlmoEarth v1.1 uses a **linear patch embedding** (vs. convolutional in v1),
 a single bandset per modality, and updated masking/loss functions, yielding a
@@ -315,7 +315,7 @@ The ``version`` parameter selects the weight family:
 
    Input normalization is selected with ``--normalization``
    (default ``dataset``). Each model receives the corresponding internal strategy through
-   :class:`~torchgeo_bench.models.BenchModel`; use ``model`` for
+   :class:`~geo_eval_harness.models.BenchModel`; use ``model`` for
    wrappers that declare pretrained input units / statistics, or ``none``
    when a backbone owns all normalization internally.
 
@@ -342,14 +342,14 @@ The ``version`` parameter selects the weight family:
 SAM 3 vision encoder
 ^^^^^^^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.models.SAM3Encoder`.  Weights come from the gated Hub
+:class:`~geo_eval_harness.models.SAM3Encoder`.  Weights come from the gated Hub
 repo `facebook/sam3 <https://huggingface.co/facebook/sam3>`_: accept the terms on
 the model page, run ``hf auth login`` once, and the checkpoint downloads into the
 HuggingFace cache on first use.
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model sam3_encoder --dataset m-eurosat --bands red,green,blue
+   $ geo-eval-harness run --model sam3_encoder --dataset m-eurosat --bands red,green,blue
 
 The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
@@ -376,7 +376,7 @@ hosting weights, and submitting a PR.
    Two key patterns apply regardless of stage:
 
    * **Do not put** ``bands`` **in the model YAML.**  The runner reads the
-     current dataset's :class:`~torchgeo_bench.datasets.BandSpec` list
+     current dataset's :class:`~geo_eval_harness.datasets.BandSpec` list
      and injects it into the constructor automatically.  Adding ``bands`` to
      the YAML causes a ``TypeError`` (duplicate keyword argument).
    * **Pass** ``normalization="identity"`` **to** ``super().__init__`` **when
@@ -387,6 +387,6 @@ hosting weights, and submitting a PR.
      additional z-score.
 
 For segmentation models, also pick the
-:attr:`segmentation.layers <torchgeo_bench.segmentation_probe.SegmentationProbe>`
+:attr:`segmentation.layers <geo_eval_harness.segmentation_probe.SegmentationProbe>`
 that the head will hook into — see :doc:`segmentation-layers` for
 verified values per timm backbone family.

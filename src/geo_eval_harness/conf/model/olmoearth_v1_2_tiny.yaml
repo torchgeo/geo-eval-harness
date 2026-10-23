@@ -1,0 +1,19 @@
+name: olmoearth_v1_2_tiny
+target: geo_eval_harness.models.OlmoEarthBenchModel
+kwargs:
+  model_size: tiny
+  version: v1_2
+  patch_size: 8
+  input_res: null
+  time_steps: 1
+  std_multiplier: 2.0
+  normalize: false
+  min_image_size: 64
+input:
+  image_size: null
+segmentation:
+  layers:
+    - encoder_model.encoder.blocks.11
+    - encoder_model.encoder.blocks.8
+    - encoder_model.encoder.blocks.5
+    - encoder_model.encoder.blocks.2

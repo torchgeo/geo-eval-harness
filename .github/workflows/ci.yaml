@@ -87,7 +87,7 @@ jobs:
       - name: Install (CPU only, no [cuda] extra)
         run: uv sync --frozen
       - name: Smoke test (CLI entry point)
-        run: uv run torchgeo-bench --help
+        run: uv run geo-eval-harness --help
 
   pre-commit:
     runs-on: ubuntu-latest
@@ -115,3 +115,34 @@ jobs:
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Run pre-commit
         run: uv run pre-commit run --all-files -v
+
+  package:
+    name: Build and install distributions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+      - name: Build and validate distributions
+        run: |
+          uv build --no-sources
+          uv run --no-project python scripts/check_distributions.py
+          uvx twine check --strict dist/*
+      - name: Install wheel in a fresh environment
+        run: |
+          uv venv "$RUNNER_TEMP/package-env"
+          uv pip install --python "$RUNNER_TEMP/package-env/bin/python" dist/*.whl
+      - name: Exercise installed CLI outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          package-env/bin/geo-eval-harness --version
+          package-env/bin/geo-eval-harness models rcf
+          package-env/bin/geo-eval-harness datasets m-eurosat
+          package-env/bin/python -I -m geo_eval_harness run --model rcf --dataset m-eurosat --device cpu --dry-run
+          package-env/bin/python -I -m geo_eval_harness.cli --help

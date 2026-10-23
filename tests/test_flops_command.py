@@ -10,11 +10,11 @@ from typing import Any
 import pytest
 import yaml
 
-from torchgeo_bench import commands
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.commands import _flops
-from torchgeo_bench.commands.flops_arguments import add_flops_arguments
-from torchgeo_bench.config.flops import FlopsConfig
+from geo_eval_harness import commands
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.commands import _flops
+from geo_eval_harness.commands.flops_arguments import add_flops_arguments
+from geo_eval_harness.config.flops import FlopsConfig
 
 
 def parser() -> argparse.ArgumentParser:
@@ -73,7 +73,7 @@ def test_explicit_flags_override_yaml_without_overriding_omitted_values(tmp_path
     "selection",
     [
         pytest.param(
-            {"name": "custom-stats", "target": "torchgeo_bench.models.ImageStatsBench"},
+            {"name": "custom-stats", "target": "geo_eval_harness.models.ImageStatsBench"},
             id="custom-target-to-preset",
         ),
         pytest.param(
@@ -94,9 +94,9 @@ def test_model_flag_replaces_entire_yaml_selection(
 ) -> None:
     import torch
 
-    from torchgeo_bench.config.presets import build_model
-    from torchgeo_bench.datasets.cloudsen12 import CloudSEN12
-    from torchgeo_bench.models import RCFBench
+    from geo_eval_harness.config.presets import build_model
+    from geo_eval_harness.datasets.cloudsen12 import CloudSEN12
+    from geo_eval_harness.models import RCFBench
 
     path = tmp_path / "flops.yaml"
     path.write_text(
@@ -131,9 +131,9 @@ def test_model_flag_replaces_entire_yaml_selection(
 def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> None:
     import torch
 
-    from torchgeo_bench.config.presets import build_model
-    from torchgeo_bench.datasets.cloudsen12 import CloudSEN12
-    from torchgeo_bench.models import RCFBench
+    from geo_eval_harness.config.presets import build_model
+    from geo_eval_harness.datasets.cloudsen12 import CloudSEN12
+    from geo_eval_harness.models import RCFBench
 
     path = tmp_path / "flops.yaml"
     path.write_text(
@@ -156,7 +156,7 @@ def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> No
                 "--model",
                 "imagestats",
                 "--model-target",
-                "torchgeo_bench.models.RCFBench",
+                "geo_eval_harness.models.RCFBench",
                 "--model-kwargs",
                 "{features: 8, stats_mode: stdev}",
             ]
@@ -166,7 +166,7 @@ def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> No
     model = build_model(preset, bands=CloudSEN12.bands).to(resolved.runtime.device).eval()
     assert isinstance(model, RCFBench)
     assert resolved.model.name == "imagestats"
-    assert resolved.model.target == "torchgeo_bench.models.RCFBench"
+    assert resolved.model.target == "geo_eval_harness.models.RCFBench"
     assert resolved.model.kwargs == {"features": 8, "stats_mode": "stdev"}
     images = torch.zeros(
         2,
@@ -332,8 +332,8 @@ class BlockRuntime:
         if fullname.split('.')[0] in {'torch', 'torchgeo', 'timm', 'pandas', 'omegaconf'}:
             raise AssertionError(f'Unexpected heavy import: {fullname}')
 sys.meta_path.insert(0, BlockRuntime())
-from torchgeo_bench.commands.flops_arguments import add_flops_arguments
-from torchgeo_bench.commands._flops import run
+from geo_eval_harness.commands.flops_arguments import add_flops_arguments
+from geo_eval_harness.commands._flops import run
 parser = argparse.ArgumentParser()
 add_flops_arguments(parser)
 run(parser.parse_args(sys.argv[1:]))
@@ -366,7 +366,7 @@ def test_dry_run_round_trip_is_reusable(capsys: pytest.CaptureFixture[str], tmp_
 
 
 def test_packaged_flops_yaml_uses_the_typed_schema() -> None:
-    path = Path(__file__).parents[1] / "src" / "torchgeo_bench" / "conf" / "flops_config.yaml"
+    path = Path(__file__).parents[1] / "src" / "geo_eval_harness" / "conf" / "flops_config.yaml"
     config = _flops.load_config(parser().parse_args(["--config", str(path), "--model", "rcf"]))
     resolved, preset = config.resolve()
     assert preset.kwargs["seed"] == 0

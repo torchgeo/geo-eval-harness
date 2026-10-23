@@ -4,7 +4,7 @@ orphan: true
 
 # Interesting findings
 
-Running notes on things we've noticed during torchgeo-bench sweeps that
+Running notes on things we've noticed during geo-eval-harness sweeps that
 might be worth a paragraph in a paper or a future ablation. One section
 per finding; nothing on this page is a benchmark result — those live in
 `results/` and the explorer.
@@ -53,7 +53,7 @@ about Prithvi/Clay's feature geometry on satellite imagery: a non-trivial
 fraction of EuroSAT patches are *literally indistinguishable* under their
 CLS-token representation, in fp32 and likely in semantic content too.
 
-Code workaround in `src/torchgeo_bench/intrinsic_dim.py`: filter rows
+Code workaround in `src/geo_eval_harness/intrinsic_dim.py`: filter rows
 where `d1 == 0` before TwoNN. Fixes all 12 nan cases on rerun.
 
 ## Open ablations / TODOs
@@ -70,7 +70,7 @@ pretraining objectives may make CLS more or less informative:
   objective); CLS is the canonical feature.
 - **CLIP-style:** pooled patch features are the canonical output.
 
-Today the wrappers in `src/torchgeo_bench/models/` mostly hard-code
+Today the wrappers in `src/geo_eval_harness/models/` mostly hard-code
 their pooling choice. Worth adding a `pooling: cls|mean|both` config
 knob and re-running the GeoFM sweep with each — could meaningfully
 change Prithvi / Clay numbers and the resulting ID estimates.

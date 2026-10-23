@@ -6,12 +6,12 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.config.flops import FlopsConfig, FlopsOutputConfig
-from torchgeo_bench.config.profile import ProfileConfig, ProfileOutputConfig
-from torchgeo_bench.config.run import OutputConfig, RunConfig
-from torchgeo_bench.config.schema import StrictModel, resolve_output_path
-from torchgeo_bench.coordbench.config import CoordConfig, CoordOutputConfig
+from geo_eval_harness.cli import main
+from geo_eval_harness.config.flops import FlopsConfig, FlopsOutputConfig
+from geo_eval_harness.config.profile import ProfileConfig, ProfileOutputConfig
+from geo_eval_harness.config.run import OutputConfig, RunConfig
+from geo_eval_harness.config.schema import StrictModel, resolve_output_path
+from geo_eval_harness.coordbench.config import CoordConfig, CoordOutputConfig
 
 
 @pytest.mark.parametrize(

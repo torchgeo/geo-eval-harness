@@ -15,17 +15,17 @@ from torchmetrics.functional.classification import (
     multiclass_recall,
 )
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.boundary_iou import MulticlassBoundaryIoU
-from torchgeo_bench.config.schema import SegmentationConfig
-from torchgeo_bench.results import bootstrap_miou
-from torchgeo_bench.segmentation_probe import (
+from geo_eval_harness.boundary_iou import MulticlassBoundaryIoU
+from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
     SegmentationProbe,
     _resolve_num_prefix_tokens,
 )
-from torchgeo_bench.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
+from geo_eval_harness.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 NUM_CLASSES = 5
 
@@ -248,7 +248,7 @@ def test_segmentation_probe_conv_block_head(mock_backbone, dummy_data):
 
     logits = probe(data["image"])
     assert logits.shape == (2, num_classes, 64, 64)
-    from torchgeo_bench.models.segmentation_heads import ConvBlockHead
+    from geo_eval_harness.models.segmentation_heads import ConvBlockHead
 
     assert isinstance(probe.head, ConvBlockHead)
 
@@ -384,7 +384,7 @@ def test_solver_evaluation_parity(
 
 
 def test_probe_fpn_head(mock_backbone, dummy_data):
-    from torchgeo_bench.models.segmentation_heads import FPNHead
+    from geo_eval_harness.models.segmentation_heads import FPNHead
 
     probe = make_probe(mock_backbone, ["layer2", "layer1"], head_type="fpn", hidden_dim=16)
 
@@ -403,7 +403,7 @@ def test_probe_backbone_prefix_stripping(dummy_data):
 
 
 def test_linear_head_weights_each_scale_before_fusion() -> None:
-    from torchgeo_bench.models.segmentation_heads import LinearHead
+    from geo_eval_harness.models.segmentation_heads import LinearHead
 
     head = LinearHead([1, 1], num_classes=1).eval()
     with torch.no_grad():
@@ -755,7 +755,7 @@ class MockBackbone4Layer(nn.Module):
 
 
 def test_probe_dpt_head_forward():
-    from torchgeo_bench.models.segmentation_heads import DPTHead
+    from geo_eval_harness.models.segmentation_heads import DPTHead
 
     backbone = MockBackbone4Layer()
     # Coarse-to-fine order (same convention as FPN)
@@ -781,7 +781,7 @@ def test_probe_dpt_wrong_num_layers():
 
 def test_probe_upernet_head_decodes_coarse_to_fine_pyramid():
     """The coarsest map, which has the most channels here, must reach the pyramid pooling module."""
-    from torchgeo_bench.models.segmentation_heads import UPerNetHead
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
 
     probe = make_probe(
         MockBackbone4Layer(),
@@ -844,7 +844,7 @@ def test_upernet_rejects_an_epoch_without_a_usable_training_batch(*, cached: boo
 
 
 def test_upernet_head_decodes_same_scale_vit_features():
-    from torchgeo_bench.models.segmentation_heads import UPerNetHead
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
 
     head = UPerNetHead([32, 32, 32, 32], num_classes=NUM_CLASSES, hidden_dim=16)
     features = [torch.randn(2, 32, 14, 14) for _ in range(4)]
@@ -854,9 +854,9 @@ def test_upernet_head_decodes_same_scale_vit_features():
 
 def test_timm_wrapper_trains_through_probe_and_extracts_without_autograd():
     """Unfrozen probes get backbone gradients; frozen feature extraction still yields arrays."""
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.utils import extract_features
     from tests.support.models import bands
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
-    from torchgeo_bench.utils import extract_features
 
     model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
     images = torch.randn(2, 3, 224, 224)
@@ -875,7 +875,7 @@ def test_dpt_fusion_layer_shim_matches_reference():
     """These checks protect decoder behavior when transformers changes its private fusion API."""
     from transformers.models.dpt.modeling_dpt import DPTPreActResidualLayer
 
-    from torchgeo_bench.models.segmentation_heads import _dpt_fusion_layer
+    from geo_eval_harness.models.segmentation_heads import _dpt_fusion_layer
 
     layer = _dpt_fusion_layer(16)
 
@@ -897,7 +897,7 @@ def test_dpt_fusion_layer_shim_matches_reference():
 
 def test_dpt_head_upsamples_purely_through_fusion_cascade():
     """Four fusion stages must reach 224x224 from 14x14 without relying on the final resize."""
-    from torchgeo_bench.models.segmentation_heads import DPTHead
+    from geo_eval_harness.models.segmentation_heads import DPTHead
 
     head = DPTHead([32, 32, 32, 32], num_classes=NUM_CLASSES, hidden_dim=16)
     features = [torch.randn(1, 32, 14, 14) for _ in range(4)]
@@ -919,7 +919,7 @@ def test_dpt_head_upsamples_purely_through_fusion_cascade():
 def test_patch_linear_head_infers_patch_geometry(
     grid: int, size: int, patch: int, dtype: torch.dtype
 ) -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     head = PatchLinearHead([8], num_classes=3).to(dtype=dtype)
     logits = head([torch.randn(2, 8, grid, grid, dtype=dtype)], size, size)
@@ -932,7 +932,7 @@ def test_patch_linear_head_infers_patch_geometry(
 
 def test_patch_linear_head_ignores_extra_channels():
     """PatchLinearHead uses only the first feature map when extra layers are passed."""
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     head = PatchLinearHead([8, 16], num_classes=3)
     primary = torch.randn(2, 8, 16, 16)
@@ -954,7 +954,7 @@ def test_patch_linear_head_ignores_extra_channels():
     ],
 )
 def test_probe_patch_linear_head_initializes_on_backbone_device(device: str) -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     probe = make_probe(ViTBackbone().to(device), ["blocks"], head_type="patch_linear")
 
@@ -967,7 +967,7 @@ def test_probe_patch_linear_head_initializes_on_backbone_device(device: str) -> 
 
 
 def test_probe_patch_linear_head_vit() -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     probe = make_probe(ViTBackbone(), ["blocks"], head_type="patch_linear")
     assert isinstance(probe.head, PatchLinearHead)

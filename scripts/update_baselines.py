@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.main import dataset_metadata
-from torchgeo_bench.results import _dedup_results, _relabel_olmoearth_normalization
-from torchgeo_bench.resume import _canonical_key_cell
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.results import _dedup_results, _relabel_olmoearth_normalization
+from geo_eval_harness.resume import _canonical_key_cell
 
 logger = logging.getLogger(__name__)
 

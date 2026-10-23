@@ -24,14 +24,14 @@ performance (accuracy / micro-mAP). Hypothesis: higher ID ⇒ better downstream.
 ## Integration points
 
 Embeddings already live as `(x_train, y_train)`, `(x_val, ...)`, `(x_test, ...)`
-in `src/torchgeo_bench/main.py:559-561` (classification path only — segmentation
+in `src/geo_eval_harness/main.py:559-561` (classification path only — segmentation
 has no global feature matrix and is **out of scope** for v1).
 
 Touched files:
 - `pyproject.toml` — add `torchid>=…` (pin after install + health check).
-- `src/torchgeo_bench/conf/config.yaml` — new `eval.intrinsic_dim` block.
-- `src/torchgeo_bench/intrinsic_dim.py` — new thin wrapper module.
-- `src/torchgeo_bench/main.py` — call wrapper after `embed_split`, emit rows.
+- `src/geo_eval_harness/conf/config.yaml` — new `eval.intrinsic_dim` block.
+- `src/geo_eval_harness/intrinsic_dim.py` — new thin wrapper module.
+- `src/geo_eval_harness/main.py` — call wrapper after `embed_split`, emit rows.
 - `tests/test_intrinsic_dim.py` — unit tests on synthetic manifolds.
 
 ## Config (Hydra)
@@ -51,7 +51,7 @@ Defaults aim cheap: 3 fast global estimators on train only, ≤10k pts.
 
 ## Wrapper module sketch
 
-`src/torchgeo_bench/intrinsic_dim.py`:
+`src/geo_eval_harness/intrinsic_dim.py`:
 
 - `ESTIMATORS: dict[str, type]` lazy import map → torchid classes.
 - `compute_id(X, estimators, device, max_samples, seed) -> dict[str, float]`
@@ -89,7 +89,7 @@ After line 562 (`feature_dim = x_train.shape[1]`):
 
 ```python
 if cfg.eval.intrinsic_dim.enabled:
-    from torchgeo_bench.intrinsic_dim import compute_id_for_splits
+    from geo_eval_harness.intrinsic_dim import compute_id_for_splits
     id_rows = compute_id_for_splits(
         splits={"train": x_train, "val": x_val, "test": x_test},
         cfg=cfg.eval.intrinsic_dim,

@@ -5,10 +5,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.presets import ModelPreset, load_model_preset
-from torchgeo_bench.config.schema import ModelConfig
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import ModelPreset, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_presets_and_dataset_defaults_respect_explicit_values(
             },
         }
     )
-    monkeypatch.setattr("torchgeo_bench.config.flops.load_model_preset", lambda *a, **kw: preset)
+    monkeypatch.setattr("geo_eval_harness.config.flops.load_model_preset", lambda *a, **kw: preset)
     config = FlopsConfig(model=ModelConfig(name="example"))
     resolved, selected = config.resolve()
     assert resolved.input.image_size == 384

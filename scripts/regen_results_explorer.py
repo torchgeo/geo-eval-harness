@@ -19,7 +19,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from torchgeo_bench.results import load_results
+from geo_eval_harness.results import load_results
 
 logger = logging.getLogger(__name__)
 
@@ -294,7 +294,7 @@ def main() -> None:
 
     text = _sub_once(
         r'<h1 class="headline" id="headline-text">.*?</h1>',
-        '<h1 class="headline" id="headline-text">Torchgeo-Bench results explorer</h1>',
+        '<h1 class="headline" id="headline-text">Geo Eval Harness results explorer</h1>',
         text,
     )
     text = _sub_once(

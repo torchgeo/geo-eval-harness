@@ -1,0 +1,8 @@
+name: vit_large_patch16_dinov3
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: vit_large_patch16_dinov3.lvd1689m
+  pretrained: true
+  global_pool: avg
+  auto_resize: true
+  use_cls_token: false

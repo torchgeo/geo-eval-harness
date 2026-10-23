@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from torchgeo_bench.results import load_results
+from geo_eval_harness.results import load_results
 
 logger = logging.getLogger(__name__)
 

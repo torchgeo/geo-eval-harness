@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from torchgeo_bench.datasets.loading import _ResizeTransform
+from geo_eval_harness.datasets.loading import _ResizeTransform
 
 
 def test_invalid_interpolation_is_rejected() -> None:

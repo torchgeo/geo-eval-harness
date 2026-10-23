@@ -1,0 +1,12 @@
+name: terrafm_base_s1
+target: geo_eval_harness.models.TerraFMBench
+kwargs:
+  variant: base
+  modality: s1
+  pretrained: true
+  checkpoint_path: null
+  checkpoint_md5: null
+  target_size: 224
+  pool: cls
+segmentation:
+  layers: ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]

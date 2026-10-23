@@ -10,7 +10,7 @@ from tests.support.cli import cli_output, run_module_cli, run_public_cli
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize("module", ["console", "torchgeo_bench", "torchgeo_bench.cli"])
+@pytest.mark.parametrize("module", ["console", "geo_eval_harness", "geo_eval_harness.cli"])
 def test_every_entrypoint_and_subcommand_has_help(tmp_path: Path, module: str) -> None:
     commands = ("run", "models", "datasets", "download", "profile", "flops", "coord")
     for arguments in (("--help",), *((command, "--help") for command in commands)):
@@ -27,7 +27,7 @@ def test_every_entrypoint_and_subcommand_has_help(tmp_path: Path, module: str) -
     ("arguments", "expected"),
     [
         (("models",), "timm/resnet18"),
-        (("models", "rcf"), "target: torchgeo_bench.models.RCFBench"),
+        (("models", "rcf"), "target: geo_eval_harness.models.RCFBench"),
         (("datasets",), "m-eurosat"),
         (("datasets", "caffe"), "task: segmentation"),
         (("run", "--config-help"), "schema_version"),
@@ -94,7 +94,7 @@ def test_public_dry_run_is_reusable_yaml(tmp_path: Path) -> None:
     assert not (tmp_path / "results").exists()
 
 
-@pytest.mark.parametrize("module", ["console", "torchgeo_bench", "torchgeo_bench.cli"])
+@pytest.mark.parametrize("module", ["console", "geo_eval_harness", "geo_eval_harness.cli"])
 @pytest.mark.parametrize("command", ["run", "flops", "profile", "coord"])
 @pytest.mark.parametrize("override", ["model=rcf", "+model.features=8", "++model.pool=cls"])
 def test_all_entrypoints_reject_retired_overrides(

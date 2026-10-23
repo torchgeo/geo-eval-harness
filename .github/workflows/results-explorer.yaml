@@ -17,8 +17,8 @@ on:
       - "results/intrinsic_dim/**"
       - "results/compute_cost.csv"
       - "scripts/regen_results_explorer.py"
-      - "src/torchgeo_bench/results.py"
-      - "src/torchgeo_bench/resume.py"
+      - "src/geo_eval_harness/results.py"
+      - "src/geo_eval_harness/resume.py"
   pull_request:
     branches: [main]
     paths:
@@ -30,8 +30,8 @@ on:
       - "results/intrinsic_dim/**"
       - "results/compute_cost.csv"
       - "scripts/regen_results_explorer.py"
-      - "src/torchgeo_bench/results.py"
-      - "src/torchgeo_bench/resume.py"
+      - "src/geo_eval_harness/results.py"
+      - "src/geo_eval_harness/resume.py"
   workflow_dispatch:
 
 # Serialise: two runs regenerating the same page would race on the branch.

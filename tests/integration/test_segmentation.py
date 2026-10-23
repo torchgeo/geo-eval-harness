@@ -9,14 +9,14 @@ import pytest
 import torch
 import yaml
 
+from geo_eval_harness.cli import main
+from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
+from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import write_caffe_files
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.cli import main
-from torchgeo_bench.config.presets import NORMALIZATIONS, build_model, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
-from torchgeo_bench.segmentation_task import build_seg_probe_and_solver
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("isolated_torch_rng")]
 

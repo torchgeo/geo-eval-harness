@@ -1,7 +1,7 @@
 Quickstart
 ==========
 
-Install ``torchgeo-bench`` (see :doc:`installation`), download a dataset,
+Install ``geo-eval-harness`` (see :doc:`installation`), download a dataset,
 and run a frozen-backbone benchmark. Commands accept explicit flags or
 strict YAML; module entry points use the same interface.
 
@@ -13,16 +13,16 @@ For a small first run, download EuroSAT V1:
 
 .. code-block:: console
 
-   $ torchgeo-bench download m-eurosat
+   $ geo-eval-harness download m-eurosat
 
 You can also download multiple named datasets or a collection:
 
 .. code-block:: console
 
-   $ torchgeo-bench download m-eurosat m-pv4ger
-   $ torchgeo-bench download geobench_v1 --datasets m-eurosat
-   $ torchgeo-bench download geobench_v2 --datasets benv2,burn_scars
-   $ torchgeo-bench download eurosat
+   $ geo-eval-harness download m-eurosat m-pv4ger
+   $ geo-eval-harness download geobench_v1 --datasets m-eurosat
+   $ geo-eval-harness download geobench_v2 --datasets benv2,burn_scars
+   $ geo-eval-harness download eurosat
 
 ``download geobench_v1`` without a subset fetches the entire V1
 classification collection. V1 uses the pickle-free JSON-metadata mirror;
@@ -37,17 +37,17 @@ Inspect the catalogs without loading models or data:
 
 .. code-block:: console
 
-   $ torchgeo-bench models
-   $ torchgeo-bench models rcf
-   $ torchgeo-bench datasets
-   $ torchgeo-bench datasets m-eurosat
+   $ geo-eval-harness models
+   $ geo-eval-harness models rcf
+   $ geo-eval-harness datasets
+   $ geo-eval-harness datasets m-eurosat
 
 Run Random Convolutional Features on EuroSAT V1 with KNN-5, linear probing,
 and 200 bootstrap resamples:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu \
        --output results/my_run.csv
 
 The image default is ``cuda:0``. Use ``--device cpu`` on a machine without
@@ -56,16 +56,16 @@ may download its weights on first use:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 \
+   $ geo-eval-harness run --model timm/resnet50 \
        --dataset m-eurosat --dataset m-pv4ger --device cpu
 
 Select just the probe you need:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu \
        --methods knn --bootstrap-samples 100
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu \
        --methods linear
 
 Use ``--knn-device cpu`` to keep KNN on CPU while extracting features on
@@ -94,8 +94,8 @@ Validate without loading a model or data, then execute:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --config my-run.yaml --dry-run
-   $ torchgeo-bench run --config my-run.yaml
+   $ geo-eval-harness run --config my-run.yaml --dry-run
+   $ geo-eval-harness run --config my-run.yaml
 
 Explicit flags override YAML. Omitted YAML fields inherit model and dataset
 defaults; explicit ``null``, ``false``, and ``[]`` are preserved.
@@ -106,7 +106,7 @@ segmentation, temporal inputs, optional profiling, and intrinsic dimension.
 
    Old ``key=value`` / ``+key=value`` commands are no longer accepted.
    For example, use ``--model rcf``, not ``model=rcf``. This also applies
-   to ``python -m torchgeo_bench`` and ``python -m torchgeo_bench.cli``.
+   to ``python -m geo_eval_harness`` and ``python -m geo_eval_harness.cli``.
 
 Profile a model
 ---------------
@@ -116,14 +116,14 @@ JSON to stdout:
 
 .. code-block:: console
 
-   $ torchgeo-bench profile --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu \
        --batch-size 8 --warmup 1 --measurements 5 > profile.json
 
 For synthetic per-sample compute accounting without dataset samples:
 
 .. code-block:: console
 
-   $ torchgeo-bench flops --model rcf --device cpu --band-configs rgb \
+   $ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
        --seg-heads --output results/my_compute_cost.csv
 
 See :doc:`configuration` for the distinct profile and FLOPs YAML schemas.
@@ -136,7 +136,7 @@ from Hugging Face, so uncached tables require network access:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model sincos --dataset california_housing \
+   $ geo-eval-harness coord --model sincos --dataset california_housing \
        --methods linear --folds 2 --device cpu \
        --output results/coordbench_quickstart.csv
 
@@ -151,7 +151,7 @@ method/config combinations:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu \
        --output results/my_run.csv --resume
 
 Without an explicit output file, image metrics append to
@@ -161,7 +161,7 @@ profile and intrinsic-dimension measurements normally use their own
 directories, but an explicit output file combines them with image metrics.
 Each evaluation is saved when it finishes.
 
-Rows follow :class:`~torchgeo_bench.main.EvaluationResult` and can be
+Rows follow :class:`~geo_eval_harness.main.EvaluationResult` and can be
 loaded with pandas:
 
 .. code-block:: python

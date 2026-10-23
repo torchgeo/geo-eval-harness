@@ -9,10 +9,10 @@ from typing import Any, cast
 import pytest
 import torch
 
-from torchgeo_bench.bands import BandSpec
-from torchgeo_bench.models._normalization import build_normalizer
-from torchgeo_bench.models.timm import TimmPatchBenchModel
-from torchgeo_bench.preprocessing import (
+from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.models._normalization import build_normalizer
+from geo_eval_harness.models.timm import TimmPatchBenchModel
+from geo_eval_harness.preprocessing import (
     ImageNormalizer,
     InputBand,
     ModelBand,

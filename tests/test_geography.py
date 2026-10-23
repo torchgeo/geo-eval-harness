@@ -9,8 +9,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from torchgeo_bench.datasets import list_datasets
-from torchgeo_bench.geography import (
+from geo_eval_harness.datasets import list_datasets
+from geo_eval_harness.geography import (
     GEO_ALIAS,
     INDEX_NAME,
     NO_GEO,
@@ -64,7 +64,7 @@ def test_extract_geography_requires_imagery(
     if directory_exists:
         (tmp_path / "data/classification_v1.0/m-eurosat").mkdir(parents=True)
 
-    with pytest.raises(FileNotFoundError, match="`torchgeo-bench download geobench_v1`"):
+    with pytest.raises(FileNotFoundError, match="`geo-eval-harness download geobench_v1`"):
         extract_geography("m-eurosat")
 
 

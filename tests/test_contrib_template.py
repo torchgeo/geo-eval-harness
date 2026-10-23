@@ -8,14 +8,16 @@ import pytest
 import torch
 from torch import nn
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._normalization import UnsupportedNormalizationError
-from torchgeo_bench.models.interface import BenchModel
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._normalization import UnsupportedNormalizationError
+from geo_eval_harness.models.interface import BenchModel
 
 
 @pytest.fixture
 def copied_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> type[BenchModel]:
-    template = Path(__file__).resolve().parents[1] / "src/torchgeo_bench/models/contrib_template.py"
+    template = (
+        Path(__file__).resolve().parents[1] / "src/geo_eval_harness/models/contrib_template.py"
+    )
     shutil.copyfile(template, tmp_path / "new_model.py")
     monkeypatch.chdir(tmp_path)
     model_class = runpy.run_path("new_model.py")["NewModel"]

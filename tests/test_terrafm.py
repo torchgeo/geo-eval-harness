@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 import torch
 
-from torchgeo_bench.bands import BandSpec
-from torchgeo_bench.models.terrafm import (
+from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.models.terrafm import (
     TERRAFM_S1_2,
     TERRAFM_S2_12,
     TerraFMBench,
 )
-from torchgeo_bench.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 TINY = (192, 2, 3)
 
@@ -203,8 +203,8 @@ def test_released_base_checkpoint_loads_strictly(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.parametrize("preset_name", ["base_s1", "base_s2", "base_s2_l1c"])
 def test_presets_build_with_current_config(preset_name: str) -> None:
-    from torchgeo_bench.config.presets import build_model, load_model_preset
-    from torchgeo_bench.config.schema import ModelConfig
+    from geo_eval_harness.config.presets import build_model, load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
 
     preset = load_model_preset(
         ModelConfig(name=f"terrafm/{preset_name}", kwargs={"pretrained": False})

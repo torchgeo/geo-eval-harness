@@ -8,9 +8,8 @@ import pytest
 import torch
 from torch import nn
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench import model_profile
-from torchgeo_bench.model_profile import (
+from geo_eval_harness import model_profile
+from geo_eval_harness.model_profile import (
     ProfileTiming,
     _count_gflops,
     _count_params,
@@ -18,6 +17,7 @@ from torchgeo_bench.model_profile import (
     measure_profile,
     profile_inference,
 )
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 

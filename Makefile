@@ -1,9 +1,9 @@
-CONDA_RUN := conda run --no-capture-output -n torchgeo-bench
+CONDA_RUN := conda run --no-capture-output -n geo-eval-harness
 
 .PHONY: install sync tests lint format clean help accuracy-check update-baselines docs docs-clean help
 
 install:
-	conda create -y -n torchgeo-bench 'python>=3.13' || true
+	conda create -y -n geo-eval-harness 'python>=3.13' || true
 	$(CONDA_RUN) pip install -e ".[dev]"
 
 sync:
@@ -37,7 +37,7 @@ clean:
 
 help:
 	@echo "Available targets:"
-	@echo "  install - Install dependencies into torchgeo-bench conda env"
+	@echo "  install - Install dependencies into geo-eval-harness conda env"
 	@echo "  sync    - Alias for install"
 	@echo "  tests   - Run test suite with coverage"
 	@echo "  lint    - Run pre-commit checks on all files"

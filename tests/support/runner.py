@@ -7,11 +7,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.main import dataset_metadata
-from torchgeo_bench.resume import resume_config_hash
+from geo_eval_harness.config.presets import merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.resume import resume_config_hash
 
 
 class _DictTensorDataset(Dataset):

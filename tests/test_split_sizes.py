@@ -2,8 +2,8 @@
 
 import pytest
 
+from geo_eval_harness.datasets import get_bench_dataset_class
 from tests.support.data import require_dataset_data
-from torchgeo_bench.datasets import get_bench_dataset_class
 
 # V1 counts come from data/classification_v1.0/<name>/default_partition.json.
 # V2 counts come from len(...) on each upstream geobench_v2.datasets.GeoBench<X> split.

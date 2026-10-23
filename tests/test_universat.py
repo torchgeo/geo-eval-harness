@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models import UniverSatBenchModel
-from torchgeo_bench.models.universat import _build_sensor_groups, _sar_code
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models import UniverSatBenchModel
+from geo_eval_harness.models.universat import _build_sensor_groups, _sar_code
 
 
 def _s2_band(name: str, wavelength_um: float) -> BandSpec:

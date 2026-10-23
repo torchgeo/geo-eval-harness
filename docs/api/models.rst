@@ -1,15 +1,15 @@
-torchgeo_bench.models
-=====================
+geo_eval_harness.models
+=======================
 
-.. module:: torchgeo_bench.models
+.. module:: geo_eval_harness.models
 
 This module provides the abstract :class:`BenchModel` interface and a
 collection of concrete backbones that can be benchmarked across the
-:mod:`torchgeo_bench.datasets` registry.
+:mod:`geo_eval_harness.datasets` registry.
 
 Model construction is exposed through
-:func:`~torchgeo_bench.config.presets.load_model_preset` and
-:func:`~torchgeo_bench.config.presets.build_model`. Preset ``kwargs`` contain
+:func:`~geo_eval_harness.config.presets.load_model_preset` and
+:func:`~geo_eval_harness.config.presets.build_model`. Preset ``kwargs`` contain
 constructor options; the runner supplies selected ``BandSpec`` objects
 and normalization explicitly. See :doc:`cli` for typed preset resolution.
 
@@ -67,7 +67,7 @@ Segmentation heads
 ------------------
 
 These heads attach to a frozen :class:`BenchModel` backbone to produce
-dense per-pixel predictions.  See :class:`~torchgeo_bench.segmentation_probe.SegmentationProbe`
+dense per-pixel predictions.  See :class:`~geo_eval_harness.segmentation_probe.SegmentationProbe`
 for the wiring layer, and :doc:`/user/segmentation-layers` for the
 verified ``segmentation.layers`` values for each supported timm
 backbone family.

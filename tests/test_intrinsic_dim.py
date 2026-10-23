@@ -10,9 +10,8 @@ import numpy as np
 import pytest
 import torch
 
-import torchgeo_bench.intrinsic_dim as intrinsic_dim
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.intrinsic_dim import (
+import geo_eval_harness.intrinsic_dim as intrinsic_dim
+from geo_eval_harness.intrinsic_dim import (
     FEATURE_SPECTRUM_METRICS,
     DegenerateManifoldError,
     DegenerateSpectrumError,
@@ -22,6 +21,7 @@ from torchgeo_bench.intrinsic_dim import (
     compute_feature_spectrum,
     compute_intrinsic_dim,
 )
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 

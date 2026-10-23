@@ -7,16 +7,16 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from tests.support.runner import _resume_row
-from torchgeo_bench.config.presets import ModelPreset, merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.resume import (
+from geo_eval_harness.config.presets import ModelPreset, merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.resume import (
     ResumeState,
     load_completed,
     plan_dataset_run,
     resume_config_hash,
 )
+from tests.support.runner import _resume_row
 
 
 def _cfg(**sections) -> RunConfig:
@@ -35,7 +35,11 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
     assert config.segmentation.lora_rank is None
     payload = {
         "schema_version": config.schema_version,
-        "model": {"name": preset.name, "target": preset.target, "kwargs": preset.kwargs},
+        "model": {
+            "name": preset.name,
+            "target": preset.target.replace("geo_eval_harness.", "torchgeo_bench.", 1),
+            "kwargs": preset.kwargs,
+        },
         "input": config.input.model_dump(mode="json"),
         "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
         "segmentation": config.segmentation.model_dump(
@@ -127,6 +131,30 @@ def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
 def test_config_hash_reflects_dataset_resolved_preset_overrides() -> None:
     config = _cfg(model={"name": "torchgeo/scalemae_large_fmow"})
     assert _hash(config, "m-eurosat") != _hash(config, "forestnet")
+
+
+@pytest.mark.parametrize("dataset", ["m-eurosat", "burn_scars"])
+def test_package_rename_preserves_result_resume(tmp_path: Path, dataset: str) -> None:
+    config, preset = resolve_run_config(_cfg(datasets=[dataset], output={"resume": True}), dataset)
+    ds_cls = get_bench_dataset_class(dataset)
+    stored_preset = preset.model_copy(
+        update={"target": preset.target.replace("geo_eval_harness.", "torchgeo_bench.", 1)}
+    )
+    stored_hash = resume_config_hash(config, stored_preset, task=ds_cls.task)
+    assert resume_config_hash(config, preset, task=ds_cls.task) == stored_hash
+    method = config.segmentation.method if ds_cls.task == "segmentation" else "knn5"
+    metadata = _resume_row(
+        config, method=method, metric_name="mIoU" if ds_cls.task == "segmentation" else "accuracy"
+    )
+    path = tmp_path / "results.csv"
+    pd.DataFrame([{**metadata, "model": stored_preset.target, "config_hash": stored_hash}]).to_csv(
+        path, index=False
+    )
+    original = path.read_bytes()
+    completed = ResumeState(*load_completed(str(path)))
+    plan = plan_dataset_run(config, ds_cls, metadata, completed)
+    assert plan.skip_dataset if ds_cls.task == "segmentation" else plan.skip_knn
+    assert path.read_bytes() == original
 
 
 @pytest.mark.parametrize("dataset", ["m-eurosat", "forestnet"])

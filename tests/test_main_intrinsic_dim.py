@@ -6,14 +6,14 @@ from unittest import mock
 import numpy as np
 import pandas as pd
 
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import evaluate_intrinsic_dim, main
 from tests.support.runner import (
     _compose_cfg,
     _resume_row,
     _synthetic_embeddings,
     _synthetic_loaders,
 )
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import evaluate_intrinsic_dim, main
 
 
 def test_intrinsic_dim_rows_emitted(tmp_path: Path):
@@ -37,13 +37,13 @@ def test_intrinsic_dim_rows_emitted(tmp_path: Path):
         return {est: values[est]}
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim", side_effect=_mock_compute),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", side_effect=_mock_compute),
     ):
         main(cfg)
 
@@ -77,13 +77,13 @@ def test_spectrum_rows_do_not_require_torchid_estimators(tmp_path: Path):
     )
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim") as id_mock,
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim") as id_mock,
     ):
         main(cfg)
 
@@ -174,13 +174,13 @@ def test_intrinsic_dim_resume_per_estimator(tmp_path: Path):
         return {est: values[est]}
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim", side_effect=_mock_compute),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", side_effect=_mock_compute),
     ):
         main(cfg)
 
@@ -217,13 +217,13 @@ def test_resume_backfills_spectrum_without_rerunning_completed_estimators(tmp_pa
     pd.DataFrame(seed_rows).to_csv(out, index=False)
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_synthetic_loaders()),
-        mock.patch("torchgeo_bench.main.embed_split", side_effect=_synthetic_embeddings()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
         mock.patch(
-            "torchgeo_bench.main.evaluate_knn",
+            "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("torchgeo_bench.main.compute_intrinsic_dim") as id_mock,
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim") as id_mock,
     ):
         main(cfg)
 

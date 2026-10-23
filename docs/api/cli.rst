@@ -1,10 +1,10 @@
 Command-line interface and configuration
 ========================================
 
-.. module:: torchgeo_bench.cli
+.. module:: geo_eval_harness.cli
 
-The installed ``torchgeo-bench`` command, ``python -m torchgeo_bench``, and
-``python -m torchgeo_bench.cli`` share one explicit-flags/YAML interface:
+The installed ``geo-eval-harness`` command, ``python -m geo_eval_harness``, and
+``python -m geo_eval_harness.cli`` share one explicit-flags/YAML interface:
 
 ``run``
     Evaluate image backbones with classification and segmentation probes.
@@ -49,8 +49,8 @@ Load and validate a YAML file without importing model implementations:
 
 .. code-block:: python
 
-   from torchgeo_bench.config.run import load_run_config
-   from torchgeo_bench.config.presets import resolve_run_config
+   from geo_eval_harness.config.run import load_run_config
+   from geo_eval_harness.config.presets import resolve_run_config
 
    config = load_run_config("docs/examples/image-run.yaml")
    effective, preset = resolve_run_config(config, "m-eurosat")
@@ -60,7 +60,7 @@ supplied values. ``RunConfig.model_dump_yaml()`` preserves omission by
 excluding unset fields; dumping all schema defaults and reloading them would
 turn those defaults into explicit overrides.
 
-.. currentmodule:: torchgeo_bench.config.run
+.. currentmodule:: geo_eval_harness.config.run
 
 .. autoclass:: RunConfig
    :members: model_dump_yaml
@@ -70,7 +70,7 @@ turn those defaults into explicit overrides.
 .. autofunction:: load_run_config
 .. autofunction:: validate_run_config
 
-.. currentmodule:: torchgeo_bench.config.schema
+.. currentmodule:: geo_eval_harness.config.schema
 
 .. autoclass:: ModelConfig
    :members:
@@ -92,7 +92,7 @@ band selection, normalization-name mapping, and per-dataset construction.
 ``kwargs`` are ordinary constructor values, not recursively instantiated
 target mappings.
 
-.. currentmodule:: torchgeo_bench.config.presets
+.. currentmodule:: geo_eval_harness.config.presets
 
 .. autoclass:: ModelPreset
    :members: for_dataset
@@ -109,8 +109,8 @@ The image loop consumes a ``RunConfig`` directly:
 
 .. code-block:: python
 
-   from torchgeo_bench.config.run import load_run_config
-   from torchgeo_bench.main import main
+   from geo_eval_harness.config.run import load_run_config
+   from geo_eval_harness.main import main
 
    config = load_run_config("docs/examples/image-run.yaml")
    main(config)
@@ -118,7 +118,7 @@ The image loop consumes a ``RunConfig`` directly:
 Unlike loading or resolving configuration, calling ``main`` executes the
 benchmark and may load data or weights and append results.
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: main
 
 Standalone measurement settings
@@ -128,7 +128,7 @@ Standalone profiling uses singular ``dataset`` plus top-level timing fields;
 synthetic compute measurements use band-source metadata, head selections,
 and a ``timing`` block. Neither takes an image ``RunConfig``.
 
-.. currentmodule:: torchgeo_bench.config.profile
+.. currentmodule:: geo_eval_harness.config.profile
 
 .. autoclass:: ProfileConfig
    :members: model_dump_yaml
@@ -137,14 +137,14 @@ and a ``timing`` block. Neither takes an image ``RunConfig``.
 
 .. autofunction:: resolve_profile_config
 
-.. currentmodule:: torchgeo_bench.config.flops
+.. currentmodule:: geo_eval_harness.config.flops
 
 .. autoclass:: FlopsConfig
    :members: model_dump_yaml, resolve
    :inherited-members: BaseModel
    :no-show-inheritance:
 
-.. currentmodule:: torchgeo_bench.flops_pipeline
+.. currentmodule:: geo_eval_harness.flops_pipeline
 .. autofunction:: main
 
 See :doc:`coordbench` for the separate coordinate configuration and runner.
@@ -152,7 +152,7 @@ See :doc:`coordbench` for the separate coordinate configuration and runner.
 Download helpers
 ----------------
 
-.. currentmodule:: torchgeo_bench.download
+.. currentmodule:: geo_eval_harness.download
 .. autofunction:: download_geobench_v1
 .. autofunction:: download_geobench_v2
 .. autofunction:: download_eurosat

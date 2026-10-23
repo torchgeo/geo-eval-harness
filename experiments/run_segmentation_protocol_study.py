@@ -17,15 +17,15 @@ from _seg_sweep_common import (
     BaseGpuRunner,
     Model,
     RunnerConfig,
+    geo_eval_harness_cli,
     parse_gpus,
     resolve_path,
     run_exclusively,
-    torchgeo_bench_cli,
     write_json_atomic,
     write_run_config,
 )
 
-from torchgeo_bench.config.run import RunConfig
+from geo_eval_harness.config.run import RunConfig
 
 logger = logging.getLogger(__name__)
 VAL_PATTERN = re.compile(r"Epoch (\d+) Val mIoU: (\S+)")
@@ -105,8 +105,8 @@ def build_jobs() -> list[Job]:
 
 def _source_hash(root: Path) -> str:
     hasher = hashlib.sha256()
-    paths = sorted((root / "src/torchgeo_bench").rglob("*.py"))
-    paths.extend(sorted((root / "src/torchgeo_bench/conf").rglob("*.yaml")))
+    paths = sorted((root / "src/geo_eval_harness").rglob("*.py"))
+    paths.extend(sorted((root / "src/geo_eval_harness/conf").rglob("*.yaml")))
     for path in paths:
         hasher.update(str(path.relative_to(root)).encode())
         hasher.update(path.read_bytes())
@@ -236,7 +236,7 @@ class StudyRunner(BaseGpuRunner):
         return [
             sys.executable,
             "-m",
-            "torchgeo_bench",
+            "geo_eval_harness",
             "run",
             "--config",
             str(config_path),
@@ -329,7 +329,7 @@ def main() -> None:
     root = Path(__file__).resolve().parents[1]
     config = StudyConfig(
         root=root,
-        cli=torchgeo_bench_cli(),
+        cli=geo_eval_harness_cli(),
         raw_dir=resolve_path(root, args.raw_dir),
         state_dir=resolve_path(root, args.state_dir),
         combined_output=resolve_path(root, args.output),

@@ -1,7 +1,7 @@
 # Portions of this file are adapted from torchgeo.
 # Copyright (c) TorchGeo Contributors. All rights reserved.
 
-"""Sphinx configuration for the torchgeo-bench documentation site."""
+"""Sphinx configuration for the geo-eval-harness documentation site."""
 
 import inspect
 import os
@@ -10,13 +10,13 @@ import sys
 # Let autodoc import the src/ package from a source checkout.
 sys.path.insert(0, os.path.abspath(os.path.join("..", "src")))
 
-import torchgeo_bench
+import geo_eval_harness
 
-project = "torchgeo-bench"
-copyright = "torchgeo-bench Contributors"  # noqa: A001 - Sphinx configuration key
-author = torchgeo_bench.__author__
-version = ".".join(torchgeo_bench.__version__.split(".")[:2])
-release = torchgeo_bench.__version__
+project = "geo-eval-harness"
+copyright = "geo-eval-harness Contributors"  # noqa: A001 - Sphinx configuration key
+author = geo_eval_harness.__author__
+version = ".".join(geo_eval_harness.__version__.split(".")[:2])
+release = geo_eval_harness.__version__
 
 
 extensions = [
@@ -40,16 +40,16 @@ needs_sphinx = "5.3"
 nitpicky = True
 nitpick_ignore = [
     # Private types shown by the API documentation.
-    ("py:class", "torchgeo_bench.datasets.geobench_v1._V1Dataset"),
-    ("py:class", "torchgeo_bench.datasets.geobench_v2._V2Dataset"),
-    ("py:class", "torchgeo_bench.datasets.geobench_v2._OffsetMaskV2Dataset"),
+    ("py:class", "geo_eval_harness.datasets.geobench_v1._V1Dataset"),
+    ("py:class", "geo_eval_harness.datasets.geobench_v2._V2Dataset"),
+    ("py:class", "geo_eval_harness.datasets.geobench_v2._OffsetMaskV2Dataset"),
     ("py:meth", "_OffsetMaskV2Dataset.canonicalize_sample"),
-    ("py:class", "torchgeo_bench.models.torchgeo_models._TorchGeoBackboneBench"),
-    ("py:class", "torchgeo_bench.models._normalization.NormalizationStrategy"),
-    ("py:class", "torchgeo_bench.models._input_units.InputUnit"),
-    ("py:class", "torchgeo_bench.coordbench.models._RSHFEncoder"),
-    ("py:class", "torchgeo_bench.segmentation_probe.CachedFeaturesDataset"),
-    ("py:class", "torchgeo_bench.segmentation_probe.GPUTensorCache"),
+    ("py:class", "geo_eval_harness.models.torchgeo_models._TorchGeoBackboneBench"),
+    ("py:class", "geo_eval_harness.models._normalization.NormalizationStrategy"),
+    ("py:class", "geo_eval_harness.models._input_units.InputUnit"),
+    ("py:class", "geo_eval_harness.coordbench.models._RSHFEncoder"),
+    ("py:class", "geo_eval_harness.segmentation_probe.CachedFeaturesDataset"),
+    ("py:class", "geo_eval_harness.segmentation_probe.GPUTensorCache"),
     ("py:class", "CachedFeaturesDataset"),
     ("py:class", "GPUTensorCache"),
     # Names that autodoc cannot link to a documentation page.
@@ -69,7 +69,7 @@ nitpick_ignore = [
     ("py:attr", "base.BenchDataset.supports_partitions"),
     ("py:meth", "_forward_patch_features"),
     ("py:meth", "SegmentationProbe.extract_segmentation_features"),
-    ("py:mod", "torchgeo_bench.main"),
+    ("py:mod", "geo_eval_harness.main"),
     # Third-party types without links in their published documentation.
     ("py:class", "faiss.swigfaiss_avx2.IndexFlatL2"),
     ("py:class", "geobench.task.Task"),
@@ -103,7 +103,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/torchgeo/torchgeo-bench",
+            "url": "https://github.com/torchgeo/geo-eval-harness",
             "icon": "fa-brands fa-github",
         },
     ],
@@ -115,7 +115,7 @@ html_theme_options = {
 
 html_context = {
     "github_user": "torchgeo",
-    "github_repo": "torchgeo-bench",
+    "github_repo": "geo-eval-harness",
     "github_version": "main",
     "doc_path": "docs",
 }
@@ -197,4 +197,6 @@ def linkcode_resolve(domain: str, info: dict[str, str]) -> str | None:
     sourcefile = os.path.relpath(sourcefile, start=os.path.join(os.path.dirname(__file__), ".."))
 
     lineend = lineno + source.count("\n") - 1
-    return f"https://github.com/torchgeo/torchgeo-bench/blob/main/{sourcefile}#L{lineno}-L{lineend}"
+    return (
+        f"https://github.com/torchgeo/geo-eval-harness/blob/main/{sourcefile}#L{lineno}-L{lineend}"
+    )

@@ -2,8 +2,8 @@ Configuration
 =============
 
 All commands use explicit flags and strict Pydantic-validated YAML.
-``torchgeo-bench``, ``python -m torchgeo_bench``, and
-``python -m torchgeo_bench.cli`` expose the same interface.
+``geo-eval-harness``, ``python -m geo_eval_harness``, and
+``python -m geo_eval_harness.cli`` expose the same interface.
 
 .. warning::
 
@@ -16,10 +16,10 @@ For example:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 --dataset m-eurosat \
+   $ geo-eval-harness run --model timm/resnet50 --dataset m-eurosat \
        --methods knn --bootstrap-samples 100 --device cpu
-   $ torchgeo-bench run --config docs/examples/image-run.yaml --methods linear --dry-run
-   $ torchgeo-bench run --config-help
+   $ geo-eval-harness run --config docs/examples/image-run.yaml --methods linear --dry-run
+   $ geo-eval-harness run --config-help
 
 ``--dry-run`` validates selections and prints reusable YAML without loading weights or dataset samples. For image runs, it checks explicit band names against each dataset's metadata and rejects model-native normalization when the preset declares it unsupported, as RCF does. These checks use resolved model and dataset defaults without writing those defaults into the output YAML. Custom model targets are not imported; constructor-specific requirements, including RGB-only inputs and weight-specific normalization, may still fail at runtime.
 
@@ -63,14 +63,14 @@ A minimal run file selects a model and one or more datasets:
      name: timm/resnet50
    datasets: [m-eurosat]
 
-Run it with ``torchgeo-bench run --config my-run.yaml``. A model selection is
+Run it with ``geo-eval-harness run --config my-run.yaml``. A model selection is
 always a mapping, not the old ``model: timm/resnet50`` scalar.
 Use ``datasets: [all]`` to select the image dataset catalog. On the CLI,
 ``--dataset`` is repeatable:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 \
+   $ geo-eval-harness run --model timm/resnet50 \
        --dataset m-eurosat --dataset m-pv4ger --device cpu
 
 The complete field example is :file:`docs/examples/image-run.yaml`. It explicitly
@@ -266,7 +266,7 @@ To keep every output from an image run outside the tracked reference results:
 
 .. code-block:: bash
 
-   torchgeo-bench run --config docs/examples/image-run.yaml \
+   geo-eval-harness run --config docs/examples/image-run.yaml \
      --output-dir outputs/my-run
 
 The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
@@ -284,9 +284,9 @@ later evaluations run. See :doc:`results-format` for stored columns and keys.
 Model presets and custom models
 --------------------------------
 
-``torchgeo-bench models`` lists packaged presets and
-``torchgeo-bench models timm/resnet50`` displays one. Presets live under
-:file:`src/torchgeo_bench/conf/model/`, including ``timm/`` and ``torchgeo/``
+``geo-eval-harness models`` lists packaged presets and
+``geo-eval-harness models timm/resnet50`` displays one. Presets live under
+:file:`src/geo_eval_harness/conf/model/`, including ``timm/`` and ``torchgeo/``
 subdirectories. They are validated separately from run files:
 
 .. code-block:: yaml
@@ -338,10 +338,10 @@ Standalone profiling
 
 .. code-block:: console
 
-   $ torchgeo-bench profile --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu \
        --batch-size 8 --warmup 1 --measurements 5 > profile.json
-   $ torchgeo-bench profile --config docs/examples/profile.yaml --dry-run
-   $ torchgeo-bench profile --model rcf --dataset m-eurosat --output-dir outputs/profile
+   $ geo-eval-harness profile --config docs/examples/profile.yaml --dry-run
+   $ geo-eval-harness profile --model rcf --dataset m-eurosat --output-dir outputs/profile
 
 Its YAML uses singular ``dataset`` and top-level measurement settings:
 
@@ -385,8 +385,8 @@ the selected model is an offline baseline or already cached.
 
 .. code-block:: console
 
-   $ torchgeo-bench flops --config docs/examples/flops.yaml --dry-run
-   $ torchgeo-bench flops --model rcf --device cpu --band-configs rgb \
+   $ geo-eval-harness flops --config docs/examples/flops.yaml --dry-run
+   $ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
        --seg-heads --output results/my_compute_cost.csv
 
 Its YAML schema is independent of image runs:
@@ -451,9 +451,9 @@ and ``output`` sections. It does not accept image-run ``input`` or
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model sincos --dataset california_housing \
+   $ geo-eval-harness coord --model sincos --dataset california_housing \
        --methods linear --folds 2 --device cpu
-   $ torchgeo-bench coord --config docs/examples/coord-run.yaml --dry-run
+   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
 
 See :doc:`coordbench` for the full YAML, encoder targets, method selection,
 random/spatial/official splits, and coordinate CSV resume semantics.

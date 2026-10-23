@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import pytest
 import yaml
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets import (
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets import (
     BandSpec,
     BenchDataset,
     get_bench_dataset_class,
@@ -52,7 +52,7 @@ def registered_dataset(
         ) -> "Dataset":
             raise AssertionError("Catalogs and dry runs must not load samples")
 
-    module = ModuleType("torchgeo_bench.datasets._catalog_test")
+    module = ModuleType("geo_eval_harness.datasets._catalog_test")
     module.TinyDataset = TinyDataset
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setitem(
@@ -140,17 +140,17 @@ def test_unknown_dataset_task_raises() -> None:
 def test_catalog_queries_do_not_import_wrappers_or_ml(arguments: list[str]) -> None:
     code = """
 import sys
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets.loading import _REGISTRY_SPEC
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets.loading import _REGISTRY_SPEC
 _REGISTRY_SPEC['catalog-test'] = ('_unimportable', 'TinyDataset', 'segmentation')
 try:
     main(sys.argv[1:])
 except SystemExit as error:  # allow-except: argparse help exits successfully
     assert error.code == 0
 assert not {'torch', 'torchgeo', 'timm', 'numpy', 'pandas', 'geobench_v2'} & sys.modules.keys()
-assert not any(name.startswith('torchgeo_bench.models') for name in sys.modules)
+assert not any(name.startswith('geo_eval_harness.models') for name in sys.modules)
 assert not any(
-    f'torchgeo_bench.datasets.{spec[0]}' in sys.modules
+    f'geo_eval_harness.datasets.{spec[0]}' in sys.modules
     for spec in _REGISTRY_SPEC.values()
 )
 """

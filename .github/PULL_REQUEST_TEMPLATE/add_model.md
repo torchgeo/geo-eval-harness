@@ -5,18 +5,18 @@ rows to `results/models/<model name>.csv`.
 
 Docs:
 
-- [Evaluate your own model](https://torchgeo.org/torchgeo-bench/user/eval_own_model.html)
-- [Contribute a model](https://torchgeo.org/torchgeo-bench/user/contribute_model.html)
-- [Datasets](https://torchgeo.org/torchgeo-bench/user/datasets.html)
-- [Results format](https://torchgeo.org/torchgeo-bench/user/results-format.html)
+- [Evaluate your own model](https://torchgeo.org/geo-eval-harness/user/eval_own_model.html)
+- [Contribute a model](https://torchgeo.org/geo-eval-harness/user/contribute_model.html)
+- [Datasets](https://torchgeo.org/geo-eval-harness/user/datasets.html)
+- [Results format](https://torchgeo.org/geo-eval-harness/user/results-format.html)
 
 ### 1. Model summary
 
 | Field | Value |
 |-------|-------|
 | **Model name** | <!-- e.g. `new_model` as it appears in the results CSV --> |
-| **Class** | <!-- e.g. `torchgeo_bench.models.NewModel` --> |
-| **Model preset** | <!-- e.g. `src/torchgeo_bench/conf/model/new_model.yaml` --> |
+| **Class** | <!-- e.g. `geo_eval_harness.models.NewModel` --> |
+| **Model preset** | <!-- e.g. `src/geo_eval_harness/conf/model/new_model.yaml` --> |
 | **Pretraining data** | <!-- e.g. Sentinel-2 global, fMoW, ImageNet, etc. --> |
 | **Sensor coverage** | <!-- e.g. Sentinel-2 RGB, Sentinel-2 multispectral, aerial RGB --> |
 | **Weights URL** | <!-- Hugging Face Hub repo, release asset, or equivalent public URL --> |
@@ -25,11 +25,11 @@ Docs:
 
 ### 2. Add the model
 
-Follow the Stage 2 guide: [Contribute a model](https://torchgeo.org/torchgeo-bench/user/contribute_model.html).
+Follow the Stage 2 guide: [Contribute a model](https://torchgeo.org/geo-eval-harness/user/contribute_model.html).
 
 - [ ] Class inherits `BenchModel` and implements `_forward_patch_features(images) -> (B, K)`.
-- [ ] Class is exported from `src/torchgeo_bench/models/__init__.py` and listed in `__all__`.
-- [ ] Model preset exists at `src/torchgeo_bench/conf/model/<name>.yaml` with the correct `target`, result `name`, and constructor `kwargs`.
+- [ ] Class is exported from `src/geo_eval_harness/models/__init__.py` and listed in `__all__`.
+- [ ] Model preset exists at `src/geo_eval_harness/conf/model/<name>.yaml` with the correct `target`, result `name`, and constructor `kwargs`.
 - [ ] The wrapper honors the requested normalization and input BandSpecs.
 - [ ] Model weights are publicly accessible without authentication.
 - [ ] Optional dependencies are declared under `[project.optional-dependencies]` in `pyproject.toml`, if needed.
@@ -52,9 +52,9 @@ the full V1 and V2 sets; use `--datasets m-eurosat` on the V1 command for a
 quick trial.
 
 ```bash
-uv run torchgeo-bench download geobench_v1
-uv run torchgeo-bench download geobench_v2
-uv run torchgeo-bench download eurosat
+uv run geo-eval-harness download geobench_v1
+uv run geo-eval-harness download geobench_v2
+uv run geo-eval-harness download eurosat
 ```
 
 Create a run YAML listing the applicable datasets and the exact bands, normalization, and device used. Use `--resume` so an interrupted run can continue without duplicating completed rows:
@@ -73,8 +73,8 @@ runtime:
 Save this as `new_model_run.yaml`, including any additional settings needed for the model:
 
 ```bash
-uv run torchgeo-bench run --config new_model_run.yaml --dry-run
-uv run torchgeo-bench run --config new_model_run.yaml --resume
+uv run geo-eval-harness run --config new_model_run.yaml --dry-run
+uv run geo-eval-harness run --config new_model_run.yaml --resume
 ```
 
 If a dataset cannot run because the model does not support that sensor or
@@ -94,7 +94,7 @@ results file and leave every other model's file untouched.
 - [ ] New rows are committed to `results/models/<model name>.csv`.
 - [ ] Added result rows are only for this model and the command above.
 - [ ] No other model's results file was added, edited, or removed.
-- [ ] Result rows match the documented [CSV schema](https://torchgeo.org/torchgeo-bench/user/results-format.html).
+- [ ] Result rows match the documented [CSV schema](https://torchgeo.org/geo-eval-harness/user/results-format.html).
 - [ ] Added row count: <!-- e.g. 42 rows -->
 
 ### 5. Reproduction details
@@ -104,7 +104,7 @@ Maintainers should be able to check out this PR and rerun the exact benchmark.
 ```bash
 git checkout <this-branch>
 uv sync --extra dev
-uv run torchgeo-bench run --config new_model_run.yaml --resume
+uv run geo-eval-harness run --config new_model_run.yaml --resume
 ```
 
 Hardware and software used for submitted results:
@@ -115,7 +115,7 @@ Hardware and software used for submitted results:
 | **OS** | <!-- e.g. Ubuntu 24.04 --> |
 | **CPU/GPU** | <!-- e.g. A100 80GB, M3 Max, CPU-only --> |
 | **Python** | <!-- `python --version` --> |
-| **torchgeo-bench command** | <!-- paste the exact command used --> |
+| **geo-eval-harness command** | <!-- paste the exact command used --> |
 
 ### 6. Local checks
 

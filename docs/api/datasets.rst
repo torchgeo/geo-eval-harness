@@ -1,7 +1,7 @@
-torchgeo_bench.datasets
-=======================
+geo_eval_harness.datasets
+=========================
 
-.. module:: torchgeo_bench.datasets
+.. module:: geo_eval_harness.datasets
 
 Every benchmark dataset is a subclass of :class:`BenchDataset` that declares
 its metadata (bands, number of classes, task type, split sizes) and knows how

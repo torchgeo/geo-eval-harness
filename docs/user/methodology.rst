@@ -2,7 +2,7 @@ Evaluation methodology
 ======================
 
 This page describes the evaluation methodology used by
-:mod:`torchgeo_bench.main` for each supported task type.  In all cases
+:mod:`geo_eval_harness.main` for each supported task type.  In all cases
 the backbone model is kept **frozen** — the benchmark measures the
 quality of learned representations, not end-to-end fine-tuning
 performance.  The model is reinstantiated fresh for each dataset
@@ -112,7 +112,7 @@ Procedure
 
 1. Extract train and test embeddings (see above).
 2. Fit a fixed **k = 5** nearest-neighbour classifier
-   (:class:`~torchgeo_bench.knn.KNNClassifier`, backed by FAISS) on the
+   (:class:`~geo_eval_harness.knn.KNNClassifier`, backed by FAISS) on the
    train embeddings.
 3. Predict labels for every test sample.
 4. Compute test-set accuracy (or micro-mAP for multilabel datasets).
@@ -152,7 +152,7 @@ Procedure
 Implementation
 ^^^^^^^^^^^^^^
 
-:class:`~torchgeo_bench.linear.LogisticRegression` is a custom PyTorch
+:class:`~geo_eval_harness.linear.LogisticRegression` is a custom PyTorch
 implementation matching scikit-learn's objective scaling:
 
 .. math::
@@ -193,9 +193,9 @@ Segmentation probes
 -------------------
 
 All segmentation methods share a common skeleton:
-:class:`~torchgeo_bench.segmentation_probe.SegmentationProbe` registers
+:class:`~geo_eval_harness.segmentation_probe.SegmentationProbe` registers
 forward hooks on the configured
-:attr:`segmentation.layers <torchgeo_bench.segmentation_probe.SegmentationProbe>`
+:attr:`segmentation.layers <geo_eval_harness.segmentation_probe.SegmentationProbe>`
 to capture intermediate feature maps.  See :doc:`segmentation-layers`
 for verified layer names per timm backbone family.
 
@@ -208,7 +208,7 @@ Each layer's feature map is reshaped into a spatial tensor
 * 4-D ``(B, C, H, W)`` is used directly.
 
 The probe head is then trained end-to-end (backbone frozen) using
-:class:`~torchgeo_bench.segmentation_task.SegmentationSolver`.
+:class:`~geo_eval_harness.segmentation_task.SegmentationSolver`.
 
 Linear segmentation probe
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -265,7 +265,7 @@ DPT probe
 
 **Method name:** ``seg-dpt`` (YAML ``segmentation: {head: dpt}``).
 A DPT-style reassemble + fusion-transformer decoder
-(:class:`~torchgeo_bench.models.DPTHead`).  Requires exactly four
+(:class:`~geo_eval_harness.models.DPTHead`).  Requires exactly four
 backbone layers in coarse-to-fine order; otherwise structurally
 similar to the FPN probe but with deeper fusion blocks.
 
@@ -273,7 +273,7 @@ UPerNet probe
 ^^^^^^^^^^^^^
 
 **Method name:** ``seg-upernet`` (YAML ``segmentation: {head: upernet}``).
-A UPerNet decoder (:class:`~torchgeo_bench.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped. A training batch size below two is rejected before training, and a run fails if any epoch has no usable training batch (for example, a one-sample training split) rather than reporting an untrained head.
+A UPerNet decoder (:class:`~geo_eval_harness.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped. A training batch size below two is rejected before training, and a run fails if any epoch has no usable training batch (for example, a one-sample training split) rather than reporting an untrained head.
 
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
@@ -308,7 +308,7 @@ All segmentation heads train for every configured epoch. After training, the sol
 
 Benchmark runs require a non-empty validation loader before training or feature extraction. Direct solver calls may omit validation and retain the final epoch; supplied validation must be non-empty. Non-finite validation mIoU raises an error. A failed run does not write a successful result.
 
-After fitting, :class:`~torchgeo_bench.segmentation_task.SegmentationSolver` exposes:
+After fitting, :class:`~geo_eval_harness.segmentation_task.SegmentationSolver` exposes:
 
 * ``best_epoch``: the selected epoch, numbered from one.
 * ``best_val_miou``: the selected validation dataset-level macro mIoU.
@@ -322,7 +322,7 @@ Segmentation knobs
 ------------------
 
 All keys live under ``segmentation`` in run YAML or model presets.
-Defaults are declared in :class:`~torchgeo_bench.config.schema.SegmentationConfig`.
+Defaults are declared in :class:`~geo_eval_harness.config.schema.SegmentationConfig`.
 Explicit run settings override preset defaults, including empty layer lists.
 
 Head type
@@ -402,7 +402,7 @@ Feature caching
      - ``true``
      - Pre-extract backbone features once per split into RAM.  Stored
        layer-first as contiguous ``(N, C, H, W)`` ``float16`` tensors
-       (:class:`~torchgeo_bench.segmentation_probe.CachedFeaturesDataset`).
+       (:class:`~geo_eval_harness.segmentation_probe.CachedFeaturesDataset`).
        GPU transfer is a single memcpy per layer.  Eliminates backbone
        re-runs across epochs — the dominant speedup.
    * - ``cache_dtype``

@@ -1,0 +1,16 @@
+name: tt_prithvi_eo_v2_600
+target: geo_eval_harness.models.TerraTorchPrithviBench
+kwargs:
+  backbone_name: prithvi_eo_v2_600
+  pretrained: true
+  target_size: 224
+classification:
+  linear:
+    c_log10_stop: 5.0
+    c_count: 60
+segmentation:
+  layers:
+    - blocks.31
+    - blocks.23
+    - blocks.15
+    - blocks.7

@@ -1,0 +1,12 @@
+name: resnet101
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: resnet101
+  pretrained: true
+  global_pool: avg
+segmentation:
+  layers:
+    - layer4
+    - layer3
+    - layer2
+    - layer1

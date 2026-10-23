@@ -10,7 +10,7 @@ Usage::
     $ python scripts/compute_band_statistics.py --dataset resisc45
     $ python scripts/compute_band_statistics.py --dataset resisc45 --batch-size 32
 
-The dataset must already be on disk; see ``torchgeo-bench download``.
+The dataset must already be on disk; see ``geo-eval-harness download``.
 """
 
 import argparse
@@ -20,7 +20,7 @@ import sys
 import torch
 from torch.utils.data import DataLoader
 
-from torchgeo_bench.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets import get_bench_dataset_class
 
 logger = logging.getLogger(__name__)
 

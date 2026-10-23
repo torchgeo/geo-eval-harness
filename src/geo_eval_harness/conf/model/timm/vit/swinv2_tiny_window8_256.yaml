@@ -1,0 +1,7 @@
+name: swinv2_tiny_window8_256
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: swinv2_tiny_window8_256
+  pretrained: true
+  global_pool: avg
+  auto_resize: true

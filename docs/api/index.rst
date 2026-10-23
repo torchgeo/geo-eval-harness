@@ -1,7 +1,7 @@
 API Reference
 =============
 
-Complete API documentation for all ``torchgeo_bench`` modules.
+Complete API documentation for all ``geo_eval_harness`` modules.
 
 .. toctree::
    :maxdepth: 2

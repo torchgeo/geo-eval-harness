@@ -3,16 +3,16 @@
 import pytest
 import torch
 
-from torchgeo_bench.bands import BandCompatibilityError
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._band_mapping import (
+from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._band_mapping import (
     BandMappingPolicy,
     canonical_band_name,
     map_to_model_bands,
     select_src_bands,
     wavelengths_um,
 )
-from torchgeo_bench.models.torchgeo_models import _resolve_dofa_wavelengths
+from geo_eval_harness.models.torchgeo_models import _resolve_dofa_wavelengths
 
 
 def _band(name: str, wl: float | None = None, sensor: str = "s2") -> BandSpec:

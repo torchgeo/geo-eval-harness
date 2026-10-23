@@ -13,13 +13,13 @@ from pathlib import Path
 
 import torch
 
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.presets import build_model, load_model_preset, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import InputConfig, ModelConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._normalization import UnsupportedNormalizationError
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.presets import build_model, load_model_preset, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import InputConfig, ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._normalization import UnsupportedNormalizationError
 
 logger = logging.getLogger(__name__)
 

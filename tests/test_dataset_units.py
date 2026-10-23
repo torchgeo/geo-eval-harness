@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from torchgeo_bench.datasets.eurosat import EuroSAT, EuroSATSpatial
-from torchgeo_bench.datasets.fotw import FieldsOfTheWorld as FOTW
-from torchgeo_bench.datasets.spacenet2 import SpaceNet2
-from torchgeo_bench.datasets.spacenet7 import SpaceNet7
+from geo_eval_harness.datasets.eurosat import EuroSAT, EuroSATSpatial
+from geo_eval_harness.datasets.fotw import FieldsOfTheWorld as FOTW
+from geo_eval_harness.datasets.spacenet2 import SpaceNet2
+from geo_eval_harness.datasets.spacenet7 import SpaceNet7
 
 
 class TestFOTWCanonicalize:

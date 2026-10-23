@@ -8,14 +8,14 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from geo_eval_harness.config.presets import merge_settings
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import LoaderSplits, evaluate_segmentation, main, run_dataset
+from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.resume import ResumeState
+from geo_eval_harness.segmentation_probe import GPUTensorCache, SegmentationProbe
+from geo_eval_harness.segmentation_task import SegmentationSolver
 from tests.support.runner import _chainable_model_mock, _compose_cfg, _resume_row
-from torchgeo_bench.config.presets import merge_settings
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import LoaderSplits, evaluate_segmentation, main, run_dataset
-from torchgeo_bench.results import bootstrap_miou
-from torchgeo_bench.resume import ResumeState
-from torchgeo_bench.segmentation_probe import GPUTensorCache, SegmentationProbe
-from torchgeo_bench.segmentation_task import SegmentationSolver
 
 
 class _SegmentationDataset(Dataset):
@@ -93,11 +93,11 @@ def test_dataset_eval_resolution_preserves_explicit_values_and_original_config(
         return []
 
     loaders = _synthetic_segmentation_loaders()
-    monkeypatch.setattr("torchgeo_bench.main.get_datasets", lambda **_kwargs: loaders)
+    monkeypatch.setattr("geo_eval_harness.main.get_datasets", lambda **_kwargs: loaders)
     monkeypatch.setattr(
-        "torchgeo_bench.main.instantiate_dataset_model", lambda *_args: _chainable_model_mock()
+        "geo_eval_harness.main.instantiate_dataset_model", lambda *_args: _chainable_model_mock()
     )
-    monkeypatch.setattr("torchgeo_bench.main.run_segmentation", capture_eval)
+    monkeypatch.setattr("geo_eval_harness.main.run_segmentation", capture_eval)
 
     assert list(run_dataset(cfg, "burn_scars", ResumeState(set(), {}))) == []
 
@@ -133,10 +133,10 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
         ),
         mock.patch(
-            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+            "geo_eval_harness.segmentation_task.build_seg_probe_and_solver",
             return_value=(probe, solver),
         ),
     ):
@@ -162,9 +162,9 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     model = _chainable_model_mock()
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.segmentation_task.build_seg_probe_and_solver") as build_mock,
+        mock.patch("geo_eval_harness.main.get_datasets") as data_mock,
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.segmentation_task.build_seg_probe_and_solver") as build_mock,
     ):
         main(cfg)
 
@@ -177,7 +177,7 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
 
 _TINY_VIT = {
     "name": "tiny-vit",
-    "target": "torchgeo_bench.models.TimmPatchBenchModel",
+    "target": "geo_eval_harness.models.TimmPatchBenchModel",
     "kwargs": {"model_name": "vit_tiny_patch16_224", "pretrained": False, "auto_resize": True},
 }
 _TINY_VIT_LAYERS = ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]
@@ -205,10 +205,10 @@ def test_upernet_skips_a_final_training_batch_of_one(
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets",
+            "geo_eval_harness.main.get_datasets",
             return_value=_synthetic_segmentation_loaders(n_train=9),
         ),
-        caplog.at_level("INFO", logger="torchgeo_bench.segmentation_task"),
+        caplog.at_level("INFO", logger="geo_eval_harness.segmentation_task"),
     ):
         main(cfg)
 
@@ -237,7 +237,7 @@ def test_upernet_with_a_cached_batch_size_of_one_fails_without_a_result(tmp_path
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
         ),
         pytest.raises(ValueError, match="below the UPerNetHead minimum of 2"),
     ):
@@ -265,10 +265,10 @@ def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
     )
 
     with mock.patch(
-        "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+        "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
     ):
         main(cfg)
-    with mock.patch("torchgeo_bench.main.get_datasets") as data_mock:
+    with mock.patch("geo_eval_harness.main.get_datasets") as data_mock:
         main(cfg)
 
     data_mock.assert_not_called()
@@ -323,10 +323,10 @@ def test_runner_test_metrics_and_bootstrap_use_selected_epoch(
 
     monkeypatch.setattr(solver, "_evaluate", controlled_validation)
     monkeypatch.setattr(
-        "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+        "geo_eval_harness.segmentation_task.build_seg_probe_and_solver",
         lambda *_args: (probe, solver),
     )
-    with mock.patch("torchgeo_bench.main.bootstrap_miou", wraps=bootstrap_miou) as bootstrap:
+    with mock.patch("geo_eval_harness.main.bootstrap_miou", wraps=bootstrap_miou) as bootstrap:
         metrics, *_ = evaluate_segmentation(probe.backbone, LoaderSplits(train, test, test), cfg, 2)
 
     assert len(boundaries) == 3
@@ -352,7 +352,7 @@ def test_runner_requires_validation_before_building_probe(
     loaders = LoaderSplits(train, None if validation == "missing" else empty_val, test)
 
     with (
-        mock.patch("torchgeo_bench.segmentation_task.build_seg_probe_and_solver") as build,
+        mock.patch("geo_eval_harness.segmentation_task.build_seg_probe_and_solver") as build,
         pytest.raises(ValueError, match="require a non-empty validation loader"),
     ):
         evaluate_segmentation(mock.Mock(), loaders, cfg, num_classes=3)
@@ -378,13 +378,13 @@ def test_runner_invalid_validation_does_not_write_results(
         },
     )
     monkeypatch.setattr(
-        "torchgeo_bench.main.get_datasets",
+        "geo_eval_harness.main.get_datasets",
         lambda **_kwargs: _synthetic_segmentation_loaders(n_val=0 if validation == "empty" else 4),
     )
     backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
     backbone.effective_normalization = "bandspec_zscore"
     monkeypatch.setattr(
-        "torchgeo_bench.main.instantiate_dataset_model",
+        "geo_eval_harness.main.instantiate_dataset_model",
         lambda *_args: backbone,
     )
     if validation == "non-finite":

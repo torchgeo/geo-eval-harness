@@ -12,8 +12,8 @@ import pytest
 import torch
 from PIL import Image
 
-from torchgeo_bench import download, hub
-from torchgeo_bench.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
+from geo_eval_harness import download, hub
+from geo_eval_harness.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
 
 RGB = (11, 22, 33)
 

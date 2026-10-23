@@ -2,8 +2,8 @@
 
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models.image_stats import ImageStatsBench
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models.image_stats import ImageStatsBench
 
 
 def _bands(n: int = 4) -> list[BandSpec]:

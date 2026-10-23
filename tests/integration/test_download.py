@@ -18,15 +18,15 @@ import pytest
 import torch
 from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial
 
+from geo_eval_harness import hub
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets import _v1_webdataset as v1
+from geo_eval_harness.datasets import geobench_v2, get_datasets
 from tests.support.data import (
     write_caffe_files,
     write_torchgeo_download_files,
     write_v1_shards,
 )
-from torchgeo_bench import hub
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets import _v1_webdataset as v1
-from torchgeo_bench.datasets import geobench_v2, get_datasets
 
 pytestmark = pytest.mark.integration
 

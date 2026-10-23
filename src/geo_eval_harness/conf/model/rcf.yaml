@@ -1,0 +1,9 @@
+name: rcf
+target: geo_eval_harness.models.RCFBench
+seed_from_run: true
+supports_model_normalization: false
+kwargs:
+  features: 512
+  kernel_size: 3
+  mode: gaussian
+  stats_mode: mean

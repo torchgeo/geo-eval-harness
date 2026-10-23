@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._input_units import (
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._input_units import (
     InputUnit,
     convert_unit,
     detect_input_unit,

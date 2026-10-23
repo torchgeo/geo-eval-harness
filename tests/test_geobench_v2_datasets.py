@@ -8,10 +8,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
+from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
+from geo_eval_harness.datasets.burn_scars import BurnScars
+from geo_eval_harness.datasets.pastis import PASTIS
 from tests.support.data import require_dataset_data
-from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
-from torchgeo_bench.datasets.burn_scars import BurnScars
-from torchgeo_bench.datasets.pastis import PASTIS
 
 
 class MockV2Dataset:
@@ -86,7 +86,7 @@ class TestV2Loading:
         ):
             get_datasets(dataset_name=dataset_name, num_workers=0)
 
-        assert f"torchgeo-bench download {download}" in str(error.value)
+        assert f"geo-eval-harness download {download}" in str(error.value)
         snapshot.assert_not_called()
         download_url.assert_not_called()
 

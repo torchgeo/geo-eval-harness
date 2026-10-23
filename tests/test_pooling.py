@@ -1,9 +1,9 @@
-"""Tests for torchgeo_bench.models._pooling."""
+"""Tests for geo_eval_harness.models._pooling."""
 
 import pytest
 import torch
 
-from torchgeo_bench.models._pooling import pool_tokens
+from geo_eval_harness.models._pooling import pool_tokens
 
 
 @pytest.fixture

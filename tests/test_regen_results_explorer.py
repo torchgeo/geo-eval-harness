@@ -161,7 +161,7 @@ def test_regeneration_preserves_references_history_and_current_rows(
     assert old_path.read_bytes() == old_bytes
     assert "This snapshot contains 4 measurements" in text
     assert "1 frozen-backbone variants on 1 classification datasets" in text
-    assert "Torchgeo-Bench results explorer" in text
+    assert "Geo Eval Harness results explorer" in text
     assert "leads" not in text
     assert "highest single score" not in text
     assert "1 segmentation measurements cover 1 backbones on 1 datasets" in text

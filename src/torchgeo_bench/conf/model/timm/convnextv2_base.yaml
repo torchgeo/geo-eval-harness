@@ -1,6 +1,0 @@
-name: convnextv2_base
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: convnextv2_base
-  pretrained: true
-  global_pool: avg

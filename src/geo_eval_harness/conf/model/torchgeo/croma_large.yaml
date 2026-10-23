@@ -1,0 +1,18 @@
+name: tgeo_croma_large
+target: geo_eval_harness.models.TorchGeoCromaBench
+kwargs:
+  factory: croma_large
+  weights_class: CROMALarge_Weights
+  weights_member: CROMA_VIT
+  auto_resize: true
+  target_size: 120
+classification:
+  linear:
+    c_log10_stop: 5.0
+    c_count: 60
+segmentation:
+  layers:
+    - s2_encoder.transformer.layers.23.1
+    - s2_encoder.transformer.layers.17.1
+    - s2_encoder.transformer.layers.11.1
+    - s2_encoder.transformer.layers.5.1

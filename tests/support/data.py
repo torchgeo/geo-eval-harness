@@ -16,7 +16,7 @@ from PIL import Image
 from rasterio.io import MemoryFile
 from rasterio.transform import Affine
 
-from torchgeo_bench.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets import get_bench_dataset_class
 
 
 def require_dataset_data(name: str) -> None:

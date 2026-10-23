@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ranking Explorer · torchgeo-bench</title>
+  <title>Ranking Explorer · geo-eval-harness</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700;8..60,900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -95,9 +95,9 @@
 </head>
 <body>
   <main class="wrap">
-    <header class="masthead"><div class="wordmark">torchgeo-bench <small>ranking explorer</small></div><span class="sans">classification &amp; segmentation benchmarks</span></header>
-    <h1>Torchgeo-Bench Geospatial Foundation Model Ranking</h1>
-    <p class="standfirst">Geospatial foundation models are pretrained backbones, with the promise of being easily adaptable to various earth observation downstream tasks. Torchgeo-Bench is a collective effort to provide transparent and fair evaluations of these models on established protocols such that the community can gain a better understanding of model performance across tasks.</p>
+    <header class="masthead"><div class="wordmark">geo-eval-harness <small>ranking explorer</small></div><span class="sans">classification &amp; segmentation benchmarks</span></header>
+    <h1>Geo Eval Harness Geospatial Foundation Model Ranking</h1>
+    <p class="standfirst">Geospatial foundation models are pretrained backbones, with the promise of being easily adaptable to various earth observation downstream tasks. Geo Eval Harness is a collective effort to provide transparent and fair evaluations of these models on established protocols such that the community can gain a better understanding of model performance across tasks.</p>
     <p class="intro">The table summarizes per-dataset scores, and four settings provide different views of the results:</p>
     <ul class="intro-list">
       <li><strong>Aggregation</strong> sets how the per-dataset scores are combined into a single number.</li>
@@ -106,7 +106,7 @@
       <li><strong>Bands</strong> sets the input modality for the backbone that configures the required bands and order, either RGB or the available multispectral channels.</li>
     </ul>
     <p class="intro">Each setting is a separate experiment rather than a filter applied to one result, so the table can reorder when you change one of them. A model is ranked only when it has a result on every eligible dataset in the selected view, and the models that fall short are named below the table. The <a href="../user/ranking_explorer.html">evaluation setup</a> documents the protocol, the coverage rules, and how each aggregation is computed.</p>
-    <p class="feedback">If a result looks wrong, is missing, or seems implausible, please <a href="https://github.com/torchgeo/torchgeo-bench/issues" target="_blank" rel="noopener">open an issue</a> with the model, the view you were looking at, and any supporting evidence. General feedback is of course welcome too.</p>
+    <p class="feedback">If a result looks wrong, is missing, or seems implausible, please <a href="https://github.com/torchgeo/geo-eval-harness/issues" target="_blank" rel="noopener">open an issue</a> with the model, the view you were looking at, and any supporting evidence. General feedback is of course welcome too.</p>
 
     <section class="controls" aria-label="Ranking controls">
       <div class="control aggregation"><label for="sel-aggregation">Aggregation</label><select id="sel-aggregation"></select></div>

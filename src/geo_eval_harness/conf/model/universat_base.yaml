@@ -1,0 +1,8 @@
+name: universat_base
+target: geo_eval_harness.models.UniverSatBenchModel
+kwargs:
+  modality: null
+  patch_size: 10
+  output_grid: null
+  input_res: null
+  normalize: false

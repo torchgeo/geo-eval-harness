@@ -6,14 +6,14 @@ Glossary
 
    BenchDataset
        Abstract base class implemented by every dataset wrapper in
-       :mod:`torchgeo_bench.datasets`.  Declares static metadata (bands,
+       :mod:`geo_eval_harness.datasets`.  Declares static metadata (bands,
        number of classes, task type, default split sizes) and exposes a
-       :meth:`~torchgeo_bench.datasets.BenchDataset.get_dataset` factory
+       :meth:`~geo_eval_harness.datasets.BenchDataset.get_dataset` factory
        returning a PyTorch ``Dataset`` for a given split.
 
    BenchModel
        Abstract base class implemented by every backbone in
-       :mod:`torchgeo_bench.models`.  Sealed ``forward_patch_features``
+       :mod:`geo_eval_harness.models`.  Sealed ``forward_patch_features``
        method guarantees that input normalisation is always applied
        before the subclass-specific ``_forward_patch_features``.
 
@@ -40,8 +40,8 @@ Glossary
    intrinsic dimension
        The geometric / statistical dimension of a manifold of feature
        embeddings, estimated by methods such as TwoNN, MLE, or lPCA.
-       Optional in ``torchgeo-bench`` via ``intrinsic_dim`` and the
-       ``[id]`` extra; see :mod:`torchgeo_bench.intrinsic_dim`.
+       Optional in ``geo-eval-harness`` via ``intrinsic_dim`` and the
+       ``[id]`` extra; see :mod:`geo_eval_harness.intrinsic_dim`.
 
    KNN-5
        5-nearest-neighbour classifier evaluated on backbone-extracted
@@ -55,7 +55,7 @@ Glossary
    mIoU
        Mean Intersection-over-Union, the primary metric for segmentation
        datasets.  Computed by
-       :func:`~torchgeo_bench.main.evaluate_segmentation`.
+       :func:`~geo_eval_harness.main.evaluate_segmentation`.
 
    resume mode
        When ``--resume`` is supplied, the runner skips any

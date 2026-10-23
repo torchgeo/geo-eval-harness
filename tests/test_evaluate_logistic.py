@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from sklearn.metrics import average_precision_score
 
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import LinearProbeDivergedError, evaluate_logistic
-from torchgeo_bench.utils import FeatureSplit, FeatureSplits
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import LinearProbeDivergedError, evaluate_logistic
+from geo_eval_harness.utils import FeatureSplit, FeatureSplits
 
 
 @pytest.fixture
@@ -65,7 +65,7 @@ class _StubModel:
 def test_nan_candidate_c_does_not_crash_sweep(
     feature_splits: FeatureSplits[np.ndarray], probe_config: RunConfig
 ) -> None:
-    with mock.patch("torchgeo_bench.main.LogisticRegression", _StubModel):
+    with mock.patch("geo_eval_harness.main.LogisticRegression", _StubModel):
         metric, lo, hi, best_c, calibration, calibration_ts = evaluate_logistic(
             feature_splits,
             c_values=[0.1, 1.0, 10.0],
@@ -103,7 +103,7 @@ def test_total_divergence_raises_named_error_not_bare_assert(
 ) -> None:
     """A dedicated error lets the runner skip failed probes without hiding unrelated failures."""
     with (
-        mock.patch("torchgeo_bench.main.LogisticRegression", _AlwaysDivergesModel),
+        mock.patch("geo_eval_harness.main.LogisticRegression", _AlwaysDivergesModel),
         pytest.raises(LinearProbeDivergedError),
     ):
         evaluate_logistic(
@@ -118,7 +118,7 @@ def test_unexpected_fit_errors_are_not_treated_as_divergence(
 ) -> None:
     error = ValueError("invalid feature implementation")
     with (
-        mock.patch("torchgeo_bench.main.LogisticRegression", _StubModel),
+        mock.patch("geo_eval_harness.main.LogisticRegression", _StubModel),
         mock.patch.object(_StubModel, "fit", side_effect=error),
         pytest.raises(ValueError, match="invalid feature implementation") as caught,
     ):

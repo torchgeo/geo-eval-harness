@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from scipy.ndimage import binary_erosion
 
-from torchgeo_bench.boundary_iou import MulticlassBoundaryIoU
+from geo_eval_harness.boundary_iou import MulticlassBoundaryIoU
 
 
 @pytest.mark.parametrize(("ratio", "logits"), [(0.02, False), (0.1, True)])

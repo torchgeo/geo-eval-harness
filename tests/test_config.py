@@ -1,8 +1,8 @@
 """Runtime model-construction contracts for typed configuration."""
 
-from torchgeo_bench.config.presets import build_model, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
+from geo_eval_harness.config.presets import build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
 
 
 def test_model_construction_preserves_bandspec_objects() -> None:

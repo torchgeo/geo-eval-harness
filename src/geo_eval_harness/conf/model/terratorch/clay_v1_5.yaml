@@ -1,0 +1,13 @@
+name: tt_clay_v1_5_base
+target: geo_eval_harness.models.TerraTorchClayBench
+kwargs:
+  backbone_name: timm_clay_v1_base
+  pretrained: true
+  target_size: 256
+  modality: sentinel-2-l2a
+segmentation:
+  layers:
+    - clay_encoder.transformer.layers.11.1
+    - clay_encoder.transformer.layers.8.1
+    - clay_encoder.transformer.layers.5.1
+    - clay_encoder.transformer.layers.2.1

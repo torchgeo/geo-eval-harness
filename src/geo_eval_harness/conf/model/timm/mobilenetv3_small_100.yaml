@@ -1,0 +1,12 @@
+name: mobilenetv3_small_100
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: mobilenetv3_small_100
+  pretrained: true
+  global_pool: avg
+segmentation:
+  layers:
+    - blocks.5
+    - blocks.4
+    - blocks.2
+    - blocks.1

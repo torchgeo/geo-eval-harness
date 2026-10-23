@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Compare L-BFGS and Adam fit time and linear-probe accuracy.
 
-Both solvers use :class:`torchgeo_bench.linear.LogisticRegression` and this loss::
+Both solvers use :class:`geo_eval_harness.linear.LogisticRegression` and this loss::
 
     loss = (1/n) * CrossEntropy + (1/n) * 0.5/C * ||W||^2
 
@@ -27,13 +27,13 @@ from _runner import add_devices_argument, default_output
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 
-from torchgeo_bench.config.presets import build_model, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig, RuntimeConfig
-from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.linear import LogisticRegression
-from torchgeo_bench.utils import extract_features
+from geo_eval_harness.config.presets import build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig, RuntimeConfig
+from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.linear import LogisticRegression
+from geo_eval_harness.utils import extract_features
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
