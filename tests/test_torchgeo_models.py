@@ -17,7 +17,12 @@ from geo_eval_harness.datasets.m_so2sat import MSo2Sat
 from geo_eval_harness.datasets.resisc45 import RESISC45
 from geo_eval_harness.models._input_units import InputUnit
 from geo_eval_harness.models.torchgeo_models import (
+    _DEO_RGB_MEAN,
+    _DEO_RGB_STD,
+    _DEO_S2_MEAN,
+    _DEO_S2_STD,
     TorchGeoCromaBench,
+    TorchGeoDEOBench,
     TorchGeoDOFABench,
     TorchGeoPanopticonBench,
     TorchGeoResNetBench,
@@ -496,6 +501,68 @@ def test_torchgeo_panopticon_model_native_raises(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(ValueError, match="model_native normalisation is undefined"):
         native.normalize_inputs(torch.full((2, len(bands), 32, 32), 5000.0))
+
+
+def test_deo_rgb_and_s2_use_distinct_published_normalizers() -> None:
+    """rgb (normalize_hr) and s2 (normalize_s2) must not collapse to the same RGB stats."""
+    assert (
+        pytest.approx((0.4182007312774658, 0.4214799106121063, 0.3991275727748871)) == _DEO_RGB_MEAN
+    )
+    assert (
+        pytest.approx((0.28774282336235046, 0.27541765570640564, 0.2764017581939697))
+        == _DEO_RGB_STD
+    )
+    assert _DEO_S2_MEAN[:3] == pytest.approx((1136.26026392, 1120.77120066, 1184.3824625))
+    assert _DEO_S2_STD[:3] == pytest.approx((965.23119807, 712.12507725, 650.2842772))
+    assert _DEO_S2_MEAN[3:] == pytest.approx(
+        (
+            1263.73947144,
+            1645.40315151,
+            1846.87040806,
+            1762.59530783,
+            1972.62420416,
+            1732.16362238,
+            1247.91870117,
+        )
+    )
+    assert pytest.approx(_DEO_S2_MEAN[:3]) != _DEO_RGB_MEAN
+
+
+def test_deo_forward_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    class _TinyDEO(nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            b, _, h, w = x.shape
+            return torch.zeros(b, h // 32, w // 32, 1024)
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinyDEO()
+    )
+    monkeypatch.setattr(
+        tg_models,
+        "_resolve_torchgeo_weights",
+        lambda _weights_class, _weights_member: SimpleNamespace(),
+    )
+
+    rgb_model = TorchGeoDEOBench(bands=_rgb_bands(), mode="rgb")
+    out = rgb_model.forward_patch_features(torch.rand(2, 3, 224, 224) * 255)
+    assert out.shape == (2, 1024)
+
+    s2_bands = _s2_multispectral_bands()
+    s2_model = TorchGeoDEOBench(bands=s2_bands, mode="s2")
+    out = s2_model.forward_patch_features(torch.rand(2, len(s2_bands), 224, 224) * 5000)
+    assert out.shape == (2, 1024)
+
+    zscore_rgb = TorchGeoDEOBench(bands=_rgb_bands(), mode="rgb", normalization="bandspec_zscore")
+    out = zscore_rgb.forward_patch_features(torch.rand(2, 3, 224, 224) * 10000)
+    assert out.shape == (2, 1024)
+
+    zscore_s2 = TorchGeoDEOBench(bands=s2_bands, mode="s2", normalization="bandspec_zscore")
+    # _s2_multispectral_bands() bands have mean=0.2, std=0.05.
+    x = torch.full((1, len(s2_bands), 4, 4), 0.2)
+    normed = zscore_s2.normalize_inputs(x)
+    assert torch.allclose(normed, torch.zeros_like(normed), atol=1e-4)
 
 
 @pytest.mark.parametrize("normalize_cls", [Normalize, NormalizeV2])
