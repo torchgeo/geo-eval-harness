@@ -86,6 +86,7 @@ optional-dependencies.dev = [
   "ruff==0.15.10",
   "ty>=0.0.21",
   "types-pyyaml>=6",
+  "vulture>=2.16",
 ]
 optional-dependencies.docs = [
   "linkify-it-py>=2",
@@ -131,7 +132,6 @@ extend-exclude = [
   "src/geo_eval_harness/cli.py",
   "src/geo_eval_harness/commands",
   "src/geo_eval_harness/config/schema.py",
-  "src/geo_eval_harness/legacy_run.py",
   "src/geo_eval_harness/preprocessing.py",
 ]
 lint.select = [
@@ -147,6 +147,7 @@ lint.select = [
   "F",       # pyflakes
   "FBT001",  # keyword-only boolean arguments
   "FBT002",  # keyword-only boolean defaults
+  "FURB",    # unnecessary or roundabout constructions
   "G",       # lazy logging formatting
   "I",       # isort
   "LOG",     # logging API usage
@@ -165,6 +166,7 @@ lint.select = [
   "RET507",  # else after continue
   "RET508",  # else after break
   "RUF",     # Ruff-specific checks
+  "S110",    # swallowed exceptions (try-except-pass)
   "SIM",     # flake8-simplify
   "T201",    # use logging for diagnostics
   "TID251",  # banned imports
@@ -184,6 +186,8 @@ lint.ignore = [
   "TRY003", # allow concise messages at the raise site
 ]
 lint.per-file-ignores."projects/cleanlab/**/*.py" = [ "D" ]
+lint.per-file-ignores."scripts/check_dead_code.py" = [ "T201" ]  # gate output goes to stdout
+lint.per-file-ignores."scripts/vulture_whitelist.py" = [ "B018" ]  # intentionally inert references
 lint.per-file-ignores."src/geo_eval_harness/cli.py" = [ "T201" ]  # CLI payloads go to stdout
 lint.per-file-ignores."src/geo_eval_harness/commands/**/*.py" = [ "T201" ]
 lint.per-file-ignores."tests/**/*.py" = [ "ARG", "D" ]
@@ -237,3 +241,32 @@ run.relative_files = true
 run.source = [ "geo_eval_harness" ]
 report.precision = 2
 report.show_missing = true
+
+[tool.vulture]
+min_confidence = 60
+paths = [ "src", "scripts", "experiments", "projects", "docs", "tests" ]
+exclude = [
+  "docs/conf.py",                                  # Sphinx reads these names by convention, not by reference.
+  "docs/examples",                                 # standalone, read-only usage snippets
+  "src/geo_eval_harness/models/contrib_template.py", # template for new model wrappers, never instantiated
+]
+ignore_decorators = [ "@field_validator", "@model_validator" ]  # called by Pydantic, not by name
+ignore_names = [
+  "__dir__",           # PEP 562 lazy-module hook, called by the import system
+  "__getattr__",       # PEP 562 lazy-module hook, called by the import system
+  "construct_mapping", # yaml.SafeLoader override, called by PyYAML
+  # EvaluationResult / CoordBenchResult / ResultMetadata fields read only via
+  # dict/row access (CSV columns), not by a bare Python-level reference.
+  # Add a new field here if vulture flags it.
+  "best_batch_size",
+  "c_range_num",
+  "c_range_start",
+  "c_range_stop",
+  "ece",
+  "ece_ts",
+  "mce",
+  "mce_ts",
+  "n_folds",
+  "rms_ce",
+  "rms_ce_ts",
+]
