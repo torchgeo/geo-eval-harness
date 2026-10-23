@@ -1,5 +1,6 @@
 """Numerical, training, and caching contracts for dense segmentation probes."""
 
+import math
 from unittest import mock
 
 import numpy as np
@@ -441,6 +442,28 @@ def test_probe_vit_token_features():
     images = torch.randn(2, 3, 64, 64)
     logits = probe(images)
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
+
+
+def test_probe_uses_backbone_declared_token_grid():
+    """Map multi-modality token sequences through the backbone's own layout, not a square guess."""
+
+    class TwoModalityViT(ViTBackbone):
+        def forward(self, x):
+            tokens = self.patch_embed(x).flatten(2).transpose(1, 2)
+            return self.blocks(torch.cat([tokens, 3 * tokens], dim=1))
+
+        def tokens_to_grid(self, tokens):
+            first, second = tokens.chunk(2, dim=1)
+            side = math.isqrt(first.shape[1])
+            return ((first + second) / 2).transpose(1, 2).reshape(len(tokens), -1, side, side)
+
+    backbone = TwoModalityViT()
+    probe = make_probe(backbone, ["blocks"], head_type="linear")
+    images = torch.randn(2, 3, 64, 64)
+
+    assert probe(images).shape == (2, NUM_CLASSES, 64, 64)
+    expected = 2 * backbone.patch_embed(images)
+    torch.testing.assert_close(probe._process_feature(probe._features["blocks"]), expected)
 
 
 def test_resolve_num_prefix_tokens_walks_module_tree():

@@ -32,6 +32,8 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* PLANTEUR crop-type segmentation (``planteur``) from Hugging Face ``allenai/planteur-benchmark``: 2,750 Sentinel-2 + Sentinel-1 monthly time series over France's overseas territories, 8 classes, on the official 1,896 / 411 / 443 split. ``geo-eval-harness download planteur`` stacks the pinned release into memory-mapped per-split arrays.
+* PLANTEUR leave-one-island-out folds (``planteur_loio_guadeloupe``, ``planteur_loio_martinique``, ``planteur_loio_guyane``, ``planteur_loio_reunion``, ``planteur_loio_mayotte``) from the release's ``splits/loio.json``, reading the same downloaded arrays.
 
 Fixed
 ^^^^^

@@ -2,7 +2,7 @@
 
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import torch
@@ -300,7 +300,15 @@ class SegmentationProbe(nn.Module):
         return feat
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
-        """Reshape token features into a spatial grid, accounting for prefix tokens."""
+        """Reshape token features into a spatial grid, accounting for prefix tokens.
+
+        A backbone that declares ``tokens_to_grid`` maps its own token layout instead.
+        """
+        to_grid: Callable[[torch.Tensor], torch.Tensor] | None = getattr(
+            self.backbone, "tokens_to_grid", None
+        )
+        if to_grid is not None:
+            return to_grid(feat)
         bsz, d1, d2 = feat.shape
         n_prefix = _resolve_num_prefix_tokens(self.backbone)
 

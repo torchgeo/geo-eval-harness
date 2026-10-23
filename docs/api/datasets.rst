@@ -74,4 +74,6 @@ torchgeo wrappers
 
 .. autoclass:: HOTOSMBuildings
 
+.. autoclass:: PLANTEUR
+
 .. autoclass:: UCMerced
