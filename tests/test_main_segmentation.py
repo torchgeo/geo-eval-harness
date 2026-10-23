@@ -1,5 +1,7 @@
 """Offline tests for the segmentation runner."""
 
+import json
+import math
 from pathlib import Path
 from unittest import mock
 
@@ -118,6 +120,7 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     cache = mock.Mock()
     probe.freeze_backbone = True
     probe.extract_segmentation_features.return_value = cache
+    solver.best_epoch, solver.best_val_miou = 4, 0.5
     solver.evaluate_cached.return_value = (
         {
             "mIoU": 0.42,
@@ -148,9 +151,12 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
         batch_size=3,
         epochs=cfg.segmentation.epochs,
         verbose=cfg.runtime.verbose,
+        on_epoch=None,
     )
     df = pd.read_csv(out)
     assert df.loc[0, "best_batch_size"] == 3
+    assert df.loc[0, "best_val_epoch"] == 4
+    assert df.loc[0, "best_val_miou"] == 0.5
     assert df.loc[0, "boundary_iou"] == 0.3
     assert df.loc[0, "boundary_iou_width"] == 1
 
@@ -275,6 +281,113 @@ def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
     df = pd.read_csv(out)
     assert df["method"].tolist() == ["seg-upernet-lora"]
     assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("lora", [False, True], ids=["frozen-cached", "lora-uncached"])
+def test_epoch_metrics_stream_records_joined_to_the_result_row(tmp_path: Path, *, lora: bool):
+    out, curves = tmp_path / "out.csv", tmp_path / "curves" / "run.jsonl"
+    segmentation = {
+        "head": "upernet",
+        "layers": _TINY_VIT_LAYERS,
+        "epochs": 2,
+        "batch_size": 2,
+        "cache_features": not lora,
+    }
+    if lora:
+        segmentation |= {
+            "lora_rank": 4,
+            "lora_target_modules": r"blocks\.\d+\.attn\.qkv",
+            "backbone_learning_rate": 1e-4,
+        }
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": segmentation,
+            "output": {"epoch_metrics": str(curves)},
+        },
+    )
+
+    with mock.patch(
+        "torchgeo_bench.main.get_datasets",
+        return_value=_synthetic_segmentation_loaders(n_train=9),
+    ):
+        main(cfg)
+
+    row = pd.read_csv(out).iloc[0]
+    lines = _read_jsonl(curves)
+    assert [line["event"] for line in lines] == ["epoch", "epoch", "selected"]
+    assert len({line["run_id"] for line in lines}) == 1
+    for line in lines:
+        assert line["config_hash"] == row["config_hash"]
+        assert line["method"] == row["method"]
+        assert (line["dataset"], line["name"], line["seed"]) == (
+            row["dataset"],
+            row["name"],
+            row["seed"],
+        )
+    epochs, selected = lines[:2], lines[2]
+    assert [epoch["epoch"] for epoch in epochs] == [1, 2]
+    for epoch in epochs:
+        assert math.isfinite(epoch["train_loss"])
+        assert math.isfinite(epoch["val_loss"])
+        assert 0.0 <= epoch["val_miou"] <= 1.0
+        # Nine samples at batch size two: four steps and one skipped batch of one.
+        assert (epoch["train_steps"], epoch["skipped_batches"]) == (4, 1)
+        assert epoch["peak_gpu_mem_mb"] is None
+        assert epoch["epoch_seconds"] >= 0.0
+    assert epochs[0]["head_lr"] == pytest.approx(1e-3)
+    assert epochs[1]["head_lr"] < epochs[0]["head_lr"]
+    if lora:
+        assert epochs[0]["backbone_lr"] == pytest.approx(1e-4)
+        assert epochs[1]["backbone_lr"] < epochs[0]["backbone_lr"]
+    else:
+        assert all(epoch["backbone_lr"] is None for epoch in epochs)
+    assert selected["best_epoch"] == row["best_val_epoch"]
+    assert selected["best_val_miou"] == pytest.approx(row["best_val_miou"])
+    assert selected["best_val_miou"] == max(epoch["val_miou"] for epoch in epochs)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_epoch_metrics_keep_epochs_of_a_failed_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+) -> None:
+    out, curves = tmp_path / "out.csv", tmp_path / "run.jsonl"
+    cfg = _cfg_for_segmentation(
+        out,
+        {
+            "segmentation": {
+                "cache_features": cached,
+                "epochs": 3,
+                "layers": ["0"],
+                "head": "linear",
+            },
+            "output": {"epoch_metrics": str(curves)},
+        },
+    )
+    monkeypatch.setattr(
+        "torchgeo_bench.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    monkeypatch.setattr("torchgeo_bench.main.instantiate_dataset_model", lambda *_args: backbone)
+    scores = iter([0.4, float("nan")])
+    monkeypatch.setattr(
+        SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": next(scores)}
+    )
+
+    with pytest.raises(ValueError, match="must be finite"):
+        main(cfg)
+
+    lines = _read_jsonl(curves)
+    assert [(line["event"], line["epoch"]) for line in lines] == [("epoch", 1), ("epoch", 2)]
+    assert lines[0]["val_miou"] == 0.4
+    assert math.isnan(lines[1]["val_miou"])
+    assert not out.exists()
 
 
 class _ChangingHead(torch.nn.Module):

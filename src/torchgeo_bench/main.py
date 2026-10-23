@@ -2,9 +2,10 @@
 
 import logging
 import os
-from collections.abc import Iterator, Sequence, Sized
+from collections.abc import Callable, Iterator, Sequence, Sized
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 
 import numpy as np
 import torch
@@ -63,6 +64,7 @@ from torchgeo_bench.utils import FeatureSplit, FeatureSplits, extract_features
 
 if TYPE_CHECKING:
     import torchgeo_bench.segmentation_task
+    from torchgeo_bench.epoch_metrics import EpochMetricsWriter
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +103,17 @@ class LoaderSplits:
     train: DataLoader
     val: DataLoader
     test: DataLoader
+
+
+class SegmentationOutcome(NamedTuple):
+    """Test metrics and training summary from :func:`evaluate_segmentation`."""
+
+    metrics: "torchgeo_bench.segmentation_task.SegMetrics"
+    feature_dim: int
+    lr: float | None
+    batch_size: int | None
+    best_epoch: int | None
+    best_val_miou: float | None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -593,13 +606,22 @@ def evaluate_segmentation(
     loaders: LoaderSplits,
     cfg: RunConfig,
     num_classes: int,
-) -> "tuple[torchgeo_bench.segmentation_task.SegMetrics, int, float | None, int | None]":
+    *,
+    on_epoch: "Callable[[torchgeo_bench.segmentation_task.EpochRecord], None] | None" = None,
+) -> SegmentationOutcome:
     """Train a segmentation head, optionally with LoRA backbone adapters, and evaluate test mIoU.
 
     Frozen-backbone features can be cached to avoid recomputing them each epoch.
 
+    Args:
+        model: Backbone to probe.
+        loaders: Train, validation, and test loaders.
+        cfg: Resolved run configuration.
+        num_classes: Number of segmentation classes.
+        on_epoch: Called with each epoch's record before epoch selection.
+
     Returns:
-        Tuple of (metrics, feature_dim, lr, batch_size).
+        Test metrics with the feature dimension, learning rate, batch size, and selected epoch.
     """
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
     if val_loader is None or len(val_loader) == 0:
@@ -626,6 +648,7 @@ def evaluate_segmentation(
             batch_size=probe_batch_size,
             epochs=epochs,
             verbose=verbose,
+            on_epoch=on_epoch,
         )
         eval_result = solver.evaluate_cached(
             test_cache,
@@ -633,7 +656,13 @@ def evaluate_segmentation(
             collect_confusions=collect_confusions,
         )
     else:
-        solver.fit(train_loader=train_loader, val_loader=val_loader, epochs=epochs, verbose=verbose)
+        solver.fit(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            verbose=verbose,
+            on_epoch=on_epoch,
+        )
         eval_result = solver.evaluate(
             test_loader,
             collect_confusions=collect_confusions,
@@ -653,7 +682,14 @@ def evaluate_segmentation(
         )
     else:
         metrics = eval_result
-    return metrics, sum(probe.channels_list), lr, actual_batch_size
+    return SegmentationOutcome(
+        metrics=metrics,
+        feature_dim=sum(probe.channels_list),
+        lr=lr,
+        batch_size=actual_batch_size,
+        best_epoch=solver.best_epoch,
+        best_val_miou=solver.best_val_miou,
+    )
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:
@@ -683,12 +719,18 @@ def run_segmentation(
     num_classes = common_meta["num_classes"]
     assert isinstance(val_loader.dataset, Sized)
     assert isinstance(test_loader.dataset, Sized)
-    metrics, feat_dim, best_lr, best_bs = evaluate_segmentation(model, loaders, cfg, num_classes)
+    writer = _epoch_metrics_writer(cfg, common_meta)
+    outcome = evaluate_segmentation(
+        model, loaders, cfg, num_classes, on_epoch=None if writer is None else writer.epoch
+    )
+    if writer is not None:
+        writer.selected(outcome.best_epoch, outcome.best_val_miou)
+    metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {
         **common_meta,
         "merge_val": False,
-        "feature_dim": feat_dim,
+        "feature_dim": outcome.feature_dim,
         "n_train": len(train_dataset),
         "n_val": len(val_loader.dataset),
         "n_test": len(test_loader.dataset),
@@ -700,16 +742,32 @@ def run_segmentation(
         metric_value=metrics.get("mIoU", float("nan")),
         ci_lower=metrics.get("ci_lower", float("nan")),
         ci_upper=metrics.get("ci_upper", float("nan")),
-        best_lr=best_lr,
-        best_batch_size=best_bs,
+        best_lr=outcome.lr,
+        best_batch_size=outcome.batch_size,
         fw_iou=metrics.get("fw_IoU"),
         precision=metrics.get("precision"),
         recall=metrics.get("recall"),
         f1=metrics.get("f1"),
         boundary_iou=metrics["boundary_IoU"],
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
+        best_val_epoch=outcome.best_epoch,
+        best_val_miou=outcome.best_val_miou,
     ).to_row()
     yield [row]
+
+
+def _epoch_metrics_writer(
+    cfg: RunConfig, common_meta: ResultMetadata
+) -> "EpochMetricsWriter | None":
+    """Return a per-epoch JSON Lines writer when ``output.epoch_metrics`` is set."""
+    if cfg.output.epoch_metrics is None:
+        return None
+    from torchgeo_bench.epoch_metrics import EpochMetricsWriter
+
+    identity_keys = ("dataset", "name", "bands", "partition", "image_size", "seed", "config_hash")
+    identity = {key: common_meta[key] for key in identity_keys}
+    identity["method"] = cfg.segmentation.method
+    return EpochMetricsWriter(Path(cfg.output.epoch_metrics), identity)
 
 
 def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit

@@ -128,7 +128,33 @@ Column               Description
 ``f1``               Macro F1 (segmentation only).
 ==================== ============================================================
 
-Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal).
+Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`). Rows written before these columns existed leave them empty.
+
+.. _segmentation-epoch-metrics:
+
+Per-epoch segmentation metrics
+------------------------------
+
+Set ``output.epoch_metrics`` to a JSON Lines path to record segmentation training curves. Lines are appended, and parent directories are created. The file is output only, so it does not change ``config_hash`` or resume.
+
+Each epoch appends one ``"event": "epoch"`` line as soon as it completes, so a failed run keeps the epochs it finished. A completed fit then appends one ``"event": "selected"`` line. Every line carries ``run_id`` (unique per fit), ``timestamp`` (UTC), and the result-row identity ``dataset``, ``name``, ``method``, ``bands``, ``partition``, ``image_size``, ``seed``, and ``config_hash``. Join curves to result rows on ``config_hash`` and ``method``; use ``run_id`` to separate repeated runs.
+
+==================== ============================================================
+Epoch field          Description
+==================== ============================================================
+``epoch``            Epoch number, starting from one.
+``train_loss``       Sample-weighted mean training loss over the epoch's steps.
+``val_loss``         Validation loss averaged over labeled pixels.
+``val_miou``         Validation dataset-level macro mIoU.
+``head_lr``          Head learning rate used during the epoch.
+``backbone_lr``      LoRA adapter learning rate; ``null`` for a frozen backbone.
+``train_steps``      Optimizer steps taken.
+``skipped_batches``  Training batches smaller than the head minimum.
+``epoch_seconds``    Wall time for training and validation.
+``peak_gpu_mem_mb``  Peak allocated CUDA memory in MiB; ``null`` off CUDA.
+==================== ============================================================
+
+The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
 
 Atomic appends
 --------------

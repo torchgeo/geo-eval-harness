@@ -55,9 +55,17 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         {"intrinsic_dim": {"enabled": True}},
         {"datasets": ["m-forestnet"]},
         {"output": {"resume": True}},
+        {"output": {"epoch_metrics": "curves.jsonl"}},
         {"runtime": {"device": "cpu", "workers": 0}},
     ],
-    ids=["profile-pass", "intrinsic-dim-pass", "dataset-selection", "resume-toggle", "execution"],
+    ids=[
+        "profile-pass",
+        "intrinsic-dim-pass",
+        "dataset-selection",
+        "resume-toggle",
+        "epoch-metrics-path",
+        "execution",
+    ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
     assert _hash(_cfg()) == _hash(_cfg(**overrides))

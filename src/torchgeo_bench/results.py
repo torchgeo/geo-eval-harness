@@ -257,6 +257,9 @@ class EvaluationResult:
     f1: float | None = None
     boundary_iou: float | None = None
     boundary_iou_width: int | None = None
+    # Segmentation epoch restored for test evaluation and its validation mIoU.
+    best_val_epoch: int | None = None
+    best_val_miou: float | None = None
     # Calibration metrics for KNN / Linear Probing (None for segmentation rows)
     ece: float | None = None
     rms_ce: float | None = None

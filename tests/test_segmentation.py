@@ -1,5 +1,6 @@
 """Numerical, training, and caching contracts for dense segmentation probes."""
 
+import math
 from unittest import mock
 
 import numpy as np
@@ -25,7 +26,11 @@ from torchgeo_bench.segmentation_probe import (
     SegmentationProbe,
     _resolve_num_prefix_tokens,
 )
-from torchgeo_bench.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
+from torchgeo_bench.segmentation_task import (
+    EpochRecord,
+    SegmentationSolver,
+    build_seg_probe_and_solver,
+)
 
 NUM_CLASSES = 5
 
@@ -278,10 +283,13 @@ def test_solver_fit_and_evaluate(mock_backbone, dummy_data):
         "f1",
         "boundary_IoU",
         "boundary_IoU_width",
+        "loss",
     }
     assert 0.0 <= metrics["mIoU"] <= 1.0
     assert 0.0 <= metrics["boundary_IoU"] <= 1.0
     assert metrics["boundary_IoU_width"] >= 1.0
+    assert math.isfinite(metrics["loss"])
+    assert metrics["loss"] > 0
 
 
 @pytest.mark.parametrize("collect_confusions", [False, True])
@@ -372,6 +380,12 @@ def test_solver_evaluation_parity(
                 for pred, mask in zip(predictions, masks, strict=True)
             ]
         )
+    raw_loss, cached_loss = (
+        (result[0] if isinstance(result, tuple) else result)["loss"]
+        for result in (raw_result, cached_result)
+    )
+    assert math.isfinite(raw_loss)
+    assert raw_loss == pytest.approx(cached_loss)
     for result in (raw_result, cached_result):
         if collect_confusions:
             assert isinstance(result, tuple)
@@ -380,6 +394,7 @@ def test_solver_evaluation_parity(
         else:
             metrics = result
         assert isinstance(metrics, dict)
+        metrics.pop("loss")
         assert metrics == pytest.approx(expected_metrics)
 
 
@@ -681,8 +696,20 @@ def test_solver_refit_clears_previous_selection(
     assert solver.val_history == [0.9, 0.8]
     head_before_refit = [p.clone() for p in probe.head.parameters()]
 
-    result = fit(train_data, train_data if with_validation else None, epochs=1, verbose=False)
+    records: list[EpochRecord] = []
+    result = fit(
+        train_data,
+        train_data if with_validation else None,
+        epochs=1,
+        verbose=False,
+        on_epoch=records.append,
+    )
 
+    assert solver.epoch_history == records
+    assert [record.epoch for record in records] == [1]
+    assert records[0].val_miou == (0.1 if with_validation else None)
+    assert records[0].backbone_lr is None
+    assert records[0].train_steps == 1
     assert result == (0.1 if with_validation else None)
     assert solver.best_epoch == (1 if with_validation else None)
     assert solver.best_val_miou == result
@@ -691,6 +718,23 @@ def test_solver_refit_clears_previous_selection(
         not torch.equal(before, after)
         for before, after in zip(head_before_refit, probe.head.parameters(), strict=True)
     )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_solver_records_peak_cuda_memory_per_epoch() -> None:
+    loader = make_loader(torch.randn(4, 3, 8, 8), torch.zeros(4, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cuda:0")
+
+    solver.fit(loader, loader, epochs=2, verbose=False)
+
+    assert [record.epoch for record in solver.epoch_history] == [1, 2]
+    for record in solver.epoch_history:
+        assert record.peak_gpu_mem_mb is not None
+        assert record.peak_gpu_mem_mb > 0
+        assert math.isfinite(record.train_loss)
+        assert record.val_loss is not None
+        assert math.isfinite(record.val_loss)
 
 
 @pytest.mark.parametrize("cached", [False, True])

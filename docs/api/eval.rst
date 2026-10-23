@@ -49,6 +49,7 @@ Segmentation
 
 .. currentmodule:: torchgeo_bench.main
 .. autofunction:: evaluate_segmentation
+.. autoclass:: SegmentationOutcome
 
 .. currentmodule:: torchgeo_bench.segmentation_probe
 .. autoclass:: SegmentationProbe
@@ -56,6 +57,10 @@ Segmentation
 .. currentmodule:: torchgeo_bench.segmentation_task
 .. autoclass:: SegmentationSolver
 .. autoclass:: SegMetrics
+.. autoclass:: EpochRecord
+
+.. currentmodule:: torchgeo_bench.epoch_metrics
+.. autoclass:: EpochMetricsWriter
 
 Intrinsic dimension
 -------------------
