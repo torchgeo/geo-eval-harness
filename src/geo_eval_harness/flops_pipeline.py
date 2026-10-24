@@ -316,6 +316,7 @@ def _build_seg_probe(
         layer_names=list(settings.layers),
         num_classes=num_classes,
         head_type=settings.head,
+        neck=settings.neck,
         freeze_backbone=True,
         temporal_pool=settings.temporal_pool,
     )
