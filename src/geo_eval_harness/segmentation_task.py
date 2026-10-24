@@ -2,7 +2,9 @@
 
 import logging
 import math
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -27,6 +29,54 @@ from .segmentation_probe import (
 logger = logging.getLogger(__name__)
 
 SegMetrics = dict[str, float]
+
+
+@dataclass(frozen=True, kw_only=True)
+class EpochRecord:
+    """Training and validation measurements for one completed segmentation epoch.
+
+    Attributes:
+        epoch: Epoch number, starting from one.
+        train_loss: Sample-weighted mean training loss over the epoch's optimizer steps.
+        val_loss: Validation loss averaged over labeled pixels, or ``None`` without validation.
+        val_miou: Validation dataset-level macro mIoU, or ``None`` without validation.
+        head_lr: Head learning rate used during the epoch.
+        backbone_lr: Backbone (LoRA adapter) learning rate, or ``None`` for a frozen backbone.
+        train_steps: Optimizer steps taken.
+        skipped_batches: Training batches skipped as smaller than the head minimum.
+        epoch_seconds: Wall time for training and validation.
+        peak_gpu_mem_mb: Peak allocated CUDA memory in MiB, or ``None`` off CUDA.
+    """
+
+    epoch: int
+    train_loss: float
+    val_loss: float | None
+    val_miou: float | None
+    head_lr: float
+    backbone_lr: float | None
+    train_steps: int
+    skipped_batches: int
+    epoch_seconds: float
+    peak_gpu_mem_mb: float | None
+
+
+class _EpochTracker:
+    """Accumulate one epoch's training statistics without per-step device syncs."""
+
+    def __init__(self, epoch: int, optimizer: torch.optim.Optimizer, device: str) -> None:
+        self.epoch = epoch
+        self.lrs = [float(group["lr"]) for group in optimizer.param_groups]
+        self.steps = 0
+        self.skipped = 0
+        self.samples = 0
+        self.loss_sum = torch.zeros((), device=device)
+        self.started = time.perf_counter()
+
+    def add_step(self, loss: torch.Tensor, batch_size: int) -> None:
+        """Record one optimizer step."""
+        self.loss_sum += loss.detach().float() * batch_size
+        self.samples += batch_size
+        self.steps += 1
 
 
 class SegmentationSolver:
@@ -65,7 +115,7 @@ class SegmentationSolver:
         self.num_classes = num_classes
         self.device = device
         self.lr_scheduler_type = lr_scheduler
-        self.val_history: list[float] = []
+        self.epoch_history: list[EpochRecord] = []
         self.best_epoch: int | None = None
         self.best_val_miou: float | None = None
         self._best_state: list[tuple[torch.Tensor, torch.Tensor]] = []
@@ -186,12 +236,57 @@ class SegmentationSolver:
 
     def _reset_selection(self, epochs: int) -> None:
         """Clear per-fit selection state and require completed training epochs."""
-        self.val_history = []
+        self.epoch_history = []
         self.best_epoch = None
         self.best_val_miou = None
         self._best_state = []
         if epochs < 1:
             raise ValueError("Segmentation fitting requires at least one training epoch.")
+
+    @property
+    def val_history(self) -> list[float]:
+        """Return every epoch's validation mIoU in chronological order."""
+        return [r.val_miou for r in self.epoch_history if r.val_miou is not None]
+
+    def _begin_epoch(self, epoch: int) -> _EpochTracker:
+        """Enter train mode and start measuring one epoch."""
+        self._set_train_mode()
+        if self._tracks_cuda_memory():
+            torch.cuda.reset_peak_memory_stats(self.device)
+        return _EpochTracker(epoch, self.optimizer, self.device)
+
+    def _tracks_cuda_memory(self) -> bool:
+        """Return whether peak CUDA memory can be measured on this device."""
+        return self.device_type == "cuda" and torch.cuda.is_available()
+
+    def _finish_epoch(
+        self,
+        tracker: _EpochTracker,
+        val_metrics: SegMetrics | None,
+        on_epoch: Callable[[EpochRecord], None] | None,
+    ) -> None:
+        """Record the epoch and report it before selection, so failing epochs stay visible."""
+        train_loss = (tracker.loss_sum / tracker.samples).item()
+        peak_mem = (
+            torch.cuda.max_memory_allocated(self.device) / 2**20
+            if self._tracks_cuda_memory()
+            else None
+        )
+        record = EpochRecord(
+            epoch=tracker.epoch,
+            train_loss=train_loss,
+            val_loss=None if val_metrics is None else val_metrics.get("loss"),
+            val_miou=None if val_metrics is None else val_metrics["mIoU"],
+            head_lr=tracker.lrs[0],
+            backbone_lr=tracker.lrs[1] if len(tracker.lrs) > 1 else None,
+            train_steps=tracker.steps,
+            skipped_batches=tracker.skipped,
+            epoch_seconds=time.perf_counter() - tracker.started,
+            peak_gpu_mem_mb=peak_mem,
+        )
+        self.epoch_history.append(record)
+        if on_epoch is not None:
+            on_epoch(record)
 
     def _select_epoch(self, epoch: int, miou: float, *, verbose: bool) -> None:
         """Snapshot mutable evaluation state on strict validation improvement."""
@@ -199,7 +294,6 @@ class SegmentationSolver:
             raise ValueError(
                 f"Segmentation validation mIoU must be finite; epoch {epoch} yielded {miou}."
             )
-        self.val_history.append(miou)
         if verbose:
             logger.info("Epoch %d Val mIoU: %.17g", epoch, miou)
         if self.best_val_miou is not None and miou <= self.best_val_miou:
@@ -229,6 +323,7 @@ class SegmentationSolver:
         epochs: int = 10,
         *,
         verbose: bool = True,
+        on_epoch: Callable[[EpochRecord], None] | None = None,
     ) -> float | None:
         """Train the segmentation probe.
 
@@ -242,6 +337,7 @@ class SegmentationSolver:
             val_loader: Optional validation data loader.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
+            on_epoch: Called with each epoch's :class:`EpochRecord` before epoch selection.
 
         Returns:
             Selected validation mIoU, or None without validation.
@@ -254,11 +350,10 @@ class SegmentationSolver:
         skip_logged = False
 
         for epoch in range(epochs):
-            self._set_train_mode()
+            tracker = self._begin_epoch(epoch + 1)
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(train_loader, desc=desc, disable=not verbose)
-            steps = 0
             for batch in batches:
                 if isinstance(batch, dict):
                     images = batch["image"].to(self.device)
@@ -270,6 +365,7 @@ class SegmentationSolver:
                     masks = masks.squeeze(1)
                 if self._skip_small_batch(len(images), skip_logged=skip_logged):
                     skip_logged = True
+                    tracker.skipped += 1
                     continue
 
                 self.optimizer.zero_grad()
@@ -280,15 +376,18 @@ class SegmentationSolver:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                steps += 1
+                tracker.add_step(loss, len(images))
 
-            self._require_training_step(epoch + 1, steps)
+            self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:
                 scheduler.step()
 
+            val_metrics = None
             if val_loader is not None:
                 val_metrics = self.evaluate(val_loader)
                 assert isinstance(val_metrics, dict)
+            self._finish_epoch(tracker, val_metrics, on_epoch)
+            if val_metrics is not None:
                 self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
 
         return self._restore_selection(verbose=verbose)
@@ -313,7 +412,7 @@ class SegmentationSolver:
             collect_confusions=collect_confusions,
         )
 
-    def fit_cached(
+    def fit_cached(  # noqa: PLR0913 -- Public training options.
         self,
         train_cache: "CachedFeaturesDataset | GPUTensorCache",
         val_cache: "CachedFeaturesDataset | GPUTensorCache | None" = None,
@@ -321,6 +420,7 @@ class SegmentationSolver:
         epochs: int = 10,
         *,
         verbose: bool = True,
+        on_epoch: Callable[[EpochRecord], None] | None = None,
     ) -> float | None:
         """Train the segmentation head on cached backbone features.
 
@@ -338,6 +438,7 @@ class SegmentationSolver:
             batch_size: Batch size for iterating over cached data.
             epochs: Number of training epochs.
             verbose: Whether to show progress bars and epoch logs.
+            on_epoch: Called with each epoch's :class:`EpochRecord` before epoch selection.
 
         Returns:
             Selected validation mIoU, or None without validation.
@@ -364,7 +465,7 @@ class SegmentationSolver:
         skip_logged = False
 
         for epoch in range(epochs):
-            self._set_train_mode()
+            tracker = self._begin_epoch(epoch + 1)
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(
@@ -373,10 +474,10 @@ class SegmentationSolver:
                 desc=desc,
                 disable=not verbose,
             )
-            steps = 0
             for features, masks in batches:
                 if self._skip_small_batch(len(masks), skip_logged=skip_logged):
                     skip_logged = True
+                    tracker.skipped += 1
                     continue
                 self.optimizer.zero_grad()
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
@@ -386,15 +487,18 @@ class SegmentationSolver:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                steps += 1
+                tracker.add_step(loss, len(masks))
 
-            self._require_training_step(epoch + 1, steps)
+            self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:
                 scheduler.step()
 
+            val_metrics = None
             if gpu_val is not None:
                 val_metrics = self._evaluate(gpu_val, batch_size)
                 assert isinstance(val_metrics, dict)
+            self._finish_epoch(tracker, val_metrics, on_epoch)
+            if val_metrics is not None:
                 self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
 
         return self._restore_selection(verbose=verbose)
@@ -490,14 +594,23 @@ class SegmentationSolver:
             m.to(self.device)
 
         confusion_list: list[torch.Tensor] = []
+        loss_sum = torch.zeros((), device=self.device)
+        labeled_pixels = torch.zeros((), dtype=torch.long, device=self.device)
         for logits, masks in self._evaluation_batches(data, batch_size):
             for m in self._all_metrics:
                 m.update(logits, masks)
+            labeled = (masks != self.ignore_index).sum()
+            # The criterion averages over labeled pixels; weight batches by that count.
+            batch_loss = self.criterion(logits.float(), masks) * labeled
+            loss_sum += torch.where(labeled > 0, batch_loss, 0.0)
+            labeled_pixels += labeled
             if collect_confusions:
                 predictions = logits.argmax(dim=1)
                 confusion_list.append(self._per_image_confusions(predictions, masks).cpu())
 
         metrics = self._compute_metrics()
+        total_labeled = int(labeled_pixels.item())
+        metrics["loss"] = (loss_sum / total_labeled).item() if total_labeled else float("nan")
         if collect_confusions:
             return metrics, torch.cat(confusion_list, dim=0)
         return metrics
