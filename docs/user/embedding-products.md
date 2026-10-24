@@ -12,7 +12,7 @@ uv run torchgeo-bench run --model aef --dataset benv2
 uv run torchgeo-bench run --model aef-pca16 --dataset fotw
 ```
 
-TESSERA and OlmoEarth need the `embeddings` extra (`pip install 'torchgeo-bench[embeddings]'`). Downloads read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. An interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check.
+TESSERA and OlmoEarth need the `embeddings` extra (`pip install 'torchgeo-bench[embeddings]'`). Downloads read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. An interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check. Samples are read in groups of neighbours so shared source blocks are fetched once, and `--workers N` reads groups in N parallel processes; remote products such as AEF download several times faster with 8 workers.
 
 ## Supported datasets
 
