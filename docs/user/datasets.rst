@@ -205,7 +205,7 @@ CLI name             #cls   bands notes                                        C
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
 ``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
-``fotw``             4      4     Fields of the World                          :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
+``fotw``             3      4     Fields of the World; unknown (3) ignored     :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
 ``kuro_siwo``        4      3     SAR ``vv`` / ``vh`` + DEM (no RGB triplet)   :class:`~geo_eval_harness.datasets.KuroSiwo`
 ``pastis``           20     16    Sentinel-2 + Sentinel-1 (multi-modal)        :class:`~geo_eval_harness.datasets.PASTIS`
 ``spacenet2``        2      9     WorldView 8-band + pan                       :class:`~geo_eval_harness.datasets.SpaceNet2`
