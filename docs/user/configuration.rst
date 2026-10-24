@@ -101,7 +101,7 @@ names. The equivalent flag accepts comma-separated names, for example
 ``--bands red,green,blue``. Band names differ by dataset; see :doc:`datasets`.
 ``time_steps`` selects a positive temporal length where supported.
 ``image_size: null`` (``--image-size none``) retains native dimensions.
-Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest``.
+Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest`` and applies to images; segmentation masks are always resized with ``nearest-exact``, which samples each output pixel at its centre like ``bilinear`` and ``bicubic`` do.
 
 For ``run`` and ``profile``, ``--image-size`` accepts a positive integer or case-insensitive ``none``. FLOPs measurements require a concrete positive image size.
 
