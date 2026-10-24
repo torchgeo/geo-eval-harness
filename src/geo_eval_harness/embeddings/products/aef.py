@@ -53,6 +53,10 @@ class AEF(EmbeddingProduct):
         "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
         "GDAL_NUM_THREADS": "ALL_CPUS",
         "GDAL_CACHEMAX": 1024 * 2**20,
+        # Requests to S3 sometimes stall for minutes; abort them so the read is retried.
+        "GDAL_HTTP_CONNECTTIMEOUT": "10",
+        "GDAL_HTTP_LOW_SPEED_TIME": "15",
+        "GDAL_HTTP_LOW_SPEED_LIMIT": "1000",
     }
 
     def __init__(self, root: Path = EMBEDDINGS_ROOT) -> None:
