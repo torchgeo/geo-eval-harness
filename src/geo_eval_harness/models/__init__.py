@@ -13,8 +13,10 @@ from .segmentation_heads import (
     DPTHead,
     FPNHead,
     LinearHead,
+    NeckedHead,
     PatchLinearHead,
     UPerNetHead,
+    ViTNeck,
 )
 from .terrafm import TerraFMBench
 from .terratorch_models import (
@@ -44,6 +46,7 @@ __all__: list[str] = [
     "ImageStatsBench",
     "InputUnit",
     "LinearHead",
+    "NeckedHead",
     "NormalizationStrategy",
     "OlmoEarthBenchModel",
     "PatchLinearHead",
@@ -66,4 +69,5 @@ __all__: list[str] = [
     "TorchGeoSwinBench",
     "UPerNetHead",
     "UniverSatBenchModel",
+    "ViTNeck",
 ]

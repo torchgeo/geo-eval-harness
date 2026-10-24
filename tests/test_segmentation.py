@@ -1,5 +1,6 @@
 """Numerical, training, and caching contracts for dense segmentation probes."""
 
+import math
 from unittest import mock
 
 import numpy as np
@@ -1206,3 +1207,100 @@ def test_probe_pools_encoded_dates_with_the_requested_reduction(
 def test_probe_rejects_unknown_temporal_pool(mock_backbone):
     with pytest.raises(ValueError, match="temporal_pool"):
         SegmentationProbe(mock_backbone, ["layer1"], NUM_CLASSES, temporal_pool="median")
+
+
+class FourBlockViT(nn.Module):
+    """Four token blocks on one 16-pixel patch grid, like a plain ViT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.patch_embed = nn.Conv2d(3, 8, kernel_size=16, stride=16)
+        self.blocks = nn.Sequential(*(nn.Linear(8, 8) for _ in range(4)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.blocks(self.patch_embed(x).flatten(2).transpose(1, 2))
+
+
+_VIT_LAYERS = ["blocks.3", "blocks.2", "blocks.1", "blocks.0"]
+
+
+@pytest.mark.parametrize("grid", [14, 16, 28])
+def test_vit_neck_rescales_one_grid_into_a_stride_pyramid(grid: int) -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8] * 4)
+    features = [torch.randn(2, 8, grid, grid) for _ in range(4)]
+    shapes = [tuple(f.shape) for f in neck(features)]
+
+    assert shapes == [
+        (2, 8, grid // 2, grid // 2),
+        (2, 8, grid, grid),
+        (2, 8, 2 * grid, 2 * grid),
+        (2, 8, 4 * grid, 4 * grid),
+    ]
+    with pytest.raises(ValueError, match="one channel count"):
+        ViTNeck([8, 6, 4, 2])
+
+
+def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    features = [torch.randn(2, 8, 14, 14) for _ in range(4)]
+    for feature in features:
+        feature[:, 0] *= 1e4  # one outlier channel, as in raw ViT block outputs
+    plain = ViTNeck([8] * 4, input_norm="none")
+    normed = ViTNeck([8] * 4)
+
+    # Max-pool passes the outlier straight through without the norm.
+    assert plain(features)[0].abs().max() > 1e3
+    # LayerNorm over channels bounds every position: |x| <= sqrt(C - 1) at identity affine.
+    assert normed(features)[0].abs().max() <= math.sqrt(7) + 1e-4
+    torch.testing.assert_close(normed(features)[1], normed.input_norms[1](features[1]))
+    with pytest.raises(ValueError, match="input_norm must be"):
+        ViTNeck([8] * 4, input_norm="batchnorm")
+
+
+@pytest.mark.parametrize("head_type", ["upernet", "fpn"])
+@pytest.mark.parametrize("cached", [False, True])
+def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:
+    from geo_eval_harness.models.segmentation_heads import NeckedHead
+
+    probe = SegmentationProbe(
+        FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+    neck_before = {n: p.clone() for n, p in probe.head.neck.named_parameters()}
+
+    assert isinstance(probe.head, NeckedHead)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=cached)
+    assert any(not torch.equal(p, neck_before[n]) for n, p in probe.head.neck.named_parameters())
+
+
+def test_probe_vit_neck_rejects_pyramid_layers_and_other_heads() -> None:
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            MockBackbone4Layer(),
+            ["layer4", "layer3", "layer2", "layer1"],
+            NUM_CLASSES,
+            head_type="upernet",
+            hidden_dim=16,
+            neck="vit",
+        )
+    with pytest.raises(ValueError, match="requires head in"):
+        SegmentationProbe(FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="dpt", neck="vit")
+    with pytest.raises(ValueError, match="Unknown neck"):
+        SegmentationProbe(FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", neck="cnn")
+
+
+def test_build_seg_probe_and_solver_attaches_the_configured_neck() -> None:
+    from geo_eval_harness.models.segmentation_heads import NeckedHead
+
+    config = SegmentationConfig(head="upernet", neck="vit", layers=_VIT_LAYERS)
+    probe, _ = build_seg_probe_and_solver(FourBlockViT(), NUM_CLASSES, config, torch.device("cpu"))
+
+    assert isinstance(probe.head, NeckedHead)

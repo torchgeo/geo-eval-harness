@@ -9,13 +9,16 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+from geo_eval_harness.config.schema import NECK_HEADS
 from geo_eval_harness.models.segmentation_heads import (
     ConvBlockHead,
     DPTHead,
     FPNHead,
     LinearHead,
+    NeckedHead,
     PatchLinearHead,
     UPerNetHead,
+    ViTNeck,
 )
 
 logger = logging.getLogger(__name__)
@@ -152,6 +155,10 @@ class SegmentationProbe(nn.Module):
             ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
             ``dpt``, and ``upernet`` heads (default 256).
+        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a :class:`ViTNeck` before an
+            ``fpn`` or ``upernet`` head; it needs exactly four layers at one resolution.
+        neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
+            ``"none"``.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -164,6 +171,8 @@ class SegmentationProbe(nn.Module):
         head_type: str = "linear",
         hidden_dim: int | None = None,
         temporal_pool: str = "mean",
+        neck: str = "none",
+        neck_norm: str = "layernorm",
     ) -> None:
         super().__init__()
         if temporal_pool not in ("mean", "max"):
@@ -216,6 +225,25 @@ class SegmentationProbe(nn.Module):
                 "Unknown head_type: "
                 f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet"
             )
+        self._attach_neck(neck, head_type, neck_norm)
+
+    def _attach_neck(self, neck: str, head_type: str, neck_norm: str = "layernorm") -> None:
+        """Put the requested neck before the head after checking the hooked feature maps."""
+        if neck == "none":
+            return
+        if neck != "vit":
+            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit")
+        if head_type not in NECK_HEADS:
+            raise ValueError(
+                f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
+            )
+        if len(self.layer_names) != 4 or len(set(self.feature_hw_list)) != 1:
+            raise ValueError(
+                "neck 'vit' needs exactly 4 layers sharing one resolution (ViT blocks); got "
+                f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
+                "backbones already provide multi-scale features."
+            )
+        self.head = NeckedHead(ViTNeck(self.channels_list, input_norm=neck_norm), self.head)
 
     def register_hooks(self) -> None:
         """Register feature hooks and reject missing or duplicate layer names."""

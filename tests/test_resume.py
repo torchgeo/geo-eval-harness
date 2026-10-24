@@ -44,7 +44,14 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
         "segmentation": config.segmentation.model_dump(
             mode="json",
-            exclude={"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"},
+            exclude={
+                "lora_rank",
+                "lora_target_modules",
+                "lora_alpha",
+                "backbone_learning_rate",
+                "neck",
+                "neck_norm",
+            },
         ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
@@ -107,6 +114,17 @@ def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
     assert _hash(vit(**lora)) != _hash(vit())
     assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
     assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+
+
+def test_neck_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(neck="none")) == _hash(upernet())
+    assert _hash(upernet(neck="vit")) != _hash(upernet())
+    # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
+    assert _hash(upernet(neck_norm="none")) == _hash(upernet())
+    assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:

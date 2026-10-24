@@ -182,6 +182,8 @@ Segmentation
 
    segmentation:
      head: fpn
+     neck: none
+     neck_norm: layernorm
      layers: []
      learning_rate: 1e-3
      epochs: 10
@@ -199,7 +201,7 @@ Segmentation
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
 ``fpn``, ``dpt``, ``patch_linear``, and ``upernet``; not every head works with every
-backbone. Omit ``layers`` to inherit the model's selection. An explicit
+backbone. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn`` or ``upernet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.

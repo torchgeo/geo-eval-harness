@@ -247,10 +247,16 @@ class ClassificationConfig(StrictModel):
         return self
 
 
+#: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
+NECK_HEADS = frozenset({"fpn", "upernet"})
+
+
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet"] = "fpn"
+    neck: Literal["none", "vit"] = "none"
+    neck_norm: Literal["layernorm", "none"] = "layernorm"
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
@@ -277,10 +283,19 @@ class SegmentationConfig(StrictModel):
             raise ValueError("backbone_learning_rate and lora_alpha require lora_rank")
         return self
 
+    @model_validator(mode="after")
+    def validate_neck(self) -> "SegmentationConfig":
+        """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
+        if self.neck == "vit" and self.head not in NECK_HEADS:
+            raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        return self
+
     @property
     def method(self) -> str:
-        """Return the result method name, ``seg-<head>`` with a ``-lora`` suffix for LoRA."""
-        return f"seg-{self.head}" if self.lora_rank is None else f"seg-{self.head}-lora"
+        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA."""
+        neck = "" if self.neck == "none" else f"-{self.neck}neck"
+        lora = "" if self.lora_rank is None else "-lora"
+        return f"seg-{self.head}{neck}{lora}"
 
 
 class RuntimeConfig(StrictModel):
