@@ -9,10 +9,10 @@ import pytest
 
 from geo_eval_harness import datasets
 from geo_eval_harness.cli import main as cli
-from geo_eval_harness.embeddings.download import download
+from geo_eval_harness.embeddings.download import download, locality_groups
 from geo_eval_harness.embeddings.products import PRODUCTS
 from geo_eval_harness.main import main
-from tests.support.embeddings import ToyBench, ToyProduct
+from tests.support.embeddings import ToyBench, ToyProduct, utm_footprint
 from tests.support.runner import _compose_cfg
 
 pytestmark = pytest.mark.integration
@@ -37,6 +37,25 @@ def test_download_pairs_labels_clamps_years_and_resumes(tmp_path: Path) -> None:
     download(product, bench, root=tmp_path)
     assert len(product.reads) == reads + 7 + 1 + 1
     assert json.loads((directory / "metadata.json").read_text())["splits"]["train"]["samples"] == 12
+
+
+def test_download_reads_neighbours_together_in_any_worker_count(tmp_path: Path) -> None:
+    far, near = 600_000.0, 400_000.0
+    samples = [(0, utm_footprint(far)), (1, utm_footprint(near)), (2, utm_footprint(far + 100)),
+               (3, utm_footprint(near + 100)), (4, utm_footprint(far, year=2019))]  # fmt: skip
+    groups = [[index for index, _ in group] for group in locality_groups(samples)]
+    assert groups == [[4], [1, 3], [0, 2]]
+
+    serial = download(ToyProduct(), ToyBench(), root=tmp_path / "serial", limit=6)
+    parallel = download(ToyProduct(), ToyBench(), root=tmp_path / "parallel", limit=6, workers=2)
+    files = sorted(path.relative_to(serial) for path in serial.rglob("*.npz"))
+    assert files == sorted(path.relative_to(parallel) for path in parallel.rglob("*.npz"))
+    for file in files:
+        with np.load(serial / file) as a, np.load(parallel / file) as b:
+            assert a.files == b.files
+            assert all(np.array_equal(a[key], b[key], equal_nan=True) for key in a.files)
+    with pytest.raises(ValueError, match="workers must be at least 1"):
+        download(ToyProduct(), ToyBench(), root=tmp_path, workers=0)
 
 
 def test_cli_reduces_a_collection_and_rejects_unknown_products(tmp_path: Path) -> None:

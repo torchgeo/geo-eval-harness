@@ -44,12 +44,15 @@ class AEF(EmbeddingProduct):
     read_attempts = 4
     retry_delay = 2.0
     #: Fetch the 64 band-interleaved blocks of a window in parallel over HTTP/2.
-    gdal_options: ClassVar[dict[str, str]] = {
+    #: Decoded blocks stay cached while their tile is open, so neighbouring samples
+    #: reuse them; a 1024 x 1024 block of all bands takes 64 MiB.
+    gdal_options: ClassVar[dict[str, str | int]] = {
         "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
         "GDAL_HTTP_MULTIPLEX": "YES",
         "GDAL_HTTP_VERSION": "2",
         "GDAL_HTTP_MERGE_CONSECUTIVE_RANGES": "YES",
         "GDAL_NUM_THREADS": "ALL_CPUS",
+        "GDAL_CACHEMAX": 1024 * 2**20,
     }
 
     def __init__(self, root: Path = EMBEDDINGS_ROOT) -> None:

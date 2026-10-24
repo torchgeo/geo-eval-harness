@@ -26,4 +26,6 @@ def embeddings(args: argparse.Namespace) -> None:
     product = PRODUCTS[args.product]()
     for dataset in args.datasets:
         bench = get_bench_dataset_class(dataset)()
-        download(product, bench, root=root, splits=args.splits, limit=args.limit)
+        download(
+            product, bench, root=root, splits=args.splits, limit=args.limit, workers=args.workers
+        )
