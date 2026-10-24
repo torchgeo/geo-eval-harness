@@ -16,6 +16,7 @@ def add_embeddings_arguments(parser: argparse.ArgumentParser) -> None:
         default=["train", "val", "test"],
     )
     download.add_argument("--limit", type=int, help="Only the first N samples of each split")
+    download.add_argument("--workers", type=int, default=1, help="Parallel reading processes")
     download.add_argument("--root", default="data/embeddings", help="Collection root directory")
     pca = commands.add_parser(
         "pca", help="Fit a train-only PCA and store the projected collection as <product>-pca<k>"
