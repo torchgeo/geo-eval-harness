@@ -397,3 +397,59 @@ class DPTHead(nn.Module):
         if out.shape[-2:] != (input_h, input_w):
             out = F.interpolate(out, size=(input_h, input_w), mode="bilinear", align_corners=False)
         return out
+
+
+class ViTNeck(nn.Module):
+    """Turn four same-resolution ViT feature maps into a stride pyramid.
+
+    The ``Feature2Pyramid`` neck of mmsegmentation's ViT and BEiT UPerNet configs. Inputs are in
+    coarse-to-fine order on one patch grid. They are rescaled by 1/2, 1, 2, and 4: max-pool,
+    identity, one 2x2 transposed conv, and two 2x2 transposed convs with BatchNorm and GELU in
+    between. A 14x14 grid becomes 7, 14, 28, and 56, the strides 32, 16, 8, and 4 that pyramid
+    backbones such as ConvNeXt and Swin give at 224 px.
+
+    Args:
+        channels_list: Channel count for each of the four layers (coarse-to-fine).
+    """
+
+    def __init__(self, channels_list: list[int]) -> None:
+        super().__init__()
+        if len(channels_list) != 4:
+            raise ValueError(f"ViTNeck needs exactly 4 layers, got {len(channels_list)}.")
+        c_x2, c_x4 = channels_list[2], channels_list[3]
+        self.rescales = nn.ModuleList(
+            [
+                nn.MaxPool2d(kernel_size=2, stride=2),
+                nn.Identity(),
+                nn.ConvTranspose2d(c_x2, c_x2, kernel_size=2, stride=2),
+                nn.Sequential(
+                    nn.ConvTranspose2d(c_x4, c_x4, kernel_size=2, stride=2),
+                    nn.BatchNorm2d(c_x4),
+                    nn.GELU(),
+                    nn.ConvTranspose2d(c_x4, c_x4, kernel_size=2, stride=2),
+                ),
+            ]
+        )
+
+    def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Rescale coarse-to-fine maps by 1/2, 1, 2, and 4."""
+        return [rescale(f) for rescale, f in zip(self.rescales, features, strict=True)]
+
+
+class NeckedHead(nn.Module):
+    """Apply a neck to the feature maps before a decoder head.
+
+    Args:
+        neck: Module mapping a list of feature maps to a list of feature maps.
+        head: Decoder head called as ``head(features, input_h, input_w)``.
+    """
+
+    def __init__(self, neck: nn.Module, head: nn.Module) -> None:
+        super().__init__()
+        self.neck = neck
+        self.head = head
+        self.min_train_batch_size = int(getattr(head, "min_train_batch_size", 1))
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Run the neck, then the head."""
+        return self.head(self.neck(features), input_h, input_w)
