@@ -402,7 +402,10 @@ Training knobs
      - Adapt only targets in the last ``k`` backbone blocks; ``null`` adapts every match.
    * - ``backbone_learning_rate``
      - ``null``
-     - Learning rate for LoRA adapters; required with ``lora_rank``.
+     - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``full_finetune``
+     - ``false``
+     - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
 
 Feature caching
 ^^^^^^^^^^^^^^^

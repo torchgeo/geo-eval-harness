@@ -52,6 +52,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "backbone_learning_rate",
                 "neck",
                 "neck_norm",
+                "full_finetune",
             },
         ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
@@ -125,6 +126,10 @@ def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
     assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
     assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora))
     assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora, lora_last_blocks=3))
+    full = {"full_finetune": True, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(full_finetune=False)) == _hash(vit())
+    assert _hash(vit(**full)) not in {_hash(vit()), _hash(vit(**lora))}
+    assert _hash(vit(**full)) != _hash(vit(**(full | {"backbone_learning_rate": 3e-5})))
 
 
 def test_neck_changes_the_hash_only_when_enabled() -> None:

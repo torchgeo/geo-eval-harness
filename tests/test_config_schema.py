@@ -207,6 +207,11 @@ def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
         ({"backbone_learning_rate": 1e-4}, "require lora_rank"),
         ({"lora_alpha": 32.0}, "require lora_rank"),
         ({"lora_last_blocks": 6}, "require lora_rank"),
+        ({"full_finetune": True}, "full_finetune requires backbone_learning_rate"),
+        (
+            {"full_finetune": True, "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "mutually exclusive",
+        ),
         ({"lora_rank": 8, "backbone_learning_rate": 1e-4, "lora_last_blocks": 0}, "greater than 0"),
     ],
 )
