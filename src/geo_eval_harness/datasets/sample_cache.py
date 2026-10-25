@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -130,6 +131,23 @@ def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
     tmp.rename(directory)
 
 
+def _dead_lock_owner(lock: Path) -> int | None:
+    """Return the PID that took ``lock`` if it was on this host and has exited, else ``None``."""
+    try:
+        host, pid = (lock / "owner").read_text().split()
+    except (OSError, ValueError):  # allow-except: owner not written yet, or a legacy lock
+        return None
+    if host != socket.gethostname():
+        return None
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return int(pid)
+    except PermissionError:  # allow-except: the PID exists but belongs to another user
+        return None
+    return None
+
+
 def _open_disk(
     dataset: Dataset, directory: Path, num_workers: int
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -139,6 +157,14 @@ def _open_disk(
         try:
             lock.mkdir(parents=True)
         except FileExistsError:
+            dead = _dead_lock_owner(lock)
+            if dead is not None:
+                logger.warning("Removing sample cache lock %s left by exited PID %d", lock, dead)
+                shutil.rmtree(
+                    directory.with_name(f"{directory.name}.tmp-{dead}"), ignore_errors=True
+                )
+                shutil.rmtree(lock, ignore_errors=True)
+                continue
             if time.time() - lock.stat().st_mtime > _LOCK_STALE_SECONDS:
                 raise RuntimeError(
                     f"Sample cache lock {lock} is older than {_LOCK_STALE_SECONDS} s; remove it "
@@ -146,12 +172,13 @@ def _open_disk(
                 ) from None
             time.sleep(10)
             continue
+        (lock / "owner").write_text(f"{socket.gethostname()} {os.getpid()}\n")
         try:
             if not (directory / "complete").exists():
                 logger.info("Building sample cache %s (%d samples)", directory, len(dataset))  # type: ignore[arg-type]
                 _build_disk(dataset, directory, num_workers)
         finally:
-            lock.rmdir()
+            shutil.rmtree(lock, ignore_errors=True)
     return (
         np.load(directory / "images.npy", mmap_mode="r"),
         np.load(directory / "masks.npy", mmap_mode="r"),
