@@ -53,6 +53,8 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "neck",
                 "neck_norm",
                 "upsampler",
+                "weight_decay",
+                "head_dropout",
                 "full_finetune",
             },
         ),
@@ -142,6 +144,15 @@ def test_neck_changes_the_hash_only_when_enabled() -> None:
     # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
     assert _hash(upernet(neck_norm="none")) == _hash(upernet())
     assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
+
+
+def test_regularisation_changes_the_hash_only_when_set() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _hash(upernet())
+    assert _hash(upernet(weight_decay=0.05)) != _hash(upernet())
+    assert _hash(upernet(head_dropout=0.1)) != _hash(upernet())
 
 
 def test_upsampler_changes_the_hash_only_when_enabled() -> None:

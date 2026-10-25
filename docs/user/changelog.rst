@@ -13,6 +13,7 @@ Changed
 Added
 ^^^^^
 
+* ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
 * ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Runs cap Torch intra-op threads at the container's CPU quota (cgroup ``cpu.max``); Torch otherwise sizes its pool from the host CPU count, which oversubscribes quota-limited containers.

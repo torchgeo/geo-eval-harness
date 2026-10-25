@@ -159,6 +159,8 @@ class SegmentationProbe(nn.Module):
             ``fpn`` or ``upernet`` head; it needs exactly four layers at one resolution.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
+        head_dropout: Channel dropout (``nn.Dropout2d``, as mmsegmentation's UPerHead) before the
+            UPerNet classifier; ``0`` (default) adds none.
         upsampler: ``"none"`` (default) or ``"anyup"``. ``"anyup"`` (UPerNet only) puts frozen
             pretrained AnyUp between the fused features and the classifier, guided by the input's
             RGB bands (see :mod:`geo_eval_harness.models.anyup`).
@@ -177,6 +179,7 @@ class SegmentationProbe(nn.Module):
         neck: str = "none",
         neck_norm: str = "layernorm",
         upsampler: str = "none",
+        head_dropout: float = 0.0,
     ) -> None:
         super().__init__()
         if temporal_pool not in ("mean", "max"):
@@ -230,8 +233,22 @@ class SegmentationProbe(nn.Module):
                 f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet"
             )
         self._attach_neck(neck, head_type, neck_norm)
+        self._attach_head_dropout(head_dropout, head_type)
         self._anyup = None
         self._attach_upsampler(upsampler, head_type)
+
+    def _upernet_decoder(self) -> nn.Module:
+        upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
+        return upernet.decoder
+
+    def _attach_head_dropout(self, head_dropout: float, head_type: str) -> None:
+        """Put channel dropout before the UPerNet classifier when requested."""
+        if not head_dropout:
+            return
+        if head_type != "upernet":
+            raise ValueError(f"head_dropout requires the upernet head, got {head_type!r}.")
+        decoder = self._upernet_decoder()
+        decoder.classifier = nn.Sequential(nn.Dropout2d(head_dropout), decoder.classifier)
 
     def _attach_upsampler(self, upsampler: str, head_type: str) -> None:
         """Wrap the UPerNet classifier with frozen AnyUp when requested."""
@@ -247,8 +264,7 @@ class SegmentationProbe(nn.Module):
             rgb_guidance_indices,
         )
 
-        upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
-        decoder = upernet.decoder
+        decoder = self._upernet_decoder()
         self._anyup = AnyUpClassifier(decoder.classifier, load_anyup().to(self._backbone_device()))
         decoder.classifier = self._anyup
         bands = getattr(self.backbone, "bands", None)

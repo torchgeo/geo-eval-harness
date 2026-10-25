@@ -258,6 +258,8 @@ class SegmentationConfig(StrictModel):
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
     upsampler: Literal["none", "anyup"] = "none"
+    weight_decay: StrictFloat = Field(default=0.0, ge=0)
+    head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
@@ -303,6 +305,8 @@ class SegmentationConfig(StrictModel):
             raise ValueError(f"upsampler 'anyup' requires head 'upernet', got {self.head!r}")
         if self.upsampler == "anyup" and self.cache_features:
             raise ValueError("upsampler 'anyup' needs input images; set cache_features: false")
+        if self.head_dropout and self.head != "upernet":
+            raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
         return self
 
     @property
