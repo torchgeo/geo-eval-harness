@@ -1440,7 +1440,8 @@ def test_anyup_chunks_large_attention_with_checkpointing(monkeypatch) -> None:
     features = torch.randn(5, 4, 4, 4, requires_grad=True)
     whole = module(features)
     assert len(stand_in.calls) == 1
-    monkeypatch.setattr(anyup, "ATTENTION_BUDGET", 2 * 16 * 16 * 4 * 4)
+    monkeypatch.setattr(anyup, "ATTENTION_BUDGET", 4 * 16 * 16 * 4 * 4)
+    monkeypatch.setattr(anyup, "CHUNK_BUDGET", 2 * 16 * 16 * 4 * 4)
     stand_in.calls.clear()
     chunked = module(features)
     chunked.sum().backward()

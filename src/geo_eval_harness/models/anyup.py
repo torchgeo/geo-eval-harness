@@ -33,8 +33,10 @@ ANYUP_CHECKPOINT_SHA256 = "b6cc407da8986c7e5c9098e61f7531767a9aca8fff20a1bc6c99d
 #: Largest cross-attention size (queries x keys x samples) run in one AnyUp call. The attention
 #: AnyUp keeps for backward grows with output pixels times feature-grid tokens: a 14x14 ViT grid
 #: at 224 px and batch 16 is 1.6e8 and runs whole, while a stride-4 (56x56) pyramid would need
-#: about 20 GB, so larger grids run in batch chunks with gradient checkpointing.
+#: about 20 GB, so larger batches run in chunks of at most CHUNK_BUDGET with gradient
+#: checkpointing (one 56x56 sample alone holds ~2.4 GB of float32 attention scores).
 ATTENTION_BUDGET = 2**28
+CHUNK_BUDGET = 2**26
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -104,8 +106,8 @@ class AnyUpClassifier(nn.Module):
 
     The caller sets :attr:`guidance` before each forward. AnyUp stays in eval mode. AnyUp has no
     cross-sample operations, so a batch whose attention exceeds :data:`ATTENTION_BUDGET` runs in
-    chunks of samples, each recomputed in backward instead of storing its attention; batches
-    within the budget run in one call as before.
+    chunks of samples within :data:`CHUNK_BUDGET`, each recomputed in backward instead of storing
+    its attention; batches within the budget run in one call as before.
     """
 
     def __init__(self, classifier: nn.Module, upsampler: nn.Module) -> None:
@@ -128,9 +130,9 @@ class AnyUpClassifier(nn.Module):
         guidance = self.guidance.to(dtype=features.dtype)
         size = tuple(guidance.shape[-2:])
         per_sample = math.prod(size) * features.shape[-2] * features.shape[-1]
-        chunk = max(1, ATTENTION_BUDGET // per_sample)
-        if chunk >= len(features):
+        if per_sample * len(features) <= ATTENTION_BUDGET:
             return self.classifier(self.upsampler(guidance, features, output_size=size))
+        chunk = max(1, CHUNK_BUDGET // per_sample)
 
         def upsample(g: torch.Tensor, f: torch.Tensor) -> torch.Tensor:
             return self.upsampler(g, f, output_size=size)
