@@ -397,6 +397,9 @@ Training knobs
    * - ``lora_alpha``
      - ``16.0``
      - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
+   * - ``lora_last_blocks``
+     - ``null``
+     - Adapt only targets in the last ``k`` backbone blocks; ``null`` adapts every match.
    * - ``backbone_learning_rate``
      - ``null``
      - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.

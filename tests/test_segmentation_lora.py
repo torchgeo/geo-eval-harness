@@ -20,6 +20,7 @@ from geo_eval_harness.models.timm import TimmPatchBenchModel
 from geo_eval_harness.segmentation_lora import (
     apply_lora,
     has_lora_adapters,
+    lora_block_of,
     merged_lora,
 )
 from geo_eval_harness.segmentation_probe import SegmentationProbe
@@ -67,6 +68,58 @@ def test_apply_lora_trains_every_adapter_and_no_base_weight(model_kind: str) -> 
 
     assert len(adapted) == expected
     _assert_only_lora_trains(model, layers, torch.randn(2, 3, 224, 224))
+
+
+@pytest.mark.parametrize(
+    ("name", "block"),
+    [
+        ("blocks.11.attn.qkv", "blocks.11"),
+        ("encoder_model.encoder.blocks.3.mlp.fc1", "encoder_model.encoder.blocks.3"),
+        ("stages.3.blocks.26.mlp.fc1", "stages.3.blocks.26"),
+        ("features.7.1.mlp.0", "features.7.1"),
+        ("encoder.11.attn.proj", "encoder.11"),
+        ("head.fc", None),
+    ],
+)
+def test_lora_block_of(name: str, block: str | None) -> None:
+    assert lora_block_of(name) == block
+
+
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin"])
+def test_apply_lora_last_blocks_adapts_only_the_deepest_blocks(model_kind: str) -> None:
+    if model_kind == "timm_vit":
+        model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+        targets, layers, last, blocks = (
+            VIT_TARGETS,
+            ["blocks.11", "blocks.9"],
+            6,
+            {f"blocks.{i}" for i in range(6, 12)},
+        )
+    else:
+        model = swin_v2_t()
+        # Swin-V2-T stages have 2, 2, 6, 2 blocks; the last 3 span two stages.
+        targets, layers, last, blocks = (
+            SWIN_TARGETS,
+            ["features.7", "features.5"],
+            3,
+            {
+                "features.5.5",
+                "features.7.0",
+                "features.7.1",
+            },
+        )
+
+    adapted = apply_lora(model, targets, rank=4, alpha=8.0, last_blocks=last)
+
+    assert {lora_block_of(name) for name in adapted} == blocks
+    assert len(adapted) == 4 * len(blocks)
+    _assert_only_lora_trains(model, layers, torch.randn(2, 3, 224, 224))
+
+
+def test_apply_lora_last_blocks_rejects_more_blocks_than_matched() -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    with pytest.raises(ValueError, match="exceeds the 12 matched blocks"):
+        apply_lora(model, VIT_TARGETS, rank=4, alpha=8.0, last_blocks=13)
 
 
 @pytest.mark.parametrize(

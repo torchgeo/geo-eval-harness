@@ -705,7 +705,13 @@ def build_seg_probe_and_solver(
         )
     if config.lora_rank is not None:
         assert config.lora_target_modules is not None
-        apply_lora(model, config.lora_target_modules, config.lora_rank, config.lora_alpha)
+        apply_lora(
+            model,
+            config.lora_target_modules,
+            config.lora_rank,
+            config.lora_alpha,
+            last_blocks=config.lora_last_blocks,
+        )
     if config.full_finetune:
         # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
         enable = getattr(model, "enable_full_finetune", None)

@@ -269,6 +269,7 @@ class SegmentationConfig(StrictModel):
     lora_rank: StrictInt | None = Field(default=None, gt=0)
     lora_target_modules: StrictStr | None = None
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
+    lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
 
@@ -284,9 +285,11 @@ class SegmentationConfig(StrictModel):
         if self.lora_rank is None and (
             (self.backbone_learning_rate is not None and not self.full_finetune)
             or self.lora_alpha != type(self).model_fields["lora_alpha"].default
+            or self.lora_last_blocks is not None
         ):
             raise ValueError(
-                "backbone_learning_rate (without full_finetune) and lora_alpha require lora_rank"
+                "backbone_learning_rate (without full_finetune), lora_alpha, and lora_last_blocks "
+                "require lora_rank"
             )
         return self
 
@@ -301,12 +304,15 @@ class SegmentationConfig(StrictModel):
     def method(self) -> str:
         """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
 
-        Full fine-tuning appends ``-full`` instead of ``-lora``.
+        Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
+        blocks appends ``-last<k>``.
         """
         neck = "" if self.neck == "none" else f"-{self.neck}neck"
         lora = "" if self.lora_rank is None else "-lora"
         if self.full_finetune:
             lora = "-full"
+        if self.lora_last_blocks is not None:
+            lora += f"-last{self.lora_last_blocks}"
         return f"seg-{self.head}{neck}{lora}"
 
 
