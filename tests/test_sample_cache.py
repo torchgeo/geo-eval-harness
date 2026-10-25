@@ -129,3 +129,48 @@ def test_run_wraps_every_segmentation_split_in_the_sample_cache(tmp_path, mode: 
         assert (served is loader) == (mode == "none")
         assert [b["image"].tolist() for b in served] == [b["image"].tolist() for b in loader]
     assert any(tmp_path.iterdir()) == (mode == "disk")
+
+
+def test_lock_left_by_an_exited_build_is_removed(tmp_path) -> None:
+    import socket
+    import subprocess
+    import sys
+
+    dataset = ToySegmentation()
+    directory = tmp_path / cache_key(dataset, IDENTITY)
+    dead = subprocess.run(
+        [sys.executable, "-c", "import os; print(os.getpid())"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    pid = int(dead.stdout)
+    lock = directory.with_name(f"{directory.name}.lock")
+    lock.mkdir(parents=True)
+    (lock / "owner").write_text(f"{socket.gethostname()} {pid}\n")
+    partial = directory.with_name(f"{directory.name}.tmp-{pid}")
+    partial.mkdir()
+    loader = DataLoader(dataset, batch_size=4)
+    cache_loader(
+        loader,
+        mode="disk",
+        identity=IDENTITY,
+        cache_dir=tmp_path,
+        device=torch.device("cpu"),
+        num_workers=0,
+    )
+    assert (directory / "complete").exists()
+    assert not lock.exists()
+    assert not partial.exists()
+
+
+def test_lock_held_by_a_live_process_is_kept(tmp_path) -> None:
+    import os
+    import socket
+
+    lock = tmp_path / "x.lock"
+    lock.mkdir()
+    (lock / "owner").write_text(f"{socket.gethostname()} {os.getpid()}\n")
+    assert sample_cache._dead_lock_owner(lock) is None
+    (lock / "owner").write_text(f"other-host {os.getpid()}\n")
+    assert sample_cache._dead_lock_owner(lock) is None
