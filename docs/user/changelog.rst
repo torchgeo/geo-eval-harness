@@ -13,6 +13,7 @@ Changed
 Added
 ^^^^^
 
+* Runs cap Torch intra-op threads at the container's CPU quota (cgroup ``cpu.max``); Torch otherwise sizes its pool from the host CPU count, which oversubscribes quota-limited containers.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks (method ``seg-<head>-lora-last<k>``); unset leaves hashes unchanged.
