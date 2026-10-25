@@ -95,6 +95,8 @@ Input and runtime
      workers: 4
      seed: 0
      verbose: false
+     sample_cache: none
+     sample_cache_dir: ~/.cache/geo_eval_harness/samples
 
 ``bands`` accepts ``rgb``, ``all``, or an ordered YAML list of dataset band
 names. The equivalent flag accepts comma-separated names, for example
@@ -102,6 +104,8 @@ names. The equivalent flag accepts comma-separated names, for example
 ``time_steps`` selects a positive temporal length where supported.
 ``image_size: null`` (``--image-size none``) retains native dimensions.
 Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest``.
+
+``runtime.sample_cache`` serves segmentation splits from a copy of the preprocessed samples (after band selection and resizing), so each sample is decoded once instead of once per epoch. ``disk`` writes ``.npy`` memory maps under ``sample_cache_dir`` (built once per dataset, split, bands, size, interpolation, and code/data fingerprint; concurrent runs share them through the OS page cache), ``host`` keeps them in process memory, and ``gpu`` on the training device. Images stay float32 and batch order matches the uncached loader exactly, so the setting does not change results or ``config_hash``. ``disk`` needs free disk space and benefits from free RAM; ``host`` and ``gpu`` need the whole split in RAM or device memory.
 
 For ``run`` and ``profile``, ``--image-size`` accepts a positive integer or case-insensitive ``none``. FLOPs measurements require a concrete positive image size.
 
