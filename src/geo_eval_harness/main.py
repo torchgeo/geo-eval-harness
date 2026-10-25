@@ -938,6 +938,39 @@ def dataset_metadata(
     }
 
 
+def _cache_segmentation_loaders(
+    cfg: RunConfig, ds_name: str, loaders: LoaderSplits
+) -> LoaderSplits:
+    """Serve segmentation splits from ``runtime.sample_cache``; ``none`` keeps the loaders."""
+    mode = cfg.runtime.sample_cache
+    if mode == "none":
+        return loaders
+    from geo_eval_harness.datasets.sample_cache import cache_loader
+
+    def cached(loader: DataLoader, split: str) -> DataLoader:
+        identity = {
+            "dataset": ds_name,
+            "split": split,
+            "partition": cfg.input.partition if split == "train" else "default",
+            "bands": normalize_bands_value(cfg.input.bands),
+            "image_size": cfg.input.image_size,
+            "interpolation": cfg.input.interpolation,
+            "time_steps": cfg.input.time_steps,
+        }
+        return cache_loader(  # type: ignore[return-value] - same iteration contract
+            loader,
+            mode=mode,
+            identity=identity,
+            cache_dir=Path(cfg.runtime.sample_cache_dir),
+            device=torch.device(cfg.runtime.device),
+            num_workers=cfg.runtime.workers,
+        )
+
+    return LoaderSplits(
+        cached(loaders.train, "train"), cached(loaders.val, "val"), cached(loaders.test, "test")
+    )
+
+
 def run_dataset(
     cfg: RunConfig,
     ds_name: str,
@@ -988,6 +1021,7 @@ def run_dataset(
     common_meta["normalization"] = model.effective_normalization
     loaders = LoaderSplits(train_loader, val_loader, test_loader)
     if ds_cls.task == "segmentation":
+        loaders = _cache_segmentation_loaders(cfg, ds_name, loaders)
         for rows in run_segmentation(cfg, model, loaders, common_meta):
             yield rows, [], []
         return
