@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
+from ._band_mapping import S2_WAVELENGTHS_UM, canonical_band_name
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -118,12 +119,21 @@ def _build_sensor_groups(
         if mod == "s1":
             wavelengths: list[float | str] = [_sar_code(b.name) for b in group_bands]
         else:
-            band_wavelengths = [b.wavelength_um for b in group_bands]
+            # Bands without wavelength_um fall back to the Sentinel-2 centre of their canonical
+            # name (red/green/blue/nir/...), as DOFA and Panopticon do.
+            band_wavelengths = [
+                b.wavelength_um
+                if b.wavelength_um is not None
+                else S2_WAVELENGTHS_UM.get(canonical_band_name(b.name))
+                for b in group_bands
+            ]
             if any(w is None for w in band_wavelengths):
-                missing = [b.name for b in group_bands if b.wavelength_um is None]
+                missing = [
+                    b.name for b, w in zip(group_bands, band_wavelengths, strict=True) if w is None
+                ]
                 raise ValueError(
                     f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
-                    f"have wavelength_um=None."
+                    f"have wavelength_um=None and no standard band name."
                 )
             wavelengths = [w for w in band_wavelengths if w is not None]
         res = input_res if (input_res is not None and single_sensor) else _MODALITY_INPUT_RES[mod]
