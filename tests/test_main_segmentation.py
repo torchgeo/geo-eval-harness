@@ -336,6 +336,7 @@ def test_epoch_metrics_stream_records_joined_to_the_result_row(tmp_path: Path, *
         assert math.isfinite(epoch["train_loss"])
         assert math.isfinite(epoch["val_loss"])
         assert 0.0 <= epoch["val_miou"] <= 1.0
+        assert 0.0 <= epoch["train_miou"] <= 1.0
         # Nine samples at batch size two: four steps and one skipped batch of one.
         assert (epoch["train_steps"], epoch["skipped_batches"]) == (4, 1)
         assert epoch["peak_gpu_mem_mb"] is None

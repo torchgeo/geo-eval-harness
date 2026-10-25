@@ -14,7 +14,7 @@ Added
 ^^^^^
 
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
-* ``output.epoch_metrics`` streams per-epoch segmentation training records (training and validation loss, validation mIoU, learning rates, step counts, wall time, peak CUDA memory) to a JSON Lines file, tagged with the result row's ``config_hash``. Segmentation result rows gain ``best_val_epoch`` and ``best_val_miou``.
+* ``output.epoch_metrics`` streams per-epoch segmentation training records (training and validation loss, training and validation mIoU, learning rates, step counts, wall time, peak CUDA memory) to a JSON Lines file, tagged with the result row's ``config_hash``. Segmentation result rows gain ``best_val_epoch`` and ``best_val_miou``.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
   torchgeo's published 18,900 / 6,300 / 6,300 split.  Downloadable with

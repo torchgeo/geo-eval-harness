@@ -46,6 +46,9 @@ class EpochRecord:
         skipped_batches: Training batches skipped as smaller than the head minimum.
         epoch_seconds: Wall time for training and validation.
         peak_gpu_mem_mb: Peak allocated CUDA memory in MiB, or ``None`` off CUDA.
+        train_miou: Macro mIoU of the training-mode predictions accumulated over the epoch's
+            optimizer steps (weights change during the epoch), using the validation definition:
+            ignored labels excluded and classes with an empty union left out.
     """
 
     epoch: int
@@ -58,25 +61,55 @@ class EpochRecord:
     skipped_batches: int
     epoch_seconds: float
     peak_gpu_mem_mb: float | None
+    train_miou: float | None = None
+
+
+def _macro_miou(confusion: torch.Tensor) -> float:
+    """Return macro IoU over classes with a non-empty union, matching torchmetrics."""
+    confusion = confusion.double()
+    tp = confusion.diag()
+    union = confusion.sum(0) + confusion.sum(1) - tp
+    present = union > 0
+    return float((tp[present] / union[present]).mean()) if present.any() else float("nan")
 
 
 class _EpochTracker:
     """Accumulate one epoch's training statistics without per-step device syncs."""
 
-    def __init__(self, epoch: int, optimizer: torch.optim.Optimizer, device: str) -> None:
+    def __init__(
+        self,
+        epoch: int,
+        optimizer: torch.optim.Optimizer,
+        device: str,
+        num_classes: int,
+        ignore_index: int,
+    ) -> None:
         self.epoch = epoch
         self.lrs = [float(group["lr"]) for group in optimizer.param_groups]
         self.steps = 0
         self.skipped = 0
         self.samples = 0
         self.loss_sum = torch.zeros((), device=device)
+        self.num_classes = num_classes
+        self.ignore_index = ignore_index
+        self.confusion = torch.zeros(num_classes * num_classes, dtype=torch.long, device=device)
         self.started = time.perf_counter()
 
-    def add_step(self, loss: torch.Tensor, batch_size: int) -> None:
-        """Record one optimizer step."""
+    def add_step(
+        self, loss: torch.Tensor, batch_size: int, logits: torch.Tensor, masks: torch.Tensor
+    ) -> None:
+        """Record one optimizer step and its training-mode predictions."""
         self.loss_sum += loss.detach().float() * batch_size
         self.samples += batch_size
         self.steps += 1
+        valid = masks != self.ignore_index
+        predictions = logits.detach().argmax(dim=1)
+        indices = masks[valid] * self.num_classes + predictions[valid]
+        self.confusion += torch.bincount(indices, minlength=self.num_classes**2)
+
+    def train_miou(self) -> float:
+        """Return the epoch's training mIoU."""
+        return _macro_miou(self.confusion.reshape(self.num_classes, self.num_classes))
 
 
 class SegmentationSolver:
@@ -253,7 +286,9 @@ class SegmentationSolver:
         self._set_train_mode()
         if self._tracks_cuda_memory():
             torch.cuda.reset_peak_memory_stats(self.device)
-        return _EpochTracker(epoch, self.optimizer, self.device)
+        return _EpochTracker(
+            epoch, self.optimizer, self.device, self.num_classes, self.ignore_index
+        )
 
     def _tracks_cuda_memory(self) -> bool:
         """Return whether peak CUDA memory can be measured on this device."""
@@ -283,6 +318,7 @@ class SegmentationSolver:
             skipped_batches=tracker.skipped,
             epoch_seconds=time.perf_counter() - tracker.started,
             peak_gpu_mem_mb=peak_mem,
+            train_miou=tracker.train_miou(),
         )
         self.epoch_history.append(record)
         if on_epoch is not None:
@@ -376,7 +412,7 @@ class SegmentationSolver:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                tracker.add_step(loss, len(images))
+                tracker.add_step(loss, len(images), logits, masks)
 
             self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:
@@ -487,7 +523,7 @@ class SegmentationSolver:
                 self.scaler.scale(loss).backward()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                tracker.add_step(loss, len(masks))
+                tracker.add_step(loss, len(masks), logits, masks)
 
             self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:

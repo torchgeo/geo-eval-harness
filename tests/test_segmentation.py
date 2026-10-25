@@ -28,6 +28,7 @@ from geo_eval_harness.segmentation_probe import (
 from geo_eval_harness.segmentation_task import (
     EpochRecord,
     SegmentationSolver,
+    _EpochTracker,
     build_seg_probe_and_solver,
 )
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
@@ -733,8 +734,31 @@ def test_solver_records_peak_cuda_memory_per_epoch() -> None:
         assert record.peak_gpu_mem_mb is not None
         assert record.peak_gpu_mem_mb > 0
         assert math.isfinite(record.train_loss)
+        assert record.train_miou is not None
+        assert 0.0 <= record.train_miou <= 1.0
         assert record.val_loss is not None
         assert math.isfinite(record.val_loss)
+
+
+def test_epoch_tracker_train_miou_matches_torchmetrics() -> None:
+    generator = torch.Generator().manual_seed(0)
+    optimizer = torch.optim.SGD([nn.Parameter(torch.zeros(1))], lr=1.0)
+    tracker = _EpochTracker(1, optimizer, "cpu", NUM_CLASSES, ignore_index=255)
+    all_logits, all_masks = [], []
+    for _ in range(3):
+        logits = torch.randn(2, NUM_CLASSES, 6, 6, generator=generator)
+        # Class 4 never occurs, so it must be left out of the macro mean, as in validation.
+        masks = torch.randint(0, NUM_CLASSES - 1, (2, 6, 6), generator=generator)
+        masks[:, 0] = 255
+        logits[:, 4] = -100.0
+        tracker.add_step(torch.tensor(1.0), 2, logits, masks)
+        all_logits.append(logits)
+        all_masks.append(masks)
+
+    expected = multiclass_jaccard_index(
+        torch.cat(all_logits), torch.cat(all_masks), NUM_CLASSES, average="macro", ignore_index=255
+    )
+    assert tracker.train_miou() == pytest.approx(expected.item(), abs=1e-6)
 
 
 @pytest.mark.parametrize("cached", [False, True])

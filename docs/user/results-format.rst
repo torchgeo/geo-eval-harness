@@ -152,6 +152,8 @@ Epoch field          Description
 ``skipped_batches``  Training batches smaller than the head minimum.
 ``epoch_seconds``    Wall time for training and validation.
 ``peak_gpu_mem_mb``  Peak allocated CUDA memory in MiB; ``null`` off CUDA.
+``train_miou``       Macro mIoU of training-mode predictions accumulated over the
+                     epoch's steps (no extra pass; weights change during the epoch).
 ==================== ============================================================
 
 The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
