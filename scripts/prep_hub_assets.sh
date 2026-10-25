@@ -76,7 +76,8 @@ import os, torch
 rev = os.environ.get("UNIVERSAT_HF_REV")
 if rev:
     from huggingface_hub import snapshot_download
-    snapshot_download("$UNIVERSAT_HF", revision=rev)
+    snapshot_download("$UNIVERSAT_HF", revision=rev,
+                      allow_patterns=["config.json", "*.safetensors", "*.bin", "*.pt", "*.pth"])
 torch.hub.load("$UNIVERSAT_HUB:$UNIVERSAT_REF", "from_pretrained", trust_repo=True,
                skip_validation=True, compile=False)
 print("UniverSat loaded")
@@ -95,7 +96,10 @@ if not repos:
 else:
     rev = max(repos[0].revisions, key=lambda r: r.last_modified)
     digest = hashlib.sha256()
-    for f in sorted(rev.files, key=lambda f: f.file_name):
+    # Only files the model loads; README/.gitattributes may or may not be cached.
+    used = [f for f in rev.files
+            if f.file_name == "config.json" or f.file_name.endswith((".safetensors", ".bin", ".pt", ".pth"))]
+    for f in sorted(used, key=lambda f: f.file_name):
         h = hashlib.sha256(Path(f.file_path).read_bytes()).hexdigest()
         digest.update(f"{f.file_name} {h}\n".encode())
     print(json.dumps({"revision": rev.commit_hash, "sha256": digest.hexdigest()}))
