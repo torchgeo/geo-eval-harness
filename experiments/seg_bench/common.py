@@ -46,16 +46,42 @@ def gpu_processes() -> list[dict]:
     return rows
 
 
+def cgroup_memory_limit_gib(cgroup_root: str = "/sys/fs/cgroup") -> float | None:
+    """Return the container memory limit (cgroup v2 ``memory.max``) in GiB, or ``None``."""
+    try:
+        value = Path(cgroup_root, "memory.max").read_text().strip()
+    except OSError:  # allow-except: no cgroup v2 memory controller means no limit
+        return None
+    return None if value == "max" else int(value) / 2**30
+
+
+def set_threads(threads: int | None) -> int:
+    """Set Torch intra-op threads explicitly, or cap them at the CPU quota; return the count."""
+    import torch
+
+    from geo_eval_harness.devices import limit_torch_threads
+
+    if threads:
+        torch.set_num_threads(threads)
+        return threads
+    return limit_torch_threads()
+
+
 def machine_context() -> dict:
     """Return host facts that affect timings."""
     import psutil
     import torch
+
+    from geo_eval_harness.devices import cgroup_cpu_limit
 
     ctx = {
         "host": platform.node(),
         "cpus": os.cpu_count(),
         "loadavg": os.getloadavg(),
         "host_ram_gib": psutil.virtual_memory().total / 2**30,
+        "cgroup_cpus": cgroup_cpu_limit(),
+        "cgroup_memory_gib": cgroup_memory_limit_gib(),
+        "torch_threads": torch.get_num_threads(),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
         "cudnn": torch.backends.cudnn.version(),

@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-from experiments.seg_bench.common import append_jsonl, machine_context
+from experiments.seg_bench.common import append_jsonl, machine_context, set_threads
 
 
 def _say(text: str) -> None:
@@ -137,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--datasets", nargs="+", required=True)
     parser.add_argument("--bands", nargs="+", default=["rgb", "all"], type=_bands_arg)
-    parser.add_argument("--workers", nargs="+", type=int, default=[2, 4, 8])
+    parser.add_argument("--workers", nargs="+", type=int, default=[1, 2, 4, 8])
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--image-size", type=int, default=224)
     parser.add_argument(
@@ -146,8 +146,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--batches", type=int, default=40, help="steady-state batches per worker count"
     )
+    parser.add_argument("--threads", type=int, help="Torch intra-op threads (default: CPU quota)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
+    set_threads(args.threads)
     for dataset_name in args.datasets:
         for bands in args.bands:
             base = {
