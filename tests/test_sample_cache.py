@@ -174,3 +174,34 @@ def test_lock_held_by_a_live_process_is_kept(tmp_path) -> None:
     assert sample_cache._dead_lock_owner(lock) is None
     (lock / "owner").write_text(f"other-host {os.getpid()}\n")
     assert sample_cache._dead_lock_owner(lock) is None
+
+
+class _ThreadRecorder(ToySegmentation):
+    def __init__(self) -> None:
+        super().__init__()
+        self.threads: list[int] = []
+
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
+        self.threads.append(torch.get_num_threads())
+        return super().__getitem__(index)
+
+
+def test_main_process_samples_use_one_thread_like_workers(tmp_path) -> None:
+    dataset = _ThreadRecorder()
+    before = torch.get_num_threads()
+    torch.set_num_threads(2)
+    try:
+        cache_key(dataset, IDENTITY)
+        loader = DataLoader(dataset, batch_size=4)
+        cache_loader(
+            loader,
+            mode="disk",
+            identity=IDENTITY,
+            cache_dir=tmp_path,
+            device=torch.device("cpu"),
+            num_workers=0,
+        )
+        assert set(dataset.threads) == {1}
+        assert torch.get_num_threads() == 2
+    finally:
+        torch.set_num_threads(before)
