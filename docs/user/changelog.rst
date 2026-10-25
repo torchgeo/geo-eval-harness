@@ -13,6 +13,7 @@ Changed
 Added
 ^^^^^
 
+* UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Runs cap Torch intra-op threads at the container's CPU quota (cgroup ``cpu.max``); Torch otherwise sizes its pool from the host CPU count, which oversubscribes quota-limited containers.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.

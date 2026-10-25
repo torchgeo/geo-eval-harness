@@ -135,6 +135,7 @@ def test_apply_lora_names_the_extra_when_peft_is_missing(monkeypatch: pytest.Mon
 _MULTISPECTRAL_INPUTS = {
     "terratorch/terramind_v1_base": ("burn_scars", "all"),
     "torchgeo/swinv2b_s2ms_satlas_si": ("m-eurosat", "all"),
+    "universat_base_seg": ("burn_scars", "all"),
 }
 
 
