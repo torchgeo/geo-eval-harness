@@ -14,7 +14,7 @@ from rasterio.windows import Window
 
 from geo_eval_harness.datasets.base import Footprint
 
-from .. import EMBEDDINGS_ROOT
+from .. import DOWNLOADS_ROOT
 from ..grid import bounds, paste, source_window
 from .base import EmbeddingProduct, decode_signed_square
 
@@ -35,6 +35,7 @@ class AEF(EmbeddingProduct):
     name = "aef"
     channels = 64
     years = range(2017, 2026)
+    codec = "signed-square-int8"
 
     base_url = "https://s3.us-west-2.amazonaws.com/"
     index_url = base_url + "us-west-2.opendata.source.coop/tge-labs/aef/v1/annual/aef_index.parquet"
@@ -59,10 +60,14 @@ class AEF(EmbeddingProduct):
         "GDAL_HTTP_LOW_SPEED_LIMIT": "1000",
     }
 
-    def __init__(self, root: Path = EMBEDDINGS_ROOT) -> None:
+    def __init__(self, root: Path = DOWNLOADS_ROOT) -> None:
         self.index_path = root / "aef_index.parquet"
         self._index: pd.DataFrame | None = None
         self._tiles: dict[str, Any] = {}
+
+    def provenance(self) -> dict[str, str]:
+        """Return the tile index the product is read through."""
+        return {"index_url": self.index_url}
 
     def index(self) -> "pd.DataFrame":
         """Return the tile index, downloading it once to :attr:`index_path`."""

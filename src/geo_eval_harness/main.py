@@ -889,13 +889,17 @@ def load_model_and_data(
     """
     device = torch.device(cfg.runtime.device)
     if model_cfg.track == "embedding":
-        from geo_eval_harness.embeddings.dataset import embedding_bands, embedding_loaders
+        from geo_eval_harness.embeddings.dataset import (
+            embedding_bands,
+            embedding_collection,
+            embedding_loaders,
+        )
 
+        directory = embedding_collection(
+            model_cfg.kwargs["product"], ds_cls.name, model_cfg.kwargs.get("variant")
+        )
         train_dataset, *loaders = embedding_loaders(
-            model_cfg.kwargs["product"],
-            ds_cls.name,
-            batch_size=cfg.runtime.batch_size,
-            num_workers=cfg.runtime.workers,
+            directory, batch_size=cfg.runtime.batch_size, num_workers=cfg.runtime.workers
         )
         bands = embedding_bands(train_dataset[0]["image"].shape[0])
         model: BenchModel = build_model(model_cfg, bands=bands)
@@ -928,7 +932,15 @@ def run_dataset(
     ds_cls = get_bench_dataset_class(ds_name)
 
     cfg, model_cfg = resolve_run_config(cfg, ds_name)
-    config_hash = resume_config_hash(cfg, model_cfg, task=ds_cls.task)
+    collection = None
+    if model_cfg.track == "embedding":
+        from geo_eval_harness.embeddings.collection import collection_digest
+        from geo_eval_harness.embeddings.dataset import embedding_collection
+
+        kwargs = model_cfg.kwargs
+        directory = embedding_collection(kwargs["product"], ds_name, kwargs.get("variant"))
+        collection = collection_digest(directory)
+    config_hash = resume_config_hash(cfg, model_cfg, task=ds_cls.task, collection=collection)
     common_meta = dataset_metadata(cfg, ds_name, ds_cls, model_cfg, config_hash)
     plan = plan_dataset_run(cfg, ds_cls, common_meta, completed)
     if plan.skip_dataset:

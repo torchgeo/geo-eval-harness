@@ -15,14 +15,16 @@ import rasterio
 import torch
 from affine import Affine
 from rasterio.errors import RasterioIOError
+from safetensors import safe_open
 
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import Footprint
 from geo_eval_harness.datasets.geobench_v2 import GeoBenchv2, stac_footprint
+from geo_eval_harness.embeddings.codecs import CODECS
+from geo_eval_harness.embeddings.collection import CollectionWriter, read_metadata
 from geo_eval_harness.embeddings.dataset import EmbeddingDataset, embedding_bands
-from geo_eval_harness.embeddings.download import save_sample, write_metadata
 from geo_eval_harness.embeddings.grid import bounds, coarsen, ground_shape, paste, utm_zone
-from geo_eval_harness.embeddings.pca import fit_pca, pca_collection, project
+from geo_eval_harness.embeddings.pca import fit_pca, pca_collection
 from geo_eval_harness.embeddings.products import (
     AEF,
     OlmoEarth,
@@ -307,42 +309,82 @@ def test_olmoearth_opens_the_store_once(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def _write_collection(root: Path, values: dict[str, np.ndarray]) -> Path:
-    directory = root / "aef" / "toy"
-    for split, embedding in values.items():
-        for index, sample in enumerate(embedding):
-            save_sample(
-                directory / split / f"{index:06d}.npz",
-                embedding=sample.astype(np.float16),
-                label=np.array(index % 2),
-                year=2020,
-                valid_fraction=1.0,
-            )
-    write_metadata(directory, {"product": "aef", "dataset": "toy", "channels": 4})
-    return directory
+    writer = CollectionWriter(root / "aef" / "toy")
+    for split, embeddings in values.items():
+        rows = []
+        for index, embedding in enumerate(embeddings):
+            height, width = embedding.shape[1:]
+            rows.append({
+                "index": index, "crs": UTM, "transform": [10.0, 0.0, 0.0, 0.0, -10.0, 0.0],
+                "height": height, "width": width, "product_year": 2020, "observation_year": 2019,
+                "valid_fraction": float(np.isfinite(embedding).all(axis=0).mean()),
+                "embedding": embedding.astype(np.float16), "label": np.array(index % 2),
+            })  # fmt: skip
+        writer.write_split(split, rows)
+    return writer.finish({"codec": "float16", "target": "label", "channels": 4})
 
 
-def test_pca_fits_train_cells_only_and_keeps_missing_cells(tmp_path: Path) -> None:
+@pytest.mark.parametrize("codec", ["signed-square-int8", "scaled-int8", "float16"])
+def test_codecs_store_downloaded_values_exactly(codec: str) -> None:
     rng = np.random.default_rng(0)
-    train = rng.normal(size=(6, 4, 3, 3)).astype(np.float32)
+    codes = rng.integers(-127, 128, size=(8, 3, 5), dtype=np.int8)
+    codes[0] = 127
+    values = {
+        "signed-square-int8": decode_signed_square(codes),
+        "scaled-int8": decode_tessera(codes, rng.uniform(0.01, 0.1, (3, 5)).astype(np.float32)),
+        "float16": rng.normal(size=codes.shape),
+    }[codec].astype(np.float16)
+    values[:, 0, 0] = np.nan
+    arrays = CODECS[codec].encode(values)
+    assert np.array_equal(CODECS[codec].decode(arrays), values.astype(np.float32), equal_nan=True)
+    assert arrays["embedding"].nbytes == values.size * (1 if codec != "float16" else 2)
+    if codec != "float16":
+        with pytest.raises(ValueError, match="not exactly representable"):
+            CODECS[codec].encode(np.full((2, 1, 1), [[[0.3]], [[np.nan]]], dtype=np.float16))
+
+
+def test_pca_fits_distinct_train_embeddings_and_keeps_missing_cells(tmp_path: Path) -> None:
+    rng = np.random.default_rng(0)
+    train = rng.normal(size=(6, 4, 3, 3)).astype(np.float16).astype(np.float32)
     shifted = train + 100
     shifted[0, :, 0, 0] = np.nan
     _write_collection(tmp_path, {"train": train, "val": shifted, "test": shifted})
     target = pca_collection("aef", "toy", 2, root=tmp_path)
-    assert target == tmp_path / "aef-pca2" / "toy"
-    with np.load(target / "val" / "000000.npz") as sample:
-        assert sample["embedding"].shape == (2, 3, 3)
-        assert int(sample["label"]) == 0
-        assert np.isnan(sample["embedding"][:, 0, 0]).all()
-    files = sorted((tmp_path / "aef" / "toy" / "train").glob("*.npz"))
-    pca = fit_pca(files, 2, 1_000, seed=0)
+    assert target == tmp_path / "aef" / "toy_pca2"
+    val = EmbeddingDataset(target, "val")
+    assert val[0]["image"].shape == (2, 3, 3)
+    assert int(val[0]["label"]) == 0
+    assert torch.isnan(val[0]["image"][:, 0, 0]).all()
+    metadata = read_metadata(target)
+    assert metadata["pca"]["whiten"] is False
+    assert metadata["splits"]["val"]["mean_valid_fraction"] == pytest.approx(53 / 54)
+    with safe_open(target / "pca.safetensors", "np") as params:
+        assert params.get_tensor("components").shape == (2, 4)
+
+    pca = fit_pca(tmp_path / "aef" / "toy", 2, 1_000, seed=0)
     assert np.allclose(pca.mean_, train.transpose(0, 2, 3, 1).reshape(-1, 4).mean(0), atol=1e-2)
-    assert np.allclose(project(train[0], pca), project(train[0], fit_pca(files, 2, 1_000, 0)))
+    repeated = np.concatenate([train, np.repeat(train[:1], 20, axis=0)])
+    _write_collection(tmp_path / "repeated", {"train": repeated})
+    assert np.allclose(fit_pca(tmp_path / "repeated" / "aef" / "toy", 2, 1_000, 0).mean_, pca.mean_)
     with pytest.raises(ValueError, match="valid training cells"):
-        fit_pca(files, 100, 1_000, seed=0)
-    with pytest.raises(FileNotFoundError, match="No training embeddings"):
+        fit_pca(tmp_path / "aef" / "toy", 100, 1_000, seed=0)
+    with pytest.raises(FileNotFoundError, match="embeddings fetch --product tessera"):
         pca_collection("tessera", "toy", 2, root=tmp_path)
     with pytest.raises(FileNotFoundError, match="No train embeddings"):
         EmbeddingDataset(tmp_path / "tessera" / "toy", "train")
+
+
+def test_collection_rows_must_share_array_shapes_and_follow_the_index(tmp_path: Path) -> None:
+    rows = [
+        {"index": i, "crs": UTM, "transform": [1.0] * 6, "height": 1, "width": 1,
+         "product_year": 2020, "observation_year": 2020, "valid_fraction": 1.0,
+         "embedding": np.zeros((2, 1, size), np.float16), "label": np.array(0)}
+        for i, size in ((0, 1), (1, 2))
+    ]  # fmt: skip
+    with pytest.raises(ValueError, match="Row 1 has arrays"):
+        CollectionWriter(tmp_path / "a").write_split("train", rows)
+    with pytest.raises(ValueError, match="train row 0 has index 1"):
+        CollectionWriter(tmp_path / "b").write_split("train", rows[1:])
 
 
 def test_model_pools_valid_cells_and_exposes_a_filled_feature_map() -> None:

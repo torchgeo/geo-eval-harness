@@ -26,11 +26,16 @@ class OlmoEarth(EmbeddingProduct):
     name = "olmoearth-v1-3"
     channels = 128
     years = range(2017, 2026)
+    codec = "signed-square-int8"
 
     url = "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
 
     def __init__(self) -> None:
         self._root: Any = None
+
+    def provenance(self) -> dict[str, str]:
+        """Return the Zarr store the product is read from."""
+        return {"store": self.url}
 
     def zone(self, number: int) -> Any:
         """Return the zarr group of one UTM zone, opening the store once."""

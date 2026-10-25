@@ -2,7 +2,8 @@ name: aef-pca16
 target: geo_eval_harness.models.PrecomputedEmbedding
 track: embedding
 kwargs:
-  product: aef-pca16
+  product: aef
+  variant: pca16
 input:
   bands: all
   image_size: null

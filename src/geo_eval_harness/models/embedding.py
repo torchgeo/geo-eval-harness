@@ -25,15 +25,19 @@ class PrecomputedEmbedding(BenchModel):
 
     Args:
         bands: One :class:`BandSpec` per embedding channel.
-        product: Stored collection name, e.g. ``"aef"`` or ``"aef-pca16"``.
+        product: Product of the stored collection, e.g. ``"aef"``.
+        variant: Derived collection, e.g. ``"pca16"`` for ``<dataset>_pca16``.
     """
 
     handles_own_normalization = True
 
-    def __init__(self, bands: list[BandSpec], product: str, **kwargs: object) -> None:
+    def __init__(
+        self, bands: list[BandSpec], product: str, variant: str | None = None, **kwargs: object
+    ) -> None:
         kwargs.pop("normalization", None)
         super().__init__(bands, normalization="identity", **kwargs)
         self.product = product
+        self.variant = variant
         self.feature_map = _FillMissing()
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:

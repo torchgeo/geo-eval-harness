@@ -21,7 +21,7 @@ from tqdm.auto import tqdm
 
 from geo_eval_harness.datasets.base import BenchDataset, Footprint
 
-from . import EMBEDDINGS_ROOT, collection_dir
+from . import DOWNLOADS_ROOT, collection_dir
 from .grid import bounds, coarsen, ground_shape
 from .products import EmbeddingProduct
 
@@ -135,13 +135,15 @@ def download(  # noqa: PLR0913
     product: EmbeddingProduct,
     bench: BenchDataset,
     *,
-    root: Path = EMBEDDINGS_ROOT,
+    root: Path = DOWNLOADS_ROOT,
     splits: Sequence[str] = SPLITS,
     limit: int | None = None,
     workers: int = 1,
 ) -> Path:
     """Store *product* embeddings and labels for *bench* under ``root/<product>/<dataset>``.
 
+    The download is a working copy; :func:`~geo_eval_harness.embeddings.export.export`
+    turns it into the collection that evaluation reads.
     All samples share the cell count of the first training sample, measured at
     10 m, so they batch together. Each sample uses the covered product year
     closest to its own observation year. Samples are read in

@@ -32,6 +32,7 @@ class Tessera(EmbeddingProduct):
     name = "tessera"
     channels = 128
     years = range(2017, 2026)
+    codec = "scaled-int8"
 
     bucket = "tessera-embeddings"
     prefix = "v1.1/dclimate.icechunk"
@@ -39,6 +40,10 @@ class Tessera(EmbeddingProduct):
 
     def __init__(self) -> None:
         self._root: Any = None
+
+    def provenance(self) -> dict[str, str]:
+        """Return the fixed icechunk snapshot the product is read from."""
+        return {"store": f"s3://{self.bucket}/{self.prefix}", "snapshot": self.snapshot}
 
     def zone(self, name: str) -> Any:
         """Return the zarr group of one UTM zone, opening the fixed snapshot once."""

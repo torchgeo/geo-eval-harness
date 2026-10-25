@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -35,18 +36,22 @@ KEY_COLS = (
 _LORA_FIELDS = {"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"}
 
 
-def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
+def resume_config_hash(
+    config: RunConfig, model_cfg: ModelPreset, *, task: str, collection: str | None = None
+) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
     Excludes device and worker count, which only control execution. Includes batch size because
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
     LoRA, so preset LoRA targets do not change frozen-probe hashes.
     ``task`` comes from the resolved dataset class;
-    only segmentation includes the best-validation model-selection protocol.
+    only segmentation includes the best-validation model-selection protocol. ``collection``
+    identifies the contents of a stored embedding collection, so results from a replaced
+    collection are not resumed.
     """
     segmentation = config.segmentation
     segmentation_exclude = _LORA_FIELDS if segmentation.lora_rank is None else None
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": config.schema_version,
         "model": {
             "name": model_cfg.name,
@@ -60,6 +65,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     }
     if task == "segmentation":
         payload["segmentation"]["selection_protocol"] = "best-validation-miou"
+    if collection is not None:
+        payload["collection"] = collection
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 

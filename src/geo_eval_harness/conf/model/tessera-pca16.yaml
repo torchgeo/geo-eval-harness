@@ -2,7 +2,8 @@ name: tessera-pca16
 target: geo_eval_harness.models.PrecomputedEmbedding
 track: embedding
 kwargs:
-  product: tessera-pca16
+  product: tessera
+  variant: pca16
 input:
   bands: all
   image_size: null

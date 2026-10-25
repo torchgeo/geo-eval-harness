@@ -9,11 +9,15 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 
 
+def parse_checksums(text: str) -> dict[str, str]:
+    """Parse ``sha256sum`` output into ``{relative path: digest}``."""
+    return {name: digest for digest, name in (line.split() for line in text.splitlines())}
+
+
 @cache
 def load_checksums(manifest: str) -> dict[str, str]:
     """Read ``checksums/<manifest>`` in ``sha256sum`` format into ``{relative path: digest}``."""
-    text = files("geo_eval_harness").joinpath("checksums", manifest).read_text()
-    return {name: digest for digest, name in (line.split() for line in text.splitlines())}
+    return parse_checksums(files("geo_eval_harness").joinpath("checksums", manifest).read_text())
 
 
 def verify_checksums(
