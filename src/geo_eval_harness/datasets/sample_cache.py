@@ -14,6 +14,7 @@ are bitwise identical to the uncached loader, including the shuffled order. The 
 therefore an execution setting and does not enter the config hash.
 """
 
+import contextlib
 import hashlib
 import inspect
 import json
@@ -59,6 +60,21 @@ def _source_digest(dataset: Dataset) -> str:
     return digest.hexdigest()[:16]
 
 
+@contextlib.contextmanager
+def _worker_threads() -> Iterator[None]:
+    """Run Torch ops with one intra-op thread, as ``DataLoader`` workers do.
+
+    CPU resizing can round differently with other thread counts, so samples produced in the main
+    process would otherwise differ in the last bits from worker-produced ones.
+    """
+    before = torch.get_num_threads()
+    torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        torch.set_num_threads(before)
+
+
 def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
     """Return a key for ``dataset`` from its run identity, code, length, and two sample digests.
 
@@ -66,10 +82,11 @@ def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
     """
     probe = hashlib.sha256()
     n = len(dataset)  # type: ignore[arg-type]
-    for index in sorted({0, n - 1}) if n else []:
-        sample = dataset[index]
-        probe.update(sample["image"].numpy().tobytes())
-        probe.update(sample["mask"].numpy().tobytes())
+    with _worker_threads():
+        for index in sorted({0, n - 1}) if n else []:
+            sample = dataset[index]
+            probe.update(sample["image"].numpy().tobytes())
+            probe.update(sample["mask"].numpy().tobytes())
     payload = {
         "format": _FORMAT_VERSION,
         "identity": identity,
@@ -83,7 +100,16 @@ def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
 
 def _iterate(dataset: Dataset, num_workers: int) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
     loader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=num_workers)
-    for batch in loader:
+    if num_workers:
+        for batch in loader:
+            yield batch["image"], batch["mask"]
+        return
+    iterator = iter(loader)
+    while True:
+        with _worker_threads():
+            batch = next(iterator, None)
+        if batch is None:
+            return
         yield batch["image"], batch["mask"]
 
 
