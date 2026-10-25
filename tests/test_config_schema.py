@@ -249,6 +249,23 @@ def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:
         validate_run_config(config)
 
 
+def test_head_dropout_needs_upernet_and_a_probability() -> None:
+    config = valid_config()
+    config["segmentation"] = {"head": "upernet", "head_dropout": 0.1, "weight_decay": 0.05}
+    segmentation = validate_run_config(config).segmentation
+    assert (segmentation.head_dropout, segmentation.weight_decay) == (0.1, 0.05)
+    config["segmentation"] = {"head": "fpn", "head_dropout": 0.1}
+    with pytest.raises(ValueError, match="head_dropout requires head 'upernet'"):
+        validate_run_config(config)
+    for bad in (
+        {"head": "upernet", "head_dropout": 1.0},
+        {"head": "upernet", "weight_decay": -0.1},
+    ):
+        config["segmentation"] = bad
+        with pytest.raises(ValueError, match=r"greater than or equal|less than"):
+            validate_run_config(config)
+
+
 def test_lora_requires_targets_from_the_preset_or_config() -> None:
     from geo_eval_harness.config.presets import resolve_run_config
 

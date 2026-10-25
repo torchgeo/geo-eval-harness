@@ -373,6 +373,12 @@ Training knobs
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
+   * - ``weight_decay``
+     - ``0``
+     - AdamW weight decay for every trainable parameter (head, neck, LoRA adapters).
+   * - ``head_dropout``
+     - ``0``
+     - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.

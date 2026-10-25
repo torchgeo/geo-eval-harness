@@ -257,6 +257,8 @@ class SegmentationConfig(StrictModel):
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
+    weight_decay: StrictFloat = Field(default=0.0, ge=0)
+    head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
@@ -298,6 +300,8 @@ class SegmentationConfig(StrictModel):
         """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
         if self.neck == "vit" and self.head not in NECK_HEADS:
             raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        if self.head_dropout and self.head != "upernet":
+            raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
         return self
 
     @property

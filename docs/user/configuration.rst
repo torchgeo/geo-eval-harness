@@ -188,6 +188,8 @@ Segmentation
      head: fpn
      neck: none
      neck_norm: layernorm
+     weight_decay: 0.0
+     head_dropout: 0.0
      layers: []
      learning_rate: 1e-3
      epochs: 10

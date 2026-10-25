@@ -729,6 +729,7 @@ def build_seg_probe_and_solver(
         head_type=config.head,
         neck=config.neck,
         neck_norm=config.neck_norm,
+        head_dropout=config.head_dropout,
         freeze_backbone=config.lora_rank is None and not config.full_finetune,
         temporal_pool=config.temporal_pool,
     )
@@ -742,6 +743,7 @@ def build_seg_probe_and_solver(
         lr_scheduler=config.scheduler,
         ignore_index=config.ignore_index,
         backbone_lr=config.backbone_learning_rate,
+        weight_decay=config.weight_decay,
     )
     solver.backbone_eval_mode = config.full_finetune
     return probe, solver
