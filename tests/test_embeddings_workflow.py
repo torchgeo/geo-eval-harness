@@ -1,8 +1,10 @@
 """Offline workflow: download a toy product, export, fetch and reduce it, then evaluate it."""
 
+import hashlib
 import json
 import pickle
 import shutil
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -141,14 +143,28 @@ def test_fetch_verifies_every_file_of_a_pinned_collection(
     assert requests == [("me/aef", revision, ["m-eurosat/*"])]
     assert len(EmbeddingDataset(directory, "test")) == 3
 
+    published = sys.modules[fetch.__module__]
+    sums = remote / "aef" / "m-eurosat" / "SHA256SUMS"
+    digest = hashlib.sha256(sums.read_bytes()).hexdigest()
+    monkeypatch.setitem(published.PUBLISHED, "aef", ("me/aef", revision))
+    monkeypatch.setattr(published, "load_checksums", lambda _: {"m-eurosat/SHA256SUMS": digest})
+    assert len(EmbeddingDataset(fetch("aef", "m-eurosat", root=tmp_path / "pinned"), "val")) == 3
+    with pytest.raises(ValueError, match="'benv2' is not published for 'aef'"):
+        fetch("aef", "benv2", root=tmp_path / "pinned")
+    original = sums.read_bytes()
+    sums.write_bytes(original + b"\n")
+    with pytest.raises(ValueError, match="SHA-256 checksum mismatch"):
+        fetch("aef", "m-eurosat", root=tmp_path / "pinned")
+    sums.write_bytes(original)
+
     shard = next((remote / "aef" / "m-eurosat").glob("train-*.parquet"))
     shard.write_bytes(shard.read_bytes()[:-1] + b"\0")
     with pytest.raises(ValueError, match="SHA-256 checksum mismatch"):
         fetch("aef", "m-eurosat", root=tmp_path / "local", repo_id="me/aef", revision=revision)
     with pytest.raises(ValueError, match="full commit hash"):
         fetch("aef", "m-eurosat", repo_id="me/aef", revision="main")
-    with pytest.raises(ValueError, match="No published collections for 'aef'"):
-        fetch("aef", "m-eurosat")
+    with pytest.raises(ValueError, match="No published collections for 'toy'"):
+        fetch("toy", "m-eurosat")
 
 
 def test_cli_exports_and_reduces_a_collection_and_rejects_unknown_products(

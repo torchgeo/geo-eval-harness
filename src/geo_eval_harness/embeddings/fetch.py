@@ -16,7 +16,13 @@ from . import EMBEDDINGS_ROOT, collection_dir
 __all__ = ["PUBLISHED", "fetch"]
 
 #: ``{product: (repository, commit)}`` of each published product.
-PUBLISHED: dict[str, tuple[str, str]] = {}
+PUBLISHED: dict[str, tuple[str, str]] = {
+    "aef": ("nilsleh/aef-embeddings-eval-datasets", "8c632b7d4a5945c3101aecf2e18aa1a144c51694"),
+    "tessera": (
+        "nilsleh/tessera-embeddings-eval-datasets",
+        "2c8239080a0cfc75cd186926634d149f6459d0f2",
+    ),
+}
 
 
 def fetch(
@@ -50,8 +56,14 @@ def fetch(
         raise ValueError(f"revision must be a full commit hash, got {revision!r}")
     expected = {}
     if published:
+        manifest = load_checksums(f"embeddings-{product}.sha256")
         key = f"{collection}/SHA256SUMS"
-        expected = {key: load_checksums(f"embeddings-{product}.sha256")[key]}
+        if key not in manifest:
+            choices = sorted(name.split("/")[0] for name in manifest)
+            raise ValueError(
+                f"{collection!r} is not published for {product!r}; choose from {choices}"
+            )
+        expected = {key: manifest[key]}
     fetch_pinned(repo_id, revision, root / product, expected, allow_patterns=[f"{collection}/*"])
     directory = collection_dir(product, collection, root)
     checksums = parse_checksums((directory / "SHA256SUMS").read_text())

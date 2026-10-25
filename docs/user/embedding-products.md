@@ -4,15 +4,17 @@ Precomputed embedding products, such as [AlphaEarth Foundations](https://source.
 
 ```bash
 # Fetch a published collection at its pinned revision, or build one locally:
-uv run geo-eval-harness embeddings fetch --product aef --dataset benv2 benv2_pca16
+uv run geo-eval-harness embeddings fetch --product aef --dataset fotw fotw_pca16
 uv run geo-eval-harness embeddings download --product aef --dataset fotw --workers 8
 uv run geo-eval-harness embeddings export --product aef --dataset fotw --workers 8
 # Optional: fit a 16-component PCA on training cells and store it as collection "fotw_pca16".
 uv run geo-eval-harness embeddings pca --product aef --dataset fotw --components 16
 # Evaluate; results go to results/models/aef.csv and aef-pca16.csv.
-uv run geo-eval-harness run --model aef --dataset benv2
+uv run geo-eval-harness run --model aef --dataset fotw
 uv run geo-eval-harness run --model aef-pca16 --dataset fotw
 ```
+
+AEF and TESSERA are published to [nilsleh/aef-embeddings-eval-datasets](https://huggingface.co/datasets/nilsleh/aef-embeddings-eval-datasets) and [nilsleh/tessera-embeddings-eval-datasets](https://huggingface.co/datasets/nilsleh/tessera-embeddings-eval-datasets). Both repositories are private, so `fetch` needs `hf auth login` with access to them. Each holds `<dataset>_pca16` for all six supported datasets and the full collections of `treesatai`, `dynamic_earthnet`, `fotw` and `kuro_siwo`; build full `benv2` and `spacenet7` collections locally with `download` and `export`.
 
 TESSERA and OlmoEarth need the `embeddings` extra (`pip install 'geo-eval-harness[embeddings]'`). Downloads and exports read GeoBench V2 data from `data/geobenchv2`, so download the dataset first. A download is a resumable working copy in `data/embedding-downloads/`: an interrupted download resumes where it stopped, and `--limit N` stores only the first N samples of each split for a quick check. Samples are read in groups of neighbours so shared source blocks are fetched once, and `--workers N` reads groups in N parallel processes; remote products such as AEF download several times faster with 8 workers. `export` refuses incomplete downloads; its `--limit` takes one count for every split or one each for train, val and test, and is recorded in the metadata.
 
