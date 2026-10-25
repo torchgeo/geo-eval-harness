@@ -157,6 +157,8 @@ class SegmentationProbe(nn.Module):
             ``dpt``, and ``upernet`` heads (default 256).
         neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a :class:`ViTNeck` before an
             ``fpn`` or ``upernet`` head; it needs exactly four layers at one resolution.
+        neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
+            ``"none"``.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -170,6 +172,7 @@ class SegmentationProbe(nn.Module):
         hidden_dim: int | None = None,
         temporal_pool: str = "mean",
         neck: str = "none",
+        neck_norm: str = "layernorm",
     ) -> None:
         super().__init__()
         if temporal_pool not in ("mean", "max"):
@@ -222,9 +225,9 @@ class SegmentationProbe(nn.Module):
                 "Unknown head_type: "
                 f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet"
             )
-        self._attach_neck(neck, head_type)
+        self._attach_neck(neck, head_type, neck_norm)
 
-    def _attach_neck(self, neck: str, head_type: str) -> None:
+    def _attach_neck(self, neck: str, head_type: str, neck_norm: str = "layernorm") -> None:
         """Put the requested neck before the head after checking the hooked feature maps."""
         if neck == "none":
             return
@@ -240,7 +243,7 @@ class SegmentationProbe(nn.Module):
                 f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
                 "backbones already provide multi-scale features."
             )
-        self.head = NeckedHead(ViTNeck(self.channels_list), self.head)
+        self.head = NeckedHead(ViTNeck(self.channels_list, input_norm=neck_norm), self.head)
 
     def register_hooks(self) -> None:
         """Register feature hooks and reject missing or duplicate layer names."""

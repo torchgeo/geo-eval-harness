@@ -51,6 +51,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "lora_last_blocks",
                 "backbone_learning_rate",
                 "neck",
+                "neck_norm",
             },
         ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
@@ -132,6 +133,9 @@ def test_neck_changes_the_hash_only_when_enabled() -> None:
 
     assert _hash(upernet(neck="none")) == _hash(upernet())
     assert _hash(upernet(neck="vit")) != _hash(upernet())
+    # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
+    assert _hash(upernet(neck_norm="none")) == _hash(upernet())
+    assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:

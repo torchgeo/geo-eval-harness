@@ -1307,6 +1307,24 @@ def test_vit_neck_rescales_one_grid_into_a_stride_pyramid(grid: int) -> None:
     ]
 
 
+def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    features = [torch.randn(2, 8, 14, 14) for _ in range(4)]
+    for feature in features:
+        feature[:, 0] *= 1e4  # one outlier channel, as in raw ViT block outputs
+    plain = ViTNeck([8] * 4, input_norm="none")
+    normed = ViTNeck([8] * 4)
+
+    # Max-pool passes the outlier straight through without the norm.
+    assert plain(features)[0].abs().max() > 1e3
+    # LayerNorm over channels bounds every position: |x| <= sqrt(C - 1) at identity affine.
+    assert normed(features)[0].abs().max() <= math.sqrt(7) + 1e-4
+    torch.testing.assert_close(normed(features)[1], normed.input_norms[1](features[1]))
+    with pytest.raises(ValueError, match="input_norm must be"):
+        ViTNeck([8] * 4, input_norm="batchnorm")
+
+
 @pytest.mark.parametrize("head_type", ["upernet", "fpn"])
 @pytest.mark.parametrize("cached", [False, True])
 def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:

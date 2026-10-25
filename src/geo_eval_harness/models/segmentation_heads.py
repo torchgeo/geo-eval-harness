@@ -408,14 +408,27 @@ class ViTNeck(nn.Module):
     between. A 14x14 grid becomes 7, 14, 28, and 56, the strides 32, 16, 8, and 4 that pyramid
     backbones such as ConvNeXt and Swin give at 224 px.
 
+    With ``input_norm="layernorm"`` each level first gets a learnable :class:`ChannelLayerNorm`.
+    Raw block outputs of some ViTs carry outlier channels; without it the max-pool level passes
+    them into UPerNet, whose BatchNorm running statistics then misrepresent eval batches.
+
     Args:
         channels_list: Channel count for each of the four layers (coarse-to-fine).
+        input_norm: ``"layernorm"`` (default) or ``"none"``.
     """
 
-    def __init__(self, channels_list: list[int]) -> None:
+    def __init__(self, channels_list: list[int], input_norm: str = "layernorm") -> None:
         super().__init__()
         if len(channels_list) != 4:
             raise ValueError(f"ViTNeck needs exactly 4 layers, got {len(channels_list)}.")
+        if input_norm not in ("layernorm", "none"):
+            raise ValueError(f"input_norm must be 'layernorm' or 'none', got {input_norm!r}.")
+        self.input_norms = nn.ModuleList(
+            [
+                ChannelLayerNorm(c) if input_norm == "layernorm" else nn.Identity()
+                for c in channels_list
+            ]
+        )
         c_x2, c_x4 = channels_list[2], channels_list[3]
         self.rescales = nn.ModuleList(
             [
@@ -432,8 +445,11 @@ class ViTNeck(nn.Module):
         )
 
     def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
-        """Rescale coarse-to-fine maps by 1/2, 1, 2, and 4."""
-        return [rescale(f) for rescale, f in zip(self.rescales, features, strict=True)]
+        """Normalise each level (if enabled), then rescale coarse-to-fine maps by 1/2, 1, 2, 4."""
+        return [
+            rescale(norm(f))
+            for rescale, norm, f in zip(self.rescales, self.input_norms, features, strict=True)
+        ]
 
 
 class NeckedHead(nn.Module):

@@ -279,7 +279,7 @@ ViT neck
 ^^^^^^^^
 
 **Method name:** ``seg-<head>-vitneck`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
-Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
+Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
 
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
@@ -370,6 +370,9 @@ Training knobs
    * - ``neck``
      - ``none``
      - ``vit`` adds the ViT neck before an ``fpn`` or ``upernet`` head (four same-resolution layers).
+   * - ``neck_norm``
+     - ``layernorm``
+     - Per-level LayerNorm before the ViT neck; ``none`` disables it.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
