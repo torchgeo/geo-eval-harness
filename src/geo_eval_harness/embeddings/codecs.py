@@ -10,10 +10,16 @@ from abc import ABC, abstractmethod
 from typing import ClassVar
 
 import numpy as np
+import torch
 
 from .products.base import decode_signed_square
 
 __all__ = ["CODECS", "Codec", "Float16", "ScaledInt8", "SignedSquareInt8"]
+
+
+def _tensor(array: np.ndarray) -> torch.Tensor:
+    """Wrap *array* without copying unless it is read-only, as Parquet buffers are."""
+    return torch.from_numpy(array if array.flags.writeable else array.copy())
 
 
 class Codec(ABC):
@@ -53,11 +59,11 @@ class Float16(Codec):
         return {"embedding": values}
 
     def _decode(self, arrays: dict[str, np.ndarray]) -> np.ndarray:
-        return arrays["embedding"].astype(np.float32)
+        return _tensor(arrays["embedding"]).float().numpy()
 
 
 class SignedSquareInt8(Codec):
-    """AEF and OlmoEarth int8 codes; ``-128`` marks a missing cell."""
+    """AEF and OlmoEarth int8 codes; ``-128`` marks a missing value."""
 
     name = "signed-square-int8"
     _codes = np.arange(-127, 128, dtype=np.int8)
@@ -66,15 +72,16 @@ class SignedSquareInt8(Codec):
     #: Code of each float16 bit pattern; other values map to nodata and fail the round trip.
     _by_bits = np.full(2**16, -128, dtype=np.int8)
     _by_bits[_values.view(np.uint16)] = _codes
+    #: Value of each code's unsigned byte, so decoding is one lookup.
+    _by_byte = torch.full((256,), float("nan"))
+    _by_byte[torch.from_numpy(_codes.view(np.uint8)).long()] = torch.from_numpy(_values).float()
 
     def _encode(self, values: np.ndarray) -> dict[str, np.ndarray]:
         return {"embedding": self._by_bits[values.view(np.uint16)]}
 
     def _decode(self, arrays: dict[str, np.ndarray]) -> np.ndarray:
-        codes = arrays["embedding"]
-        values = self._values[(codes.astype(np.int16) + 127).clip(0)].astype(np.float32)
-        values[:, (codes == -128).any(axis=0)] = np.nan
-        return values
+        codes = arrays["embedding"].view(np.uint8)
+        return self._by_byte[_tensor(codes).long()].numpy()
 
 
 class ScaledInt8(Codec):
@@ -108,11 +115,9 @@ class ScaledInt8(Codec):
         return {"embedding": codes.astype(np.int8), "scale": scale}
 
     def _decode(self, arrays: dict[str, np.ndarray]) -> np.ndarray:
-        scale = arrays["scale"]
-        values = (arrays["embedding"].astype(np.float32) * scale).astype(np.float16)
-        values = values.astype(np.float32)
-        values[:, ~(scale > 0)] = np.nan
-        return values
+        codes, scale = _tensor(arrays["embedding"]), _tensor(arrays["scale"])
+        values = (codes.float() * scale).half().float()
+        return torch.where(scale > 0, values, float("nan")).numpy()
 
 
 CODECS: dict[str, Codec] = {
