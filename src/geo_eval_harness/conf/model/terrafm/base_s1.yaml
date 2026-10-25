@@ -9,4 +9,5 @@ kwargs:
   target_size: 224
   pool: cls
 segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers: ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]

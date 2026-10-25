@@ -158,3 +158,13 @@ def test_patch_px_sets_metric_patch_size_and_patch_grid(monkeypatch: pytest.Monk
     assert seen["output_grid"] == 14
     assert model.num_prefix_tokens == 4
     assert out.requires_grad, "segmentation fine-tuning needs gradients through the encoder"
+
+
+def test_rgb_bands_without_wavelengths_use_standard_centres() -> None:
+    bands = [
+        BandSpec("aerial", name, "gray", mean=0, std=1, min=0, max=1)
+        for name in ("red", "green", "blue")
+    ]
+    (group,) = _build_sensor_groups(bands)
+    assert group["modality"] == "aerial"
+    assert group["wavelengths"] == [0.665, 0.56, 0.49]

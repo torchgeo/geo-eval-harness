@@ -136,6 +136,9 @@ _MULTISPECTRAL_INPUTS = {
     "terratorch/terramind_v1_base": ("burn_scars", "all"),
     "torchgeo/swinv2b_s2ms_satlas_si": ("m-eurosat", "all"),
     "universat_base_seg": ("burn_scars", "all"),
+    "terrafm/base_s1": ("kuro_siwo", "rgb"),
+    "terrafm/base_s2": ("burn_scars", "all"),
+    "terrafm/base_s2_l1c": ("burn_scars", "all"),
 }
 
 
