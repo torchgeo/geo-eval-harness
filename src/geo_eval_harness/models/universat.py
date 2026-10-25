@@ -179,6 +179,11 @@ class UniverSatBenchModel(BenchModel):
             entry to match otherwise).
         output_grid: Side ``G`` of the ``GxG`` token grid. ``None`` (default)
             lets UniverSat infer the natural patch grid; tokens are mean-pooled.
+        patch_px: Patch size in input pixels. When set it replaces ``patch_size``
+            with ``patch_px`` times the first sensor's ``input_res`` (metres), so
+            a ``H x W`` input gives an ``H/patch_px`` latent grid regardless of
+            sensor, and ``output_grid`` defaults to that grid. Segmentation presets
+            use 16 (14x14 tokens at 224 px, as ViT-B/16).
         input_res: Override the physical resolution (m/px), single-sensor only;
             ``None`` uses the registry value per modality.
         normalize: If True, L2-normalize the output embeddings.
@@ -197,6 +202,7 @@ class UniverSatBenchModel(BenchModel):
         patch_size: float = 10.0,
         output_grid: int | None = None,
         input_res: float | None = None,
+        patch_px: int | None = None,
         normalize: bool = False,
         repo: str = UNIVERSAT_REPO,
         repo_ref: str | None = UNIVERSAT_REF,
@@ -207,7 +213,8 @@ class UniverSatBenchModel(BenchModel):
 
         self._groups = _build_sensor_groups(self.bands, modality=modality, input_res=input_res)
 
-        self.patch_size = patch_size
+        self.patch_px = patch_px
+        self.patch_size = patch_px * self._groups[0]["input_res"] if patch_px else patch_size
         self.output_grid = output_grid
         self.do_normalize = normalize
 
@@ -226,6 +233,8 @@ class UniverSatBenchModel(BenchModel):
                 compile=False,
             ),
         ).eval()
+        # Register tokens precede the spatial tokens in every trunk block output.
+        self.num_prefix_tokens = int(getattr(getattr(self.model, "model", None), "n_registers", 0))
         logger.info(
             "UniverSat loaded (modalities=%s, %d channels, patch_size=%sm)",
             [g["modality"] for g in self._groups],
@@ -233,7 +242,6 @@ class UniverSatBenchModel(BenchModel):
             self.patch_size,
         )
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         """Embed ``(B, C, H, W)`` into ``(B, 768)`` mean-pooled tile features."""
         x, wavelengths, input_res, subpatches = {}, {}, {}, {}
@@ -243,10 +251,13 @@ class UniverSatBenchModel(BenchModel):
             wavelengths[mod] = g["wavelengths"]
             input_res[mod] = g["input_res"]
             subpatches[mod] = g["subpatch"]
+        output_grid = self.output_grid
+        if output_grid is None and self.patch_px:
+            output_grid = images.shape[-1] // self.patch_px
         tokens, _ = self.model.encode(
             x,
             patch_size=self.patch_size,
-            output_grid=self.output_grid,
+            output_grid=output_grid,
             wavelengths=wavelengths,
             input_res=input_res,
             subpatches=subpatches,

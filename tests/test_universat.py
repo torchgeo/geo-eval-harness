@@ -130,3 +130,31 @@ def test_forward_multi_sensor() -> None:
         out = model(x)
     assert out.shape == (2, UniverSatBenchModel.embed_dim)
     assert torch.isfinite(out).all()
+
+
+def test_patch_px_sets_metric_patch_size_and_patch_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    weight = torch.nn.Parameter(torch.ones(()))
+
+    class _Inner(torch.nn.Module):
+        n_registers = 4
+
+    class _Encoder(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.model = _Inner()
+
+        def encode(
+            self, images: dict[str, torch.Tensor], **kwargs: object
+        ) -> tuple[torch.Tensor, None]:
+            seen.update(kwargs)
+            pooled = images["s2"].mean(dim=(1, 2, 3))[:, None, None]
+            return pooled.expand(-1, 3, 2) * weight, None
+
+    monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _Encoder())
+    model = UniverSatBenchModel(_RGB, patch_px=16, normalization="identity")
+    out = model(torch.rand(2, len(_RGB), 224, 224))
+    assert seen["patch_size"] == 160.0
+    assert seen["output_grid"] == 14
+    assert model.num_prefix_tokens == 4
+    assert out.requires_grad, "segmentation fine-tuning needs gradients through the encoder"
