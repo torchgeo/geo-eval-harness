@@ -173,7 +173,7 @@ def test_download_every_family_then_load_real_splits(
         assert archive.read_bytes() == (source / name / dataset_class.filename).read_bytes()
     for name, counts, channels in (
         ("m-eurosat", [24, 8, 8], 3),
-        ("caffe", [6, 4, 4], 1),
+        ("caffe", [6, 4, 4], 3),
         ("eurosat", [2, 2, 2], 3),
         ("eurosat-spatial", [2, 2, 2], 3),
         ("resisc45", [2, 2, 2], 3),
