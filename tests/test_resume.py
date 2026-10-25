@@ -48,6 +48,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "lora_rank",
                 "lora_target_modules",
                 "lora_alpha",
+                "lora_last_blocks",
                 "backbone_learning_rate",
                 "neck",
             },
@@ -121,6 +122,8 @@ def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
     assert _hash(vit(**lora)) != _hash(vit())
     assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
     assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora, lora_last_blocks=3))
 
 
 def test_neck_changes_the_hash_only_when_enabled() -> None:

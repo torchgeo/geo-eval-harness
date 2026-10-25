@@ -83,8 +83,8 @@ def _json_safe(value: object) -> object:
 
 
 def regime_of(method: str) -> str:
-    """Map a result-row method such as ``seg-upernet-vitneck-lora`` to frozen/lora/full."""
-    if method.endswith("-lora"):
+    """Map a result-row method such as ``seg-upernet-vitneck-lora-last6`` to frozen/lora/full."""
+    if "-lora" in method:
         return "lora"
     if method.endswith("-full"):
         return "full"

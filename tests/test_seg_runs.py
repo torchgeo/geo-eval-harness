@@ -76,7 +76,7 @@ def rules(tmp_path: Path) -> dict[str, set[str]]:
 
 def test_regime_from_method() -> None:
     assert [
-        regime_of(m) for m in ("seg-upernet", "seg-upernet-vitneck-lora", "seg-upernet-full")
+        regime_of(m) for m in ("seg-upernet", "seg-upernet-vitneck-lora-last6", "seg-upernet-full")
     ] == ["frozen", "lora", "full"]
 
 

@@ -206,6 +206,8 @@ def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
         ({"lora_rank": 8}, "lora_rank requires backbone_learning_rate"),
         ({"backbone_learning_rate": 1e-4}, "require lora_rank"),
         ({"lora_alpha": 32.0}, "require lora_rank"),
+        ({"lora_last_blocks": 6}, "require lora_rank"),
+        ({"lora_rank": 8, "backbone_learning_rate": 1e-4, "lora_last_blocks": 0}, "greater than 0"),
     ],
 )
 def test_lora_settings_require_each_other(segmentation: dict, message: str) -> None:
@@ -224,6 +226,8 @@ def test_lora_targets_alone_keep_the_frozen_probe_and_name_lora_runs() -> None:
 
     assert frozen.method == "seg-upernet"
     assert lora.method == "seg-upernet-lora"
+    config["segmentation"] |= {"lora_last_blocks": 6}
+    assert validate_run_config(config).segmentation.method == "seg-upernet-lora-last6"
 
 
 def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:

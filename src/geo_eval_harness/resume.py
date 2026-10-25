@@ -32,7 +32,13 @@ KEY_COLS = (
     "config_hash",
 )
 
-_LORA_FIELDS = {"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"}
+_LORA_FIELDS = {
+    "lora_rank",
+    "lora_target_modules",
+    "lora_alpha",
+    "lora_last_blocks",
+    "backbone_learning_rate",
+}
 
 
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
@@ -40,8 +46,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
 
     Excludes device and worker count, which only control execution. Includes batch size because
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
-    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck`` counts only when a
-    neck is enabled.
+    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck`` and
+    ``lora_last_blocks`` count only when set, so existing hashes are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
@@ -49,6 +55,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     segmentation_exclude = set(_LORA_FIELDS) if segmentation.lora_rank is None else set()
     if segmentation.neck == "none":
         segmentation_exclude.add("neck")
+    if segmentation.lora_last_blocks is None:
+        segmentation_exclude.add("lora_last_blocks")
     payload = {
         "schema_version": config.schema_version,
         "model": {
