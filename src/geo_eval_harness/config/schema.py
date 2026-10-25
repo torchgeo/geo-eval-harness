@@ -270,17 +270,24 @@ class SegmentationConfig(StrictModel):
     lora_target_modules: StrictStr | None = None
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+    full_finetune: StrictBool = False
 
     @model_validator(mode="after")
     def validate_lora(self) -> "SegmentationConfig":
         """Pair LoRA settings with ``lora_rank``; target modules may come from a model preset."""
+        if self.full_finetune and self.lora_rank is not None:
+            raise ValueError("full_finetune and lora_rank are mutually exclusive")
         if self.lora_rank is not None and self.backbone_learning_rate is None:
             raise ValueError("lora_rank requires backbone_learning_rate")
+        if self.full_finetune and self.backbone_learning_rate is None:
+            raise ValueError("full_finetune requires backbone_learning_rate")
         if self.lora_rank is None and (
-            self.backbone_learning_rate is not None
+            (self.backbone_learning_rate is not None and not self.full_finetune)
             or self.lora_alpha != type(self).model_fields["lora_alpha"].default
         ):
-            raise ValueError("backbone_learning_rate and lora_alpha require lora_rank")
+            raise ValueError(
+                "backbone_learning_rate (without full_finetune) and lora_alpha require lora_rank"
+            )
         return self
 
     @model_validator(mode="after")
@@ -292,9 +299,14 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA."""
+        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
+
+        Full fine-tuning appends ``-full`` instead of ``-lora``.
+        """
         neck = "" if self.neck == "none" else f"-{self.neck}neck"
         lora = "" if self.lora_rank is None else "-lora"
+        if self.full_finetune:
+            lora = "-full"
         return f"seg-{self.head}{neck}{lora}"
 
 

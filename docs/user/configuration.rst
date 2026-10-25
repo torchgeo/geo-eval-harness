@@ -201,6 +201,7 @@ Segmentation
      lora_target_modules: null
      lora_alpha: 16.0
      backbone_learning_rate: null
+     full_finetune: false
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
@@ -219,7 +220,7 @@ Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
 See :ref:`segmentation-model-selection` for the validation requirements and model-selection policy.
 
-Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. Without ``lora_rank``, ``backbone_learning_rate`` and ``lora_alpha`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
+Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (method ``seg-<head>-full``), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate`` and ``lora_alpha`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
 
 .. code-block:: yaml
 

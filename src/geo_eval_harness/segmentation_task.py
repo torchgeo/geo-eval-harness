@@ -148,6 +148,7 @@ class SegmentationSolver:
                 ``None`` trains all parameters at ``lr``.
         """
         self.model = model.to(device)
+        self.backbone_eval_mode = False
         self.num_classes = num_classes
         self.device = device
         self.lr_scheduler_type = lr_scheduler
@@ -263,9 +264,13 @@ class SegmentationSolver:
         return True
 
     def _set_train_mode(self) -> None:
-        """Train the head; a frozen or LoRA-adapted backbone stays in eval mode except adapters."""
+        """Train the head; a frozen or LoRA-adapted backbone stays in eval mode except adapters.
+
+        With ``backbone_eval_mode`` (full fine-tuning) every backbone weight trains, but dropout,
+        stochastic depth, and normalisation statistics behave as at inference, like LoRA.
+        """
         self.model.train()
-        if self.model.freeze_backbone:
+        if self.model.freeze_backbone or self.backbone_eval_mode:
             self.model.backbone.eval()
         elif has_lora_adapters(self.model.backbone):
             set_lora_train_mode(self.model.backbone)
@@ -688,7 +693,8 @@ def build_seg_probe_and_solver(
 ) -> tuple[SegmentationProbe, SegmentationSolver]:
     """Build the probe and solver from validated segmentation settings.
 
-    The backbone is frozen unless ``config.lora_rank`` adds LoRA adapters, which then train at
+    The backbone is frozen unless ``config.lora_rank`` adds LoRA adapters or
+    ``config.full_finetune`` trains every backbone weight, both at
     ``config.backbone_learning_rate``.
     """
     layer_names = config.layers
@@ -707,7 +713,7 @@ def build_seg_probe_and_solver(
         head_type=config.head,
         neck=config.neck,
         neck_norm=config.neck_norm,
-        freeze_backbone=config.lora_rank is None,
+        freeze_backbone=config.lora_rank is None and not config.full_finetune,
         temporal_pool=config.temporal_pool,
     )
     criterion = nn.CrossEntropyLoss(ignore_index=config.ignore_index)
@@ -721,4 +727,5 @@ def build_seg_probe_and_solver(
         ignore_index=config.ignore_index,
         backbone_lr=config.backbone_learning_rate,
     )
+    solver.backbone_eval_mode = config.full_finetune
     return probe, solver

@@ -14,6 +14,7 @@ Added
 ^^^^^
 
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
+* ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * ``output.epoch_metrics`` streams per-epoch segmentation training records (training and validation loss, training and validation mIoU, learning rates, step counts, wall time, peak CUDA memory) to a JSON Lines file, tagged with the result row's ``config_hash``. Segmentation result rows gain ``best_val_epoch`` and ``best_val_miou``.
