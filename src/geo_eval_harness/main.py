@@ -30,7 +30,7 @@ from geo_eval_harness.datasets import (
     get_datasets,
     list_datasets,
 )
-from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.devices import limit_torch_threads, resolve_device
 from geo_eval_harness.intrinsic_dim import (
     FEATURE_SPECTRUM_METRICS,
     DegenerateManifoldError,
@@ -975,6 +975,9 @@ def main(cfg: RunConfig, *, strict: bool = False) -> None:
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
     torch.manual_seed(cfg.runtime.seed)
+    threads = limit_torch_threads()
+    if cfg.runtime.verbose:
+        logger.info("Torch intra-op threads: %d", threads)
     dataset_names = _expand_dataset_list(cfg.datasets)
 
     output_path = _resolve_output_path(cfg)

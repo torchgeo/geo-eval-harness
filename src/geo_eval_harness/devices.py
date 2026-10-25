@@ -3,6 +3,8 @@
 
 """Runtime Torch device selection and CUDA validation."""
 
+import os
+
 import torch
 
 
@@ -42,3 +44,32 @@ def resolve_device(requested: str | torch.device) -> torch.device:
             f"Requested CUDA index {index}, but only {count} CUDA devices are available"
         )
     return torch.device("cuda", index)
+
+
+def cgroup_cpu_limit(cgroup_root: str = "/sys/fs/cgroup") -> float | None:
+    """Return the container's CPU quota in CPUs from cgroup v2 ``cpu.max``, or ``None``.
+
+    ``os.cpu_count()`` reports the host's CPUs even when the container may use fewer.
+    """
+    try:
+        with open(f"{cgroup_root}/cpu.max") as f:
+            quota, period = f.read().split()[:2]
+    except (OSError, ValueError):  # allow-except: no cgroup v2 CPU controller means no quota
+        return None
+    if quota == "max":
+        return None
+    return int(quota) / int(period)
+
+
+def limit_torch_threads(cgroup_root: str = "/sys/fs/cgroup") -> int:
+    """Cap Torch intra-op threads at the CPUs this process may use, and return the count.
+
+    Torch sizes its thread pool from the host CPU count. Inside a container with a smaller CPU
+    quota, the surplus threads contend and CPU-side tensor work slows by orders of magnitude.
+    """
+    available = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else os.cpu_count()
+    limit = cgroup_cpu_limit(cgroup_root)
+    threads = max(1, min(available or 1, int(limit) if limit else available or 1))
+    if torch.get_num_threads() > threads:
+        torch.set_num_threads(threads)
+    return torch.get_num_threads()

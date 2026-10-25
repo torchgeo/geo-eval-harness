@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 import torch
 
-from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.devices import cgroup_cpu_limit, limit_torch_threads, resolve_device
 
 
 @pytest.mark.parametrize("requested", ["cpu", "cpu:0", "meta", "mps"])
@@ -125,3 +125,42 @@ def test_invalid_device_requests_fail_before_cuda_queries(requested: str) -> Non
     ):
         resolve_device(requested)
     available.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [("800000 100000\n", 8.0), ("150000 100000\n", 1.5), ("max 100000\n", None)],
+)
+def test_cgroup_cpu_limit_reads_cpu_max(tmp_path, content: str, expected: float | None) -> None:
+    (tmp_path / "cpu.max").write_text(content)
+    assert cgroup_cpu_limit(str(tmp_path)) == expected
+
+
+def test_cgroup_cpu_limit_without_cgroup(tmp_path) -> None:
+    assert cgroup_cpu_limit(str(tmp_path)) is None
+
+
+def test_limit_torch_threads_caps_at_quota(tmp_path) -> None:
+    (tmp_path / "cpu.max").write_text("200000 100000\n")
+    before = torch.get_num_threads()
+    try:
+        with (
+            mock.patch("os.sched_getaffinity", return_value=set(range(40))),
+            mock.patch.object(torch, "get_num_threads", side_effect=[40, 2]),
+            mock.patch.object(torch, "set_num_threads") as set_threads,
+        ):
+            assert limit_torch_threads(str(tmp_path)) == 2
+        set_threads.assert_called_once_with(2)
+    finally:
+        torch.set_num_threads(before)
+
+
+def test_limit_torch_threads_never_raises_thread_count(tmp_path) -> None:
+    (tmp_path / "cpu.max").write_text("max 100000\n")
+    with (
+        mock.patch("os.sched_getaffinity", return_value=set(range(40))),
+        mock.patch.object(torch, "get_num_threads", return_value=4),
+        mock.patch.object(torch, "set_num_threads") as set_threads,
+    ):
+        assert limit_torch_threads(str(tmp_path)) == 4
+    set_threads.assert_not_called()
