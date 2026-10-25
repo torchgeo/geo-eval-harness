@@ -373,6 +373,9 @@ Training knobs
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
+   * - ``upsampler``
+     - ``none``
+     - ``anyup`` upsamples UPerNet's fused features to input resolution with frozen AnyUp before the classifier.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.

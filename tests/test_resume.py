@@ -52,6 +52,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "backbone_learning_rate",
                 "neck",
                 "neck_norm",
+                "upsampler",
                 "full_finetune",
             },
         ),
@@ -141,6 +142,14 @@ def test_neck_changes_the_hash_only_when_enabled() -> None:
     # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
     assert _hash(upernet(neck_norm="none")) == _hash(upernet())
     assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
+
+
+def test_upsampler_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
+
+    assert _hash(upernet(upsampler="none")) == _hash(upernet())
+    assert _hash(upernet(upsampler="anyup")) != _hash(upernet())
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:

@@ -257,6 +257,7 @@ class SegmentationConfig(StrictModel):
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet"] = "fpn"
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
+    upsampler: Literal["none", "anyup"] = "none"
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
@@ -298,6 +299,10 @@ class SegmentationConfig(StrictModel):
         """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
         if self.neck == "vit" and self.head not in NECK_HEADS:
             raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        if self.upsampler == "anyup" and self.head != "upernet":
+            raise ValueError(f"upsampler 'anyup' requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.cache_features:
+            raise ValueError("upsampler 'anyup' needs input images; set cache_features: false")
         return self
 
     @property
@@ -305,8 +310,11 @@ class SegmentationConfig(StrictModel):
         """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
 
         LoRA restricted to the last ``k`` blocks appends ``-last<k>``; full fine-tuning ``-full``.
+        The AnyUp upsampler adds ``-anyup`` after the neck.
         """
         neck = "" if self.neck == "none" else f"-{self.neck}neck"
+        if self.upsampler != "none":
+            neck += f"-{self.upsampler}"
         lora = "" if self.lora_rank is None else "-lora"
         if self.full_finetune:
             lora = "-full"

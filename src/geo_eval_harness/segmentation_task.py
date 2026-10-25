@@ -691,6 +691,7 @@ def build_seg_probe_and_solver(
         head_type=config.head,
         neck=config.neck,
         neck_norm=config.neck_norm,
+        upsampler=config.upsampler,
         freeze_backbone=config.lora_rank is None and not config.full_finetune,
         temporal_pool=config.temporal_pool,
     )
