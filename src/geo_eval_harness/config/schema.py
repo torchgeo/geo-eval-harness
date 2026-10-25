@@ -291,6 +291,8 @@ class RuntimeConfig(StrictModel):
     workers: StrictInt = Field(default=4, ge=0)
     seed: StrictInt = 0
     verbose: StrictBool = False
+    sample_cache: Literal["none", "disk", "host", "gpu"] = "none"
+    sample_cache_dir: StrictStr = "~/.cache/geo_eval_harness/samples"
 
 
 def load_yaml(path: str | pathlib.Path) -> dict[str, Any]:
