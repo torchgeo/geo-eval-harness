@@ -11,7 +11,7 @@
 #   GEH_DIR      [~/geo-eval-harness]     repo checkout with .venv/
 #   CKPT_DIR     [$GEH_DIR/checkpoints]   TerraFM-B.pth goes here
 #   HF_HOME      [~/.cache/huggingface]   Hugging Face cache (UniverSat weights)
-#   TORCH_HOME   [~/.cache/torch]         torch.hub cache (UniverSat code)
+#   TORCH_HOME   [~/.cache/torch]         torch.hub cache (UniverSat and AnyUp code, AnyUp checkpoint)
 # The lock file defaults to $CKPT_DIR/assets.lock. Copy it to the other hubs.
 set -euo pipefail
 
@@ -37,6 +37,10 @@ TERRAFM_FILE=TerraFM-B.pth
 UNIVERSAT_HUB=gastruc/UniverSat
 UNIVERSAT_REF=d4e8712d29651c34c4fdb9f9d2c0b168dd5c678b  # pinned in geo_eval_harness/models/universat.py
 UNIVERSAT_HF=g-astruc/UniverSat
+# Pinned in geo_eval_harness/models/anyup.py (code commit and checkpoint sha256).
+ANYUP_HUB=wimmerth/anyup
+ANYUP_REF=351807a9c4287368732cc247f26c7c81c9139af4
+ANYUP_SHA256=b6cc407da8986c7e5c9098e61f7531767a9aca8fff20a1bc6c99d488e61aac59
 
 fail=0
 say() { printf '%-8s %s\n' "$1" "$2"; }
@@ -114,6 +118,21 @@ else
   want=$(locked universat_hf_sha256 || true)
   if [[ -n $want && $want != "$universat_sha" ]]; then say MISMATCH "UniverSat weights $universat_sha != locked $want"; fail=1
   else say OK "UniverSat code $hub_dir, weights rev ${universat_rev:0:12} sha256=${universat_sha:0:16}"; fi
+fi
+
+# --- AnyUp (segmentation.upsampler: anyup): torch.hub code + release checkpoint -------------
+anyup_ckpt=${TORCH_HOME:-$HOME/.cache/torch}/hub/checkpoints/anyup_multi_backbone.pth
+if [[ ! -f $anyup_ckpt && $MODE == download ]]; then
+  echo "loading AnyUp ($ANYUP_HUB@$ANYUP_REF)"
+  "$PYTHON" -c "import torch; torch.hub.load('$ANYUP_HUB:$ANYUP_REF', 'anyup_multi_backbone', trust_repo=True, skip_validation=True)" >/dev/null
+fi
+anyup_dir=$(ls -d "${TORCH_HOME:-$HOME/.cache/torch}"/hub/wimmerth_anyup_"$ANYUP_REF" 2>/dev/null || true)
+if [[ -f $anyup_ckpt && -n $anyup_dir ]]; then
+  anyup_sha=$(sha256sum "$anyup_ckpt" | cut -d' ' -f1)
+  if [[ $anyup_sha != "$ANYUP_SHA256" ]]; then say MISMATCH "$anyup_ckpt sha256 $anyup_sha != $ANYUP_SHA256"; fail=1
+  else say OK "AnyUp code $anyup_dir, checkpoint sha256=${anyup_sha:0:16}"; fi
+else
+  say MISSING "AnyUp (code: ${anyup_dir:-none}, checkpoint: $anyup_ckpt)"; fail=1
 fi
 
 # --- Lock file: written once on the leader, then copied to the other hubs -------------------
