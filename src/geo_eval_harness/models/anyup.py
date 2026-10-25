@@ -12,11 +12,13 @@ and ImageNet normalisation, so the raw input scale does not matter.
 
 import hashlib
 import logging
+import math
 from pathlib import Path
 from typing import override
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
 
@@ -27,6 +29,12 @@ ANYUP_REF = "351807a9c4287368732cc247f26c7c81c9139af4"
 ANYUP_ENTRYPOINT = "anyup_multi_backbone"
 #: sha256 of the multi-backbone release checkpoint (``checkpoint_v2/anyup_multi_backbone.pth``).
 ANYUP_CHECKPOINT_SHA256 = "b6cc407da8986c7e5c9098e61f7531767a9aca8fff20a1bc6c99d488e61aac59"
+
+#: Largest cross-attention size (queries x keys x samples) run in one AnyUp call. The attention
+#: AnyUp keeps for backward grows with output pixels times feature-grid tokens: a 14x14 ViT grid
+#: at 224 px and batch 16 is 1.6e8 and runs whole, while a stride-4 (56x56) pyramid would need
+#: about 20 GB, so larger grids run in batch chunks with gradient checkpointing.
+ATTENTION_BUDGET = 2**28
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
@@ -94,7 +102,10 @@ def load_anyup() -> nn.Module:
 class AnyUpClassifier(nn.Module):
     """Upsample fused features to the guidance resolution with frozen AnyUp, then classify.
 
-    The caller sets :attr:`guidance` before each forward. AnyUp stays in eval mode.
+    The caller sets :attr:`guidance` before each forward. AnyUp stays in eval mode. AnyUp has no
+    cross-sample operations, so a batch whose attention exceeds :data:`ATTENTION_BUDGET` runs in
+    chunks of samples, each recomputed in backward instead of storing its attention; batches
+    within the budget run in one call as before.
     """
 
     def __init__(self, classifier: nn.Module, upsampler: nn.Module) -> None:
@@ -115,5 +126,20 @@ class AnyUpClassifier(nn.Module):
         if self.guidance is None:
             raise RuntimeError("AnyUp guidance image was not set before the head forward.")
         guidance = self.guidance.to(dtype=features.dtype)
-        upsampled = self.upsampler(guidance, features, output_size=tuple(guidance.shape[-2:]))
-        return self.classifier(upsampled)
+        size = tuple(guidance.shape[-2:])
+        per_sample = math.prod(size) * features.shape[-2] * features.shape[-1]
+        chunk = max(1, ATTENTION_BUDGET // per_sample)
+        if chunk >= len(features):
+            return self.classifier(self.upsampler(guidance, features, output_size=size))
+
+        def upsample(g: torch.Tensor, f: torch.Tensor) -> torch.Tensor:
+            return self.upsampler(g, f, output_size=size)
+
+        parts = []
+        for start in range(0, len(features), chunk):
+            g, f = guidance[start : start + chunk], features[start : start + chunk]
+            if torch.is_grad_enabled() and f.requires_grad:
+                parts.append(checkpoint(upsample, g, f, use_reentrant=False))
+            else:
+                parts.append(upsample(g, f))
+        return self.classifier(torch.cat(parts))

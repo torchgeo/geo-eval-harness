@@ -1428,3 +1428,22 @@ def test_anyup_guidance_bands_follow_wavelengths() -> None:
     guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
     assert guide.shape == (2, 3, 8, 8)
     assert guide.abs().max() < 3
+
+
+def test_anyup_chunks_large_attention_with_checkpointing(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    stand_in = _StandInAnyUp()
+    classifier = nn.Conv2d(4, 2, 1)
+    module = anyup.AnyUpClassifier(classifier, stand_in)
+    module.guidance = torch.randn(5, 3, 16, 16)
+    features = torch.randn(5, 4, 4, 4, requires_grad=True)
+    whole = module(features)
+    assert len(stand_in.calls) == 1
+    monkeypatch.setattr(anyup, "ATTENTION_BUDGET", 2 * 16 * 16 * 4 * 4)
+    stand_in.calls.clear()
+    chunked = module(features)
+    chunked.sum().backward()
+    assert [c[1][0] for c in stand_in.calls[:3]] == [2, 2, 1]
+    torch.testing.assert_close(chunked, whole)
+    assert features.grad is not None
