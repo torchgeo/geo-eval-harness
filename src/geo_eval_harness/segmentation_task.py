@@ -3,6 +3,7 @@
 import logging
 import math
 from collections.abc import Iterator
+from contextlib import nullcontext
 
 import torch
 import torch.nn as nn
@@ -17,7 +18,7 @@ from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
 from .config.schema import SegmentationConfig
-from .segmentation_lora import apply_lora, has_lora_adapters, set_lora_train_mode
+from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -483,19 +484,32 @@ class SegmentationSolver:
         *,
         collect_confusions: bool = False,
     ) -> SegMetrics | tuple[SegMetrics, torch.Tensor]:
-        """Evaluate raw images or device-resident features with the same metrics."""
+        """Evaluate raw images or device-resident features with the same metrics.
+
+        LoRA adapters are merged into the backbone weights for the pass (see
+        :func:`merged_lora`), so evaluation costs the same as the plain backbone.
+        """
         self.model.eval()
         for m in self._all_metrics:
             m.reset()
             m.to(self.device)
 
+        backbone = getattr(self.model, "backbone", None)
+        merge = (
+            merged_lora(backbone)
+            if backbone is not None
+            and not isinstance(data, GPUTensorCache)
+            and has_lora_adapters(backbone)
+            else nullcontext()
+        )
         confusion_list: list[torch.Tensor] = []
-        for logits, masks in self._evaluation_batches(data, batch_size):
-            for m in self._all_metrics:
-                m.update(logits, masks)
-            if collect_confusions:
-                predictions = logits.argmax(dim=1)
-                confusion_list.append(self._per_image_confusions(predictions, masks).cpu())
+        with merge:
+            for logits, masks in self._evaluation_batches(data, batch_size):
+                for m in self._all_metrics:
+                    m.update(logits, masks)
+                if collect_confusions:
+                    predictions = logits.argmax(dim=1)
+                    confusion_list.append(self._per_image_confusions(predictions, masks).cpu())
 
         metrics = self._compute_metrics()
         if collect_confusions:

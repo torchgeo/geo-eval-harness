@@ -4,6 +4,8 @@ import importlib.util
 import logging
 import math
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import torch
 import torch.nn as nn
@@ -105,6 +107,28 @@ def _is_lora_module(name: str, module: nn.Module) -> bool:
 def has_lora_adapters(model: nn.Module) -> bool:
     """Return whether :func:`apply_lora` added adapter modules to ``model``."""
     return any(_is_lora_module(name, module) for name, module in model.named_modules())
+
+
+@contextmanager
+def merged_lora(model: nn.Module) -> Iterator[None]:
+    """Fold LoRA updates into the backbone weights for inference, then unmerge them.
+
+    Unmerged adapters add several small kernels per adapted layer to every forward pass; merged,
+    the forward pass costs the same as the plain backbone. PEFT layers use their own
+    ``merge``/``unmerge``; Swin weight parametrizations are cached so ``W + BA`` is computed once
+    per pass. Use only without gradients.
+    """
+    layers = [
+        m for m in model.modules() if hasattr(m, "lora_A") and hasattr(m, "merge") and not m.merged
+    ]
+    for layer in layers:
+        layer.merge()
+    try:
+        with parametrize.cached():
+            yield
+    finally:
+        for layer in layers:
+            layer.unmerge()
 
 
 def set_lora_train_mode(model: nn.Module) -> None:

@@ -2,6 +2,8 @@
 
 import re
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pytest
 import torch
@@ -15,7 +17,11 @@ from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, load_mo
 from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.models.timm import TimmPatchBenchModel
-from geo_eval_harness.segmentation_lora import apply_lora, has_lora_adapters
+from geo_eval_harness.segmentation_lora import (
+    apply_lora,
+    has_lora_adapters,
+    merged_lora,
+)
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 from geo_eval_harness.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
 from tests.support.models import bands
@@ -263,3 +269,49 @@ def test_best_validation_restores_head_and_real_adapters_together(
     for name, value in backbone.named_parameters():
         if name in frozen:
             torch.testing.assert_close(value, frozen[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])
+def test_merged_lora_preserves_outputs(model_kind: str) -> None:
+    torch.manual_seed(3)
+    backbone = _TinyAdapterBackbone(model_kind)
+    targets = r"attn\.(qkv|proj)" if model_kind == "torchvision_swin" else "attn"
+    apply_lora(backbone, targets, rank=2, alpha=4.0)
+    with torch.no_grad():
+        for name, param in backbone.named_parameters():
+            if "lora_B" in name:
+                param.normal_(0, 0.1)
+    backbone.eval()
+    images = torch.randn(2, 3, 8, 8)
+
+    with torch.no_grad():
+        reference = backbone(images)
+        with merged_lora(backbone):
+            torch.testing.assert_close(backbone(images), reference, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(backbone(images), reference, rtol=1e-5, atol=1e-6)
+
+
+def test_solver_evaluates_lora_inside_merged_lora(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"],
+        lora_rank=4,
+        lora_target_modules=VIT_TARGETS,
+        backbone_learning_rate=1e-4,
+    )
+    _probe, solver = build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+    merged: list[nn.Module] = []
+
+    @contextmanager
+    def spy(backbone: nn.Module) -> Iterator[None]:
+        merged.append(backbone)
+        yield
+
+    monkeypatch.setattr("geo_eval_harness.segmentation_task.merged_lora", spy)
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 224, 224), torch.randint(0, 3, (2, 224, 224))),
+        batch_size=2,
+    )
+    solver.evaluate(loader)
+
+    assert merged == [model]
