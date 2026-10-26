@@ -35,7 +35,7 @@ class BENV2(_V2Dataset):
         BandSpec("s2", "b09", "B09", mean=2242.3, std=1294.24, min=1, max=13792, wavelength_um=0.945),
         BandSpec("s2", "b11", "B11", mean=1576.53, std=1064.65, min=1, max=15351, wavelength_um=1.61),
         BandSpec("s2", "b12", "B12", mean=1004.48, std=809.08, min=1, max=15213, wavelength_um=2.19),
-        BandSpec("s1", "vv", "VV", mean=-19.361, std=5.6033, min=-66.5271, max=24.3281),
-        BandSpec("s1", "vh", "VH", mean=-12.6317, std=5.094, min=-65.3005, max=33.5545),
+        BandSpec("s1", "vv", "VV", mean=-19.361, std=5.6033, min=-66.5271, max=24.3281, unit="db"),
+        BandSpec("s1", "vh", "VH", mean=-12.6317, std=5.094, min=-65.3005, max=33.5545, unit="db"),
     ]
     # fmt: on

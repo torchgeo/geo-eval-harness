@@ -337,9 +337,12 @@ class OlmoEarthBenchModel(BenchModel):
             identical slots; use only for explicit multi-timestep ablations.
         std_multiplier: Std multiplier passed to ``Normalizer``.
         normalize: If True, L2-normalize output embeddings.
-        sar_log_scale: If True, convert SAR values to dB via
-            ``10·log10(max(v, 1e-6))`` before feeding OlmoEarth's S1
-            normalizer, which was trained on std⁰ dB values.
+        sar_log_scale: Convert SAR to dB via ``10·log10(max(v, 1e-6))``
+            before OlmoEarth's S1 normalizer, which expects σ⁰ in dB
+            (min-max over -50..0 dB). ``None`` (default) converts exactly
+            when every SAR band declares ``BandSpec.unit == "linear_power"``
+            (e.g. Kuro Siwo); linear values would otherwise all normalize to
+            ~0.77-0.79. ``True``/``False`` force it.
         landsat_scale_factor: Optional multiplier applied to Landsat
             values *after* the standard uint8→DN conversion.  Use to
             compensate for mis-matched scales between GeoBench's uint8
@@ -382,7 +385,7 @@ class OlmoEarthBenchModel(BenchModel):
         time_steps: int = 1,
         std_multiplier: float = 2.0,
         normalize: bool = False,
-        sar_log_scale: bool = False,
+        sar_log_scale: bool | None = None,
         landsat_scale_factor: float | None = None,
         norm_from_pretrained: bool | Literal["auto"] = "auto",
         sensor_remap: dict[str, str] | None = None,
@@ -413,6 +416,11 @@ class OlmoEarthBenchModel(BenchModel):
         sensor_groups = _build_sensor_groups(bands_for_routing)
         for g in sensor_groups:
             g["modality"] = getattr(Modality, g["modality_name"])
+            g["sar_to_db"] = g["sensor"] in ("sar", "s1") and (
+                sar_log_scale
+                if sar_log_scale is not None
+                else all(self.bands[i].unit == "linear_power" for i in g["src_indices"])
+            )
         self._sensor_groups = sensor_groups
 
         if input_res is None:
@@ -528,7 +536,7 @@ class OlmoEarthBenchModel(BenchModel):
                 g_images = to_s2_dn(g_images, input_unit)
                 if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
                     g_images = g_images * self.landsat_scale_factor
-            if group["sensor"] in ("sar", "s1") and self.sar_log_scale:
+            if group["sar_to_db"]:
                 g_images = 10.0 * torch.log10(g_images.clamp(min=1e-6))
 
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
