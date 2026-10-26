@@ -10,12 +10,15 @@ Model code loads via ``torch.hub`` and weights from the HuggingFace Hub
 ``bandspec_zscore`` normalization, matching UniverSat's own GeoBench loader.
 """
 
+import functools
 import logging
 from collections import defaultdict
-from typing import ClassVar, Protocol, Self, cast
+from collections.abc import Callable
+from typing import Any, ClassVar, Protocol, Self, cast
 
 import torch
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
 
@@ -64,6 +67,87 @@ _MODALITY_SUBPATCH: dict[str, int] = {
     "l8": 1,
     "l7": 1,
 }
+
+
+# UniverSat's patch encoder (UPE) expands every input pixel x band into a
+# 384-d spectral token before patch pooling: 16 x 224^2 x 6 bands needs a
+# single 6.9 GiB tensor and OOMs a 32 GB GPU at batch 16. The UPE is
+# per-sample (no cross-batch ops without masking), so it runs in sample
+# chunks of at most this many pixel x band values; the trunk still sees the
+# full batch.
+UPE_PIXEL_BUDGET = 2**20
+
+
+def _merge_upe_chunks(chunks: list[tuple[Any, ...]]) -> tuple[Any, ...]:
+    """Concatenate per-chunk ``UPE_forward`` outputs along the batch dim."""
+    merged: list[Any] = []
+    for parts in zip(*chunks, strict=True):
+        first = parts[0]
+        if isinstance(first, list) and first and isinstance(first[0], torch.Tensor):
+            merged.append([torch.cat(items, dim=0) for items in zip(*parts, strict=True)])
+        elif isinstance(first, dict):
+            merged.append({k: torch.cat([p[k] for p in parts], dim=0) for k in first})
+        else:
+            # Batch-independent metadata (token sizes, kept modalities).
+            if any(p != first for p in parts[1:]):
+                msg = f"UniverSat UPE chunks disagree on metadata: {parts!r}"
+                raise RuntimeError(msg)
+            merged.append(first)
+    return tuple(merged)
+
+
+def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
+    upe_forward: Callable[..., tuple[Any, ...]],
+    params: Callable[[], list[torch.nn.Parameter]],
+    x: dict[str, torch.Tensor],
+    modalities: list[str],
+    wavelengths: dict[str, list[float | str]],
+    input_res: dict[str, float],
+    scale: float,
+    subpatches: dict[str, int],
+    mask_in: object = None,
+    dataset: str = "",
+) -> tuple[Any, ...]:
+    """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET``.
+
+    Masked (pretraining) and dataset-projector calls bypass chunking. When the
+    UPE itself trains (full fine-tuning), each chunk is checkpointed so its
+    per-pixel activations are recomputed in backward instead of stored.
+    """
+    batch = x[modalities[0]].shape[0]
+    per_sample = sum(x[m][0].numel() for m in modalities)
+    chunk = max(1, UPE_PIXEL_BUDGET // max(per_sample, 1))
+    if mask_in is not None or dataset or batch <= chunk:
+        return upe_forward(
+            x, modalities, wavelengths, input_res, scale, subpatches, mask_in, dataset
+        )
+
+    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
+    outs = []
+    for start in range(0, batch, chunk):
+        part = {
+            k: v[start : start + chunk] if isinstance(v, torch.Tensor) else v for k, v in x.items()
+        }
+        args = (part, modalities, wavelengths, input_res, scale, subpatches, None, dataset)
+        if needs_grad:
+            outs.append(checkpoint(upe_forward, *args, use_reentrant=False))
+        else:
+            outs.append(upe_forward(*args))
+    return _merge_upe_chunks(outs)
+
+
+def _install_upe_chunking(encoder: object) -> None:
+    """Wrap the loaded UniverSat's ``UPE_forward`` with batch chunking."""
+    inner = getattr(encoder, "model", None)
+    upe = getattr(inner, "UPE_forward", None)
+    if inner is None or upe is None:
+        return
+    spatial = getattr(inner, "spatial_encoder", None)
+
+    def params() -> list[torch.nn.Parameter]:
+        return list(spatial.parameters()) if isinstance(spatial, torch.nn.Module) else []
+
+    object.__setattr__(inner, "UPE_forward", functools.partial(_chunked_upe_forward, upe, params))
 
 
 # SAR bands are sensor codes (not wavelengths) in UniverSat's s1 modality.
@@ -243,6 +327,7 @@ class UniverSatBenchModel(BenchModel):
                 compile=False,
             ),
         ).eval()
+        _install_upe_chunking(self.model)
         # Register tokens precede the spatial tokens in every trunk block output.
         self.num_prefix_tokens = int(getattr(getattr(self.model, "model", None), "n_registers", 0))
         logger.info(

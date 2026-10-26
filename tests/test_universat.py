@@ -168,3 +168,55 @@ def test_rgb_bands_without_wavelengths_use_standard_centres() -> None:
     (group,) = _build_sensor_groups(bands)
     assert group["modality"] == "aerial"
     assert group["wavelengths"] == [0.665, 0.56, 0.49]
+
+
+class _FakeUPE(torch.nn.Module):
+    """Mimics UniverSat's per-sample ``UPE_forward`` output structure."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.spatial_encoder = torch.nn.Linear(2, 2)
+        self.batches: list[int] = []
+
+    def UPE_forward(  # noqa: PLR0913
+        self, x, modalities, wavelengths, input_res, scale, subpatches, mask_in=None, dataset=""
+    ):
+        t = x[modalities[0]]
+        self.batches.append(t.shape[0])
+        tok = t.flatten(1).sum(1, keepdim=True)[:, None] * self.spatial_encoder.weight[0, 0]
+        return [tok], [tok * 2], [7], [tok + 1], [tok - 1], {"tokens_s2": tok}, list(modalities)
+
+
+@pytest.mark.parametrize("trainable", [False, True])
+def test_upe_chunking_matches_full_batch(
+    monkeypatch: pytest.MonkeyPatch, *, trainable: bool
+) -> None:
+    from geo_eval_harness.models import universat
+
+    encoder = torch.nn.Module()
+    encoder.model = _FakeUPE()
+    encoder.model.spatial_encoder.weight.requires_grad_(trainable)
+    x = {"s2": torch.randn(5, 3, 4, 4), "s2_extra": "meta"}
+    args = (["s2"], {"s2": [0.5]}, {"s2": 10.0}, 1.0, {"s2": 1})
+    full = encoder.model.UPE_forward(x, *args)
+
+    universat._install_upe_chunking(encoder)
+    monkeypatch.setattr(universat, "UPE_PIXEL_BUDGET", 2 * 3 * 4 * 4)
+    encoder.model.batches.clear()
+    chunked = encoder.model.UPE_forward(x, *args)
+
+    assert encoder.model.batches == [2, 2, 1]
+    for a, b in zip(full, chunked, strict=True):
+        if isinstance(a, dict):
+            torch.testing.assert_close(a["tokens_s2"], b["tokens_s2"])
+        elif a and isinstance(a[0], torch.Tensor):
+            torch.testing.assert_close(a[0], b[0])
+        else:
+            assert a == b
+    if trainable:
+        chunked[0][0].sum().backward()
+        assert encoder.model.spatial_encoder.weight.grad is not None
+
+    encoder.model.batches.clear()
+    encoder.model.UPE_forward(x, *args, mask_in=object())
+    assert encoder.model.batches == [5]
