@@ -260,6 +260,7 @@ class SegmentationConfig(StrictModel):
     upsampler: Literal["none", "anyup"] = "none"
     weight_decay: StrictFloat = Field(default=0.0, ge=0)
     head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
+    early_stopping_patience: StrictInt | None = Field(default=None, gt=0)
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)

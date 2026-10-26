@@ -55,6 +55,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "upsampler",
                 "weight_decay",
                 "head_dropout",
+                "early_stopping_patience",
                 "full_finetune",
             },
         ),
@@ -153,6 +154,8 @@ def test_regularisation_changes_the_hash_only_when_set() -> None:
     assert _hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _hash(upernet())
     assert _hash(upernet(weight_decay=0.05)) != _hash(upernet())
     assert _hash(upernet(head_dropout=0.1)) != _hash(upernet())
+    assert _hash(upernet(early_stopping_patience=None)) == _hash(upernet())
+    assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
 
 
 def test_upsampler_changes_the_hash_only_when_enabled() -> None:
