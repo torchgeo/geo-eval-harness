@@ -9,58 +9,67 @@ of the same (cosine-over-20-epochs) schedule earlier gives:
 
 A shorter cosine schedule (``epochs=N``) follows a different LR path and is NOT covered.
 
-    python -m experiments.seg_bench.early_stop <campaign_dir> [...] [--out rescored.csv]
+    python -m experiments.seg_bench.early_stop <dir>[=study] [...] [--out table.csv]
+
+Excludes runs listed in SUPERSEDED.tsv.
 """
 
 import argparse
 import csv
 import json
+import math
 import statistics as st
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 
 from scipy.stats import kendalltau
 
 TRUNCATE = (5, 8, 10, 12, 15)
 PATIENCE = (2, 3, 5)
-GROUP_EXCLUDE = ("model_key", "preset", "bands", "backbone_lr", "job_id", "source_job_id")
+MIN_GROUP = 3
+TAU_MIN, TOP1_MIN, LOSS_MAX = 0.95, 100.0, 0.3
 
 
-def load_runs(campaign: Path) -> list[dict]:
-    """One record per finished run, including pilot runs listed in ``reuse.tsv``."""
+def load_superseded(path: Path) -> set[tuple[str, str]]:
+    """``(campaign, job_id)`` pairs listed in ``SUPERSEDED.tsv`` (``#`` lines are comments)."""
+    if not path.is_file():
+        return set()
+    rows = (line.rstrip("\n").split("\t") for line in path.open() if not line.startswith("#"))
+    return {(r[0], r[1]) for r in rows if len(r) >= 2}
+
+
+def load_runs(campaign: Path, study: str, superseded: set[tuple[str, str]]) -> list[dict]:
+    """One record per finished run, including runs reused from other campaigns via ``reuse.tsv``.
+
+    ``study`` names the ranking scope, so a follow-up campaign can join its parent's groups.
+    """
     rows = list(csv.DictReader((campaign / "jobs.tsv").open(), delimiter="\t"))
     sources = [(r, campaign, r["job_id"]) for r in rows]
     reuse = campaign / "reuse.tsv"
     if reuse.is_file():
-        protos = {r["job_id"]: r for r in rows}
         for r in csv.DictReader(reuse.open(), delimiter="\t"):
-            ds, mode, model, _arm, seed = r["job_id"].split("__")
-            proto = next(
-                (
-                    p
-                    for p in protos.values()
-                    if (p["dataset"], p["mode"], p["model_key"]) == (ds, mode, model)
-                ),
-                None,
-            )
-            if proto:
-                rec = dict(
-                    proto,
-                    job_id=r["job_id"],
-                    seed=seed.removeprefix("s"),
-                    config="base",
-                    weight_decay="0",
-                    head_dropout="0",
-                )
-                sources.append((rec, campaign.parent / r["source_campaign"], r["source_job_id"]))
+            ds, mode, model, arm, seed = r["job_id"].split("__")
+            meta = {
+                "job_id": r["job_id"],
+                "dataset": ds,
+                "mode": mode,
+                "model_key": model,
+                "arm": arm,
+                "seed": seed.removeprefix("s"),
+                "config": "base",
+                "epochs": "20",
+            }
+            sources.append((meta, campaign.parent / r["source_campaign"], r["source_job_id"]))
     out = []
     for meta, src, jid in sources:
+        if (campaign.name, meta["job_id"]) in superseded or (src.name, jid) in superseded:
+            continue
         res, cur = src / "results" / f"{jid}.csv", src / "curves" / f"{jid}.jsonl"
         if not (res.is_file() and res.stat().st_size and cur.is_file()):
             continue
-        test = {m["metric_name"]: float(m["metric_value"]) for m in csv.DictReader(res.open())}.get(
-            "mIoU"
-        )
+        metrics = csv.DictReader(res.open())
+        test = {m["metric_name"]: float(m["metric_value"]) for m in metrics}.get("mIoU")
         ep = [
             e for e in map(json.loads, filter(str.strip, cur.open())) if e.get("event") == "epoch"
         ]
@@ -69,7 +78,8 @@ def load_runs(campaign: Path) -> list[dict]:
         out.append(
             {
                 "meta": meta,
-                "campaign": campaign.name,
+                "campaign": study,
+                "source": f"{src.name}/{jid}",
                 "test": test,
                 "val": [e["val_miou"] for e in ep],
                 "sec": [e["epoch_seconds"] for e in ep],
@@ -103,94 +113,112 @@ def rescore(run: dict, stop: int) -> tuple[float, bool]:
     return run["test"] - (full_v - best(run["val"], stop)[1]), False
 
 
-def group_key(meta: dict) -> tuple:
-    """Settings shared by the runs whose models are ranked against each other."""
-    return tuple((k, v) for k, v in sorted(meta.items()) if k not in GROUP_EXCLUDE)
+def group_key(run: dict) -> tuple:
+    """Runs whose models are ranked against each other: same study/dataset/mode/arm/config/seed."""
+    m = run["meta"]
+    return (
+        run["campaign"],
+        m["dataset"],
+        m["mode"],
+        m.get("arm", ""),
+        m.get("config", "base"),
+        m["seed"],
+    )
+
+
+def summarize(runs: list[dict], stop_of: Callable[[dict], int]) -> dict:
+    """Δtest over unique source runs, rankings over each study's groups, and GPU time used."""
+    seen, deltas, exact, used, total = set(), [], 0, 0.0, 0.0
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in runs:
+        s = min(stop_of(r), len(r["val"]))
+        est, ok = rescore(r, s)
+        r["_stop"], r["_est"], r["_exact"] = s, est, ok
+        groups[group_key(r)].append((r["test"], est))
+        if r["source"] in seen:
+            continue
+        seen.add(r["source"])
+        deltas.append(100 * (est - r["test"]))
+        exact += ok
+        used += sum(r["sec"][:s])
+        total += sum(r["sec"])
+    taus, top1 = [], []
+    for g in groups.values():
+        if len(g) < MIN_GROUP:
+            continue
+        a, b = zip(*g, strict=True)
+        tau = kendalltau(a, b).statistic
+        taus.append(1.0 if math.isnan(tau) else tau)
+        top1.append(max(range(len(a)), key=a.__getitem__) == max(range(len(b)), key=b.__getitem__))
+    return {
+        "n": len(deltas),
+        "saved": 100 * (1 - used / total),
+        "exact": 100 * exact / len(deltas),
+        "delta": st.mean(deltas),
+        "worst": min(deltas),
+        "tau": st.mean(taus) if taus else float("nan"),
+        "top1": 100 * st.mean(top1) if top1 else float("nan"),
+        "groups": len(taus),
+    }
+
+
+def passes(row: dict) -> bool:
+    """Owner criteria: mean τ ≥ 0.95, top-1 unchanged in every group, mean loss ≤ 0.3 pp."""
+    return row["tau"] >= TAU_MIN and row["top1"] >= TOP1_MIN and row["delta"] >= -LOSS_MAX
+
+
+def parse_campaign(arg: str) -> tuple[Path, str]:
+    """``path`` or ``path=study`` (the study a follow-up campaign is ranked with)."""
+    path, _, study = arg.partition("=")
+    return Path(path), study or Path(path).name
 
 
 def main() -> None:
-    """Print the policy table and optionally write per-run rows."""
+    """Print the policy table overall and per dataset; optionally write per-run rows."""
     ap = argparse.ArgumentParser()
-    ap.add_argument("campaigns", nargs="+", type=Path)
+    ap.add_argument(
+        "campaigns", nargs="+", help="campaign dir, or dir=study to join a study's groups"
+    )
+    ap.add_argument("--superseded", type=Path, help="default: <outputs>/SUPERSEDED.tsv")
     ap.add_argument("--out", type=Path)
     args = ap.parse_args()
-    runs = [r for c in args.campaigns for r in load_runs(c)]
-    print(f"runs: {len(runs)} ({', '.join(sorted({r['campaign'] for r in runs}))})")
-    total = sum(sum(r["sec"]) for r in runs)
-    policies = [(f"trunc{n}", lambda _r, n=n: n) for n in TRUNCATE]
+    campaigns = [parse_campaign(c) for c in args.campaigns]
+    superseded = load_superseded(args.superseded or campaigns[0][0].parent / "SUPERSEDED.tsv")
+    runs = [r for path, study in campaigns for r in load_runs(path, study, superseded)]
+    unique = len({r["source"] for r in runs})
+    print(f"runs: {len(runs)} ({unique} unique); superseded entries: {len(superseded)}")
+    policies: list[tuple[str, Callable[[dict], int]]] = [
+        (f"stop{n}", lambda _r, n=n: n) for n in TRUNCATE
+    ]
     policies += [(f"pat{p}", lambda r, p=p: stop_epoch_patience(r["val"], p)) for p in PATIENCE]
-    rows = []
-    hdr = (
-        f"{'policy':8s} {'saved%':>6s} {'exact%':>6s} {'Δtest pp':>9s} {'p90 loss':>8s} {'max loss':>8s} "
-        f"{'τ test':>7s} {'τ val':>6s} {'top1 same%':>10s}"
-    )
+    datasets = sorted({r["meta"]["dataset"] for r in runs})
+    hdr = f"{'policy':7s} {'scope':17s} {'n':>4s} {'saved%':>6s} {'exact%':>6s} {'Δtest':>6s} {'worst':>6s} {'τ':>5s} {'top1%':>5s} {'grp':>3s} pass"
     print(hdr)
+    out_rows, recommended = [], {}
     for name, stop_of in policies:
-        deltas, exact, used = [], 0, 0.0
-        by_group: dict[tuple, list] = defaultdict(list)
-        for r in runs:
-            s = min(stop_of(r), len(r["val"]))
-            est, ok = rescore(r, s)
-            exact += ok
-            used += sum(r["sec"][:s])
-            deltas.append(100 * (est - r["test"]))
-            by_group[group_key(r["meta"])].append(
-                (r["test"], est, best(r["val"], len(r["val"]))[1], best(r["val"], s)[1])
+        for scope in ("all", *datasets):
+            subset = runs if scope == "all" else [r for r in runs if r["meta"]["dataset"] == scope]
+            row = summarize(subset, stop_of)
+            ok = passes(row)
+            if ok and scope != "all" and name.startswith("stop") and scope not in recommended:
+                recommended[scope] = name
+            print(
+                f"{name:7s} {scope:17s} {row['n']:4d} {row['saved']:6.1f} {row['exact']:6.1f} "
+                f"{row['delta']:+6.2f} {row['worst']:+6.2f} {row['tau']:5.3f} {row['top1']:5.1f} "
+                f"{row['groups']:3d} {'yes' if ok else 'no'}"
             )
-            m = r["meta"]
-            rows.append(
-                {
-                    "policy": name,
-                    "campaign": r["campaign"],
-                    "dataset": m["dataset"],
-                    "model": m["model_key"],
-                    "mode": m["mode"],
-                    "arm": m.get("arm", ""),
-                    "config": m.get("config", "base"),
-                    "seed": m["seed"],
-                    "stop_epoch": s,
-                    "best_epoch": best(r["val"], len(r["val"]))[0],
-                    "test_20": r["test"],
-                    "test_stop": est,
-                    "exact": ok,
-                }
-            )
-        taus, tauv, top1 = [], [], []
-        for g in by_group.values():
-            if len(g) < 3:
-                continue
-            a, b, va, vb = zip(*g, strict=True)
-            taus.append(kendalltau(a, b).statistic)
-            tauv.append(kendalltau(va, vb).statistic)
-            top1.append(
-                max(range(len(a)), key=a.__getitem__) == max(range(len(b)), key=b.__getitem__)
-            )
-        loss = sorted(-d for d in deltas)
-        print(
-            f"{name:8s} {100 * (1 - used / total):6.1f} {100 * exact / len(runs):6.1f} {st.mean(deltas):+9.2f} "
-            f"{loss[int(0.9 * len(loss)) - 1]:8.2f} {loss[-1]:8.2f} {st.mean(taus):7.3f} {st.mean(tauv):6.3f} "
-            f"{100 * st.mean(top1):10.1f}"
-        )
-    print(f"ranking groups: {len(taus)} (same campaign/dataset/mode/arm/config/seed, ≥3 models)")
+            out_rows.append({"policy": name, "scope": scope, **row, "pass": ok})
+        print()
+    print(
+        "earliest passing fixed stop per dataset:",
+        {d: recommended.get(d, "stop20") for d in datasets},
+    )
     if args.out:
         with args.out.open("w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0]))
+            w = csv.DictWriter(f, fieldnames=list(out_rows[0]))
             w.writeheader()
-            w.writerows(rows)
+            w.writerows(out_rows)
         print(f"wrote {args.out}")
-    # Per dataset x mode for the two most relevant policies.
-    for pol in ("trunc10", "pat3"):
-        print(f"\n{pol}: mean Δtest pp / exact% by dataset x mode")
-        agg = defaultdict(list)
-        for r in rows:
-            if r["policy"] == pol:
-                agg[(r["dataset"], r["mode"])].append(r)
-        for (ds, mode), rs in sorted(agg.items()):
-            d = [100 * (x["test_stop"] - x["test_20"]) for x in rs]
-            print(
-                f"  {ds:17s} {mode:6s} n={len(rs):3d} Δ {st.mean(d):+.2f}  worst {min(d):+.2f}  "
-                f"exact {100 * sum(x['exact'] for x in rs) / len(rs):5.1f}%"
-            )
 
 
 if __name__ == "__main__":
