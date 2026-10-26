@@ -75,3 +75,8 @@ torchgeo wrappers
 .. autoclass:: HOTOSMBuildings
 
 .. autoclass:: UCMerced
+
+Other datasets
+--------------
+
+.. autoclass:: InfraBenchCLS

@@ -11,6 +11,7 @@ from tests.support.data import require_dataset_data
 # RESISC45 uses torchgeo split-file counts: 31500 images split 60/20/20.
 # UCMerced uses torchgeo split-file counts: 2100 images split 60/20/20.
 # HOTOSM buildings uses the official Hugging Face split row counts.
+# Infra-Bench CLS uses the paper's split artifact over all 28 cells: 18756 tiles.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},
@@ -38,6 +39,7 @@ EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "eurosat-spatial": {"train": 16200, "val": 5400, "test": 5400},
     "aid": {"train": 6000, "val": 2000, "test": 2000},
     "hotosm_buildings": {"train": 57890, "val": 7237, "test": 7236},
+    "infrabench-cls": {"train": 13087, "val": 2856, "test": 2813},
 }
 
 
