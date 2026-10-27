@@ -4,6 +4,8 @@ import importlib.util
 import logging
 import math
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import torch
 import torch.nn as nn
@@ -56,6 +58,8 @@ def apply_lora(model: nn.Module, target_modules: str, rank: int, alpha: float) -
         ValueError: If no module matches or a match is not ``nn.Linear``.
         ImportError: If PEFT is not installed.
     """
+    if importlib.util.find_spec("peft") is None:
+        raise ImportError("LoRA fine-tuning requires PEFT: pip install 'geo-eval-harness[lora]'")
     root = getattr(model, "backbone", model)
     matches = {
         name: module
@@ -77,10 +81,6 @@ def apply_lora(model: nn.Module, target_modules: str, rank: int, alpha: float) -
     ]
     peft_names = [name for name in linear if name not in attention_names]
     if peft_names:
-        if importlib.util.find_spec("peft") is None:
-            raise ImportError(
-                "LoRA fine-tuning requires PEFT: pip install 'geo-eval-harness[lora]'"
-            )
         from peft import LoraConfig, inject_adapter_in_model
 
         exact_names = "|".join(re.escape(name) for name in peft_names)
@@ -105,6 +105,28 @@ def _is_lora_module(name: str, module: nn.Module) -> bool:
 def has_lora_adapters(model: nn.Module) -> bool:
     """Return whether :func:`apply_lora` added adapter modules to ``model``."""
     return any(_is_lora_module(name, module) for name, module in model.named_modules())
+
+
+@contextmanager
+def merged_lora(model: nn.Module) -> Iterator[None]:
+    """Fold LoRA updates into the backbone weights for inference, then unmerge them.
+
+    Unmerged adapters add several small kernels per adapted layer to every forward pass; merged,
+    the forward pass costs the same as the plain backbone. PEFT layers use their own
+    ``merge``/``unmerge``; Swin weight parametrizations are cached so ``W + BA`` is computed once
+    per pass. Use only without gradients.
+    """
+    from peft.tuners.tuners_utils import BaseTunerLayer
+
+    layers = [m for m in model.modules() if isinstance(m, BaseTunerLayer) and not m.merged]
+    for layer in layers:
+        layer.merge()
+    try:
+        with parametrize.cached():
+            yield
+    finally:
+        for layer in layers:
+            layer.unmerge()
 
 
 def set_lora_train_mode(model: nn.Module) -> None:
