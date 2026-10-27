@@ -6,6 +6,7 @@ import math
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Protocol, cast
 
 import torch
 import torch.nn as nn
@@ -13,6 +14,16 @@ from torch.nn.utils import parametrize
 from torchvision.models.swin_transformer import ShiftedWindowAttention, ShiftedWindowAttentionV2
 
 logger = logging.getLogger(__name__)
+
+
+class _MergeableLoRALayer(Protocol):
+    """Structural type of a PEFT LoRA layer that can fold its update into the base weight."""
+
+    merged: bool
+
+    def merge(self) -> None: ...
+
+    def unmerge(self) -> None: ...
 
 
 class _LoRAWeightDelta(nn.Module):
@@ -119,7 +130,9 @@ def merged_lora(model: nn.Module) -> Iterator[None]:
     per pass. Use only without gradients.
     """
     layers = [
-        m for m in model.modules() if hasattr(m, "lora_A") and hasattr(m, "merge") and not m.merged
+        cast(_MergeableLoRALayer, m)
+        for m in model.modules()
+        if hasattr(m, "lora_A") and hasattr(m, "merge") and not m.merged
     ]
     for layer in layers:
         layer.merge()
