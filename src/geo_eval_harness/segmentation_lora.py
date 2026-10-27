@@ -58,6 +58,8 @@ def apply_lora(model: nn.Module, target_modules: str, rank: int, alpha: float) -
         ValueError: If no module matches or a match is not ``nn.Linear``.
         ImportError: If PEFT is not installed.
     """
+    if importlib.util.find_spec("peft") is None:
+        raise ImportError("LoRA fine-tuning requires PEFT: pip install 'geo-eval-harness[lora]'")
     root = getattr(model, "backbone", model)
     matches = {
         name: module
@@ -79,10 +81,6 @@ def apply_lora(model: nn.Module, target_modules: str, rank: int, alpha: float) -
     ]
     peft_names = [name for name in linear if name not in attention_names]
     if peft_names:
-        if importlib.util.find_spec("peft") is None:
-            raise ImportError(
-                "LoRA fine-tuning requires PEFT: pip install 'geo-eval-harness[lora]'"
-            )
         from peft import LoraConfig, inject_adapter_in_model
 
         exact_names = "|".join(re.escape(name) for name in peft_names)
@@ -118,11 +116,9 @@ def merged_lora(model: nn.Module) -> Iterator[None]:
     ``merge``/``unmerge``; Swin weight parametrizations are cached so ``W + BA`` is computed once
     per pass. Use only without gradients.
     """
-    layers = []
-    if importlib.util.find_spec("peft") is not None:
-        from peft.tuners.tuners_utils import BaseTunerLayer
+    from peft.tuners.tuners_utils import BaseTunerLayer
 
-        layers = [m for m in model.modules() if isinstance(m, BaseTunerLayer) and not m.merged]
+    layers = [m for m in model.modules() if isinstance(m, BaseTunerLayer) and not m.merged]
     for layer in layers:
         layer.merge()
     try:

@@ -79,11 +79,19 @@ def test_apply_lora_rejects_missing_or_non_linear_targets(targets: str, message:
         apply_lora(model, targets, rank=4, alpha=8.0)
 
 
-def test_apply_lora_names_the_extra_when_peft_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin"])
+def test_apply_lora_names_the_extra_when_peft_is_missing(
+    monkeypatch: pytest.MonkeyPatch, model_kind: str
+) -> None:
+    """Swin attention adapters do not use PEFT, but every LoRA run requires the extra."""
     monkeypatch.setitem(sys.modules, "peft", None)
-    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    if model_kind == "timm_vit":
+        model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+        targets = VIT_TARGETS
+    else:
+        model, targets = swin_v2_t(), r"features\.\d+\.\d+\.attn\.(qkv|proj)"
     with pytest.raises(ImportError, match=re.escape("geo-eval-harness[lora]")):
-        apply_lora(model, VIT_TARGETS, rank=4, alpha=8.0)
+        apply_lora(model, targets, rank=4, alpha=8.0)
 
 
 _MULTISPECTRAL_INPUTS = {
