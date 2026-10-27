@@ -15,6 +15,7 @@ from .segmentation_heads import (
     LinearHead,
     NeckedHead,
     PatchLinearHead,
+    UNetHead,
     UPerNetHead,
     ViTNeck,
 )
@@ -67,6 +68,7 @@ __all__: list[str] = [
     "TorchGeoResNetBench",
     "TorchGeoScaleMAEBench",
     "TorchGeoSwinBench",
+    "UNetHead",
     "UPerNetHead",
     "UniverSatBenchModel",
     "ViTNeck",

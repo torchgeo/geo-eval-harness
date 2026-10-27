@@ -248,13 +248,13 @@ class ClassificationConfig(StrictModel):
 
 
 #: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
-NECK_HEADS = frozenset({"fpn", "upernet"})
+NECK_HEADS = frozenset({"fpn", "upernet", "unet"})
 
 
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
-    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet"] = "fpn"
+    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
     layers: list[StrictStr] = Field(default_factory=list)

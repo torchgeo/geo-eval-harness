@@ -1,5 +1,7 @@
 """Segmentation decoder heads for use with SegmentationProbe."""
 
+import itertools
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -277,6 +279,68 @@ class UPerNetHead(nn.Module):
     def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
         """Decode coarse-to-fine feature maps into logits at the input resolution."""
         logits = self.decoder(list(reversed(features)))
+        if logits.shape[-2:] != (input_h, input_w):
+            logits = F.interpolate(
+                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
+            )
+        return logits
+
+
+class UNetHead(nn.Module):
+    """U-Net decoder head using the ``segmentation_models_pytorch`` ``UnetDecoder``.
+
+    The coarsest map is the decoder input and each finer map is one skip (no centre block, no
+    attention, nearest upsampling, BatchNorm). Decoding stops at the finest hooked map (stride 4 for
+    ConvNeXt stages or the ViT neck), the same resolution as :class:`UPerNetHead`; a 1x1 classifier
+    then gives logits that are upsampled bilinearly to the input. There is no raw-image skip, so
+    ViT blocks need ``neck: vit`` to form the pyramid.
+
+    Every stage has ``hidden_dim`` channels, so at the default 256 the decoder is about as large as
+    :class:`UPerNetHead`. Convolutions use UPerNet's ``N(0, 0.02)`` initialisation, and
+    ``min_train_batch_size`` is 2 like :class:`UPerNetHead`, so both heads see identical batches.
+
+    Args:
+        channels_list: Channel count for each hooked feature layer (coarse-to-fine, at least 2).
+        num_classes: Number of segmentation output classes.
+        hidden_dim: Channel width of every decoder stage (default 256).
+    """
+
+    min_train_batch_size = 2
+
+    def __init__(self, channels_list: list[int], num_classes: int, hidden_dim: int = 256) -> None:
+        super().__init__()
+        from segmentation_models_pytorch.decoders.unet.decoder import UnetDecoder
+
+        if len(channels_list) < 2:
+            raise ValueError(f"UNetHead needs at least 2 feature layers, got {len(channels_list)}.")
+        n_blocks = len(channels_list) - 1
+        # smp expects fine-to-coarse maps led by a full-resolution stage that it drops; repeating
+        # the finest map keeps it as the last skip and ends decoding at its resolution.
+        fine_to_coarse = list(reversed(channels_list))
+        self.decoder = UnetDecoder(
+            encoder_channels=[fine_to_coarse[0], *fine_to_coarse],
+            decoder_channels=[hidden_dim] * n_blocks,
+            n_blocks=n_blocks,
+        )
+        self.classifier = nn.Conv2d(hidden_dim, num_classes, kernel_size=1)
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Decode coarse-to-fine feature maps into logits at the input resolution."""
+        if any(
+            fine.shape[-2] < coarse.shape[-2] or fine.shape[-1] < coarse.shape[-1]
+            for coarse, fine in itertools.pairwise(features)
+        ):
+            raise ValueError(
+                "UNetHead needs coarse-to-fine features; got sizes "
+                f"{[tuple(f.shape[-2:]) for f in features]}."
+            )
+        fine_to_coarse = list(reversed(features))
+        logits = self.classifier(self.decoder([fine_to_coarse[0], *fine_to_coarse]))
         if logits.shape[-2:] != (input_h, input_w):
             logits = F.interpolate(
                 logits, size=(input_h, input_w), mode="bilinear", align_corners=False

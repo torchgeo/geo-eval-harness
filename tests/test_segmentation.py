@@ -1260,7 +1260,7 @@ def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
         ViTNeck([8] * 4, input_norm="batchnorm")
 
 
-@pytest.mark.parametrize("head_type", ["upernet", "fpn"])
+@pytest.mark.parametrize("head_type", ["upernet", "fpn", "unet"])
 @pytest.mark.parametrize("cached", [False, True])
 def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:
     from geo_eval_harness.models.segmentation_heads import NeckedHead
