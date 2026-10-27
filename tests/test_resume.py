@@ -158,6 +158,14 @@ def test_regularisation_changes_the_hash_only_when_set() -> None:
     assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
 
 
+def test_unet_head_has_its_own_hash() -> None:
+    def seg(head: str, **segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": head, **segmentation})
+
+    assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
+    assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
 def test_upsampler_changes_the_hash_only_when_enabled() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
