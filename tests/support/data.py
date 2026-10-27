@@ -117,7 +117,8 @@ def write_openearthmap_sar_files(root: Path) -> Path:
         for index, name in enumerate(reversed(OpenEarthMapSAR.split_filenames(split))):
             mask = ((x // 2 + y // 4 + index) % 8 + 1).astype(np.uint8)
             image = (mask * 25 + split_index * 3 + index).astype(np.uint8)
-            mask[0, 0] = 0
+            # A 2x2 block keeps ignored pixels at the origin after 2x nearest downsampling.
+            mask[:2, :2] = 0
             for kind, pixels in (("sar_images", image), ("labels", mask)):
                 path = directory / split / kind / name
                 path.parent.mkdir(parents=True, exist_ok=True)
