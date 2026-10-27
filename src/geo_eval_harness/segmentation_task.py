@@ -702,6 +702,16 @@ def build_seg_probe_and_solver(
             config.lora_alpha,
             last_blocks=config.lora_last_blocks,
         )
+    if config.full_finetune:
+        # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
+        enable = getattr(model, "enable_full_finetune", None)
+        if callable(enable):
+            enable()
+        if not any(p.requires_grad for p in model.parameters()):
+            raise ValueError(
+                f"full_finetune: {type(model).__name__} has no trainable backbone parameter; "
+                "its wrapper freezes the backbone and does not define enable_full_finetune()."
+            )
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,

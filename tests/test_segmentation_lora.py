@@ -231,6 +231,17 @@ def test_solver_full_finetune_trains_every_backbone_weight_in_eval_mode() -> Non
     assert config.method == "seg-fpn-full"
 
 
+def test_full_finetune_rejects_a_backbone_that_stays_frozen() -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    # A wrapper that freezes itself and offers no enable_full_finetune().
+    model.requires_grad_(False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"], full_finetune=True, backbone_learning_rate=1e-4
+    )
+    with pytest.raises(ValueError, match="no trainable backbone parameter"):
+        build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+
+
 class _TinyAdapterBackbone(nn.Module):
     def __init__(self, kind: str) -> None:
         super().__init__()
