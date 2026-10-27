@@ -130,6 +130,47 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
 
 
+@pytest.mark.parametrize(
+    ("unit", "sar_log_scale", "expected"),
+    [
+        ("linear_power", None, [-10.0, -20.0]),  # declared linear: auto-convert to dB
+        ("db", None, [0.1, 0.01]),
+        (None, None, [0.1, 0.01]),  # undeclared: unchanged (previous behaviour)
+        ("linear_power", False, [0.1, 0.01]),
+        (None, True, [-10.0, -20.0]),
+    ],
+)
+def test_sar_db_conversion_follows_declared_unit(
+    tiny_olmoearth: dict[str, Any],
+    unit: str | None,
+    *,
+    sar_log_scale: bool | None,
+    expected: list[float],
+) -> None:
+    bands = [
+        BandSpec("sar", "vv", "VV", 0.1, 1, 0, 100, unit=unit),
+        BandSpec("sar", "vh", "VH", 0.03, 0.2, 0, 100, unit=unit),
+    ]
+    model = OlmoEarthBenchModel(
+        bands, model_size="nano", normalization="identity", sar_log_scale=sar_log_scale
+    )
+    images = torch.tensor([0.1, 0.01]).view(1, 2, 1, 1).expand(1, 2, 4, 4)
+    model(images)
+    np.testing.assert_allclose(
+        tiny_olmoearth["normalizer_inputs"]["sar"],
+        np.broadcast_to(expected, (1, 4, 4, 1, 2)),
+        rtol=1e-5,
+    )
+
+
+def test_sar_dataset_units() -> None:
+    from geo_eval_harness.datasets.benv2 import BENV2
+    from geo_eval_harness.datasets.kuro_siwo import KuroSiwo
+
+    assert {b.unit for b in KuroSiwo.bands if b.sensor == "sar"} == {"linear_power"}
+    assert {b.unit for b in BENV2.bands if b.sensor == "s1"} == {"db"}
+
+
 @pytest.mark.parametrize("normalization", ["auto", False])
 def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     tiny_olmoearth: dict[str, Any], *, normalization: str | bool
