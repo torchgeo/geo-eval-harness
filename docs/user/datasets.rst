@@ -65,7 +65,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
    $ geo-eval-harness download hotosm_buildings                         # HOTOSM VHR buildings
-   $ geo-eval-harness download openearthmap-sar                        # standalone SAR segmentation
+   $ geo-eval-harness download openearthmap-sar                         # OpenEarthMap-SAR
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -216,10 +216,41 @@ CLI name             #cls   bands notes                                        C
 ``spacenet7``        2      3                                                  :class:`~geo_eval_harness.datasets.SpaceNet7`
 ==================== ====== ===== ============================================ ==============================================================
 
-Standalone segmentation: OpenEarthMap-SAR
-------------------------------------------
+Other
+-----
 
-``openearthmap-sar`` (:class:`~geo_eval_harness.datasets.OpenEarthMapSAR`) uses the official IEEE GRSS Data Fusion Contest 2025 Track I splits: **4,333 training, 210 validation, and 490 test** image/label pairs. Images are single-band ``uint8`` SAR GeoTIFFs at **1024 x 1024** pixels, with published GSD of **0.15-0.5 m**.
+==================== ============================================================================
+CLI name             Class
+==================== ============================================================================
+``eurosat``          :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
+``eurosat-spatial``  :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
+``resisc45``         :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
+``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+
+``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
+``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
+``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
+==================== ============================================================================
+
+``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
+published 60/20/20 split.  It is the most-divergent benchmark in the GFM
+literature — the same Scale-MAE checkpoint is reported at 33.0 and 89.6
+linear-probe accuracy by different papers under the same nominal protocol —
+which is why it is worth running under a fixed harness.  The imagery carries
+no geolocation, so it appears on the coverage map as an explicit gap rather
+than being silently omitted.
+
+``aid`` contains 10,000 RGB scenes at 600x600 across 30 classes (Xia et al., 2017). With no official split, ``scripts/generate_aid_splits.py`` generates a deterministic, stratified 60/20/20 split. Downloads use the pinned, checksum-verified ``isaaccorley/aid`` rehost. Upstream specifies no license or image geolocation. Band subsets and ordering are applied before user transforms.
+
+``ucmerced`` contains 2,100 RGB aerial images across 21 land use classes, resized to 256x256 by torchgeo. Its published split files contain 1,260 training, 420 validation, and 420 test images. Normalization statistics use the training split only. The source resolution is 1 ft (0.3048 m); the shared ``aerial`` sensor tag uses an approximate 1 m GSD for resolution-aware models. Images have no georeferencing, which is recorded in the coverage map.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model imagestats --dataset ucmerced --device cpu
+
+``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``geo-eval-harness download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model.
+
+``openearthmap-sar`` uses the official IEEE GRSS Data Fusion Contest 2025 Track I splits: **4,333 training, 210 validation, and 490 test** image/label pairs. Images are single-band ``uint8`` SAR GeoTIFFs at **1024 x 1024** pixels, with published GSD of **0.15-0.5 m**.
 
 The eight classes, in model output order, are bareland, grass/rangeland, pavement/developed space, road, tree, water, cropland/agricultural land, and building. Native labels ``1..8`` map to model classes ``0..7``; native ``0`` maps to ``255`` and is ignored in both training loss and mIoU. This deliberately differs from the official baseline, which trains a ninth background output but excludes it from foreground mIoU.
 
@@ -253,39 +284,6 @@ The downloader retrieves about **9.29 GB** across four immutable archives: ``dfc
 Geography is read from SAR GeoTIFF headers without requiring label files. The release provides usable locations for **210 of 5,033 samples**, all in the validation split; training and test SAR files have no usable georeferencing. Images without a CRS or with an identity transform are omitted from location counts, not assigned guessed coordinates. Raster read errors and invalid projected coordinates are errors.
 
 Sources and attribution: `OpenEarthMap-SAR <https://github.com/cliffbb/OpenEarthMap-SAR>`__, the `official DFC2025 baseline <https://github.com/cliffbb/DFC2025-OEM-SAR-Baseline>`__, and the `dataset paper <https://arxiv.org/abs/2501.10891v2>`__. Zenodo identifies the Umbra Open Data Program SAR imagery as CC BY 4.0. Optical-source and label licensing varies by source; consult the release and source-specific terms rather than treating the whole installed benchmark as uniformly CC BY 4.0.
-
-Other
------
-
-==================== ============================================================================
-CLI name             Class
-==================== ============================================================================
-``eurosat``          :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
-``eurosat-spatial``  :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
-``resisc45``         :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
-``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
-
-``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
-==================== ============================================================================
-
-``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
-published 60/20/20 split.  It is the most-divergent benchmark in the GFM
-literature — the same Scale-MAE checkpoint is reported at 33.0 and 89.6
-linear-probe accuracy by different papers under the same nominal protocol —
-which is why it is worth running under a fixed harness.  The imagery carries
-no geolocation, so it appears on the coverage map as an explicit gap rather
-than being silently omitted.
-
-``aid`` contains 10,000 RGB scenes at 600x600 across 30 classes (Xia et al., 2017). With no official split, ``scripts/generate_aid_splits.py`` generates a deterministic, stratified 60/20/20 split. Downloads use the pinned, checksum-verified ``isaaccorley/aid`` rehost. Upstream specifies no license or image geolocation. Band subsets and ordering are applied before user transforms.
-
-``ucmerced`` contains 2,100 RGB aerial images across 21 land use classes, resized to 256x256 by torchgeo. Its published split files contain 1,260 training, 420 validation, and 420 test images. Normalization statistics use the training split only. The source resolution is 1 ft (0.3048 m); the shared ``aerial`` sensor tag uses an approximate 1 m GSD for resolution-aware models. Images have no georeferencing, which is recorded in the coverage map.
-
-.. code-block:: console
-
-   $ geo-eval-harness run --model imagestats --dataset ucmerced --device cpu
-
-``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``geo-eval-harness download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model.
 
 Selecting datasets
 ------------------
