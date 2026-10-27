@@ -105,7 +105,11 @@ def download_command(name: str) -> str:
 
 
 class _ResizeTransform:
-    """Sample-level transform that resizes ``image`` (and ``mask``)."""
+    """Sample-level transform that resizes ``image`` (and ``mask``).
+
+    Masks use ``nearest-exact``, which samples each output pixel at its centre, the same
+    position that ``bilinear`` and ``bicubic`` (``align_corners=False``) use for the image.
+    """
 
     valid_modes = ("area", "bicubic", "bilinear", "nearest")
 
@@ -152,7 +156,7 @@ class _ResizeTransform:
                 mask = F.interpolate(
                     resize_mask,
                     size=(image_size, image_size),
-                    mode="nearest",
+                    mode="nearest-exact",
                 )
                 for _ in range(squeeze_dims):
                     mask = mask.squeeze(0)
@@ -200,7 +204,7 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         batch_size: Batch size for the returned dataloaders.
         return_val: If ``True``, also return a validation dataloader.
         num_workers: Number of dataloader worker processes.
-        image_size: If set, resize images (and masks, with nearest) to this
+        image_size: If set, resize images (and masks, with ``nearest-exact``) to this
             square size at sample time.
         interpolation: Resize interpolation for images (``"area"``, ``"bicubic"``,
             ``"bilinear"``, ``"nearest"``).

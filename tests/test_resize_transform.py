@@ -24,5 +24,16 @@ def test_temporal_images_and_singleton_masks_keep_their_axes_and_values() -> Non
 
     expected_image = image.reshape(2, 3, 4, 2, 4, 2).mean(dim=(3, 5))
     torch.testing.assert_close(resized["image"], expected_image)
-    torch.testing.assert_close(resized["mask"], mask[:, ::2, ::2])
+    torch.testing.assert_close(resized["mask"], mask[:, 1::2, 1::2])
     assert resized["mask"].dtype == torch.long
+
+
+@pytest.mark.parametrize("mode", ["bilinear", "bicubic"])
+def test_mask_samples_the_same_positions_as_the_image(mode: str) -> None:
+    columns = torch.arange(7)
+    step = (columns >= 3).expand(7, 7)
+    resized = _ResizeTransform(3, mode)({"image": step[None].float(), "mask": step.long()})
+
+    image_labels = (resized["image"][0] >= 0.5).long()
+    torch.testing.assert_close(resized["mask"], image_labels)
+    torch.testing.assert_close(resized["mask"][0], torch.tensor([0, 1, 1]))
