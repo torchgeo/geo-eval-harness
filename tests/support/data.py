@@ -108,12 +108,13 @@ def geotiff_bytes(pixels: np.ndarray) -> bytes:
 
 def write_openearthmap_sar_files(root: Path) -> Path:
     """Write tiny, disjoint SAR/label pairs using the active split descriptors."""
-    from geo_eval_harness.datasets.openearthmap_sar import RASTER_SIZE, SPLITS, split_filenames
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
 
     directory = root / "data" / "openearthmap-sar"
-    y, x = np.indices((RASTER_SIZE, RASTER_SIZE))
-    for split_index, split in enumerate(SPLITS):
-        for index, name in enumerate(reversed(split_filenames(split))):
+    size = OpenEarthMapSAR.raster_size
+    y, x = np.indices((size, size))
+    for split_index, split in enumerate(OpenEarthMapSAR.split_sizes):
+        for index, name in enumerate(reversed(OpenEarthMapSAR.split_filenames(split))):
             mask = ((x // 2 + y // 4 + index) % 8 + 1).astype(np.uint8)
             image = (mask * 25 + split_index * 3 + index).astype(np.uint8)
             mask[0, 0] = 0

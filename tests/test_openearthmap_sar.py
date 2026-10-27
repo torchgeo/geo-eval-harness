@@ -7,8 +7,7 @@ import rasterio
 import torch
 from torchgeo.datasets.utils import Sample
 
-from geo_eval_harness.datasets import openearthmap_sar as sar
-from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR, split_filenames
+from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
 from tests.support.data import write_openearthmap_sar_files
 
 pytestmark = pytest.mark.usefixtures("small_openearthmap_sar")
@@ -35,8 +34,8 @@ def test_order_raw_units_mapping_and_transform(
     dataset = bench.get_dataset("train", bands=("sar",), transform=transform)
     assert len(dataset) == 3
     # Numeric ordering must also hold across the three/four-digit filename boundary.
-    monkeypatch.setitem(sar.SPLITS, "val", ("ValArea", 1001))
-    assert split_filenames("val")[998:1001] == [
+    monkeypatch.setitem(OpenEarthMapSAR.split_sizes, "val", 1001)
+    assert OpenEarthMapSAR.split_filenames("val")[998:1001] == [
         "ValArea_999.tif",
         "ValArea_1000.tif",
         "ValArea_1001.tif",

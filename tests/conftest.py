@@ -50,12 +50,10 @@ def small_partition() -> str:
 @pytest.fixture
 def small_openearthmap_sar(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bound native raster size and official memberships for offline SAR workflows."""
-    from geo_eval_harness.datasets import openearthmap_sar as sar
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
 
-    splits = {"train": ("TrainArea", 3), "val": ("ValArea", 2), "test": ("TestArea", 2)}
-    monkeypatch.setattr(sar, "SPLITS", splits)
-    monkeypatch.setattr(sar, "RASTER_SIZE", 16)
-    monkeypatch.setattr(sar.OpenEarthMapSAR, "split_sizes", {s: n for s, (_, n) in splits.items()})
+    monkeypatch.setattr(OpenEarthMapSAR, "split_sizes", {"train": 3, "val": 2, "test": 2})
+    monkeypatch.setattr(OpenEarthMapSAR, "raster_size", 16)
 
 
 @pytest.fixture(scope="session", autouse=True)

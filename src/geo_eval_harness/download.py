@@ -259,10 +259,12 @@ def _verify_sar_archive(path: Path, artifact: SARArchive) -> None:
 
 
 def _extract_sar_archive(path: Path, target: Path, prefixes: tuple[str, ...]) -> None:
-    from geo_eval_harness.datasets.openearthmap_sar import split_filenames
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
 
     expected = {
-        f"{prefix}/{name}" for prefix in prefixes for name in split_filenames(prefix.split("/")[0])
+        f"{prefix}/{name}"
+        for prefix in prefixes
+        for name in OpenEarthMapSAR.split_filenames(prefix.split("/")[0])
     }
     with zipfile.ZipFile(path) as archive:
         selected: dict[str, zipfile.ZipInfo] = {}
@@ -293,7 +295,7 @@ def _extract_sar_archive(path: Path, target: Path, prefixes: tuple[str, ...]) ->
 
 def download_openearthmap_sar(output_dir: Path) -> None:
     """Install all four checksum-verified releases, repairing from retained ZIPs."""
-    from geo_eval_harness.datasets.openearthmap_sar import SPLITS, split_paths
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
 
     target = Path(output_dir) / "openearthmap-sar"
     target.mkdir(parents=True, exist_ok=True)
@@ -310,8 +312,8 @@ def download_openearthmap_sar(output_dir: Path) -> None:
             logger.info("Verifying cached archive %s", path)
             _verify_sar_archive(path, artifact)
         _extract_sar_archive(path, target, artifact.prefixes)
-    for split in SPLITS:
-        split_paths(target, split)
+    for split in OpenEarthMapSAR.split_sizes:
+        OpenEarthMapSAR.split_paths(target, split)
     logger.info("OpenEarthMap-SAR download complete.")
 
 
