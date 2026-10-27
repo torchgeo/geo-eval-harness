@@ -7,6 +7,7 @@ verification/extraction, torchgeo downloaders, and all dataset readers remain re
 import hashlib
 import shutil
 from collections.abc import Iterator
+from dataclasses import replace
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,12 +19,13 @@ import pytest
 import torch
 from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial
 
-from geo_eval_harness import hub
+from geo_eval_harness import download, hub
 from geo_eval_harness.cli import main
 from geo_eval_harness.datasets import _v1_webdataset as v1
-from geo_eval_harness.datasets import geobench_v2, get_datasets
+from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
     write_caffe_files,
+    write_openearthmap_sar_archives,
     write_torchgeo_download_files,
     write_v1_shards,
 )
@@ -79,6 +81,11 @@ def local_download_sources(
         assert thread.is_alive()
         with urlopen(f"{url}/eurosat/eurosat-train.txt", timeout=5) as response:
             assert response.status == 200
+        monkeypatch.setattr(
+            download,
+            "SAR_ARCHIVES",
+            tuple(replace(a, url=f"{url}/{a.filename}") for a in download.SAR_ARCHIVES),
+        )
         for dataset_class in (EuroSAT, EuroSATSpatial):
             monkeypatch.setattr(dataset_class, "url", f"{url}/eurosat/")
             monkeypatch.setattr(
@@ -112,6 +119,31 @@ def local_download_sources(
         server.shutdown()
         thread.join(timeout=5)
         server.server_close()
+
+
+@pytest.mark.usefixtures("small_openearthmap_sar")
+def test_openearthmap_sar_http_download_then_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_download_sources: tuple[Path, list[dict[str, Any]]],
+) -> None:
+    source, _ = local_download_sources
+    monkeypatch.setattr(download, "SAR_ARCHIVES", write_openearthmap_sar_archives(source))
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    monkeypatch.chdir(destination)
+    main(["download", "openearthmap-sar"])
+    _, *loaders = get_datasets(
+        "openearthmap-sar", batch_size=2, num_workers=0, return_val=True, image_size=8
+    )
+    assert get_bench_dataset_class("openearthmap-sar").num_classes == 8
+    assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
+    for loader in loaders:
+        sample = loader.dataset[0]
+        assert sample["image"].shape == (1, 8, 8)
+        assert sample["mask"].shape == (8, 8)
+        assert sample["mask"][0, 0] == 255
+        assert torch.isfinite(sample["image"]).all()
 
 
 @pytest.mark.parametrize("selection", ["named", "collection"])

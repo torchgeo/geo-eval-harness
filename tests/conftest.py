@@ -47,6 +47,15 @@ def small_partition() -> str:
     return "0.01x_train"
 
 
+@pytest.fixture
+def small_openearthmap_sar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bound native raster size and official memberships for offline SAR workflows."""
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
+
+    monkeypatch.setattr(OpenEarthMapSAR, "split_sizes", {"train": 3, "val": 2, "test": 2})
+    monkeypatch.setattr(OpenEarthMapSAR, "raster_size", 16)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Iterator[None]:
     """Keep child processes on this checkout and avoid CPU oversubscription."""

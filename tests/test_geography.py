@@ -1,6 +1,7 @@
 """Check committed geography records without loading raw imagery."""
 
 import json
+from collections import Counter
 from pathlib import Path
 
 import h5py
@@ -8,7 +9,10 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import rasterio
+from rasterio.transform import Affine
 
+from geo_eval_harness import geography
 from geo_eval_harness.datasets import list_datasets
 from geo_eval_harness.geography import (
     GEO_ALIAS,
@@ -25,6 +29,35 @@ from geo_eval_harness.geography import (
 )
 
 VALID_STATUSES = {"extracted", "no_geo", "not_downloaded"}
+
+
+def test_openearthmap_sar_geography_skips_missing_tags_and_reprojects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    for split, crs in (("train", None), ("val", "EPSG:32618")):
+        directory = tmp_path / "data/openearthmap-sar" / split / "sar_images"
+        directory.mkdir(parents=True)
+        with rasterio.open(
+            directory / "sample.tif",
+            "w",
+            driver="GTiff",
+            width=1,
+            height=1,
+            count=1,
+            dtype="uint8",
+            crs=crs,
+            transform=Affine(0.5, 0, 500000, 0, -0.5, 4400000),
+        ) as raster:
+            raster.write(np.zeros((1, 1, 1), dtype=np.uint8))
+    monkeypatch.setattr(
+        geography, "_attribute_continents", lambda lon, lat: Counter({"North America": len(lon)})
+    )
+    record = extract_geography("openearthmap-sar")
+    assert record.n == 1
+    lon, lat = record.points[0]
+    assert -76 < lon < -74
+    assert 39 < lat < 41
 
 
 @pytest.fixture(scope="module")

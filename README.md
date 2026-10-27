@@ -69,6 +69,8 @@ V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merc
 
 Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
 
+For standalone SAR segmentation, `geo-eval-harness download openearthmap-sar` installs the official DFC2025 Track I SAR images and labels (4,333 train / 210 validation / 490 test pairs, eight classes). Training RGB is excluded. See the [SAR example](docs/examples/openearthmap-sar-run.yaml) and [dataset protocol](https://torchgeo.org/geo-eval-harness/user/datasets.html#standalone-segmentation-openearthmap-sar).
+
 ## Run a basic experiment
 
 ```bash
