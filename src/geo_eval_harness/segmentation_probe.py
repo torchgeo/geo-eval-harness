@@ -62,15 +62,6 @@ class CachedFeaturesDataset(Dataset):
         return [t[index] for t in self.layer_tensors], self.masks[index]
 
 
-def _estimate_cache_bytes(cache: "CachedFeaturesDataset") -> int:
-    if not cache.layer_tensors:
-        return 0
-    return (
-        sum(t.numel() * t.element_size() for t in cache.layer_tensors)
-        + cache.masks.numel() * cache.masks.element_size()
-    )
-
-
 class GPUTensorCache:
     """Cached features and masks kept on the target device.
 
@@ -173,7 +164,6 @@ class SegmentationProbe(nn.Module):
         self.layer_names = layer_names
         self.freeze_backbone = freeze_backbone
         self.head_type = head_type
-        self.effective_classes = num_classes
 
         self._features: dict[str, torch.Tensor] = {}
         self.hooks: list[Any] = []
