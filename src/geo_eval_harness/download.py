@@ -10,6 +10,8 @@ Targets:
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
   into compact per-split files under ``<output>/hotosm_buildings``.
+- ``planteur`` — pinned ``allenai/planteur-benchmark`` monthly mosaics and labels, stacked
+  into per-split arrays under ``<output>/planteur``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -30,7 +32,8 @@ from geo_eval_harness.datasets.hotosm_buildings import (
     HOTOSMBuildings,
     convert_hotosm_split,
 )
-from geo_eval_harness.hub import fetch_pinned, load_checksums
+from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
+from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,17 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
+
+PLANTEUR_REPO = "allenai/planteur-benchmark"
+PLANTEUR_REVISION = "51b74a91424e7dc9ea1fe0042390353658af8185"
+PLANTEUR_FILES = [
+    "DATA_S2_MONTHLY/*",
+    "DATA_S1_MONTHLY/*",
+    "ANNOTATIONS/*",
+    "splits/443.json",
+    "splits/loio.json",
+    "metadata.geojson",
+]
 
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
@@ -53,7 +67,7 @@ V1_DATASETS: tuple[str, ...] = (
     "m-bigearthnet",
 )
 TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings")
+DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "planteur")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
 )
@@ -190,6 +204,22 @@ def download_hotosm_buildings(output_dir: Path) -> None:
     logger.info("HOTOSM buildings download complete.")
 
 
+def download_planteur(output_dir: Path) -> None:
+    """Download the pinned PLANTEUR monthly mosaics and stack them into ``output_dir/planteur``.
+
+    The 8,250 per-patch upstream arrays (17 GB) are deleted once the stacked splits match
+    ``checksums/planteur.sha256``.
+    """
+    target = Path(output_dir) / "planteur"
+    upstream = target / "upstream"
+    logger.info("Downloading %s@%s -> %s", PLANTEUR_REPO, PLANTEUR_REVISION, upstream)
+    fetch_pinned(PLANTEUR_REPO, PLANTEUR_REVISION, upstream, {}, allow_patterns=PLANTEUR_FILES)
+    convert_planteur(upstream, target, expected_sizes=PLANTEUR.split_sizes)
+    verify_checksums(target, load_checksums("planteur.sha256"))
+    shutil.rmtree(upstream)
+    logger.info("PLANTEUR download complete.")
+
+
 def download_ucmerced(output_dir: Path) -> None:
     """Download verified UC Merced imagery and splits into ``output_dir/ucmerced``."""
     target = Path(output_dir) / "ucmerced"
@@ -227,3 +257,5 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_ucmerced(output_dir)
     if "hotosm_buildings" in selected:
         download_hotosm_buildings(output_dir)
+    if "planteur" in selected:
+        download_planteur(output_dir)

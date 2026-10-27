@@ -433,8 +433,49 @@ class OlmoEarthBenchModel(BenchModel):
         self.min_image_size = min_image_size
 
         model_id = getattr(ModelID, f"OLMOEARTH_{version.upper()}_{model_size.upper()}")
-        self.encoder_model = load_model_from_id(model_id, load_weights=True)
+        self.encoder_model: Any = load_model_from_id(model_id, load_weights=True)
         self.normalizer = Normalizer(std_multiplier=std_multiplier)
+        self._token_layout: list[tuple[int, ...]] = []
+        self._record_token_layout()
+
+    def _record_token_layout(self) -> None:
+        """Record each modality's ``(h, w, ...)`` token shape as the encoder flattens them.
+
+        The encoder orders modalities through a ``set``, so the order is only known at call time.
+        """
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit import (
+            get_modalities_to_process,
+            return_modalities_from_dict,
+        )
+
+        encoder = self.encoder_model.encoder
+        collapse = encoder.collapse_and_combine_hwtc
+
+        def collapse_and_record(x: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+            order = get_modalities_to_process(
+                return_modalities_from_dict(x), encoder.supported_modality_names
+            )
+            self._token_layout = [tuple(x[modality].shape[1:-1]) for modality in order]
+            return collapse(x)
+
+        encoder.collapse_and_combine_hwtc = collapse_and_record
+
+    def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid.
+
+        This matches the pooling behind :meth:`_forward_patch_features`.
+        """
+        sizes = [int(np.prod(shape)) for shape in self._token_layout]
+        if sum(sizes) != tokens.shape[1]:
+            raise ValueError(
+                f"OlmoEarth tokens {tuple(tokens.shape)} do not match the last forward's "
+                f"per-modality layout {self._token_layout}."
+            )
+        grids = [
+            chunk.reshape(chunk.shape[0], shape[0], shape[1], -1, chunk.shape[-1]).mean(dim=3)
+            for chunk, shape in zip(tokens.split(sizes, dim=1), self._token_layout, strict=True)
+        ]
+        return torch.stack(grids).mean(dim=0).permute(0, 3, 1, 2)
 
     handles_own_normalization = True
 

@@ -3,7 +3,7 @@
 import sys
 from importlib.util import find_spec
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 import numpy as np
@@ -64,12 +64,25 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["normalizer_inputs"][modality] = values.copy()
             return values / 1000 - np.arange(values.shape[-1])
 
-    class _Encoder(torch.nn.Module):
-        def encoder(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
+    class _FlexiEncoder:
+        supported_modality_names: ClassVar[list[str]] = ["sentinel2_l2a", "sentinel1"]
+
+        def __call__(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
             pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
             return {"tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled)}
+
+        def collapse_and_combine_hwtc(
+            self, x: dict[str, torch.Tensor]
+        ) -> tuple[torch.Tensor, None]:
+            order = sorted(key for key in x if key in self.supported_modality_names)
+            return torch.cat([x[key].flatten(1, -2) for key in order], dim=1), None
+
+    class _Encoder(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.encoder = _FlexiEncoder()
 
     def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
         state["loads"].append((model_id, load_weights))
@@ -86,6 +99,10 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit": {
             "PoolingType": SimpleNamespace(MEAN="mean"),
+            "return_modalities_from_dict": lambda x: [k for k in x if not k.endswith("_mask")],
+            "get_modalities_to_process": lambda available, supported: sorted(
+                set(available) & set(supported)
+            ),
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.datatypes": {
             "MaskedOlmoEarthSample": SimpleNamespace,
@@ -147,6 +164,26 @@ def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     expected = np.array([0, -0.5, -0.5, 0, 0.5, 1, 1.5, 2, 2, 2, 2])
     np.testing.assert_allclose(actual, expected.reshape(1, 1, 1, 1, 11))
     assert tiny_olmoearth["normalizer_inputs"] == {}
+
+
+def test_tokens_to_grid_averages_each_location_over_modalities_and_band_sets(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    del tiny_olmoearth
+    model = OlmoEarthBenchModel(_rgb_bands(), model_size="nano", version="v1")
+    s2 = torch.arange(2 * 3 * 4 * 1 * 3 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 3, 5)
+    s1 = -torch.arange(2 * 3 * 4 * 1 * 1 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 1, 5)
+    tokens, _ = model.encoder_model.encoder.collapse_and_combine_hwtc(
+        {"sentinel2_l2a": s2, "sentinel2_l2a_mask": s2, "sentinel1": s1}
+    )
+    assert model._token_layout == [(3, 4, 1, 1), (3, 4, 1, 3)]
+
+    grid = model.tokens_to_grid(tokens)
+
+    expected = (s2.mean(dim=(3, 4)) + s1.mean(dim=(3, 4))) / 2
+    torch.testing.assert_close(grid, expected.permute(0, 3, 1, 2))
+    with pytest.raises(ValueError, match="do not match"):
+        model.tokens_to_grid(tokens[:, 1:])
 
 
 def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:

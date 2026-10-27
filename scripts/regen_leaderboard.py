@@ -144,6 +144,12 @@ DATASET_DISPLAY = {
     "kuro_siwo": "Kuro Siwo · V2",
     "pastis": "PASTIS · V2",
     "hotosm_buildings": "HOTOSM Buildings",
+    "planteur": "PLANTEUR",
+    "planteur_loio_guadeloupe": "PLANTEUR LOIO Guadeloupe",
+    "planteur_loio_martinique": "PLANTEUR LOIO Martinique",
+    "planteur_loio_guyane": "PLANTEUR LOIO Guyane",
+    "planteur_loio_reunion": "PLANTEUR LOIO Réunion",
+    "planteur_loio_mayotte": "PLANTEUR LOIO Mayotte",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.

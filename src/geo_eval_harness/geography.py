@@ -22,6 +22,8 @@ Three coordinate sources are handled:
 * **V1**: reproject JSON affine/CRS origins from shards or HDF5 to EPSG:4326.
 * **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
+* **PLANTEUR**: read the patch centres and islands in the ``metadata.csv`` that
+  ``geo-eval-harness download planteur`` writes.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -68,7 +70,14 @@ NO_GEO: dict[str, str] = {
 }
 
 # Re-splits reuse coordinates from the dataset with the same imagery.
-GEO_ALIAS: dict[str, str] = {"eurosat-spatial": "m-eurosat", "eurosat": "m-eurosat"}
+GEO_ALIAS: dict[str, str] = {
+    "eurosat-spatial": "m-eurosat",
+    "eurosat": "m-eurosat",
+    **{
+        f"planteur_loio_{fold}": "planteur"
+        for fold in ("guadeloupe", "martinique", "guyane", "reunion", "mayotte")
+    },
+}
 
 BIN_RES = 0.25  # Degrees per density-map cell.
 POINT_CAP = 2000  # per-dataset cap on individually plotted samples
@@ -85,7 +94,8 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, or ``"hotosm"``.
+        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
+            ``"planteur"``.
             ``None`` when nothing was read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
@@ -165,6 +175,29 @@ def _extract_hotosm(paths: list[Path]) -> dict:
         "place": np.asarray(table["country"].to_pylist(), dtype=object),
         "version": "hotosm",
     }
+
+
+def _extract_planteur(path: Path) -> dict:
+    """Read patch centres and islands from the converted ``planteur`` metadata."""
+    import pandas as pd
+
+    frame = pd.read_csv(path)
+    return {
+        "lon": frame["lon"].to_numpy(),
+        "lat": frame["lat"].to_numpy(),
+        "place": frame["island"].to_numpy(dtype=object),
+        "version": "planteur",
+    }
+
+
+def _extract_converted(name: str, directory: Path) -> dict | None:
+    """Read coordinates written by a converting downloader, or ``None`` if they are absent."""
+    if name == "hotosm_buildings":
+        splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+        return _extract_hotosm(splits) if all(path.is_file() for path in splits) else None
+    if name == "planteur" and (directory / "metadata.csv").is_file():
+        return _extract_planteur(directory / "metadata.csv")
+    return None
 
 
 def _metadata_origin(meta: dict) -> tuple[float | None, float | None, str]:
@@ -414,7 +447,7 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
-    hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    converted = _extract_converted(name, directory)
 
     if tortillas:
         data = _extract_v2(tortillas)
@@ -428,8 +461,8 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
             return GeoRecord(
                 name=name, status="no_geo", reason="no sample carries a usable transform/crs"
             )
-    elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
-        data = _extract_hotosm(hotosm_splits)
+    elif converted is not None:
+        data = converted
     else:
         raise FileNotFoundError(
             f"No .tortilla, V1 shard, or .hdf5 files under {directory}. Run `{command}`."
