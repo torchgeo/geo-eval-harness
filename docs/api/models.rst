@@ -77,5 +77,6 @@ backbone family.
 .. autoclass:: FPNHead
 .. autoclass:: DPTHead
 .. autoclass:: UPerNetHead
+.. autoclass:: UNetHead
 .. autoclass:: ViTNeck
 .. autoclass:: NeckedHead

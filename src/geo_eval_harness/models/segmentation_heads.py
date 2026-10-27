@@ -472,7 +472,7 @@ class ViTNeck(nn.Module):
     A 14x14 grid becomes 7, 14, 28, and 56, the strides 32, 16, 8, and 4 that pyramid backbones
     such as ConvNeXt and Swin give at 224 px.
 
-    With ``input_norm="layernorm"`` each level first gets a learnable :class:`ChannelLayerNorm`.
+    With ``input_norm="layernorm"`` each level first gets a learnable ``ChannelLayerNorm``.
     Raw block outputs of some ViTs carry outlier channels; without it the max-pool level passes
     them into UPerNet, whose BatchNorm running statistics then misrepresent eval batches.
 

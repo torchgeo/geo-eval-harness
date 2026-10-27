@@ -165,8 +165,9 @@ class SegmentationProbe(nn.Module):
             ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``, ``"unet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
             ``dpt``, ``upernet``, and ``unet`` heads (default 256).
-        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a :class:`ViTNeck` before an
-            ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers at one resolution.
+        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a
+            :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn``, ``upernet``, or ``unet``
+            head; it needs exactly four layers at one resolution.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
     """
@@ -207,6 +208,7 @@ class SegmentationProbe(nn.Module):
         self.channels_list = self._dry_run_channels()
         hdim = hidden_dim or 256
 
+        self.head: nn.Module
         if head_type == "linear":
             self.head = LinearHead(self.channels_list, num_classes)
         elif head_type in _HIDDEN_DIM_HEADS:
