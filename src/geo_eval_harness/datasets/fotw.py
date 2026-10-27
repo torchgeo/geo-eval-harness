@@ -12,7 +12,7 @@ class FieldsOfTheWorld(_V2Dataset):
     """Sentinel-2 field boundary segmentation (3 classes).
 
     Classes: background, field, boundary. Fields of the World labels value 3 as unknown;
-    :meth:`canonicalize_sample` maps it to :attr:`ignore_label`, the default
+    :meth:`canonicalize_sample` maps it to ``ignore_label``, the default
     ``segmentation.ignore_index``, so it is excluded from loss and metrics. Upstream returns
     ``image_a`` / ``image_b`` change-detection pairs; :meth:`canonicalize_sample` keeps the later
     acquisition (``image_b``).
