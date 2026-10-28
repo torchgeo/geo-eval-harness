@@ -127,6 +127,14 @@ def test_neck_changes_the_hash_only_when_enabled() -> None:
     assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
 
 
+def test_unet_head_has_its_own_hash() -> None:
+    def seg(head: str, **segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": head, **segmentation})
+
+    assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
+    assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:
     config = _cfg(model={"name": "torchgeo/dofa_base"}, datasets=["burn_scars"])
     changed = _cfg(

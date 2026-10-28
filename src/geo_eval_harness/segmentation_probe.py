@@ -17,11 +17,21 @@ from geo_eval_harness.models.segmentation_heads import (
     LinearHead,
     NeckedHead,
     PatchLinearHead,
+    UNetHead,
     UPerNetHead,
     ViTNeck,
 )
 
 logger = logging.getLogger(__name__)
+
+#: Heads built as ``Head(channels_list, num_classes, hidden_dim=...)``.
+_HIDDEN_DIM_HEADS: dict[str, type[nn.Module]] = {
+    "conv_block": ConvBlockHead,
+    "fpn": FPNHead,
+    "dpt": DPTHead,
+    "upernet": UPerNetHead,
+    "unet": UNetHead,
+}
 
 
 def _resolve_num_prefix_tokens(backbone: nn.Module) -> int | None:
@@ -152,12 +162,12 @@ class SegmentationProbe(nn.Module):
         freeze_backbone: If ``True`` (default), backbone parameters are frozen
             and the backbone runs in eval mode during inference.
         head_type: Decoder architecture — one of ``"linear"``, ``"conv_block"``,
-            ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``.
+            ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``, ``"unet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
-            ``dpt``, and ``upernet`` heads (default 256).
+            ``dpt``, ``upernet``, and ``unet`` heads (default 256).
         neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a
-            :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn`` or ``upernet`` head; it
-            needs exactly four layers at one resolution.
+            :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn``, ``upernet``, or ``unet``
+            head; it needs exactly four layers at one resolution.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
     """
@@ -201,14 +211,10 @@ class SegmentationProbe(nn.Module):
         self.head: nn.Module
         if head_type == "linear":
             self.head = LinearHead(self.channels_list, num_classes)
-        elif head_type == "conv_block":
-            self.head = ConvBlockHead(self.channels_list, num_classes, hidden_dim=hdim)
-        elif head_type == "fpn":
-            self.head = FPNHead(self.channels_list, num_classes, hidden_dim=hdim)
-        elif head_type == "dpt":
-            self.head = DPTHead(self.channels_list, num_classes, hidden_dim=hdim)
-        elif head_type == "upernet":
-            self.head = UPerNetHead(self.channels_list, num_classes, hidden_dim=hdim)
+        elif head_type in _HIDDEN_DIM_HEADS:
+            self.head = _HIDDEN_DIM_HEADS[head_type](
+                self.channels_list, num_classes, hidden_dim=hdim
+            )
         elif head_type == "patch_linear":
             self.head = PatchLinearHead(self.channels_list, num_classes).to(self._backbone_device())
             dry_run_features = [
@@ -225,13 +231,18 @@ class SegmentationProbe(nn.Module):
         else:
             raise ValueError(
                 "Unknown head_type: "
-                f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet"
+                f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet, unet"
             )
         self._attach_neck(neck, head_type, neck_norm)
 
     def _attach_neck(self, neck: str, head_type: str, neck_norm: str = "layernorm") -> None:
         """Put the requested neck before the head after checking the hooked feature maps."""
         if neck == "none":
+            if head_type == "unet" and len(set(self.feature_hw_list)) == 1:
+                raise ValueError(
+                    "head 'unet' needs a feature pyramid; the hooked layers share one resolution "
+                    f"{self.feature_hw_list[0]}. Use neck 'vit' for ViT blocks."
+                )
             return
         if neck != "vit":
             raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit")
