@@ -1,5 +1,7 @@
 """Segmentation decoder heads for use with SegmentationProbe."""
 
+import itertools
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -284,6 +286,68 @@ class UPerNetHead(nn.Module):
         return logits
 
 
+class UNetHead(nn.Module):
+    """U-Net decoder head using the ``segmentation_models_pytorch`` ``UnetDecoder``.
+
+    The coarsest map is the decoder input and each finer map is one skip (no centre block, no
+    attention, nearest upsampling, BatchNorm). Decoding stops at the finest hooked map (stride 4 for
+    ConvNeXt stages or the ViT neck), the same resolution as :class:`UPerNetHead`; a 1x1 classifier
+    then gives logits that are upsampled bilinearly to the input. There is no raw-image skip, so
+    ViT blocks need ``neck: vit`` to form the pyramid.
+
+    Every stage has ``hidden_dim`` channels, so at the default 256 the decoder is about as large as
+    :class:`UPerNetHead`. Convolutions use UPerNet's ``N(0, 0.02)`` initialisation, and
+    ``min_train_batch_size`` is 2 like :class:`UPerNetHead`, so both heads see identical batches.
+
+    Args:
+        channels_list: Channel count for each hooked feature layer (coarse-to-fine, at least 2).
+        num_classes: Number of segmentation output classes.
+        hidden_dim: Channel width of every decoder stage (default 256).
+    """
+
+    min_train_batch_size = 2
+
+    def __init__(self, channels_list: list[int], num_classes: int, hidden_dim: int = 256) -> None:
+        super().__init__()
+        from segmentation_models_pytorch.decoders.unet.decoder import UnetDecoder
+
+        if len(channels_list) < 2:
+            raise ValueError(f"UNetHead needs at least 2 feature layers, got {len(channels_list)}.")
+        n_blocks = len(channels_list) - 1
+        # smp expects fine-to-coarse maps led by a full-resolution stage that it drops; repeating
+        # the finest map keeps it as the last skip and ends decoding at its resolution.
+        fine_to_coarse = list(reversed(channels_list))
+        self.decoder = UnetDecoder(
+            encoder_channels=[fine_to_coarse[0], *fine_to_coarse],
+            decoder_channels=[hidden_dim] * n_blocks,
+            n_blocks=n_blocks,
+        )
+        self.classifier = nn.Conv2d(hidden_dim, num_classes, kernel_size=1)
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Decode coarse-to-fine feature maps into logits at the input resolution."""
+        if any(
+            fine.shape[-2] < coarse.shape[-2] or fine.shape[-1] < coarse.shape[-1]
+            for coarse, fine in itertools.pairwise(features)
+        ):
+            raise ValueError(
+                "UNetHead needs coarse-to-fine features; got sizes "
+                f"{[tuple(f.shape[-2:]) for f in features]}."
+            )
+        fine_to_coarse = list(reversed(features))
+        logits = self.classifier(self.decoder([fine_to_coarse[0], *fine_to_coarse]))
+        if logits.shape[-2:] != (input_h, input_w):
+            logits = F.interpolate(
+                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
+            )
+        return logits
+
+
 # The fusion cascade is the reference implementation from
 # ``transformers.models.dpt.modeling_dpt`` (Apache-2.0), itself a faithful port
 # of Intel-ISL DPT. It is imported rather than reimplemented so the residual
@@ -397,3 +461,65 @@ class DPTHead(nn.Module):
         if out.shape[-2:] != (input_h, input_w):
             out = F.interpolate(out, size=(input_h, input_w), mode="bilinear", align_corners=False)
         return out
+
+
+class ViTNeck(nn.Module):
+    """Turn four same-resolution ViT feature maps into a stride pyramid.
+
+    Wraps ``transformers``' ``BeitFPNNeck``, the ``Feature2Pyramid`` neck of the BEiT/ViT UPerNet
+    configs: coarse-to-fine inputs on one patch grid are rescaled by 1/2, 1, 2, and 4 (max-pool,
+    identity, one 2x2 transposed conv, two 2x2 transposed convs with BatchNorm and GELU between).
+    A 14x14 grid becomes 7, 14, 28, and 56, the strides 32, 16, 8, and 4 that pyramid backbones
+    such as ConvNeXt and Swin give at 224 px.
+
+    With ``input_norm="layernorm"`` each level first gets a learnable ``ChannelLayerNorm``.
+    Raw block outputs of some ViTs carry outlier channels; without it the max-pool level passes
+    them into UPerNet, whose BatchNorm running statistics then misrepresent eval batches.
+
+    Args:
+        channels_list: Channel count for each of the four layers (coarse-to-fine, all equal).
+        input_norm: ``"layernorm"`` (default) or ``"none"``.
+    """
+
+    def __init__(self, channels_list: list[int], input_norm: str = "layernorm") -> None:
+        super().__init__()
+        from transformers import BeitConfig
+        from transformers.models.beit.modeling_beit import BeitFPNNeck
+
+        if len(channels_list) != 4 or len(set(channels_list)) != 1:
+            raise ValueError(
+                f"ViTNeck needs 4 layers with one channel count, got {list(channels_list)}."
+            )
+        if input_norm not in ("layernorm", "none"):
+            raise ValueError(f"input_norm must be 'layernorm' or 'none', got {input_norm!r}.")
+        self.input_norms = nn.ModuleList(
+            [
+                ChannelLayerNorm(c) if input_norm == "layernorm" else nn.Identity()
+                for c in channels_list
+            ]
+        )
+        self.fpn = BeitFPNNeck(BeitConfig(hidden_size=channels_list[0]))
+
+    def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Normalise each level (if enabled), then rescale coarse-to-fine maps by 1/2, 1, 2, 4."""
+        normed = [norm(f) for norm, f in zip(self.input_norms, features, strict=True)]
+        return list(reversed(self.fpn(normed[::-1])))
+
+
+class NeckedHead(nn.Module):
+    """Apply a neck to the feature maps before a decoder head.
+
+    Args:
+        neck: Module mapping a list of feature maps to a list of feature maps.
+        head: Decoder head called as ``head(features, input_h, input_w)``.
+    """
+
+    def __init__(self, neck: nn.Module, head: nn.Module) -> None:
+        super().__init__()
+        self.neck = neck
+        self.head = head
+        self.min_train_batch_size = int(getattr(head, "min_train_batch_size", 1))
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Run the neck, then the head."""
+        return self.head(self.neck(features), input_h, input_w)
