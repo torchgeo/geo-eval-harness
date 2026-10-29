@@ -4,6 +4,7 @@
 """Official DFC2025 Track I SAR-only semantic segmentation."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
 
@@ -61,6 +62,20 @@ class OpenEarthMapSAR(BenchDataset):
             "sar", "sar", "sar", mean=49.4892, std=34.9148, min=0, max=255, wavelength_um=None
         ),
     ]
+
+    #: Opt-in aliases for models that only accept Sentinel-1 polarisations: ``--bands vv`` (or ``vv,vh``)
+    #: feeds the single SAR channel under that name (same pixels and statistics). The polarisation of the
+    #: source data is not declared, so this is an adapter for comparison, not a physical match.
+    band_aliases: ClassVar[tuple[str, ...]] = ("vv", "vh")
+
+    @classmethod
+    def select_band_specs(cls, bands: "list[str] | None") -> list[BandSpec]:
+        """Like the base class, plus the ``vv``/``vh`` aliases of the single ``sar`` band."""
+        if bands is None:
+            return list(cls.bands)
+        sar = cls.bands[0]
+        return [replace(sar, name=b, source_name=b) if b in cls.band_aliases else
+                super(OpenEarthMapSAR, cls).select_band_specs([b])[0] for b in bands]
 
     @classmethod
     def data_root(cls) -> Path:
@@ -122,7 +137,7 @@ class OpenEarthMapSAR(BenchDataset):
         if partition != "default":
             raise ValueError("OpenEarthMap-SAR supports only the default partition")
         specs = self.select_band_specs(bands)
-        if specs != self.bands:
-            raise ValueError("OpenEarthMap-SAR requires exactly the single sar band")
-        transform = select_bands([0], 1, transform)
+        if not specs or len({b.name for b in specs}) != len(specs):
+            raise ValueError("OpenEarthMap-SAR needs the sar band (or its vv/vh aliases), each at most once")
+        transform = select_bands([0] * len(specs), 1, transform)
         return SARSegmentationDataset(self.split_paths(self.data_root(), split), transform)
