@@ -17,10 +17,10 @@ __all__ = ["PUBLISHED", "fetch"]
 
 #: ``{product: (repository, commit)}`` of each published product.
 PUBLISHED: dict[str, tuple[str, str]] = {
-    "aef": ("nilsleh/aef-embeddings-eval-datasets", "8c632b7d4a5945c3101aecf2e18aa1a144c51694"),
+    "aef": ("nilsleh/aef-embeddings-eval-datasets", "947d092fa7eca424e5b42b5b37107d88afd88cb6"),
     "tessera": (
         "nilsleh/tessera-embeddings-eval-datasets",
-        "2c8239080a0cfc75cd186926634d149f6459d0f2",
+        "b387bac612309275917304e18009c70864376689",
     ),
 }
 
