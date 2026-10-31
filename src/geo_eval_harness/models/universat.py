@@ -69,6 +69,41 @@ _MODALITY_SUBPATCH: dict[str, int] = {
 }
 
 
+def _patch_pixels(patch_size: float, input_res: float) -> int:
+    """Pixels per patch side, computed exactly as upstream ``to_scale``."""
+    return max(int((patch_size / 10) * 10 / input_res), 1)
+
+
+def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) -> int:
+    """Choose a sub-patch factor that tiles each patch exactly.
+
+    Upstream ``to_scale`` unfolds each ``patch_pixels`` patch in steps of the
+    sub-patch factor and silently drops any remainder, so a factor that does not
+    divide the patch discards pixels (a 16 px patch with the registry's 10 keeps
+    only its top-left 10x10). An explicit ``override`` must divide the patch;
+    otherwise the registry factor is used, or its largest divisor of the patch
+    if it does not tile.
+    """
+    if override is not None:
+        if override < 1 or patch_pixels % override:
+            raise ValueError(
+                f"UniverSat subpatch={override} for {modality!r} does not divide its "
+                f"{patch_pixels} px patch; pixels would be dropped."
+            )
+        return override
+    registry = _MODALITY_SUBPATCH.get(modality, 1)
+    sub = next(d for d in range(min(registry, patch_pixels), 0, -1) if patch_pixels % d == 0)
+    if sub != registry:
+        logger.info(
+            "UniverSat %s: registry subpatch %d does not divide the %d px patch; using %d",
+            modality,
+            registry,
+            patch_pixels,
+            sub,
+        )
+    return sub
+
+
 # UniverSat's patch encoder (UPE) expands every input pixel x band into a
 # 384-d spectral token before patch pooling: 16 x 224^2 x 6 bands needs a
 # single 6.9 GiB tensor and OOMs a 32 GB GPU at batch 16. The UPE is
@@ -307,6 +342,14 @@ class UniverSatBenchModel(BenchModel):
             use 16 (14x14 tokens at 224 px, as ViT-B/16).
         input_res: Override the physical resolution (m/px), single-sensor only;
             ``None`` uses the registry value per modality.
+        subpatch: Sub-patch factor (pixels per sub-patch side) for every sensor, or a
+            ``{modality: factor}`` mapping. It must divide each patch. ``None`` (default)
+            uses the registry factor, or its largest divisor of the patch when it does not
+            tile (e.g. 8 for a 16 px VHR patch, whose registry factor is 10).
+        output_px: Output token size in input pixels. When set, ``output_grid`` becomes
+            ``W // output_px`` per call, so the final encoder tokens (after UniverSat's
+            bilinear resampling and sub-patch cross-attention) form a dense grid; 1 gives
+            one token per pixel, as in UniverSat's PangaeaBench linear probe.
         normalize: If True, L2-normalize the output embeddings.
         gradient_checkpointing: Recompute trunk-block activations in backward (exact; for full
             fine-tuning, whose stored activations exceed 32 GB on some datasets).
@@ -326,6 +369,8 @@ class UniverSatBenchModel(BenchModel):
         output_grid: int | None = None,
         input_res: float | None = None,
         patch_px: int | None = None,
+        subpatch: int | dict[str, int] | None = None,
+        output_px: int | None = None,
         normalize: bool = False,
         gradient_checkpointing: bool = False,
         repo: str = UNIVERSAT_REPO,
@@ -339,6 +384,19 @@ class UniverSatBenchModel(BenchModel):
 
         self.patch_px = patch_px
         self.patch_size = patch_px * self._groups[0]["input_res"] if patch_px else patch_size
+        overrides = subpatch if isinstance(subpatch, dict) else {}
+        unknown = set(overrides) - {g["modality"] for g in self._groups}
+        if unknown:
+            raise ValueError(f"subpatch given for modalities not in the input: {sorted(unknown)}")
+        for g in self._groups:
+            g["patch_pixels"] = _patch_pixels(self.patch_size, g["input_res"])
+            override = overrides.get(g["modality"]) if isinstance(subpatch, dict) else subpatch
+            g["subpatch"] = _resolve_subpatch(g["modality"], g["patch_pixels"], override)
+        if patch_px and self._groups[0]["patch_pixels"] != patch_px:
+            raise ValueError(
+                f"patch_px={patch_px} resolves to {self._groups[0]['patch_pixels']} px in UniverSat."
+            )
+        self.output_px = output_px
         self.output_grid = output_grid
         self.do_normalize = normalize
 
@@ -366,11 +424,13 @@ class UniverSatBenchModel(BenchModel):
         # Register tokens precede the spatial tokens in every trunk block output.
         self.num_prefix_tokens = int(getattr(getattr(self.model, "model", None), "n_registers", 0))
         logger.info(
-            "UniverSat loaded (modalities=%s, %d channels, patch_size=%sm)",
+            "UniverSat loaded (modalities=%s, %d channels, patch_size=%sm, subpatches=%s)",
             [g["modality"] for g in self._groups],
             self.num_channels,
             self.patch_size,
+            {g["modality"]: g["subpatch"] for g in self._groups},
         )
+        self._warned_remainder = False
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         """Embed ``(B, C, H, W)`` into ``(B, 768)`` mean-pooled tile features."""
@@ -382,8 +442,21 @@ class UniverSatBenchModel(BenchModel):
             input_res[mod] = g["input_res"]
             subpatches[mod] = g["subpatch"]
         output_grid = self.output_grid
-        if output_grid is None and self.patch_px:
+        if self.output_px:
+            output_grid = images.shape[-1] // self.output_px
+        elif output_grid is None and self.patch_px:
             output_grid = images.shape[-1] // self.patch_px
+        if not self._warned_remainder:
+            for g in self._groups:
+                if images.shape[-2] % g["patch_pixels"] or images.shape[-1] % g["patch_pixels"]:
+                    logger.warning(
+                        "UniverSat %s: input %s is not a multiple of the %d px patch; "
+                        "UniverSat drops the remainder rows and columns.",
+                        g["modality"],
+                        tuple(images.shape[-2:]),
+                        g["patch_pixels"],
+                    )
+                    self._warned_remainder = True
         tokens, _ = self.model.encode(
             x,
             patch_size=self.patch_size,

@@ -11,7 +11,7 @@ import torch
 
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import UniverSatBenchModel
-from geo_eval_harness.models.universat import _build_sensor_groups, _sar_code
+from geo_eval_harness.models.universat import _build_sensor_groups, _resolve_subpatch, _sar_code
 
 
 def _s2_band(name: str, wavelength_um: float) -> BandSpec:
@@ -158,6 +158,74 @@ def test_patch_px_sets_metric_patch_size_and_patch_grid(monkeypatch: pytest.Monk
     assert seen["output_grid"] == 14
     assert model.num_prefix_tokens == 4
     assert out.requires_grad, "segmentation fine-tuning needs gradients through the encoder"
+
+
+@pytest.mark.parametrize(
+    ("modality", "patch_pixels", "expected"),
+    [("aerial", 16, 8), ("aerial", 50, 10), ("naip", 8, 8), ("spot", 20, 10), ("s2", 1, 1)],
+)
+def test_default_subpatch_tiles_the_patch(modality: str, patch_pixels: int, expected: int) -> None:
+    sub = _resolve_subpatch(modality, patch_pixels, None)
+    assert sub == expected
+    assert patch_pixels % sub == 0
+
+
+def test_subpatch_override_must_tile() -> None:
+    assert _resolve_subpatch("aerial", 16, 4) == 4
+    with pytest.raises(ValueError, match="does not divide"):
+        _resolve_subpatch("aerial", 16, 10)
+
+
+def _vhr_encoder(seen: dict[str, Any]) -> Any:
+    class _Encoder(torch.nn.Module):
+        def encode(
+            self, images: dict[str, torch.Tensor], **kwargs: object
+        ) -> tuple[torch.Tensor, None]:
+            seen.update(kwargs)
+            return images["aerial"].mean(dim=(1, 2, 3))[:, None, None].expand(-1, 3, 2), None
+
+    return _Encoder()
+
+
+_AERIAL = [
+    BandSpec("aerial", n, n, mean=0, std=1, min=0, max=1, wavelength_um=w)
+    for n, w in [("red", 0.665), ("green", 0.56), ("blue", 0.49)]
+]
+
+
+def test_vhr_patch_px_passes_a_tiling_subpatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The registry's factor 10 does not divide a 16 px patch; upstream would drop 61% of pixels.
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _vhr_encoder(seen))
+    UniverSatBenchModel(_AERIAL, patch_px=16, normalization="identity")(torch.rand(1, 3, 32, 32))
+    assert seen["subpatches"] == {"aerial": 8}
+    with pytest.raises(ValueError, match="does not divide"):
+        UniverSatBenchModel(_AERIAL, patch_px=16, subpatch=10, normalization="identity")
+    with pytest.raises(ValueError, match="not in the input"):
+        UniverSatBenchModel(_AERIAL, patch_px=16, subpatch={"s2": 1}, normalization="identity")
+
+
+def test_output_px_sets_a_dense_output_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _vhr_encoder(seen))
+    model = UniverSatBenchModel(_AERIAL, patch_px=16, output_px=2, normalization="identity")
+    model(torch.rand(1, 3, 64, 64))
+    assert seen["output_grid"] == 32
+
+
+@pytest.mark.slow
+def test_every_vhr_pixel_reaches_the_encoder() -> None:
+    # Re-drawing the pixels a 10 px sub-patch would skip (rows/cols 10-15 of each 16 px patch)
+    # must change the embedding.
+    gen = torch.Generator().manual_seed(0)
+    x = torch.randn(1, 3, 32, 32, generator=gen)
+    idx = torch.arange(32) % 16 >= 10
+    skipped = idx[:, None] | idx[None, :]
+    x2 = x.clone()
+    x2[:, :, skipped] = torch.randn(1, 3, int(skipped.sum()), generator=gen)
+    model = UniverSatBenchModel(_AERIAL, patch_px=16, normalization="identity").eval()
+    with torch.no_grad():
+        assert not torch.allclose(model(x), model(x2))
 
 
 def test_rgb_bands_without_wavelengths_use_standard_centres() -> None:
