@@ -30,6 +30,74 @@ logger = logging.getLogger(__name__)
 SegMetrics = dict[str, float]
 
 
+def median_frequency_weights(pixel_counts: torch.Tensor) -> torch.Tensor:
+    """Return median-frequency-balancing weights ``median(f) / f_c`` (Eigen & Fergus, 2015).
+
+    The median is over classes with pixels; classes without training pixels get weight 0.
+    """
+    counts = pixel_counts.double()
+    freq = counts / counts.sum()
+    present = counts > 0
+    if not present.any():
+        raise ValueError("Class weights need at least one labelled training pixel.")
+    weights = torch.zeros_like(freq)
+    weights[present] = freq[present].median() / freq[present]
+    return weights.float()
+
+
+def class_pixel_counts(
+    source: "DataLoader | torch.Tensor", num_classes: int, ignore_index: int
+) -> torch.Tensor:
+    """Count labelled pixels per class in a mask tensor or a loader's masks.
+
+    Iterating a loader runs under a saved RNG state, so training sees the same shuffles after it.
+    """
+    counts = torch.zeros(num_classes, dtype=torch.long)
+
+    def add(masks: torch.Tensor) -> None:
+        masks = masks.long().reshape(-1)
+        masks = masks[(masks != ignore_index) & (masks >= 0) & (masks < num_classes)]
+        counts.add_(torch.bincount(masks.cpu(), minlength=num_classes))
+
+    if isinstance(source, torch.Tensor):
+        add(source)
+        return counts
+    state = _rng_state()
+    try:
+        for batch in source:
+            add(batch["mask"] if isinstance(batch, dict) else batch[1])
+    finally:
+        _set_rng_state(state)
+    return counts
+
+
+def _rng_state() -> tuple:
+    """Snapshot every RNG a data loader or model may advance."""
+    import random
+
+    import numpy as np
+
+    # Only devices already in use; touching others would initialise every visible GPU.
+    cuda = torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
+    # DataLoader worker seeding and user transforms read the legacy global NumPy RNG.
+    np_state = np.random.get_state()  # noqa: NPY002
+    return random.getstate(), np_state, torch.get_rng_state(), cuda
+
+
+def _set_rng_state(state: tuple) -> None:
+    """Restore a snapshot from :func:`_rng_state`."""
+    import random
+
+    import numpy as np
+
+    py, np_state, cpu, cuda = state
+    random.setstate(py)
+    np.random.set_state(np_state)  # noqa: NPY002
+    torch.set_rng_state(cpu)
+    if cuda is not None:
+        torch.cuda.set_rng_state_all(cuda)
+
+
 class SegmentationSolver:
     """Train and evaluate a segmentation probe.
 

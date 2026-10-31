@@ -195,6 +195,7 @@ Segmentation
      lora_target_modules: null
      lora_alpha: 16.0
      backbone_learning_rate: null
+     class_weights: none
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,

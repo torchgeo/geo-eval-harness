@@ -63,6 +63,7 @@ from geo_eval_harness.utils import FeatureSplit, FeatureSplits, extract_features
 
 if TYPE_CHECKING:
     import geo_eval_harness.segmentation_task
+    from geo_eval_harness.config.schema import SegmentationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -620,6 +621,7 @@ def evaluate_segmentation(
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        _apply_class_weights(solver, seg_cfg, train_cache.masks, num_classes, device)
         solver.fit_cached(
             train_cache=train_cache,
             val_cache=val_cache,
@@ -633,6 +635,7 @@ def evaluate_segmentation(
             collect_confusions=collect_confusions,
         )
     else:
+        _apply_class_weights(solver, seg_cfg, train_loader, num_classes, device)
         solver.fit(train_loader=train_loader, val_loader=val_loader, epochs=epochs, verbose=verbose)
         eval_result = solver.evaluate(
             test_loader,
@@ -654,6 +657,31 @@ def evaluate_segmentation(
     else:
         metrics = eval_result
     return metrics, sum(probe.channels_list), lr, actual_batch_size
+
+
+def _apply_class_weights(
+    solver: "geo_eval_harness.segmentation_task.SegmentationSolver",
+    seg_cfg: "SegmentationConfig",
+    train_masks: "torch.utils.data.DataLoader | torch.Tensor",
+    num_classes: int,
+    device: torch.device,
+) -> None:
+    """Replace the solver's loss with class-weighted cross-entropy when configured."""
+    if seg_cfg.class_weights == "none":
+        return
+    from geo_eval_harness.segmentation_task import class_pixel_counts, median_frequency_weights
+
+    counts = class_pixel_counts(train_masks, num_classes, seg_cfg.ignore_index)
+    weights = median_frequency_weights(counts)
+    logger.info(
+        "Class weights (%s) from %d training pixels: %s",
+        seg_cfg.class_weights,
+        int(counts.sum()),
+        ", ".join(f"{w:.3g}" for w in weights.tolist()),
+    )
+    solver.criterion = torch.nn.CrossEntropyLoss(
+        weight=weights.to(device), ignore_index=seg_cfg.ignore_index
+    )
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:

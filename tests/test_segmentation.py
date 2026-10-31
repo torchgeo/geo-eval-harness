@@ -1206,3 +1206,29 @@ def test_probe_pools_encoded_dates_with_the_requested_reduction(
 def test_probe_rejects_unknown_temporal_pool(mock_backbone):
     with pytest.raises(ValueError, match="temporal_pool"):
         SegmentationProbe(mock_backbone, ["layer1"], NUM_CLASSES, temporal_pool="median")
+
+
+def test_median_frequency_weights() -> None:
+    from geo_eval_harness.segmentation_task import median_frequency_weights
+
+    weights = median_frequency_weights(torch.tensor([60, 30, 10, 0]))
+
+    # Frequencies .6/.3/.1, median .3; the class without training pixels gets weight 0.
+    assert weights.tolist() == pytest.approx([0.5, 1.0, 3.0, 0.0])
+    with pytest.raises(ValueError, match="labelled"):
+        median_frequency_weights(torch.zeros(3, dtype=torch.long))
+
+
+def test_class_pixel_counts_skip_ignored_labels_and_keep_the_rng() -> None:
+    from geo_eval_harness.segmentation_task import class_pixel_counts
+
+    masks = torch.tensor([[[0, 1], [255, 2]], [[2, 2], [1, 255]]])
+    assert class_pixel_counts(masks, 3, 255).tolist() == [1, 2, 3]
+
+    loader = DataLoader(TensorDataset(torch.zeros(2, 1), masks), batch_size=1, shuffle=True)
+    torch.manual_seed(0)
+    counts = class_pixel_counts(loader, 3, 255)
+    after = torch.rand(3)
+    torch.manual_seed(0)
+    assert counts.tolist() == [1, 2, 3]
+    assert torch.equal(after, torch.rand(3))
