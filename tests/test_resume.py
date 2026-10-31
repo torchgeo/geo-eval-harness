@@ -44,7 +44,13 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
         "segmentation": config.segmentation.model_dump(
             mode="json",
-            exclude={"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"},
+            exclude={
+                "lora_rank",
+                "lora_target_modules",
+                "lora_alpha",
+                "backbone_learning_rate",
+                "class_weights",
+            },
         ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
@@ -91,6 +97,7 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"classification": {"bootstrap_samples": 100}},
         {"segmentation": {"head": "linear"}},
         {"segmentation": {"learning_rate": 0.01}},
+        {"segmentation": {"class_weights": "median_frequency"}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
     ],
 )
