@@ -220,3 +220,49 @@ def test_upe_chunking_matches_full_batch(
     encoder.model.batches.clear()
     encoder.model.UPE_forward(x, *args, mask_in=object())
     assert encoder.model.batches == [5]
+
+
+class _FakeTrunk(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.model = torch.nn.Module()
+        self.model.blocks = torch.nn.ModuleList(
+            torch.nn.Sequential(torch.nn.Linear(4, 4), torch.nn.GELU()) for _ in range(3)
+        )
+
+    def run(self, x: torch.Tensor) -> torch.Tensor:
+        for blk in self.model.blocks:
+            x = blk(x)
+        return x
+
+
+def test_block_checkpointing_is_exact_and_keeps_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
+    from geo_eval_harness.models import universat
+
+    torch.manual_seed(0)
+    reference, encoder = _FakeTrunk(), _FakeTrunk()
+    encoder.load_state_dict(reference.state_dict())
+    x = torch.randn(2, 5, 4)
+    reference.run(x).square().sum().backward()
+
+    assert universat._install_block_checkpointing(encoder) == 3
+    seen: list[torch.Tensor] = []
+    encoder.model.blocks[1].register_forward_hook(lambda _m, _i, out: seen.append(out))
+    calls: list[int] = []
+    real = universat.checkpoint
+    monkeypatch.setattr(universat, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k))
+    out = encoder.run(x)
+    out.square().sum().backward()
+
+    assert len(calls) == 3
+    assert len(seen) == 1
+    torch.testing.assert_close(out, reference.run(x), rtol=0, atol=0)
+    for p, q in zip(encoder.parameters(), reference.parameters(), strict=True):
+        torch.testing.assert_close(p.grad, q.grad, rtol=0, atol=0)
+
+    calls.clear()
+    with torch.no_grad():
+        encoder.run(x)
+    encoder.requires_grad_(False)
+    encoder.run(x)
+    assert calls == []

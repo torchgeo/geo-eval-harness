@@ -150,6 +150,33 @@ def _install_upe_chunking(encoder: object) -> None:
     object.__setattr__(inner, "UPE_forward", functools.partial(_chunked_upe_forward, upe, params))
 
 
+def _install_block_checkpointing(encoder: object) -> int:
+    """Recompute each trunk block's activations in backward instead of storing them.
+
+    Applies only while gradients flow into the block (full fine-tuning, LoRA); frozen and
+    no-grad forwards run the block directly. Forward hooks on the blocks still see the
+    block outputs. Returns the number of wrapped blocks.
+    """
+    blocks = getattr(getattr(encoder, "model", None), "blocks", None)
+    if not isinstance(blocks, torch.nn.ModuleList):
+        raise TypeError("UniverSat gradient checkpointing needs model.model.blocks (a ModuleList).")
+    for block in blocks:
+        forward = block.forward
+
+        def checkpointed(
+            *args: Any,
+            _forward: Callable[..., Any] = forward,
+            _block: torch.nn.Module = block,
+            **kwargs: Any,
+        ) -> Any:
+            if torch.is_grad_enabled() and any(p.requires_grad for p in _block.parameters()):
+                return checkpoint(_forward, *args, use_reentrant=False, **kwargs)
+            return _forward(*args, **kwargs)
+
+        object.__setattr__(block, "forward", checkpointed)
+    return len(blocks)
+
+
 # SAR bands are sensor codes (not wavelengths) in UniverSat's s1 modality.
 def _sar_code(name: str) -> str:
     n = name.lower()
@@ -281,6 +308,8 @@ class UniverSatBenchModel(BenchModel):
         input_res: Override the physical resolution (m/px), single-sensor only;
             ``None`` uses the registry value per modality.
         normalize: If True, L2-normalize the output embeddings.
+        gradient_checkpointing: Recompute trunk-block activations in backward (exact; for full
+            fine-tuning, whose stored activations exceed 32 GB on some datasets).
         repo: torch.hub source for the model code.
         repo_ref: Pinned git ref for the torch.hub load.
     """
@@ -298,6 +327,7 @@ class UniverSatBenchModel(BenchModel):
         input_res: float | None = None,
         patch_px: int | None = None,
         normalize: bool = False,
+        gradient_checkpointing: bool = False,
         repo: str = UNIVERSAT_REPO,
         repo_ref: str | None = UNIVERSAT_REF,
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -328,6 +358,11 @@ class UniverSatBenchModel(BenchModel):
             ),
         ).eval()
         _install_upe_chunking(self.model)
+        if gradient_checkpointing:
+            logger.info(
+                "UniverSat gradient checkpointing on %d trunk blocks",
+                _install_block_checkpointing(self.model),
+            )
         # Register tokens precede the spatial tokens in every trunk block output.
         self.num_prefix_tokens = int(getattr(getattr(self.model, "model", None), "n_registers", 0))
         logger.info(
