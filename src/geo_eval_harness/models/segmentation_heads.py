@@ -114,6 +114,177 @@ class PatchLinearHead(nn.Module):
         return logits
 
 
+class SweepPatchLinearHead(nn.Module):
+    """``n_heads`` independent :class:`PatchLinearHead` probes trained in one vectorised pass.
+
+    Each head is LayerNorm + per-token linear projection to ``C * P^2`` logits + pixel shuffle,
+    as in :class:`PatchLinearHead`. Every head has its own LayerNorm affine; the shared
+    normalisation is computed once and the affine is folded into the projection, so no head
+    materialises its own normalised copy of the features. This is the batched LayerNorm-linear
+    probe of UniverSat's ``LP_eval.py`` (one head per learning-rate x weight-decay cell).
+
+    Until :attr:`selected` is set, :meth:`forward` returns ``(n_heads, B, C, H, W)`` logits;
+    afterwards it returns the selected head's ``(B, C, H, W)`` logits.
+    """
+
+    def __init__(self, channels_list: list[int], num_classes: int, n_heads: int) -> None:
+        super().__init__()
+        if n_heads < 1:
+            raise ValueError(f"n_heads must be positive, got {n_heads}.")
+        self.num_classes = num_classes
+        self.in_channels = channels_list[0]
+        self.n_heads = n_heads
+        self.ln_eps = 1e-5
+        self.ln_weight = nn.ParameterList(
+            [nn.Parameter(torch.ones(self.in_channels)) for _ in range(n_heads)]
+        )
+        self.ln_bias = nn.ParameterList(
+            [nn.Parameter(torch.zeros(self.in_channels)) for _ in range(n_heads)]
+        )
+        self.weight: nn.ParameterList | None = None
+        self.bias: nn.ParameterList | None = None
+        self.patch_size: int | None = None
+        self.selected: int | None = None
+
+    def head_parameters(self, index: int) -> list[nn.Parameter]:
+        """Return the trainable parameters of head ``index``."""
+        if self.weight is None or self.bias is None:
+            raise RuntimeError("SweepPatchLinearHead has not been materialised by a dry run.")
+        return [
+            self.ln_weight[index],
+            self.ln_bias[index],
+            self.weight[index],
+            self.bias[index],
+        ]
+
+    def _ensure_projection(self, patch_size: int, device: torch.device) -> None:
+        if patch_size <= 0:
+            raise ValueError(f"Patch size must be positive, got {patch_size}.")
+        if self.weight is None:
+            out = self.num_classes * patch_size**2
+            weights = []
+            for _ in range(self.n_heads):
+                w = torch.empty(out, self.in_channels, device=device)
+                nn.init.trunc_normal_(w, std=0.02)
+                weights.append(nn.Parameter(w))
+            self.weight = nn.ParameterList(weights)
+            self.bias = nn.ParameterList(
+                [nn.Parameter(torch.zeros(out, device=device)) for _ in range(self.n_heads)]
+            )
+            self.patch_size = patch_size
+        elif self.patch_size != patch_size:
+            raise ValueError(
+                f"SweepPatchLinearHead was initialized for patch_size={self.patch_size}, "
+                f"but got patch_size={patch_size}."
+            )
+
+    def forward_all(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Return ``(n_heads, B, C, H, W)`` logits of every head."""
+        feat = features[0]
+        bsz, channels, grid_h, grid_w = feat.shape
+        patch_h, patch_w = round(input_h / grid_h), round(input_w / grid_w)
+        if patch_h != patch_w:
+            raise ValueError(
+                "SweepPatchLinearHead requires square patch geometry. "
+                f"Got input=({input_h}, {input_w}) and grid=({grid_h}, {grid_w})."
+            )
+        self._ensure_projection(patch_h, feat.device)
+        assert self.weight is not None
+        assert self.bias is not None
+        x_hat = F.layer_norm(feat.float().permute(0, 2, 3, 1), (channels,), eps=self.ln_eps)
+        gamma = torch.stack(list(self.ln_weight))
+        beta = torch.stack(list(self.ln_bias))
+        weight = torch.stack(list(self.weight))
+        bias = torch.stack(list(self.bias))
+        # W(gamma * x_hat + beta) + b == (W * gamma) x_hat + (W beta + b), per head.
+        weight_eff = weight * gamma[:, None, :]
+        bias_eff = bias + torch.einsum("nod,nd->no", weight, beta)
+        logits = torch.einsum("bhwd,nod->nbohw", x_hat, weight_eff)
+        logits = logits + bias_eff[:, None, :, None, None].to(logits.dtype)
+        logits = F.pixel_shuffle(logits.flatten(0, 1), patch_h)
+        if logits.shape[-2:] != (input_h, input_w):
+            logits = F.interpolate(
+                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
+            )
+        return logits.unflatten(0, (self.n_heads, bsz))
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Return every head's logits, or only the selected head's once one is selected."""
+        logits = self.forward_all(features, input_h, input_w)
+        return logits if self.selected is None else logits[self.selected]
+
+
+class FeatureStandardizer(nn.Module):
+    """Fixed per-channel z-scoring of each hooked feature map, fit on the training split.
+
+    ``(x - mean) / sqrt(var + eps)`` per channel, as UniverSat's ``LP_eval.py``
+    ``standardization=standard``. The statistics are buffers, so they move with the probe and are
+    not trained.
+    """
+
+    def __init__(self, channels_list: list[int], eps: float = 1e-6) -> None:
+        super().__init__()
+        self.eps = eps
+        self.num_layers = len(channels_list)
+        for index, channels in enumerate(channels_list):
+            self.register_buffer(f"mean_{index}", torch.zeros(channels))
+            self.register_buffer(f"std_{index}", torch.ones(channels))
+        self.fitted = False
+
+    def stats(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return the mean and standard deviation of layer ``index``."""
+        return getattr(self, f"mean_{index}"), getattr(self, f"std_{index}")
+
+    @torch.no_grad()
+    def set_moments(
+        self, sums: list[torch.Tensor], sq_sums: list[torch.Tensor], count: int
+    ) -> None:
+        """Set statistics from per-channel sums and squared sums over ``count`` positions."""
+        if len(sums) != self.num_layers or len(sq_sums) != self.num_layers:
+            raise ValueError(f"Expected moments for {self.num_layers} layers.")
+        if count <= 0:
+            raise ValueError("Feature standardization needs at least one training position.")
+        for index, (total, sq_total) in enumerate(zip(sums, sq_sums, strict=True)):
+            mean, std = self.stats(index)
+            mu = total.double() / count
+            var = (sq_total.double() / count - mu * mu).clamp(min=0.0)
+            mean.copy_(mu.to(mean.dtype))
+            std.copy_(torch.sqrt(var + self.eps).to(std.dtype))
+        self.fitted = True
+
+    def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
+        """Standardize each layer's ``(B, C, H, W)`` features channel-wise."""
+        out = []
+        for index, feat in enumerate(features):
+            mean, std = self.stats(index)
+            out.append((feat.float() - mean[:, None, None]) / std[:, None, None])
+        return out
+
+
+def feature_moments(features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, int]:
+    """Return per-channel float64 sums and squared sums of ``(B, C, H, W)`` features."""
+    flat = features.double().transpose(0, 1).reshape(features.shape[1], -1)
+    return flat.sum(dim=1), (flat * flat).sum(dim=1), flat.shape[1]
+
+
+class StandardizedHead(nn.Module):
+    """Apply a :class:`FeatureStandardizer` before ``head``; parameters are the head's."""
+
+    def __init__(self, standardizer: FeatureStandardizer, head: nn.Module) -> None:
+        super().__init__()
+        self.standardizer = standardizer
+        self.head = head
+
+    @property
+    def min_train_batch_size(self) -> int:
+        """Forward the wrapped head's minimum training batch size."""
+        return int(getattr(self.head, "min_train_batch_size", 1))
+
+    def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
+        """Standardize the features, then run the head."""
+        return self.head(self.standardizer(features), input_h, input_w)
+
+
 class ConvBlockHead(nn.Module):
     """Per-layer 1x1 projection to hidden_dim, aligned concat, 1x1 classification head.
 

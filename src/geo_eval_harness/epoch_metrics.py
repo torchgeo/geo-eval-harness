@@ -39,9 +39,24 @@ class EpochMetricsWriter:
         """Append one completed epoch."""
         self._write("epoch", asdict(record))
 
-    def selected(self, best_epoch: int | None, best_val_miou: float | None) -> None:
-        """Append the epoch restored for test evaluation."""
-        self._write("selected", {"best_epoch": best_epoch, "best_val_miou": best_val_miou})
+    def selected(
+        self,
+        best_epoch: int | None,
+        best_val_miou: float | None,
+        *,
+        lr: float | None = None,
+        weight_decay: float | None = None,
+    ) -> None:
+        """Append the epoch restored for test evaluation and the probe's lr and weight decay."""
+        self._write(
+            "selected",
+            {
+                "best_epoch": best_epoch,
+                "best_val_miou": best_val_miou,
+                "lr": lr,
+                "weight_decay": weight_decay,
+            },
+        )
 
     def _write(self, event: str, payload: Mapping[str, object]) -> None:
         """Append one line and flush it immediately."""
