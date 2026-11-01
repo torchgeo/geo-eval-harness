@@ -267,6 +267,10 @@ def separable_bilinear_upsample(x: torch.Tensor, size: tuple[int, int]) -> torch
     float32), otherwise *x*'s dtype. Upsampling tiny maps with ``F.interpolate`` has an
     atomic-add backward that is extremely slow on large outputs; the matmul backward is not.
     A length-1 axis is broadcast (a single-row matmul would dispatch to an unavailable kernel).
+
+    The slow backward is PyTorch's atomic-add CUDA kernel (``UpSampleBilinear2d.cu``); upstream
+    replaced it with an atomic-free kernel only for ROCm
+    (https://github.com/pytorch/pytorch/pull/164572). Drop this workaround once CUDA does the same.
     """
     height, width = size
     cuda_autocast = x.device.type == "cuda" and torch.is_autocast_enabled("cuda")
