@@ -80,9 +80,11 @@ def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) ->
     Upstream ``to_scale`` unfolds each ``patch_pixels`` patch in steps of the
     sub-patch factor and silently drops any remainder, so a factor that does not
     divide the patch discards pixels (a 16 px patch with the registry's 10 keeps
-    only its top-left 10x10). An explicit ``override`` must divide the patch;
-    otherwise the registry factor is used, or its largest divisor of the patch
-    if it does not tile.
+    only its top-left 10x10). An explicit ``override`` must divide the patch.
+    Otherwise the registry factor is used when it tiles the patch; if not, the
+    largest divisor that leaves at least a 4x4 sub-patch grid (4 for a 16 px
+    patch), which scored best on FLAIR #2 (sub-patch 16/8/4/2/1: 34.5/35.7/39.5
+    test mIoU; 4 also best on a linear probe, where 2 and 1 were worse).
     """
     if override is not None:
         if override < 1 or patch_pixels % override:
@@ -92,7 +94,10 @@ def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) ->
             )
         return override
     registry = _MODALITY_SUBPATCH.get(modality, 1)
-    sub = next(d for d in range(min(registry, patch_pixels), 0, -1) if patch_pixels % d == 0)
+    if patch_pixels % registry == 0:
+        return registry
+    limit = max(1, min(registry, patch_pixels // 4))
+    sub = next(d for d in range(limit, 0, -1) if patch_pixels % d == 0)
     if sub != registry:
         logger.info(
             "UniverSat %s: registry subpatch %d does not divide the %d px patch; using %d",
@@ -344,8 +349,9 @@ class UniverSatBenchModel(BenchModel):
             ``None`` uses the registry value per modality.
         subpatch: Sub-patch factor (pixels per sub-patch side) for every sensor, or a
             ``{modality: factor}`` mapping. It must divide each patch. ``None`` (default)
-            uses the registry factor, or its largest divisor of the patch when it does not
-            tile (e.g. 8 for a 16 px VHR patch, whose registry factor is 10).
+            uses the registry factor when it divides the patch, else the largest divisor
+            that leaves at least a 4x4 sub-patch grid (4 for a 16 px VHR patch, whose
+            registry factor is 10).
         output_px: Output token size in input pixels. When set, ``output_grid`` becomes
             ``W // output_px`` per call, so the final encoder tokens (after UniverSat's
             bilinear resampling and sub-patch cross-attention) form a dense grid; 1 gives

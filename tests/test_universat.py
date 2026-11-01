@@ -162,7 +162,7 @@ def test_patch_px_sets_metric_patch_size_and_patch_grid(monkeypatch: pytest.Monk
 
 @pytest.mark.parametrize(
     ("modality", "patch_pixels", "expected"),
-    [("aerial", 16, 8), ("aerial", 50, 10), ("naip", 8, 8), ("spot", 20, 10), ("s2", 1, 1)],
+    [("aerial", 16, 4), ("aerial", 50, 10), ("naip", 8, 2), ("spot", 20, 10), ("s2", 1, 1)],
 )
 def test_default_subpatch_tiles_the_patch(modality: str, patch_pixels: int, expected: int) -> None:
     sub = _resolve_subpatch(modality, patch_pixels, None)
@@ -198,7 +198,7 @@ def test_vhr_patch_px_passes_a_tiling_subpatch(monkeypatch: pytest.MonkeyPatch) 
     seen: dict[str, Any] = {}
     monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _vhr_encoder(seen))
     UniverSatBenchModel(_AERIAL, patch_px=16, normalization="identity")(torch.rand(1, 3, 32, 32))
-    assert seen["subpatches"] == {"aerial": 8}
+    assert seen["subpatches"] == {"aerial": 4}
     with pytest.raises(ValueError, match="does not divide"):
         UniverSatBenchModel(_AERIAL, patch_px=16, subpatch=10, normalization="identity")
     with pytest.raises(ValueError, match="not in the input"):
