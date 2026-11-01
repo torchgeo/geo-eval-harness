@@ -1304,3 +1304,86 @@ def test_build_seg_probe_and_solver_attaches_the_configured_neck() -> None:
     probe, _ = build_seg_probe_and_solver(FourBlockViT(), NUM_CLASSES, config, torch.device("cpu"))
 
     assert isinstance(probe.head, NeckedHead)
+
+
+def _stock_and_separable_upernet(channels: int, num_classes: int):
+    import copy
+
+    from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
+
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
+
+    torch.manual_seed(0)
+    head = UPerNetHead([channels], num_classes, hidden_dim=16)
+    stock = copy.deepcopy(head)
+    stock.decoder.psp_modules.__class__ = UperNetPyramidPoolingModule
+    return stock, head
+
+
+def _loss_and_grads(head, features, masks, *, amp: bool):
+    head.zero_grad()
+    with torch.autocast(device_type=features.device.type, enabled=amp):
+        logits = head([features], *masks.shape[-2:])
+        loss = nn.functional.cross_entropy(logits, masks)
+    loss.backward()
+    grads = torch.cat([p.grad.flatten().float() for p in head.parameters() if p.grad is not None])
+    return logits, loss.detach(), grads
+
+
+@pytest.mark.parametrize(
+    ("size_in", "size_out"),
+    [((1, 1), (154, 88)), ((2, 2), (210, 211)), ((3, 3), (154, 88)), ((6, 6), (210, 211)),
+     ((1, 5), (9, 12)), ((4, 1), (9, 12))],
+)  # fmt: skip
+def test_separable_bilinear_upsample_matches_interpolate(size_in, size_out) -> None:
+    from geo_eval_harness.models.segmentation_heads import separable_bilinear_upsample
+
+    x = torch.randn(2, 3, *size_in, dtype=torch.float64).float().requires_grad_()
+    expected = nn.functional.interpolate(x, size=size_out, mode="bilinear", align_corners=False)
+    actual = separable_bilinear_upsample(x, size_out)
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
+    weight = torch.randn_like(expected)
+    (grad_expected,) = torch.autograd.grad((expected * weight).sum(), x)
+    (grad_actual,) = torch.autograd.grad((actual * weight).sum(), x)
+    assert ((grad_actual - grad_expected).norm() / grad_expected.norm()).item() < 1e-5
+    devices = [("cpu", torch.bfloat16)] + [("cuda", torch.float16)] * torch.cuda.is_available()
+    for device, low in devices:
+        with torch.autocast(device_type=device):
+            y = x.detach().to(device, low)
+            reference = nn.functional.interpolate(y, size=size_out, mode="bilinear")
+            assert separable_bilinear_upsample(y, size_out).dtype == reference.dtype
+
+
+@pytest.mark.parametrize("hw", [(154, 88), (210, 211), (13, 7)])
+def test_upernet_pyramid_upsampling_matches_the_reference_head_in_float32(hw) -> None:
+    stock, head = _stock_and_separable_upernet(channels=8, num_classes=3)
+    features = torch.randn(3, 8, *hw)
+    masks = torch.randint(0, 3, (3, hw[0] + 5, hw[1] + 3))
+    stock.train(), head.train()
+    ref_logits, ref_loss, ref_grads = _loss_and_grads(stock, features, masks, amp=False)
+    logits, loss, grads = _loss_and_grads(head, features, masks, amp=False)
+    torch.testing.assert_close(logits, ref_logits, rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(loss, ref_loss, rtol=1e-6, atol=1e-6)
+    assert ((grads - ref_grads).norm() / ref_grads.norm()).item() < 1e-4
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="autocast float16 path needs CUDA")
+@pytest.mark.parametrize("hw", [(154, 88), (210, 211)])
+def test_upernet_pyramid_upsampling_matches_the_reference_head_under_amp(hw) -> None:
+    stock, head = _stock_and_separable_upernet(channels=16, num_classes=4)
+    stock, head = stock.cuda().train(), head.cuda().train()
+    features = torch.randn(4, 16, *hw, device="cuda")
+    masks = torch.randint(0, 4, (4, 256, 256), device="cuda")
+    _, _, ref_grads = _loss_and_grads(stock, features, masks, amp=False)
+    stock_logits, stock_loss, stock_grads = _loss_and_grads(stock, features.half(), masks, amp=True)
+    logits, loss, grads = _loss_and_grads(head, features.half(), masks, amp=True)
+    assert logits.dtype == stock_logits.dtype
+    with torch.autocast(device_type="cuda"):
+        x = features.half()
+        assert [t.dtype for t in head.decoder.psp_modules(x)] == [
+            t.dtype for t in stock.decoder.psp_modules(x)
+        ]
+    torch.testing.assert_close(loss, stock_loss, rtol=2e-3, atol=2e-3)
+    stock_error = ((stock_grads - ref_grads).norm() / ref_grads.norm()).item()
+    error = ((grads - ref_grads).norm() / ref_grads.norm()).item()
+    assert error <= 1.1 * stock_error + 1e-3

@@ -1,5 +1,6 @@
 """Segmentation decoder heads for use with SegmentationProbe."""
 
+import functools
 import itertools
 
 import torch
@@ -241,6 +242,73 @@ class FPNHead(nn.Module):
         return logits
 
 
+_INTERPOLATION_MATRICES: dict[tuple[int, int, torch.device], torch.Tensor] = {}
+
+
+def _bilinear_matrix(size_in: int, size_out: int, device: torch.device) -> torch.Tensor:
+    """Return the float32 ``(size_out, size_in)`` weights of 1-D bilinear resizing.
+
+    The weights are PyTorch's own (``align_corners=False``), read off by resizing an identity
+    in float64, and cached per ``(size_in, size_out, device)``.
+    """
+    key = (size_in, size_out, device)
+    if key not in _INTERPOLATION_MATRICES:
+        eye = torch.eye(size_in, dtype=torch.float64, device=device)[None, None]
+        weights = F.interpolate(eye, size=(size_out, size_in), mode="bilinear", align_corners=False)
+        _INTERPOLATION_MATRICES[key] = weights[0, 0].float()
+    return _INTERPOLATION_MATRICES[key]
+
+
+def separable_bilinear_upsample(x: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+    """Bilinearly resize ``(..., h, w)`` maps to *size* (``align_corners=False``) by matmuls.
+
+    Computes ``A_h @ x @ A_w^T`` in float32 with autocast disabled and returns the dtype
+    ``F.interpolate`` returns: float32 under CUDA autocast (which runs bilinear resizing in
+    float32), otherwise *x*'s dtype. Upsampling tiny maps with ``F.interpolate`` has an
+    atomic-add backward that is extremely slow on large outputs; the matmul backward is not.
+    A length-1 axis is broadcast (a single-row matmul would dispatch to an unavailable kernel).
+    """
+    height, width = size
+    cuda_autocast = x.device.type == "cuda" and torch.is_autocast_enabled("cuda")
+    dtype = torch.float32 if cuda_autocast else x.dtype
+    with torch.autocast(device_type=x.device.type, enabled=False):
+        out = x.float()
+        if out.shape[-2] == 1:
+            out = out.expand(*out.shape[:-2], height, out.shape[-1])
+        else:
+            out = _bilinear_matrix(out.shape[-2], height, x.device) @ out
+        if out.shape[-1] == 1:
+            out = out.expand(*out.shape[:-1], width)
+        else:
+            out = out @ _bilinear_matrix(out.shape[-1], width, x.device).T
+    return out.to(dtype)
+
+
+@functools.cache
+def _separable_pyramid_pooling_class() -> type[nn.Module]:
+    from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
+
+    class SeparablePyramidPoolingModule(UperNetPyramidPoolingModule):
+        """The ``transformers`` PSP module with matmul upsampling of its pooled maps."""
+
+        def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
+            return [separable_bilinear_upsample(ppm(x), x.shape[-2:]) for ppm in self.blocks]
+
+    return SeparablePyramidPoolingModule
+
+
+def _separable_pyramid_pooling(module: nn.Module) -> None:
+    """Make a ``transformers`` PSP module upsample its pooled maps with matmuls, keeping weights.
+
+    Only the pyramid-pooling upsampling changes; the FPN and logit resizing stay ``F.interpolate``.
+    """
+    from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
+
+    if type(module) is not UperNetPyramidPoolingModule or module.align_corners:
+        raise TypeError(f"Expected a transformers PSP module without align_corners, got {module}")
+    module.__class__ = _separable_pyramid_pooling_class()
+
+
 class UPerNetHead(nn.Module):
     """UPerNet decoder head using the reference ``transformers`` implementation.
 
@@ -253,6 +321,12 @@ class UPerNetHead(nn.Module):
     The pool-scale-1 branch applies BatchNorm to a ``1x1`` map, so training batches need at
     least two samples; :class:`~geo_eval_harness.segmentation_task.SegmentationSolver` skips
     smaller ones (``min_train_batch_size``) and rejects a training batch size below it.
+
+    The pooled pyramid maps are upsampled by :func:`separable_bilinear_upsample`: the same
+    bilinear weights as the reference ``F.interpolate``, applied as float32 matmuls whose backward
+    avoids the reference's atomic accumulation into the tiny pooled maps (over 90% of a training
+    step on large maps). Outputs have the reference dtype (float32 under CUDA autocast, as the
+    reference computes them); results agree with the reference to float32 rounding.
 
     Args:
         channels_list: Channel count for each hooked feature layer (coarse-to-fine).
@@ -270,6 +344,7 @@ class UPerNetHead(nn.Module):
         config = UperNetConfig(hidden_size=hidden_dim)
         config.num_labels = num_classes
         self.decoder = ReferenceHead(config, list(reversed(channels_list)))
+        _separable_pyramid_pooling(self.decoder.psp_modules)
         for module in self.decoder.modules():
             if isinstance(module, nn.Conv2d):
                 nn.init.normal_(module.weight, mean=0.0, std=config.initializer_range)
