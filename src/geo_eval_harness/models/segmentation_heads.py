@@ -2,10 +2,14 @@
 
 import functools
 import itertools
+from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+if TYPE_CHECKING:
+    from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
 
 
 class LinearHead(nn.Module):
@@ -289,14 +293,15 @@ def separable_bilinear_upsample(x: torch.Tensor, size: tuple[int, int]) -> torch
 
 
 @functools.cache
-def _separable_pyramid_pooling_class() -> type[nn.Module]:
+def _separable_pyramid_pooling_class() -> "type[UperNetPyramidPoolingModule]":
     from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
 
     class SeparablePyramidPoolingModule(UperNetPyramidPoolingModule):
         """The ``transformers`` PSP module with matmul upsampling of its pooled maps."""
 
         def forward(self, x: torch.Tensor) -> list[torch.Tensor]:
-            return [separable_bilinear_upsample(ppm(x), x.shape[-2:]) for ppm in self.blocks]
+            size = (x.shape[-2], x.shape[-1])
+            return [separable_bilinear_upsample(ppm(x), size) for ppm in self.blocks]
 
     return SeparablePyramidPoolingModule
 
@@ -326,7 +331,7 @@ class UPerNetHead(nn.Module):
     least two samples; :class:`~geo_eval_harness.segmentation_task.SegmentationSolver` skips
     smaller ones (``min_train_batch_size``) and rejects a training batch size below it.
 
-    The pooled pyramid maps are upsampled by :func:`separable_bilinear_upsample`: the same
+    The pooled pyramid maps are upsampled by ``separable_bilinear_upsample``: the same
     bilinear weights as the reference ``F.interpolate``, applied as float32 matmuls whose backward
     avoids the reference's atomic accumulation into the tiny pooled maps (over 90% of a training
     step on large maps). Outputs have the reference dtype (float32 under CUDA autocast, as the

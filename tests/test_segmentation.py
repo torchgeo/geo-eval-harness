@@ -1364,7 +1364,12 @@ def test_upernet_pyramid_upsampling_matches_the_reference_head_in_float32(hw) ->
     logits, loss, grads = _loss_and_grads(head, features, masks, amp=False)
     torch.testing.assert_close(logits, ref_logits, rtol=1e-4, atol=1e-5)
     torch.testing.assert_close(loss, ref_loss, rtol=1e-6, atol=1e-6)
-    assert ((grads - ref_grads).norm() / ref_grads.norm()).item() < 1e-4
+    # Conv weights feeding train-mode BatchNorm have ill-conditioned float32 gradients whose
+    # rounding differs across platforms, so compare both heads against a float64 stock run.
+    _, _, exact_grads = _loss_and_grads(stock.double(), features.double(), masks, amp=False)
+    stock_error = ((ref_grads.double() - exact_grads).norm() / exact_grads.norm()).item()
+    error = ((grads.double() - exact_grads).norm() / exact_grads.norm()).item()
+    assert error <= 1.1 * stock_error + 1e-6
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="autocast float16 path needs CUDA")
