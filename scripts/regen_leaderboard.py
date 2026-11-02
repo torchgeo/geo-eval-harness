@@ -42,7 +42,7 @@ DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln"})
 
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
-RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "resisc45", "ucmerced"})
+RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "open_cities", "resisc45", "ucmerced"})
 
 # The plain (S2L2A) TerraMind configs were additionally swept with
 # ``dataset.bands=rgb``, which forces their S2L2A-modality pathway onto
@@ -144,6 +144,7 @@ DATASET_DISPLAY = {
     "kuro_siwo": "Kuro Siwo · V2",
     "pastis": "PASTIS · V2",
     "hotosm_buildings": "HOTOSM Buildings",
+    "open_cities": "Open Cities",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.

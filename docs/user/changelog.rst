@@ -17,6 +17,12 @@ Added
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
+* Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
+  seven African cities, cut into 512x512 chips on each scene's native grid (0.02-0.20 m GSD).
+  Train/val/test are assigned per 500 m geographic block and fixed in a packaged index
+  (76,818 / 11,236 / 22,408 chips). Download with ``geo-eval-harness download open_cities``.
+* ``scripts/compute_band_statistics.py --ignore-index`` leaves nodata mask pixels out of the
+  band statistics.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * ``output.epoch_metrics`` streams per-epoch segmentation training records (training and validation loss, training and validation mIoU, learning rates, step counts, wall time, peak CUDA memory) to a JSON Lines file, tagged with the result row's ``config_hash``. Segmentation result rows gain ``best_val_epoch`` and ``best_val_miou``.
 * ``segmentation.early_stopping_patience`` (default ``null``, off) stops segmentation training once validation mIoU has not improved for that many epochs; the best validation epoch is still restored. Hashes are unchanged when unset.
