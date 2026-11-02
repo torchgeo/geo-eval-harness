@@ -723,7 +723,13 @@ def build_seg_probe_and_solver(
         )
     if config.lora_rank is not None:
         assert config.lora_target_modules is not None
-        apply_lora(model, config.lora_target_modules, config.lora_rank, config.lora_alpha)
+        apply_lora(
+            model,
+            config.lora_target_modules,
+            config.lora_rank,
+            config.lora_alpha,
+            last_blocks=config.lora_last_blocks,
+        )
     if config.full_finetune:
         # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
         enable = getattr(model, "enable_full_finetune", None)
@@ -741,6 +747,7 @@ def build_seg_probe_and_solver(
         head_type=config.head,
         neck=config.neck,
         neck_norm=config.neck_norm,
+        head_dropout=config.head_dropout,
         freeze_backbone=config.lora_rank is None and not config.full_finetune,
         temporal_pool=config.temporal_pool,
     )
@@ -754,6 +761,7 @@ def build_seg_probe_and_solver(
         lr_scheduler=config.scheduler,
         ignore_index=config.ignore_index,
         backbone_lr=config.backbone_learning_rate,
+        weight_decay=config.weight_decay,
         early_stopping_patience=config.early_stopping_patience,
     )
     solver.backbone_eval_mode = config.full_finetune

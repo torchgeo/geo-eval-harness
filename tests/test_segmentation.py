@@ -1429,6 +1429,49 @@ def test_build_seg_probe_and_solver_attaches_the_configured_neck() -> None:
     assert isinstance(probe.head, NeckedHead)
 
 
+def test_head_dropout_sits_before_the_upernet_classifier_and_trains_only() -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        head_dropout=0.5,
+    )
+    classifier = probe.head.head.decoder.classifier
+    assert isinstance(classifier, nn.Sequential)
+    assert isinstance(classifier[0], nn.Dropout2d)
+    assert classifier[0].p == 0.5
+    x = torch.randn(2, 3, 64, 64)
+    probe.eval()
+    torch.testing.assert_close(probe(x), probe(x))
+    probe.train()
+    assert not torch.equal(probe(x), probe(x))
+    with pytest.raises(ValueError, match="requires the upernet head"):
+        SegmentationProbe(
+            FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", head_dropout=0.1
+        )
+
+
+def test_build_seg_probe_and_solver_applies_weight_decay_and_dropout() -> None:
+    config = SegmentationConfig(
+        head="upernet", neck="vit", layers=_VIT_LAYERS, weight_decay=0.05, head_dropout=0.2
+    )
+    probe, solver = build_seg_probe_and_solver(
+        FourBlockViT(), NUM_CLASSES, config, torch.device("cpu")
+    )
+    assert {g["weight_decay"] for g in solver.optimizer.param_groups} == {0.05}
+    assert probe.head.head.decoder.classifier[0].p == 0.2
+    _, default = build_seg_probe_and_solver(
+        FourBlockViT(),
+        NUM_CLASSES,
+        SegmentationConfig(head="upernet", layers=_VIT_LAYERS, neck="vit"),
+        torch.device("cpu"),
+    )
+    assert {g["weight_decay"] for g in default.optimizer.param_groups} == {0.0}
+
+
 def _stock_and_separable_upernet(channels: int, num_classes: int):
     import copy
 
