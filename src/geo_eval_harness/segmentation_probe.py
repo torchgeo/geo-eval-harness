@@ -3,7 +3,7 @@
 import logging
 import math
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -256,8 +256,10 @@ class SegmentationProbe(nn.Module):
         )
 
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
-        decoder = upernet.decoder
-        self._anyup = AnyUpClassifier(decoder.classifier, load_anyup().to(self._backbone_device()))
+        decoder = cast(nn.Module, cast(UPerNetHead, upernet).decoder)
+        self._anyup = AnyUpClassifier(
+            cast(nn.Module, decoder.classifier), load_anyup().to(self._backbone_device())
+        )
         decoder.classifier = self._anyup
         bands = getattr(self.backbone, "bands", None)
         self._anyup_rgb = rgb_guidance_indices(list(bands)) if bands else (0, 1, 2)

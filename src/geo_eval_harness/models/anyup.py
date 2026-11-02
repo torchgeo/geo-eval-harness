@@ -14,7 +14,7 @@ import hashlib
 import logging
 import math
 from pathlib import Path
-from typing import override
+from typing import cast, override
 
 import torch
 import torch.nn as nn
@@ -84,11 +84,14 @@ def _checkpoint_path() -> Path:
 
 def load_anyup() -> nn.Module:
     """Load the pinned multi-backbone AnyUp, verify its checkpoint, and freeze it."""
-    model = torch.hub.load(
-        f"{ANYUP_REPO}:{ANYUP_REF}",
-        ANYUP_ENTRYPOINT,
-        trust_repo=True,
-        skip_validation=True,
+    model = cast(
+        nn.Module,
+        torch.hub.load(
+            f"{ANYUP_REPO}:{ANYUP_REF}",
+            ANYUP_ENTRYPOINT,
+            trust_repo=True,
+            skip_validation=True,
+        ),
     )
     checkpoint = _checkpoint_path()
     digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
