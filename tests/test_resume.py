@@ -51,6 +51,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "backbone_learning_rate",
                 "neck",
                 "neck_norm",
+                "early_stopping_patience",
             },
         ),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
@@ -141,6 +142,14 @@ def test_unet_head_has_its_own_hash() -> None:
 
     assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
     assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
+def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(early_stopping_patience=None)) == _hash(upernet())
+    assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:

@@ -310,7 +310,9 @@ Boundary IoU measures overlap within each class's inner contour band, following 
 Model selection
 ^^^^^^^^^^^^^^^
 
-All segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no early stopping or configurable final-epoch option.
+By default, all segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no configurable final-epoch option.
+
+``segmentation.early_stopping_patience`` (default ``null``, off) stops training once validation mIoU has not strictly improved for that many epochs; a tie does not count as an improvement. The learning-rate schedule still spans ``epochs``, so a stopped run matches the first epochs of the full run, and selection and test evaluation are unchanged. Early stopping requires validation; without it, training runs every epoch.
 
 Benchmark runs require a non-empty validation loader before training or feature extraction. Direct solver calls may omit validation and retain the final epoch; supplied validation must be non-empty. Non-finite validation mIoU raises an error. A failed run does not write a successful result.
 
@@ -376,6 +378,9 @@ Training knobs
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
+   * - ``early_stopping_patience``
+     - ``null``
+     - Stop once validation mIoU has not improved for this many epochs; ``null`` trains every epoch.
    * - ``learning_rate``
      - ``1e-3``
      - Initial learning rate (AdamW).
