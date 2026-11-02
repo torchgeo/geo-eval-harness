@@ -16,6 +16,9 @@ Targets:
   masks built from the labels, into ``<output>/open_cities``.
 - ``loveda`` — torchgeo's LoveDA downloader (labelled Train and Val only), into
   ``<output>/loveda``.
+- ``sen1floods11-s1`` / ``sen1floods11-s2``: the 431 hand-labelled Sen1Floods11 v1.1 chips of the
+  official train/valid/test splits (S1, S2 and labels, shared by both ids), into
+  ``<output>/sen1floods11``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -70,8 +73,9 @@ V1_DATASETS: tuple[str, ...] = (
 )
 TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda", "levir-cd-post")
 DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
+SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
-    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
+    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS + SEN1FLOODS11_DATASETS
 )
 
 
@@ -443,6 +447,47 @@ def download_openearthmap_sar(output_dir: Path) -> None:
     logger.info("OpenEarthMap-SAR download complete.")
 
 
+SEN1FLOODS11_URL = "https://storage.googleapis.com/sen1floods11/v1.1"
+
+
+def _sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def download_sen1floods11(output_dir: Path) -> None:
+    """Fetch the checksum-listed split CSVs and hand-labelled chips, skipping verified files."""
+    from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
+
+    target = Path(output_dir) / "sen1floods11"
+
+    def fetch(item: tuple[str, str]) -> None:
+        name, digest = item
+        path = target / name
+        if _sha256(path) == digest:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(f"{path.name}.part")
+        with (
+            urlopen(f"{SEN1FLOODS11_URL}/{name}", timeout=120) as response,
+            partial.open("wb") as out,
+        ):
+            shutil.copyfileobj(response, out)
+        if _sha256(partial) != digest:
+            partial.unlink()
+            raise ValueError(f"Sen1Floods11 SHA-256 mismatch for {SEN1FLOODS11_URL}/{name}. Retry.")
+        partial.replace(path)
+
+    logger.info("Downloading Sen1Floods11 %s -> %s", SEN1FLOODS11_URL, target)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(fetch, load_checksums("sen1floods11.sha256").items()))
+    for split in Sen1Floods11S1.split_sizes:
+        Sen1Floods11S1.split_chips(target, split)
+    logger.info("Sen1Floods11 download complete.")
+
+
 def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None:
     """Download individually named benchmark datasets.
 
@@ -464,3 +509,5 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         if name in selected:
             # Look up by name at call time so tests can monkeypatch individual downloaders.
             globals()[f"download_{name.replace('-', '_')}"](output_dir)
+    if any(name in SEN1FLOODS11_DATASETS for name in selected):
+        download_sen1floods11(output_dir)
