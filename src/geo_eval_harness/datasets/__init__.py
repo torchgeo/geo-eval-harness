@@ -13,6 +13,7 @@ Public API
 """
 
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 from .base import BandSpec, BenchDataset
 from .loading import (
@@ -21,6 +22,9 @@ from .loading import (
     get_datasets,
     list_datasets,
 )
+
+if TYPE_CHECKING:
+    from .open_cities import OpenCities
 
 __all__ = [
     "AID",
