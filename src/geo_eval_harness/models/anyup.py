@@ -107,9 +107,11 @@ def load_anyup() -> nn.Module:
 class AnyUpClassifier(nn.Module):
     """Upsample fused features to the guidance resolution with frozen AnyUp, then classify.
 
-    The caller sets :attr:`guidance` before each forward. AnyUp stays in eval mode. AnyUp has no
-    cross-sample operations, so a batch whose attention exceeds :data:`ATTENTION_BUDGET` runs in
-    chunks of samples within :data:`CHUNK_BUDGET`, each recomputed in backward instead of storing
+    The caller sets ``guidance`` before each forward and clears it after: the wrapped head
+    (transformers' UPerNet decoder) calls the classifier with features only, so the image cannot
+    be passed as an argument. AnyUp stays in eval mode. AnyUp has no
+    cross-sample operations, so a batch whose attention exceeds ``ATTENTION_BUDGET`` runs in
+    chunks of samples within ``CHUNK_BUDGET``, each recomputed in backward instead of storing
     its attention; batches within the budget run in one call as before.
     """
 

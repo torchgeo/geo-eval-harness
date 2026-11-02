@@ -1337,6 +1337,7 @@ def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
     decoder = probe.head.head.decoder
     assert isinstance(decoder.classifier, anyup.AnyUpClassifier)
     assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    assert decoder.classifier.guidance is None
     guidance, features, size = stand_in.calls[-1]
     assert guidance == (2, 3, 64, 64)
     assert size == (64, 64)

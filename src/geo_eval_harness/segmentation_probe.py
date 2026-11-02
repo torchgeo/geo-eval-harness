@@ -3,13 +3,14 @@
 import logging
 import math
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import Any
 
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
 from geo_eval_harness.config.schema import NECK_HEADS
+from geo_eval_harness.models import anyup
 from geo_eval_harness.models.segmentation_heads import (
     ConvBlockHead,
     DPTHead,
@@ -172,7 +173,7 @@ class SegmentationProbe(nn.Module):
             ``"none"``.
         upsampler: ``"none"`` (default) or ``"anyup"``. ``"anyup"`` (UPerNet only) puts frozen
             pretrained AnyUp between the fused features and the classifier, guided by the input's
-            RGB bands (see :mod:`geo_eval_harness.models.anyup`).
+            RGB bands (see :class:`~geo_eval_harness.models.anyup.AnyUpClassifier`).
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -249,20 +250,15 @@ class SegmentationProbe(nn.Module):
             raise ValueError(f"Unknown upsampler: {upsampler!r}. Choose from: none, anyup")
         if head_type != "upernet":
             raise ValueError(f"upsampler 'anyup' requires the upernet head, got {head_type!r}.")
-        from geo_eval_harness.models.anyup import (
-            AnyUpClassifier,
-            load_anyup,
-            rgb_guidance_indices,
-        )
-
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
-        decoder = cast(nn.Module, cast(UPerNetHead, upernet).decoder)
-        self._anyup = AnyUpClassifier(
-            cast(nn.Module, decoder.classifier), load_anyup().to(self._backbone_device())
+        assert isinstance(upernet, UPerNetHead)
+        decoder: nn.Module = upernet.decoder
+        classifier = decoder.get_submodule("classifier")
+        self._anyup = anyup.AnyUpClassifier(
+            classifier, anyup.load_anyup().to(self._backbone_device())
         )
         decoder.classifier = self._anyup
-        bands = getattr(self.backbone, "bands", None)
-        self._anyup_rgb = rgb_guidance_indices(list(bands)) if bands else (0, 1, 2)
+        self._anyup_rgb = anyup.rgb_guidance_indices(list(getattr(self.backbone, "bands", [])))
         logger.info("AnyUp before the classifier, guidance channels %s", self._anyup_rgb)
 
     def _attach_neck(self, neck: str, head_type: str, neck_norm: str = "layernorm") -> None:
@@ -487,9 +483,11 @@ class SegmentationProbe(nn.Module):
         if self._anyup is not None:
             if steps:
                 raise ValueError("upsampler 'anyup' does not support time series inputs.")
-            from geo_eval_harness.models.anyup import anyup_guidance
-
-            self._anyup.guidance = anyup_guidance(x, self._anyup_rgb)
+            self._anyup.guidance = anyup.anyup_guidance(x, self._anyup_rgb)
+            try:
+                return self.head(features, input_h, input_w)
+            finally:
+                self._anyup.guidance = None
         return self.head(features, input_h, input_w)
 
     def _pool_time(self, feat: torch.Tensor, steps: int) -> torch.Tensor:
