@@ -375,6 +375,12 @@ Training knobs
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
+   * - ``weight_decay``
+     - ``0``
+     - AdamW weight decay for every trainable parameter (head, neck, LoRA adapters).
+   * - ``head_dropout``
+     - ``0``
+     - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
@@ -402,9 +408,15 @@ Training knobs
    * - ``lora_alpha``
      - ``16.0``
      - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
+   * - ``lora_last_blocks``
+     - ``null``
+     - Adapt only targets in the last ``k`` backbone blocks; ``null`` adapts every match.
    * - ``backbone_learning_rate``
      - ``null``
-     - Learning rate for LoRA adapters; required with ``lora_rank``.
+     - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``full_finetune``
+     - ``false``
+     - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
 
 Feature caching
 ^^^^^^^^^^^^^^^

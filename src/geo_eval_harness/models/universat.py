@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # Pin model code for reproducible torch.hub loads.
 UNIVERSAT_REPO = "gastruc/UniverSat"
 UNIVERSAT_REF = "d4e8712d29651c34c4fdb9f9d2c0b168dd5c678b"
+# Pin the weights too: the hub entrypoint downloads them from g-astruc/UniverSat on Hugging Face,
+# which otherwise resolves to the moving ``main`` branch.
+UNIVERSAT_WEIGHTS_REVISION = "177d1ef81948002d114874deae3884a96fb779cd"
 
 # BandSpec.sensor -> UniverSat modality name (must be a key the released
 # checkpoint built a projector for; see DEFAULT_MODALITIES_DICT in the repo).
@@ -371,6 +374,8 @@ class UniverSatBenchModel(BenchModel):
             fine-tuning, whose stored activations exceed 32 GB on some datasets).
         repo: torch.hub source for the model code.
         repo_ref: Pinned git ref for the torch.hub load.
+        weights_revision: Pinned Hugging Face commit of the pretrained weights
+            (``g-astruc/UniverSat``); ``None`` uses the repo's default branch.
     """
 
     # Output embedding dimension of the released Base model.
@@ -391,6 +396,7 @@ class UniverSatBenchModel(BenchModel):
         gradient_checkpointing: bool = False,
         repo: str = UNIVERSAT_REPO,
         repo_ref: str | None = UNIVERSAT_REF,
+        weights_revision: str | None = UNIVERSAT_WEIGHTS_REVISION,
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
         **_kwargs: object,
     ) -> None:
@@ -417,6 +423,8 @@ class UniverSatBenchModel(BenchModel):
         self.do_normalize = normalize
 
         source = f"{repo}:{repo_ref}" if repo_ref else repo
+        # The hub entrypoint forwards ``revision`` to ``PyTorchModelHubMixin.from_pretrained``.
+        revision = {"revision": weights_revision} if weights_revision else {}
         # Single-pass extraction does not amortize torch.compile's max-autotune warmup.
         # Varying dataset shapes can also exhaust its recompile limit.
         # torch.hub's fork check only accepts a commit that is a branch or tag head,
@@ -429,6 +437,7 @@ class UniverSatBenchModel(BenchModel):
                 trust_repo=True,
                 skip_validation=True,
                 compile=False,
+                **revision,
             ),
         ).eval()
         _install_upe_chunking(self.model)
