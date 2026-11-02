@@ -191,6 +191,7 @@ Segmentation
      layers: []
      learning_rate: 1e-3
      epochs: 10
+     early_stopping_patience: null
      batch_size: 64
      temporal_pool: mean
      scheduler: cosine
@@ -217,7 +218,7 @@ dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-See :ref:`segmentation-model-selection` for the validation requirements and model-selection policy.
+See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
 Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. Without ``lora_rank``, ``backbone_learning_rate`` and ``lora_alpha`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
 
@@ -265,6 +266,7 @@ Results and resume
      directory: results
      file: null
      resume: false
+     epoch_metrics: null
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
 
@@ -280,6 +282,8 @@ The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneat
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. An explicit file takes precedence over the directory, even when the file comes from YAML; clear ``output.file`` to ``null`` to use the directory instead. For image runs, the explicit file combines all selected measurement kinds in one CSV. Each CLI flag overrides its corresponding YAML field, regardless of flag order.
 
 When migrating older image YAML, change ``output.directory: results/models`` to ``output.directory: results`` and remove ``profile_directory`` and ``intrinsic_dim_directory``. Those fields and the old ``--results-dir``, ``--profile-dir``, and ``--intrinsic-dim-dir`` flags are no longer accepted.
+
+``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 
 ``--resume`` / ``--no-resume`` control skipping completed measurements.
 Resume compares method/config keys and metric completeness; additive profile

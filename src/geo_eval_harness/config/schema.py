@@ -257,6 +257,7 @@ class SegmentationConfig(StrictModel):
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
+    early_stopping_patience: StrictInt | None = Field(default=None, gt=0)
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
