@@ -16,6 +16,7 @@ from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import (
+    write_bright_post_sar_files,
     write_caffe_files,
     write_levir_cd_post_files,
     write_loveda_files,
@@ -94,6 +95,25 @@ def test_levir_cd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.M
     row = pd.read_csv(output).iloc[0]
     assert row["num_classes"] == 2
     assert row[["n_train", "n_val", "n_test"]].tolist() == [12, 8, 8]
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_bright_post_sar_public_segmentation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_bright_post_sar_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "bright.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = ["bright-post-sar"]
+    config.input.bands = ["sar"]
+    config.segmentation.epochs = 1
+    path = tmp_path / "bright.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    (row,) = pd.read_csv(output).to_dict("records")
+    assert (row["num_classes"], row["n_train"], row["n_test"]) == (4, 3, 2)
     assert np.isfinite(row["metric_value"])
 
 

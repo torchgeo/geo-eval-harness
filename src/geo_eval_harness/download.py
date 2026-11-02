@@ -19,6 +19,8 @@ Targets:
 - ``sen1floods11-s1`` / ``sen1floods11-s2``: the 431 hand-labelled Sen1Floods11 v1.1 chips of the
   official train/valid/test splits (S1, S2 and labels, shared by both ids), into
   ``<output>/sen1floods11``.
+- ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
+  ``<output>/bright-post-sar``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -61,6 +63,9 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
+BRIGHT_REPO = "Kullervo/BRIGHT"
+BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
+
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
 V1_DATASETS: tuple[str, ...] = (
@@ -72,7 +77,13 @@ V1_DATASETS: tuple[str, ...] = (
     "m-bigearthnet",
 )
 TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda", "levir-cd-post")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
+DIRECT_DATASETS: tuple[str, ...] = (
+    "aid",
+    "hotosm_buildings",
+    "openearthmap-sar",
+    "open_cities",
+    "bright-post-sar",
+)
 SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS + SEN1FLOODS11_DATASETS
@@ -486,6 +497,32 @@ def download_sen1floods11(output_dir: Path) -> None:
     for split in Sen1Floods11S1.split_sizes:
         Sen1Floods11S1.split_chips(target, split)
     logger.info("Sen1Floods11 download complete.")
+
+
+def download_bright_post_sar(output_dir: Path) -> None:
+    """Install BRIGHT post-event SAR and damage masks from the pinned, verified ZIPs.
+
+    The ZIPs (3.3 GB) are kept, so a rerun reverifies them and only re-extracts missing or
+    truncated TIFFs.
+    """
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    target = Path(output_dir) / "bright-post-sar"
+    target.mkdir(parents=True, exist_ok=True)
+    checksums = load_checksums("bright_post_sar.sha256")
+    logger.info("Downloading %s@%s -> %s", BRIGHT_REPO, BRIGHT_REVISION, target)
+    fetch_pinned(BRIGHT_REPO, BRIGHT_REVISION, target, checksums, allow_patterns=list(checksums))
+    for name in checksums:
+        with zipfile.ZipFile(target / name) as archive:
+            for member in archive.infolist():
+                path = target / member.filename
+                if member.filename.endswith(".tif") and not (
+                    path.is_file() and path.stat().st_size == member.file_size
+                ):
+                    archive.extract(member, target)
+    for split in BRIGHTPostSAR.split_sizes:
+        BRIGHTPostSAR.split_paths(target, split)
+    logger.info("BRIGHT post-event SAR download complete.")
 
 
 def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None:
