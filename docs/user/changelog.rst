@@ -14,6 +14,7 @@ Added
 ^^^^^
 
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
+* ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of

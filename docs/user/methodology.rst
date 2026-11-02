@@ -404,7 +404,10 @@ Training knobs
      - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
    * - ``backbone_learning_rate``
      - ``null``
-     - Learning rate for LoRA adapters; required with ``lora_rank``.
+     - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``full_finetune``
+     - ``false``
+     - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
 
 Feature caching
 ^^^^^^^^^^^^^^^

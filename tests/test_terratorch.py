@@ -318,3 +318,22 @@ def test_invalid_pool_mode_raises(mock_registry: dict[str, Any]) -> None:
     bands = _bands(["blue", "green", "red", "nir_narrow", "swir1", "swir2"])
     with pytest.raises(ValueError, match="pool"):
         TerraTorchPrithviBench(bands=bands, normalization="identity", pool="bogus")
+
+
+def test_full_finetune_undoes_only_the_wrapper_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Backbone(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = nn.Parameter(torch.ones(1))
+            self.pos_embed = nn.Parameter(torch.zeros(1), requires_grad=False)  # fixed by design
+
+    monkeypatch.setattr(
+        "geo_eval_harness.models.terratorch_models._build_backbone", lambda name, **_: _Backbone()
+    )
+    model = TerraTorchTerraMindBench(bands=_bands(_S2L2A_FULL), normalization="identity")
+    assert not any(p.requires_grad for p in model.backbone.parameters())
+
+    model.enable_full_finetune()
+
+    assert model.backbone.weight.requires_grad
+    assert not model.backbone.pos_embed.requires_grad
