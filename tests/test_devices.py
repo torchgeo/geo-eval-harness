@@ -129,7 +129,14 @@ def test_invalid_device_requests_fail_before_cuda_queries(requested: str) -> Non
 
 @pytest.mark.parametrize(
     ("content", "expected"),
-    [("800000 100000\n", 8.0), ("150000 100000\n", 1.5), ("max 100000\n", None)],
+    [
+        ("800000 100000\n", 8.0),
+        ("150000 100000\n", 1.5),
+        ("max 100000\n", None),
+        ("100000\n", None),
+        ("abc 100000\n", None),
+        ("100000 0\n", None),
+    ],
 )
 def test_cgroup_cpu_limit_reads_cpu_max(tmp_path, content: str, expected: float | None) -> None:
     (tmp_path / "cpu.max").write_text(content)
@@ -145,7 +152,7 @@ def test_limit_torch_threads_caps_at_quota(tmp_path) -> None:
     before = torch.get_num_threads()
     try:
         with (
-            mock.patch("os.sched_getaffinity", return_value=set(range(40))),
+            mock.patch("os.sched_getaffinity", return_value=set(range(40)), create=True),
             mock.patch.object(torch, "get_num_threads", side_effect=[40, 2]),
             mock.patch.object(torch, "set_num_threads") as set_threads,
         ):
@@ -158,7 +165,7 @@ def test_limit_torch_threads_caps_at_quota(tmp_path) -> None:
 def test_limit_torch_threads_never_raises_thread_count(tmp_path) -> None:
     (tmp_path / "cpu.max").write_text("max 100000\n")
     with (
-        mock.patch("os.sched_getaffinity", return_value=set(range(40))),
+        mock.patch("os.sched_getaffinity", return_value=set(range(40)), create=True),
         mock.patch.object(torch, "get_num_threads", return_value=4),
         mock.patch.object(torch, "set_num_threads") as set_threads,
     ):

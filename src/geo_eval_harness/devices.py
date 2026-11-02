@@ -54,11 +54,11 @@ def cgroup_cpu_limit(cgroup_root: str = "/sys/fs/cgroup") -> float | None:
     try:
         with open(f"{cgroup_root}/cpu.max") as f:
             quota, period = f.read().split()[:2]
-    except (OSError, ValueError):  # allow-except: no cgroup v2 CPU controller means no quota
+        if quota == "max":
+            return None
+        return int(quota) / int(period)
+    except (OSError, ValueError, ZeroDivisionError):  # allow-except: bad cpu.max = no quota
         return None
-    if quota == "max":
-        return None
-    return int(quota) / int(period)
 
 
 def limit_torch_threads(cgroup_root: str = "/sys/fs/cgroup") -> int:
