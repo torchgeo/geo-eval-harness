@@ -122,6 +122,12 @@ def test_unknown_dataset_task_raises() -> None:
         get_dataset_task("unregistered-dataset")
 
 
+def test_open_cities_public_export_matches_registry() -> None:
+    from geo_eval_harness.datasets import OpenCities
+
+    assert OpenCities is get_bench_dataset_class("open_cities")
+
+
 @pytest.mark.parametrize(
     "arguments",
     [
@@ -131,12 +137,14 @@ def test_unknown_dataset_task_raises() -> None:
         ["datasets", "m-eurosat"],
         ["datasets", "burn_scars"],
         ["datasets", "openearthmap-sar"],
+        ["datasets", "open_cities"],
         ["datasets", "catalog-test"],
         ["models"],
         ["models", "rcf"],
         ["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "catalog-test", "--device", "cpu", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "openearthmap-sar", "--dry-run"],
+        ["run", "--model", "rcf", "--dataset", "open_cities", "--dry-run"],
     ],
 )
 def test_catalog_queries_do_not_import_wrappers_or_ml(arguments: list[str]) -> None:

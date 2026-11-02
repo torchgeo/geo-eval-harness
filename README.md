@@ -65,7 +65,7 @@ geo-eval-harness download geobench_v1 --datasets m-eurosat
 
 V1 uses the pickle-free [JSON-metadata mirror](https://huggingface.co/datasets/calebrob6/geobenchv1-webdataset) under `data/classification_v1.0_wds/`, with a pinned revision and archive SHA-256 verification. Re-download existing pickle-based V1 caches; the readers no longer unpickle metadata.
 
-V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`geo-eval-harness download geobench_v2`, `geo-eval-harness download eurosat`, `geo-eval-harness download resisc45`, `geo-eval-harness download ucmerced`, `geo-eval-harness download hotosm_buildings`). See the [documentation](https://torchgeo.org/geo-eval-harness/user/datasets.html) for all options.
+V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`geo-eval-harness download geobench_v2`, `geo-eval-harness download eurosat`, `geo-eval-harness download resisc45`, `geo-eval-harness download ucmerced`, `geo-eval-harness download hotosm_buildings`), plus the Open Cities building segmentation set (`geo-eval-harness download open_cities`). See the [documentation](https://torchgeo.org/geo-eval-harness/user/datasets.html) for all options.
 
 Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
 
