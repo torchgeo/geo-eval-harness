@@ -617,6 +617,39 @@ def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
 
 @pytest.mark.parametrize("cached", [False, True])
 @pytest.mark.parametrize(
+    ("patience", "epochs_run"),
+    [(None, 6), (2, 4), (3, 5), (4, 6)],
+)
+def test_solver_early_stopping_patience(
+    monkeypatch: pytest.MonkeyPatch, patience: int | None, epochs_run: int, *, cached: bool
+) -> None:
+    scores = [0.3, 0.8, 0.5, 0.8, 0.4, 0.2]  # best at epoch 2; the tie at 4 is not an improvement
+    images = torch.randn(2, 3, 8, 8)
+    loader = make_loader(images, torch.randint(0, NUM_CLASSES, (2, 8, 8)))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"], freeze=cached)
+    solver = SegmentationSolver(
+        probe, NUM_CLASSES, device="cpu", lr_scheduler="cosine", early_stopping_patience=patience
+    )
+    calls: list[float] = []
+
+    def validation(*_args: object, **_kwargs: object) -> dict[str, float]:
+        calls.append(scores[len(calls)])
+        return {"mIoU": calls[-1]}
+
+    monkeypatch.setattr(solver, "_evaluate", validation)
+    if cached:
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        result = solver.fit_cached(cache, cache, epochs=len(scores), verbose=False)
+    else:
+        result = solver.fit(loader, loader, epochs=len(scores), verbose=False)
+
+    assert len(calls) == epochs_run
+    assert result == 0.8
+    assert solver.best_epoch == 2
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(
     "scores",
     [[0.3, 0.8, 0.2], [0.8, 0.8, 0.2]],
     ids=["earlier-maximum", "earliest-tie"],
