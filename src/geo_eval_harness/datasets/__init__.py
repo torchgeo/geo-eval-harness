@@ -13,6 +13,7 @@ Public API
 """
 
 from importlib import import_module
+from typing import TYPE_CHECKING
 
 from .base import BandSpec, BenchDataset
 from .loading import (
@@ -21,6 +22,9 @@ from .loading import (
     get_datasets,
     list_datasets,
 )
+
+if TYPE_CHECKING:
+    from .open_cities import OpenCities
 
 __all__ = [
     "AID",
@@ -46,6 +50,7 @@ __all__ = [
     "MForestnet",
     "MPv4ger",
     "MSo2Sat",
+    "OpenCities",
     "OpenEarthMapSAR",
     "So2Sat",
     "SpaceNet2",
@@ -78,6 +83,7 @@ _LAZY_CLASSES: dict[str, str] = {
     "MForestnet": "m_forestnet",
     "MPv4ger": "m_pv4ger",
     "MSo2Sat": "m_so2sat",
+    "OpenCities": "open_cities",
     "OpenEarthMapSAR": "openearthmap_sar",
     "PASTIS": "pastis",
     "RESISC45": "resisc45",
