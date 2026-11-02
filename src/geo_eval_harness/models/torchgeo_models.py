@@ -34,7 +34,7 @@ from ._input_units import (
     to_s2_dn,
     to_s2_tci,
 )
-from ._normalization import NormalizationStrategy
+from ._normalization import NormalizationStrategy, build_normalizer
 from ._pooling import pool_tokens
 from .interface import BenchModel
 
@@ -647,12 +647,16 @@ _DEO_S2_BANDS = [
     "swir1",
     "swir2",
 ]
-_DEO_RGB_MEAN = (0.485, 0.456, 0.406)
-_DEO_RGB_STD = (0.229, 0.224, 0.225)
+# DEO-FM (github.com/wolfilip/DEO-FM, DEO/utils/augmentations.py) has two 10-channel
+# Normalize objects with the same 7 multispectral values: normalize_hr (aerial RGB in
+# reflectance, ~0.4; torchgeo's DEO_SWIN.transforms) for the RGB patch embedding, and
+# normalize_s2 (RGB in raw Sentinel-2 DN, ~1100) for genuine S2 tiles.
+_DEO_RGB_MEAN = (0.4182007312774658, 0.4214799106121063, 0.3991275727748871)
+_DEO_RGB_STD = (0.28774282336235046, 0.27541765570640564, 0.2764017581939697)
 _DEO_S2_MEAN = (
-    0.4182007312774658,
-    0.4214799106121063,
-    0.3991275727748871,
+    1136.26026392,
+    1120.77120066,
+    1184.3824625,
     1263.73947144,
     1645.40315151,
     1846.87040806,
@@ -662,9 +666,9 @@ _DEO_S2_MEAN = (
     1247.91870117,
 )
 _DEO_S2_STD = (
-    0.28774282336235046,
-    0.27541765570640564,
-    0.2764017581939697,
+    965.23119807,
+    712.12507725,
+    650.2842772,
     948.9819932,
     1108.06650639,
     1258.36394548,
@@ -678,9 +682,11 @@ _DEO_S2_STD = (
 class TorchGeoDEOBench(BenchModel):
     """Frozen DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
 
-    DEO has separate RGB and ten-channel Sentinel-2 patch embeddings. Its
-    normalization deliberately bypasses the generic TorchGeo weights transform:
-    RGB uses ImageNet statistics, while S2 uses DEO's exact published values.
+    DEO has separate RGB and ten-channel Sentinel-2 patch embeddings. With
+    ``model_native`` normalization, RGB uses DEO-FM's normalize_hr (torchgeo's
+    bundled transform) and S2 uses normalize_s2 on raw DN, as in DEO-FM's own
+    source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
+    channel order instead.
     """
 
     _deo_mean: torch.Tensor
@@ -698,20 +704,16 @@ class TorchGeoDEOBench(BenchModel):
         target_size: int = _DEO_TARGET_SIZE,
         **_kwargs: Any,
     ) -> None:
-        if NormalizationStrategy(normalization) is not NormalizationStrategy.MODEL_NATIVE:
-            raise ValueError(
-                "TorchGeoDEOBench requires normalization='model_native' to preserve "
-                "the DEO pretraining input pipeline."
-            )
         if mode not in {"rgb", "s2"}:
             raise ValueError("TorchGeoDEOBench mode must be 'rgb' or 's2'.")
         if target_size != _DEO_TARGET_SIZE:
             raise ValueError(f"TorchGeoDEOBench requires target_size={_DEO_TARGET_SIZE}.")
+        strategy = NormalizationStrategy(normalization)
 
         # DEO does its own native conversion below. Avoid the generic model_native
         # builder, which cannot infer a single unit from mixed sensor inputs.
         super().__init__(bands=bands, normalization=NormalizationStrategy.IDENTITY)
-        self.normalization = NormalizationStrategy.MODEL_NATIVE
+        self.normalization = strategy
         self.mode = mode
         self.auto_resize = auto_resize
         self.target_size = target_size
@@ -723,7 +725,7 @@ class TorchGeoDEOBench(BenchModel):
                     "TorchGeoDEOBench RGB mode requires exactly ordered red, green, blue bands; "
                     f"got {actual}."
                 )
-            self._rgb_input_unit = detect_input_unit(bands)
+            canonical_bands = list(bands)
             mean, std = _DEO_RGB_MEAN, _DEO_RGB_STD
         else:
             source_indices = resolve_src_indices(bands, preferred_sensors=("s2",))
@@ -734,11 +736,16 @@ class TorchGeoDEOBench(BenchModel):
                     "TorchGeoDEOBench S2 mode is missing required Sentinel-2 semantics "
                     f"{missing}; available={available}."
                 )
-            self._s2_source_indices = [source_indices[band] for band in _DEO_S2_BANDS]
-            self._s2_input_unit = detect_input_unit(
-                [bands[index] for index in self._s2_source_indices]
-            )
+            canonical_bands = [bands[source_indices[band]] for band in _DEO_S2_BANDS]
             mean, std = _DEO_S2_MEAN, _DEO_S2_STD
+        self._input_unit = detect_input_unit(canonical_bands)
+        self._generic_normalizer = (
+            None
+            if strategy is NormalizationStrategy.MODEL_NATIVE
+            else build_normalizer(
+                strategy, bands=canonical_bands, expected_input_unit=self.expected_input_unit
+            )
+        )
 
         self.register_buffer("_deo_mean", torch.tensor(mean, dtype=torch.float32).view(1, -1, 1, 1))
         self.register_buffer("_deo_std", torch.tensor(std, dtype=torch.float32).view(1, -1, 1, 1))
@@ -756,26 +763,27 @@ class TorchGeoDEOBench(BenchModel):
         return self
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
-        """Apply DEO's mode-specific native input conversion and normalization."""
+        """Select DEO's channel order, then apply DEO's native or the configured normalization."""
         if images.shape[1] != len(self.bands):
             raise ValueError(
                 f"TorchGeoDEOBench received {images.shape[1]} channels for {len(self.bands)} bands."
             )
         if self.mode == "rgb":
-            inputs = to_reflectance(images, self._rgb_input_unit).clamp(0.0, 1.0)
+            selected = images
         else:
-            mapped, _ = map_to_model_bands(
+            selected, _ = map_to_model_bands(
                 images,
                 self.bands,
                 _DEO_S2_BANDS,
                 policy=BandMappingPolicy(preferred_sensors=("s2",)),
             )
-            rgb = mapped[:, :3]
-            finite_rgb = torch.where(torch.isfinite(rgb), rgb, torch.zeros_like(rgb))
-            rgb_max = finite_rgb.amax(dim=(1, 2, 3), keepdim=True).clamp_min(1e-6)
-            rgb = (finite_rgb / rgb_max).clamp(0.0, 1.0)
-            multispectral = to_s2_dn(mapped[:, 3:], self._s2_input_unit)
-            inputs = torch.cat((rgb, multispectral), dim=1)
+        if self._generic_normalizer is not None:
+            return self._generic_normalizer(selected)
+        if self.mode == "rgb":
+            inputs = to_reflectance(selected, self._input_unit).clamp(0.0, 1.0)
+        else:
+            # All ten channels, RGB included, are raw Sentinel-2 DN (normalize_s2).
+            inputs = to_s2_dn(selected, self._input_unit)
         return (inputs - self._deo_mean.to(inputs)) / self._deo_std.to(inputs)
 
     @torch.no_grad()

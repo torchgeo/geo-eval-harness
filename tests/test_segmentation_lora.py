@@ -153,6 +153,7 @@ _MULTISPECTRAL_INPUTS = {
     "terrafm/base_s1": ("kuro_siwo", "all"),
     "terrafm/base_s2": ("m-eurosat", "all"),
     "terrafm/base_s2_l1c": ("m-eurosat", "all"),
+    "universat_base_seg": ("burn_scars", "all"),
 }
 
 

@@ -132,6 +132,7 @@ class SegmentationSolver:
         lr_scheduler: str = "cosine",
         ignore_index: int = 255,
         backbone_lr: float | None = None,
+        early_stopping_patience: int | None = None,
     ) -> None:
         """Configure the optimizer, loss, and segmentation metrics.
 
@@ -146,12 +147,16 @@ class SegmentationSolver:
             ignore_index: Label value to ignore in loss and metrics (default: 255).
             backbone_lr: Learning rate for trainable backbone parameters, such as LoRA adapters.
                 ``None`` trains all parameters at ``lr``.
+            early_stopping_patience: Stop training once validation mIoU has not improved for
+                this many epochs. The LR schedule still spans ``epochs``, so a stopped run equals
+                the first epochs of the full run. ``None`` trains all epochs.
         """
         self.model = model.to(device)
         self.backbone_eval_mode = False
         self.num_classes = num_classes
         self.device = device
         self.lr_scheduler_type = lr_scheduler
+        self.early_stopping_patience = early_stopping_patience
         self.epoch_history: list[EpochRecord] = []
         self.best_epoch: int | None = None
         self.best_val_miou: float | None = None
@@ -350,6 +355,19 @@ class SegmentationSolver:
         self._best_state = [(tensor, tensor.detach().to("cpu", copy=True)) for tensor in tensors]
         self.best_epoch, self.best_val_miou = epoch, miou
 
+    def _select_and_check_stop(
+        self, epoch: int, val_metrics: "SegMetrics | None", *, verbose: bool
+    ) -> bool:
+        """Select on validation mIoU; return whether early-stopping patience has run out."""
+        if val_metrics is None:
+            return False
+        self._select_epoch(epoch, val_metrics["mIoU"], verbose=verbose)
+        patience = self.early_stopping_patience
+        if patience is None or self.best_epoch is None or epoch - self.best_epoch < patience:
+            return False
+        logger.info("Early stopping after epoch %d (best epoch %d).", epoch, self.best_epoch)
+        return True
+
     @torch.no_grad()
     def _restore_selection(self, *, verbose: bool) -> float | None:
         """Restore into existing tensors without replacing modules or hooks."""
@@ -431,8 +449,8 @@ class SegmentationSolver:
                 val_metrics = self.evaluate(val_loader)
                 assert isinstance(val_metrics, dict)
             self._finish_epoch(tracker, val_metrics, on_epoch)
-            if val_metrics is not None:
-                self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
+            if self._select_and_check_stop(epoch + 1, val_metrics, verbose=verbose):
+                break
 
         return self._restore_selection(verbose=verbose)
 
@@ -542,8 +560,8 @@ class SegmentationSolver:
                 val_metrics = self._evaluate(gpu_val, batch_size)
                 assert isinstance(val_metrics, dict)
             self._finish_epoch(tracker, val_metrics, on_epoch)
-            if val_metrics is not None:
-                self._select_epoch(epoch + 1, val_metrics["mIoU"], verbose=verbose)
+            if self._select_and_check_stop(epoch + 1, val_metrics, verbose=verbose):
+                break
 
         return self._restore_selection(verbose=verbose)
 
@@ -744,6 +762,7 @@ def build_seg_probe_and_solver(
         ignore_index=config.ignore_index,
         backbone_lr=config.backbone_learning_rate,
         weight_decay=config.weight_decay,
+        early_stopping_patience=config.early_stopping_patience,
     )
     solver.backbone_eval_mode = config.full_finetune
     return probe, solver
