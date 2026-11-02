@@ -101,6 +101,7 @@ _MULTISPECTRAL_INPUTS = {
     "terrafm/base_s2": ("m-eurosat", "all"),
     "terrafm/base_s2_l1c": ("m-eurosat", "all"),
     "torchgeo/deo_s2": ("cloudsen12", "all"),
+    "universat_base_seg": ("burn_scars", "all"),
 }
 
 
