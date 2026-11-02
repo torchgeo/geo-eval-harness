@@ -51,6 +51,7 @@ Fixed
 ^^^^^
 
 * Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
+* UniverSat pins its pretrained weights to a fixed Hugging Face commit (``weights_revision``), as it already pinned the torch.hub code. Before, an update to ``g-astruc/UniverSat`` could change results silently. Set ``weights_revision: null`` to follow the default branch. Hashes and resume keys are unchanged.
 
 0.5.0 (2026-08-10)
 ------------------
