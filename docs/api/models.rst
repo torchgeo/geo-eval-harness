@@ -63,6 +63,11 @@ SAM 3
 
 .. autoclass:: SAM3Encoder
 
+SkySense
+^^^^^^^^
+
+.. autoclass:: SkySenseBench
+
 Segmentation heads
 ------------------
 

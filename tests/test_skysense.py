@@ -81,7 +81,7 @@ def test_s2_selects_model_bands_and_pools(loads: list[tuple[str, dict[str, Any]]
             {"revision": SKYSENSE_REVISION, "allow_patterns": ["skysense-vit-large-s2/*"]},
         ),
         (
-            "/hub/snapshot/skysense-vit-large-s2",
+            str(Path("/hub/snapshot", "skysense-vit-large-s2")),
             {"trust_remote_code": True, "local_files_only": True},
         ),
     ]
