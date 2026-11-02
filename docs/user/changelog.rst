@@ -16,7 +16,15 @@ Added
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
+* Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
+  seven African cities, cut into 512x512 chips on each scene's native grid (0.02-0.20 m GSD).
+  Train/val/test are assigned per 500 m geographic block and fixed in a packaged index
+  (76,818 / 11,236 / 22,408 chips). Download with ``geo-eval-harness download open_cities``.
+* ``scripts/compute_band_statistics.py --ignore-index`` leaves nodata mask pixels out of the
+  band statistics.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
+* ``output.epoch_metrics`` streams per-epoch segmentation training records (training and validation loss, training and validation mIoU, learning rates, step counts, wall time, peak CUDA memory) to a JSON Lines file, tagged with the result row's ``config_hash``. Segmentation result rows gain ``best_val_epoch`` and ``best_val_miou``.
+* ``segmentation.early_stopping_patience`` (default ``null``, off) stops segmentation training once validation mIoU has not improved for that many epochs; the best validation epoch is still restored. Hashes are unchanged when unset.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
   torchgeo's published 18,900 / 6,300 / 6,300 split.  Downloadable with
