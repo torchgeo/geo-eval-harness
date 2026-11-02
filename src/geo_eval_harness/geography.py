@@ -67,6 +67,10 @@ NO_GEO: dict[str, str] = {
         "land-use TIFFs with no georeferencing: all 2,100 images lack GeoTIFF tags, "
         "EXIF GPS, and XMP location fields; the release ships no coordinate table"
     ),
+    "loveda": (
+        "Google Earth PNG tiles with no georeferencing: tile ids encode no location, "
+        "and the release names only the source cities (Nanjing, Changzhou, Wuhan)"
+    ),
 }
 
 # Re-splits reuse coordinates from the dataset with the same imagery.

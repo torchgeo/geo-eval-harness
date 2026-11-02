@@ -1,7 +1,9 @@
 """Small, disjoint on-disk datasets read by the production dataset adapters."""
 
+import hashlib
 import io
 import json
+import shutil
 import struct
 import tarfile
 import zipfile
@@ -28,7 +30,14 @@ def require_dataset_data(name: str) -> None:
         ]
     elif name in ("eurosat", "eurosat-spatial"):
         paths = [Path("data/eurosat")]
-    elif name in ("resisc45", "ucmerced", "hotosm_buildings", "openearthmap-sar", "open_cities"):
+    elif name in (
+        "resisc45",
+        "ucmerced",
+        "hotosm_buildings",
+        "openearthmap-sar",
+        "open_cities",
+        "loveda",
+    ):
         paths = [Path("data") / name]
     else:
         paths = [Path("data/geobenchv2") / name]
@@ -152,6 +161,34 @@ def write_openearthmap_sar_archives(root: Path) -> tuple:
             )
         )
     return tuple(artifacts)
+
+
+def write_loveda_files(root: Path) -> Path:
+    """Write tiny RGB/mask PNG pairs for the active LoveDA memberships."""
+    from geo_eval_harness.datasets.loveda import LoveDA
+
+    directory = root / "data" / "loveda"
+    mask = (np.arange(64).reshape(8, 8) % 8).astype(np.uint8)  # native 0 (no-data) at the origin
+    image = np.stack([mask * 30 + band for band in range(3)], axis=-1)
+    for split in LoveDA.split_sizes:
+        for member in LoveDA.split_members(split):
+            release, scene, name = member.split("/")
+            for kind, pixels in (("images_png", image), ("masks_png", mask)):
+                path = directory / release / scene / kind / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(pixels).save(path)
+    return directory
+
+
+def write_loveda_archives(root: Path) -> dict[str, str]:
+    """Package the tiny tiles as torchgeo's ``Train.zip``/``Val.zip``; return their MD5s."""
+    directory = write_loveda_files(root / "tiles")
+    md5s = {}
+    for release in ("Train", "Val"):
+        path = root / f"{release}.zip"
+        shutil.make_archive(str(path.with_suffix("")), "zip", directory, release)
+        md5s[release.lower()] = hashlib.md5(path.read_bytes()).hexdigest()
+    return md5s
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:

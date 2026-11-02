@@ -13,6 +13,8 @@ Targets:
 - ``openearthmap-sar``: verified DFC2025 SAR images and labels.
 - ``open_cities`` — Open Cities AI Challenge tier-1 scenes from source.coop, plus native-grid
   masks built from the labels, into ``<output>/open_cities``.
+- ``loveda`` — torchgeo's LoveDA downloader (labelled Train and Val only), into
+  ``<output>/loveda``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -33,7 +35,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, UCMerced
+from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
@@ -65,7 +67,7 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
+TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda")
 DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
@@ -297,6 +299,23 @@ def download_ucmerced(output_dir: Path) -> None:
     logger.info("UCMerced download complete.")
 
 
+def download_loveda(output_dir: Path) -> None:
+    """Download torchgeo's labelled LoveDA Train and Val releases into ``output_dir/loveda``.
+
+    The unlabelled Test release is not downloaded; benchmark splits are checked at the end.
+    """
+    from geo_eval_harness.datasets.loveda import LoveDA as BenchLoveDA
+
+    target = Path(output_dir) / "loveda"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LoveDA -> %s", target)
+    for split in ("train", "val"):
+        LoveDA(root=str(target), split=split, download=True, checksum=True)
+    for split in BenchLoveDA.split_sizes:
+        BenchLoveDA.load_split(target, split)
+    logger.info("LoveDA download complete.")
+
+
 @dataclass(frozen=True)
 class SARArchive:
     """Immutable Zenodo artifact and the benchmark directories it supplies."""
@@ -427,17 +446,7 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_geobench_v1(output_dir, datasets=[name])
     if v2:
         download_geobench_v2(output_dir, datasets=v2)
-    if "eurosat" in selected:
-        download_eurosat(output_dir)
-    if "resisc45" in selected:
-        download_resisc45(output_dir)
-    if "aid" in selected:
-        download_aid(output_dir)
-    if "ucmerced" in selected:
-        download_ucmerced(output_dir)
-    if "hotosm_buildings" in selected:
-        download_hotosm_buildings(output_dir)
-    if "openearthmap-sar" in selected:
-        download_openearthmap_sar(output_dir)
-    if "open_cities" in selected:
-        download_open_cities(output_dir)
+    for name in TORCHGEO_DATASETS + DIRECT_DATASETS:
+        if name in selected:
+            # Look up by name at call time so tests can monkeypatch individual downloaders.
+            globals()[f"download_{name.replace('-', '_')}"](output_dir)
