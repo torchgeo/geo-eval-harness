@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), and BRIGHT post-event SAR building damage segmentation (Hugging Face). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -61,6 +61,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``bright-post-sar``
      - ``data/bright-post-sar/``
      - Hugging Face ``Kullervo/BRIGHT``, pinned commit, two SHA-256-verified ZIPs
+   * - ``oscd-post``
+     - ``data/oscd-post/``
+     - torchgeo's ``OSCD`` downloader
 
 Downloading
 -----------
@@ -86,6 +89,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download levir-cd-post                            # LEVIR-CD post image
    $ geo-eval-harness download sen1floods11-s1                          # Sen1Floods11 (S1 + S2)
    $ geo-eval-harness download bright-post-sar                          # BRIGHT post-event SAR
+   $ geo-eval-harness download oscd-post                                # torchgeo OSCD (post image)
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -255,6 +259,7 @@ CLI name             Class
 ``sen1floods11-s1``  :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
 ``sen1floods11-s2``  :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
 ``bright-post-sar``  :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
+``oscd-post``        :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
@@ -392,6 +397,29 @@ The downloader fetches ``post-event.zip`` (3.29 GB) and ``target.zip`` (48 MB) f
 Geography is read from the post-event GeoTIFF headers; all 4,246 tiles are georeferenced.
 
 Sources and attribution: the `BRIGHT paper <https://essd.copernicus.org/articles/17/6217/2025/>`__ (Chen et al., Earth System Science Data 17, 2025) and the `BRIGHT repository <https://github.com/ChenHongruixuan/BRIGHT>`__. The SAR images come from the Capella Open Data Gallery and the Umbra Open Data Program under CC BY 4.0. The labels carry the licence of each event's optical imagery, which is mostly Maxar Open Data under CC BY-NC 4.0. Check these terms before any non-research use.
+
+``oscd-post`` poses the Onera Satellite Change Detection dataset (OSCD; Caye Daudt et al., IGARSS 2018) as **single-image binary segmentation of the post-change image**. Each of the 24 cities has a Sentinel-2 **Level-1C** image pair and a pixel-level urban change map. Only the later image is used. There is no bi-temporal input, so a model must recognise new construction from appearance alone, and scores are not comparable with published change-detection results on OSCD.
+
+* **Splits (by city).** ``test`` is the 10 official test cities. ``val`` is three of the 14 official training cities, ``cupertino``, ``rennes``, and ``saclay_e``, drawn with ``sorted(random.Random(0).sample(sorted(official_train), 3))``. ``train`` is the remaining 11.
+* **Tiles.** Every city (241-1180 px a side) is cut row-major into non-overlapping 256 x 256 tiles (2.56 km at 10 m), giving **119 / 31 / 69** train/val/test tiles. Edge tiles are zero-padded and their padded mask pixels are 255, which the segmentation probe ignores. About a third of all tile pixels are padding.
+* **Labels.** These come from ``<city>-cm.tif``, where native ``1`` = no change and ``2`` = change. They map to classes ``0`` (no change) and ``1`` (change). The ``cm.png`` previews are not used because the aguasclaras PNG is anti-aliased. Change covers 2.4 % / 2.0 % / 5.2 % of the labelled train/val/test pixels.
+* **Bands.** All 13 bands come from the authors' ``imgs_2_rect`` stacks, which are resampled to 10 m: ``b01`` ... ``b12`` and ``b8a``. The cirrus band ``b10`` is included because the data is L1C; models that do not use cirrus drop it through band mapping. ``rgb`` is ``b04, b03, b02``.
+* **Values and normalization.** Values are raw L1C digital numbers (reflectance x 10\ :sup:`4`) as float32. A few edge pixels of the 20 m and 60 m bands are 0 from the resampling and are kept. Dataset normalization uses statistics from the 11 training cities, with padding excluded.
+* **L1C models.** ``BandSpec`` has no processing-level field, so select an L1C model variant explicitly, for example ``terrafm/base_s2_l1c``.
+
+The dataset is tiny and the change class is rare, so expect noisy scores and report several seeds.
+
+The data is torchgeo's ``OSCD`` layout under ``data/oscd-post/``. Only ``<city>/imgs_2_rect/*.tif`` and the ``<city>-cm.tif`` change maps are read. Missing files and tile counts that differ from the split sizes are errors. Custom partitions are unsupported.
+
+.. code-block:: console
+
+   $ geo-eval-harness download oscd-post
+   $ geo-eval-harness run --config docs/examples/oscd-post-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/oscd-post-run.yaml
+
+The :download:`example config </examples/oscd-post-run.yaml>` uses a randomly initialized ResNet-18 with a linear head as a no-weight-download smoke test. The download is about 490 MB. torchgeo verifies the SHA-256 digests and extracts the archives, which leaves 1.2 GB on disk.
+
+Sources and attribution: the `OSCD project page <https://rcdaudt.github.io/oscd/>`__ and the `paper <https://doi.org/10.1109/IGARSS.2018.8518015>`__. The imagery contains modified Copernicus Sentinel data (2015-2018). The change labels are released under **CC BY-NC-SA** (non-commercial); contact the authors for commercial use.
 
 Open Cities AI Challenge — segmentation
 ---------------------------------------

@@ -21,6 +21,7 @@ from tests.support.data import (
     write_levir_cd_post_files,
     write_loveda_files,
     write_openearthmap_sar_files,
+    write_oscd_post_files,
     write_sen1floods11_files,
 )
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
@@ -114,6 +115,24 @@ def test_bright_post_sar_public_segmentation(
     main(["run", "--config", str(path)])
     (row,) = pd.read_csv(output).to_dict("records")
     assert (row["num_classes"], row["n_train"], row["n_test"]) == (4, 3, 2)
+
+
+@pytest.mark.usefixtures("small_oscd_post")
+def test_oscd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_oscd_post_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "oscd.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = ["oscd-post"]
+    config.input.bands = "all"
+    config.input.image_size = 8
+    config.segmentation.epochs = 1
+    path = tmp_path / "oscd.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    row = pd.read_csv(output).iloc[0]
+    assert row[["num_classes", "n_train", "n_val", "n_test"]].tolist() == [2, 7, 4, 4]
     assert np.isfinite(row["metric_value"])
 
 
