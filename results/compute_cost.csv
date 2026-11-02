@@ -485,9 +485,9 @@ torchgeo_bench.models.HandcraftedBench,handcrafted,rgb,3,224,10,classification,,
 torchgeo_bench.models.HandcraftedBench,handcrafted,s2,12,224,10,classification,,0.0,,6.72e-06,6.72e-06,0.0,,0.00337,336,,,,,,,,False,2026-10-13T07:18:17+00:00
 torchgeo_bench.models.TerraFMBench,terrafm_base_s2_l1c,s2,12,224,10,classification,,42.524872704,,1.536e-05,42.524888064,112.951296,,0.00769,768,cls,196.0,,,,,,False,2026-10-13T07:18:39+00:00
 torchgeo_bench.models.TerraTorchTerraMindBench,tt_terramind_v1_base,rgb,3,224,10,classification,,34.941763584,,1.536e-05,34.941778944,85.544448,,0.00769,768,mean,196.0,,,,,,False,2026-10-13T07:18:58+00:00
-torchgeo_bench.models.TorchGeoDEOBench,tgeo_deo_swin_rgb,rgb,3,224,10,classification,,30.859845632,,2.048e-05,30.859866112,87.789088,,0.01025,1024,,,,,,,,False,2026-10-13T07:19:21+00:00
+geo_eval_harness.models.TorchGeoDEOBench,tgeo_deo_swin_rgb,rgb,3,224,10,classification,,50.987532288,,2.048e-05,50.987552768,86.899448,,0.01025,1024,,,,,,,,False,2026-11-02T08:14:37+00:00
 torchgeo_bench.models.TerraTorchTerraMindBench,tt_terramind_v1_large,rgb,3,224,10,classification,,122.44549632,,2.048e-05,122.4455168,302.778368,,0.01025,1024,mean,196.0,,,,,,False,2026-10-13T07:19:30+00:00
-torchgeo_bench.models.TorchGeoDEOBench,tgeo_deo_swin_s2,s2,12,224,10,classification,,30.949761024,,2.048e-05,30.949781504,87.789088,,0.01025,1024,,,,,,,,False,2026-10-13T07:19:31+00:00
+geo_eval_harness.models.TorchGeoDEOBench,tgeo_deo_swin_s2,s2,12,224,10,classification,,51.07744768,,2.048e-05,51.07746816,86.899448,,0.01025,1024,,,,,,,,False,2026-11-02T08:25:01+00:00
 torchgeo_bench.models.TorchGeoResNetBench,tgeo_resnet152_s2ms_satlas_si,s2,12,224,10,classification,,23.495213056,,4.096e-05,23.495254016,58.162624,,0.02049,2048,,,,,,,,False,2026-10-13T07:19:36+00:00
 torchgeo_bench.models.TorchGeoResNetBench,tgeo_resnet50_s2ms_satlas_si,s2,12,224,10,classification,,8.64632832,,4.096e-05,8.64636928,23.526848,,0.02049,2048,,,,,,,,False,2026-10-13T07:19:44+00:00
 torchgeo_bench.models.TorchGeoSwinBench,tgeo_swinv2b_naip_satlas_mi,rgb,3,224,10,classification,,40.648220672,,2.048e-05,40.648241152,86.905848,,0.01025,1024,,,,,,,,False,2026-10-13T07:19:58+00:00
