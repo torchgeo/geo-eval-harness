@@ -22,6 +22,7 @@ import logging
 import os
 import shutil
 import socket
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -55,7 +56,7 @@ def _source_digest(dataset: Dataset) -> str:
     for obj in (type(dataset), loading):
         try:
             digest.update(inspect.getsource(inspect.getmodule(obj) or obj).encode())
-        except (OSError, TypeError):
+        except (OSError, TypeError):  # allow-except: source unavailable, hash the repr instead
             digest.update(repr(obj).encode())
     return digest.hexdigest()[:16]
 
@@ -165,13 +166,33 @@ def _dead_lock_owner(lock: Path) -> int | None:
         return None
     if host != socket.gethostname():
         return None
+    return int(pid) if _pid_exited(int(pid)) else None
+
+
+def _pid_exited(pid: int) -> bool:
+    """Return whether no process with ``pid`` is running on this host."""
+    if sys.platform == "win32":
+        # os.kill(pid, 0) would call TerminateProcess on Windows, so query the process instead.
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 87  # ERROR_INVALID_PARAMETER: no such process
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value != 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
     try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return int(pid)
+        os.kill(pid, 0)
+    except ProcessLookupError:  # allow-except: no such process, so the build has exited
+        return True
     except PermissionError:  # allow-except: the PID exists but belongs to another user
-        return None
-    return None
+        return False
+    return False
 
 
 def _open_disk(
@@ -182,7 +203,7 @@ def _open_disk(
     while not (directory / "complete").exists():
         try:
             lock.mkdir(parents=True)
-        except FileExistsError:
+        except FileExistsError:  # allow-except: another build holds the lock; wait or recover it
             dead = _dead_lock_owner(lock)
             if dead is not None:
                 logger.warning("Removing sample cache lock %s left by exited PID %d", lock, dead)
