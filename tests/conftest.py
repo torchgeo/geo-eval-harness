@@ -72,6 +72,17 @@ def small_loveda(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
     monkeypatch.setattr(LoveDA, "splits_dir", directory)
 
 
+@pytest.fixture
+def small_levir_cd_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use 16 x 16 rasters cut into four 8 x 8 tiles, with 3/2/2 images per split."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    monkeypatch.setattr(LEVIRCDPost, "image_counts", {"train": 3, "val": 2, "test": 2})
+    monkeypatch.setattr(LEVIRCDPost, "split_sizes", {"train": 12, "val": 8, "test": 8})
+    monkeypatch.setattr(LEVIRCDPost, "raster_size", 16)
+    monkeypatch.setattr(LEVIRCDPost, "tile_size", 8)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Iterator[None]:
     """Keep child processes on this checkout and avoid CPU oversubscription."""

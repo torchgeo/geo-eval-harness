@@ -17,6 +17,7 @@ from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import (
     write_caffe_files,
+    write_levir_cd_post_files,
     write_loveda_files,
     write_openearthmap_sar_files,
 )
@@ -74,6 +75,25 @@ def test_loveda_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert row[["n_train", "n_val", "n_test"]].tolist() == [2, 1, 2]
     assert row["metric_name"] == "mIoU"
     assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
+
+
+@pytest.mark.usefixtures("small_levir_cd_post")
+def test_levir_cd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_levir_cd_post_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "levir.csv"
+    config = _segmentation_config(output, cached=False)
+    config.datasets = ["levir-cd-post"]
+    config.input.image_size = 8
+    config.segmentation.epochs = 1
+    path = tmp_path / "levir.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    row = pd.read_csv(output).iloc[0]
+    assert row["num_classes"] == 2
+    assert row[["n_train", "n_val", "n_test"]].tolist() == [12, 8, 8]
+    assert np.isfinite(row["metric_value"])
 
 
 @pytest.mark.parametrize("cached", [True, False], ids=["cached", "uncached"])

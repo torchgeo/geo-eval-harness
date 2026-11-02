@@ -37,6 +37,7 @@ def require_dataset_data(name: str) -> None:
         "openearthmap-sar",
         "open_cities",
         "loveda",
+        "levir-cd-post",
     ):
         paths = [Path("data") / name]
     else:
@@ -189,6 +190,26 @@ def write_loveda_archives(root: Path) -> dict[str, str]:
         shutil.make_archive(str(path.with_suffix("")), "zip", directory, release)
         md5s[release.lower()] = hashlib.md5(path.read_bytes()).hexdigest()
     return md5s
+
+
+def write_levir_cd_post_files(root: Path) -> Path:
+    """Write random pre/post images and masks (including stray 156/254) in torchgeo's layout."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    directory = root / "data" / "levir-cd-post"
+    size = LEVIRCDPost.raster_size
+    rng = np.random.default_rng(0)
+    for kind in ("A", "B", "label"):
+        (directory / kind).mkdir(parents=True, exist_ok=True)
+    for split, count in LEVIRCDPost.image_counts.items():
+        for index in range(1, count + 1):
+            name = f"{split}_{index}.png"
+            image = Image.fromarray(rng.integers(0, 256, (size, size, 3), dtype=np.uint8))
+            image.save(directory / "A" / name)
+            image.save(directory / "B" / name)
+            mask = rng.choice(np.array([0, 0, 156, 254, 255], dtype=np.uint8), (size, size))
+            Image.fromarray(mask).save(directory / "label" / name)
+    return directory
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:

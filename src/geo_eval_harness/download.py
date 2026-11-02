@@ -8,6 +8,7 @@ Targets:
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
+- ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
   into compact per-split files under ``<output>/hotosm_buildings``.
 - ``openearthmap-sar``: verified DFC2025 SAR images and labels.
@@ -35,7 +36,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
+from torchgeo.datasets import LEVIRCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
@@ -67,7 +68,7 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda")
+TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda", "levir-cd-post")
 DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
@@ -314,6 +315,19 @@ def download_loveda(output_dir: Path) -> None:
     for split in BenchLoveDA.split_sizes:
         BenchLoveDA.load_split(target, split)
     logger.info("LoveDA download complete.")
+
+
+def download_levir_cd_post(output_dir: Path) -> None:
+    """Download torchgeo's MD5-verified LEVIR-CD archives into ``output_dir/levir-cd-post``."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    target = Path(output_dir) / "levir-cd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LEVIR-CD -> %s", target)
+    LEVIRCD(root=str(target), download=True, checksum=True)
+    for split in LEVIRCDPost.image_counts:
+        LEVIRCDPost.split_paths(target, split)
+    logger.info("LEVIR-CD download complete.")
 
 
 @dataclass(frozen=True)
