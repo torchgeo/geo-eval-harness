@@ -542,6 +542,8 @@ def build_seg_probe_and_solver(
         layer_names=layer_names,
         num_classes=num_classes,
         head_type=config.head,
+        neck=config.neck,
+        neck_norm=config.neck_norm,
         freeze_backbone=config.lora_rank is None,
         temporal_pool=config.temporal_pool,
     )

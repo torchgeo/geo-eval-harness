@@ -226,6 +226,20 @@ def test_lora_targets_alone_keep_the_frozen_probe_and_name_lora_runs() -> None:
     assert lora.method == "seg-upernet-lora"
 
 
+def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:
+    config = valid_config()
+    config["segmentation"] = {"head": "upernet", "neck": "vit", "lora_target_modules": "blocks"}
+    frozen = validate_run_config(config).segmentation
+    config["segmentation"] |= {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    lora = validate_run_config(config).segmentation
+
+    assert frozen.method == "seg-upernet-vitneck"
+    assert lora.method == "seg-upernet-vitneck-lora"
+    config["segmentation"] = {"head": "linear", "neck": "vit"}
+    with pytest.raises(ValueError, match="neck 'vit' requires head in"):
+        validate_run_config(config)
+
+
 def test_lora_requires_targets_from_the_preset_or_config() -> None:
     from geo_eval_harness.config.presets import resolve_run_config
 
