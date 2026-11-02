@@ -3,7 +3,7 @@
 
 """Official DFC2025 Track I SAR-only semantic segmentation."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar
@@ -63,14 +63,14 @@ class OpenEarthMapSAR(BenchDataset):
         ),
     ]
 
-    #: Opt-in aliases for models that only accept Sentinel-1 polarisations: ``--bands vv``
+    #: Opt-in aliases for models that only accept Sentinel-1 polarisations. ``--bands vv``
     #: (or ``vv,vh``) feeds the single SAR channel under that name (same pixels and statistics).
     #: The polarisation of the source data is not declared, so this is an adapter for comparison,
     #: not a physical match.
     band_aliases: ClassVar[tuple[str, ...]] = ("vv", "vh")
 
     @classmethod
-    def select_band_specs(cls, bands: "list[str] | None") -> list[BandSpec]:
+    def select_band_specs(cls, bands: "Iterable[str] | None") -> list[BandSpec]:
         """Like the base class, plus the ``vv``/``vh`` aliases of the single ``sar`` band."""
         if bands is None:
             return list(cls.bands)
