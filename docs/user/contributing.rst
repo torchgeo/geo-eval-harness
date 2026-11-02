@@ -27,6 +27,13 @@ If you prefer `conda <https://docs.conda.io>`_, install into that environment wi
    $ conda activate geo-eval-harness
    $ pip install -e ".[dev]"
 
+Dependency security
+-------------------
+
+Use uv 0.13.5 or newer. Run ``uv audit --locked`` to check the lockfile, including optional extras and packages for other platforms, against published advisories. CI runs this check on pushes and pull requests. Apply targeted updates with ``uv lock --upgrade-package <package>``, then rerun the audit and project checks.
+
+External GitHub Actions use full commit SHAs. Verify the upstream release when changing a pin and retain its version comment.
+
 Makefile shortcuts
 ------------------
 

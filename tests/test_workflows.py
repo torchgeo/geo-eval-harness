@@ -1,11 +1,22 @@
 """Workflow coverage for independently reviewable stacked pull requests."""
 
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+
+
+@pytest.mark.parametrize("path", sorted(WORKFLOWS.glob("*.y*ml")), ids=lambda p: p.name)
+def test_external_actions_use_immutable_commits(path: Path) -> None:
+    config = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+    for job in config["jobs"].values():
+        for step in job.get("steps", []):
+            action = step.get("uses", "")
+            if action and not action.startswith("./"):
+                assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action), action
 
 
 @pytest.mark.parametrize("name", ["ci", "docs"])

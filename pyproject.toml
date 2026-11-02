@@ -46,6 +46,7 @@ dependencies = [
   "lazy-loader>=0.4",
   "numpy>=1.24",
   "pandas>=2",
+  "pillow>=13",
   # Required for CoordBench's Parquet files.
   "pyarrow>=14",
   "pydantic>=2",
