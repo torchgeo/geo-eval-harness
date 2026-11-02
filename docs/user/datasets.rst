@@ -389,6 +389,8 @@ The :download:`example config </examples/bright-post-sar-run.yaml>` uses a rando
 
 The downloader fetches ``post-event.zip`` (3.29 GB) and ``target.zip`` (48 MB) from `Kullervo/BRIGHT <https://huggingface.co/datasets/Kullervo/BRIGHT>`__ at commit ``46f202d9``, verifies their SHA-256 digests, extracts the TIFFs, and keeps the ZIPs. The installation needs about **12 GB** because the extracted TIFFs are uncompressed. Rerunning the download reverifies the archives and repairs missing or truncated files without downloading again.
 
+Geography is read from the post-event GeoTIFF headers; all 4,246 tiles are georeferenced.
+
 Sources and attribution: the `BRIGHT paper <https://essd.copernicus.org/articles/17/6217/2025/>`__ (Chen et al., Earth System Science Data 17, 2025) and the `BRIGHT repository <https://github.com/ChenHongruixuan/BRIGHT>`__. The SAR images come from the Capella Open Data Gallery and the Umbra Open Data Program under CC BY 4.0. The labels carry the licence of each event's optical imagery, which is mostly Maxar Open Data under CC BY-NC 4.0. Check these terms before any non-research use.
 
 Open Cities AI Challenge — segmentation
