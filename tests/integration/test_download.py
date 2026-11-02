@@ -17,7 +17,7 @@ from urllib.request import urlopen
 
 import pytest
 import torch
-from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial
+from torchgeo.datasets import LEVIRCD, RESISC45, EuroSAT, EuroSATSpatial
 from torchgeo.datasets import LoveDA as TGLoveDA
 
 from geo_eval_harness import download, hub
@@ -26,6 +26,7 @@ from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
     write_caffe_files,
+    write_levir_cd_post_files,
     write_loveda_archives,
     write_openearthmap_sar_archives,
     write_torchgeo_download_files,
@@ -153,6 +154,7 @@ def test_openearthmap_sar_http_download_then_load(
         assert sample["image"].shape == (1, 8, 8)
         assert sample["mask"].shape == (8, 8)
         assert sample["mask"][0, 0] == 255
+
         assert torch.isfinite(sample["image"]).all()
 
 
@@ -172,6 +174,27 @@ def test_loveda_http_download_then_load(
     sample = loaders[0].dataset[0]
     assert sample["image"].shape == (3, 8, 8)
     assert sample["mask"][0, 0] == 255
+
+
+@pytest.mark.usefixtures("small_levir_cd_post")
+def test_levir_cd_post_download_then_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    files = write_levir_cd_post_files(tmp_path / "source")
+    splits = {}
+    for split in ("train", "val", "test"):
+        archive = tmp_path / f"{split}.zip"
+        shutil.make_archive(str(archive.with_suffix("")), "zip", files)
+        md5 = hashlib.md5(archive.read_bytes()).hexdigest()
+        splits[split] = {"url": archive.as_uri(), "filename": archive.name, "md5": md5}
+    monkeypatch.setattr(LEVIRCD, "splits", splits)
+    monkeypatch.chdir(tmp_path)
+    main(["download", "levir-cd-post"])
+    _, *loaders = get_datasets(
+        "levir-cd-post", batch_size=2, num_workers=0, return_val=True, image_size=4
+    )
+    assert [len(loader.dataset) for loader in loaders] == [12, 8, 8]
+    sample = loaders[0].dataset[0]
+    assert sample["image"].shape == (3, 4, 4)
+    assert set(sample["mask"].unique().tolist()) <= {0, 1}
 
 
 @pytest.mark.parametrize("selection", ["named", "collection"])

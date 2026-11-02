@@ -71,6 +71,10 @@ NO_GEO: dict[str, str] = {
         "Google Earth PNG tiles with no georeferencing: tile ids encode no location, "
         "and the release names only the source cities (Nanjing, Changzhou, Wuhan)"
     ),
+    "levir-cd-post": (
+        "change-detection PNGs with no georeferencing: no PNG text or EXIF chunks, "
+        "and the release ships no coordinate table"
+    ),
 }
 
 # Re-splits reuse coordinates from the dataset with the same imagery.

@@ -83,4 +83,6 @@ torchgeo wrappers
 
 .. autoclass:: LoveDA
 
+.. autoclass:: LEVIRCDPost
+
 .. autoclass:: UCMerced

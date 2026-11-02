@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, and LoveDA land-cover segmentation (torchgeo). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), and a LEVIR-CD post-image segmentation proxy. All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -52,6 +52,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``loveda``
      - ``data/loveda/``
      - torchgeo's ``LoveDA`` downloader (labelled ``Train.zip`` and ``Val.zip`` only)
+   * - ``levir-cd-post``
+     - ``data/levir-cd-post/``
+     - torchgeo's ``LEVIRCD`` downloader
 
 Downloading
 -----------
@@ -74,6 +77,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download hotosm_buildings                         # HOTOSM VHR buildings
    $ geo-eval-harness download openearthmap-sar                         # OpenEarthMap-SAR
    $ geo-eval-harness download loveda                                   # torchgeo LoveDA
+   $ geo-eval-harness download levir-cd-post                            # LEVIR-CD post image
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -239,6 +243,7 @@ CLI name             Class
 ``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
 ``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
 ``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
+``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
@@ -293,6 +298,28 @@ The downloader retrieves about **9.29 GB** across four immutable archives: ``dfc
 Geography is read from SAR GeoTIFF headers without requiring label files. The release provides usable locations for **210 of 5,033 samples**, all in the validation split; training and test SAR files have no usable georeferencing. Images without a CRS or with an identity transform are omitted from location counts, not assigned guessed coordinates. Raster read errors and invalid projected coordinates are errors.
 
 Sources and attribution: `OpenEarthMap-SAR <https://github.com/cliffbb/OpenEarthMap-SAR>`__, the `official DFC2025 baseline <https://github.com/cliffbb/DFC2025-OEM-SAR-Baseline>`__, and the `dataset paper <https://arxiv.org/abs/2501.10891v2>`__. Zenodo identifies the Umbra Open Data Program SAR imagery as CC BY 4.0. Optical-source and label licensing varies by source; consult the release and source-specific terms rather than treating the whole installed benchmark as uniformly CC BY 4.0.
+
+``levir-cd-post`` is a **single-image proxy task, not change detection**: each sample is a tile of the LEVIR-CD *post* image (``B``), segmented against the building-change mask (the Fields of the World ``image_b`` precedent). The pre image is never loaded, so scores are **not comparable to published LEVIR-CD change-detection F1**. The ``-post`` suffix keeps ``levir-cd`` free for a future bi-temporal variant.
+
+LEVIR-CD has the official **445 / 64 / 128** train/val/test images (Google Earth RGB, **0.5 m**, **1024 x 1024**). Each image is cut into 16 non-overlapping **256 x 256** tiles at native resolution (**7,120 / 1,024 / 2,048** tiles), ordered by image, row and column, before the runner resizes them. Classes are 0 = no change and 1 = change; as in torchgeo, every non-zero mask value is change, so there are no ignore pixels. Change covers only **4.6 / 4.2 / 5.1 %** of train/val/test pixels, so read the reported mIoU against the all-no-change baseline of about 0.475 on test. Dataset normalization uses statistics from the training tiles of the ``aerial`` red/green/blue bands (raw ``0..255``).
+
+.. code-block:: text
+
+   data/levir-cd-post/
+     A/       pre images (downloaded but unused)
+     B/       train_1.png ... train_445.png, val_1.png ... val_64.png, test_1.png ... test_128.png
+     label/   change masks with the same names
+     train.zip  val.zip  test.zip
+
+.. code-block:: console
+
+   $ geo-eval-harness download levir-cd-post
+   $ geo-eval-harness run --config docs/examples/levir-cd-post-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/levir-cd-post-run.yaml
+
+The download uses torchgeo's ``LEVIRCD`` (2.5 GB of MD5-verified archives from a pinned Hugging Face commit, about 4.7 GB on disk after extraction) and then checks the exact split membership. The :download:`example config </examples/levir-cd-post-run.yaml>` is a randomly initialized ResNet-18 smoke configuration, not an accuracy baseline. The images are not georeferenced.
+
+Sources and attribution: `LEVIR-CD <https://justchenhao.github.io/LEVIR/>`__ and the `dataset paper <https://doi.org/10.3390/rs12101662>`__ (Chen & Shi, *Remote Sensing* 12(10):1662, 2020). The dataset is distributed for academic research only; imagery is from Google Earth and subject to Google's terms.
 
 Open Cities AI Challenge — segmentation
 ---------------------------------------
