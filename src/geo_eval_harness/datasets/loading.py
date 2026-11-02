@@ -57,6 +57,8 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "open_cities": ("open_cities", "OpenCities", "segmentation"),
     "loveda": ("loveda", "LoveDA", "segmentation"),
     "levir-cd-post": ("levir_cd_post", "LEVIRCDPost", "segmentation"),
+    "sen1floods11-s1": ("sen1floods11", "Sen1Floods11S1", "segmentation"),
+    "sen1floods11-s2": ("sen1floods11", "Sen1Floods11S2", "segmentation"),
 }
 
 
@@ -114,6 +116,8 @@ def download_command(name: str) -> str:
         "open_cities",
         "loveda",
         "levir-cd-post",
+        "sen1floods11-s1",
+        "sen1floods11-s2",
     }:
         return f"geo-eval-harness download {name.removesuffix('-spatial')}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"

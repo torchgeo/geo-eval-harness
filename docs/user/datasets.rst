@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), and a LEVIR-CD post-image segmentation proxy. All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, and Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -55,6 +55,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``levir-cd-post``
      - ``data/levir-cd-post/``
      - torchgeo's ``LEVIRCD`` downloader
+   * - ``sen1floods11-s1``, ``sen1floods11-s2``
+     - ``data/sen1floods11/``
+     - Public GCS bucket ``sen1floods11`` (v1.1) over HTTPS, checksum-verified per file
 
 Downloading
 -----------
@@ -78,6 +81,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download openearthmap-sar                         # OpenEarthMap-SAR
    $ geo-eval-harness download loveda                                   # torchgeo LoveDA
    $ geo-eval-harness download levir-cd-post                            # LEVIR-CD post image
+   $ geo-eval-harness download sen1floods11-s1                          # Sen1Floods11 (S1 + S2)
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -244,6 +248,8 @@ CLI name             Class
 ``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
 ``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
 ``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
+``sen1floods11-s1``  :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
+``sen1floods11-s2``  :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
@@ -320,6 +326,36 @@ LEVIR-CD has the official **445 / 64 / 128** train/val/test images (Google Earth
 The download uses torchgeo's ``LEVIRCD`` (2.5 GB of MD5-verified archives from a pinned Hugging Face commit, about 4.7 GB on disk after extraction) and then checks the exact split membership. The :download:`example config </examples/levir-cd-post-run.yaml>` is a randomly initialized ResNet-18 smoke configuration, not an accuracy baseline. The images are not georeferenced.
 
 Sources and attribution: `LEVIR-CD <https://justchenhao.github.io/LEVIR/>`__ and the `dataset paper <https://doi.org/10.3390/rs12101662>`__ (Chen & Shi, *Remote Sensing* 12(10):1662, 2020). The dataset is distributed for academic research only; imagery is from Google Earth and subject to Google's terms.
+
+``sen1floods11-s1`` and ``sen1floods11-s2`` are the **446 hand-labelled** chips of Sen1Floods11 v1.1 (Bonafilia et al., CVPRW 2020), seen through two sensors: Sentinel-1 GRD backscatter (``vv``, ``vh``; float32 dB, ``unit="db"``) or all 13 Sentinel-2 L1C bands (``b01``..``b12``, ``b8a``; int16 top-of-atmosphere reflectance x 10\ :sup:`4`, so the unit is detected as S2 DN). Both ids share the official ``flood_handlabeled`` splits, **252 training, 89 validation (``valid``), and 90 test** chips, and exactly the same masks, so S1 and S2 results are directly comparable. The 15-chip Bolivia hold-out and the 4,385 weakly labelled chips are not used. Chips are **512 x 512** pixels in EPSG:4326 at about 10 m and are not tiled; the runner resizes them.
+
+Classes are 0 (not water) and 1 (water). Native ``-1`` (no data, mostly clouds) maps to ``255``. Pixels where Sentinel-1 is not finite or all Sentinel-2 bands are zero (scene-edge fill) also map to ``255`` for **both** ids: 26,037 / 20,571 / 73,408 otherwise-labelled train/val/test pixels. Non-finite Sentinel-1 values are replaced with the band's training mean, so the S1 dataset only emits finite values. Normalization statistics are measured on the training split over valid (non-``255``) pixels only.
+
+Label quality: about 13% of pixels are no data and about 10% of the valid pixels are water (9.5 / 11.0 / 12.5% in train/val/test). One training, three validation, and one test chip are entirely no data; they are kept because they are part of the official membership and contribute nothing to the scores. An independent visual inspection (Arshad, MSc thesis, University of Twente, 2026) found the hand labels sufficiently accurate; its ~35% error rate concerns the weak labels, which are excluded here. Otsu thresholding of S1 agrees with the hand labels at only about 0.5 IoU, so S1-only models have a lower ceiling than S2. The splits are random chips from the same 10 flood events, so they are spatially correlated and overstate generalisation. Also report the water-class IoU, not only mIoU. The protocol (train, val, and test on hand labels, as in PANGAEA and TerraTorch) differs from the original paper, which trains on weak labels and tests on all 446 hand-labelled chips, so the numbers are not comparable.
+
+.. code-block:: text
+
+   data/sen1floods11/
+     splits/flood_handlabeled/
+       flood_train_data.csv  flood_valid_data.csv  flood_test_data.csv
+     data/flood_events/HandLabeled/
+       S1Hand/<event>_<chip>_S1Hand.tif        (431 files)
+       S2Hand/<event>_<chip>_S2Hand.tif        (431 files)
+       LabelHand/<event>_<chip>_LabelHand.tif  (431 files)
+
+Membership follows the official CSVs; missing files and CSVs with the wrong chip count are errors. Custom partitions are unsupported.
+
+.. code-block:: console
+
+   $ geo-eval-harness download sen1floods11-s1
+   $ geo-eval-harness run --config docs/examples/sen1floods11-s1-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/sen1floods11-s1-run.yaml
+
+Either id downloads the shared data: the 1,293 TIFFs referenced by the three split CSVs plus the CSVs, about **1.7 GB**, from ``https://storage.googleapis.com/sen1floods11/v1.1/`` over plain HTTPS (no ``gsutil``). Upstream publishes no checksums, so each file is verified against the packaged ``checksums/sen1floods11.sha256`` manifest. Re-running the download re-hashes local files and fetches only missing or corrupt ones. The :download:`example config </examples/sen1floods11-s1-run.yaml>` uses a randomly initialized ResNet-18 with a linear segmentation head as a no-weight-download smoke configuration, not a published accuracy baseline; :download:`sen1floods11-s2-run.yaml </examples/sen1floods11-s2-run.yaml>` is the S2 equivalent.
+
+For OlmoEarth on ``sen1floods11-s1``, use ``olmoearth_nano`` (or another preset that leaves ``sar_log_scale`` unset), not ``olmoearth_nano_sar_db``: the values are already in dB, and that preset converts linear power to dB.
+
+Sources and attribution: `Sen1Floods11 <https://github.com/cloudtostreet/Sen1Floods11>`__, generated by Cloud to Street. Cite Bonafilia, D., Tellman, B., Anderson, T., Issenberg, E. (2020), *Sen1Floods11: a georeferenced dataset to train and test deep learning flood algorithms for Sentinel-1*, CVPR Workshops. The imagery contains modified Copernicus Sentinel data. Upstream specifies no license for the dataset; check the upstream terms before redistribution.
 
 Open Cities AI Challenge — segmentation
 ---------------------------------------

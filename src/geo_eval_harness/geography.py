@@ -78,7 +78,11 @@ NO_GEO: dict[str, str] = {
 }
 
 # Re-splits reuse coordinates from the dataset with the same imagery.
-GEO_ALIAS: dict[str, str] = {"eurosat-spatial": "m-eurosat", "eurosat": "m-eurosat"}
+GEO_ALIAS: dict[str, str] = {
+    "eurosat-spatial": "m-eurosat",
+    "eurosat": "m-eurosat",
+    "sen1floods11-s2": "sen1floods11-s1",
+}
 
 BIN_RES = 0.25  # Degrees per density-map cell.
 POINT_CAP = 2000  # per-dataset cap on individually plotted samples
@@ -441,7 +445,9 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
     hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
-    geotiffs = sorted(directory.glob("*/sar_images/*.tif"))
+    geotiffs = sorted(directory.glob("*/sar_images/*.tif")) or sorted(
+        directory.glob("data/flood_events/HandLabeled/LabelHand/*.tif")
+    )
 
     if tortillas:
         data = _extract_v2(tortillas)

@@ -25,10 +25,12 @@ from geo_eval_harness.cli import main
 from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
+    sen1floods11_checksums,
     write_caffe_files,
     write_levir_cd_post_files,
     write_loveda_archives,
     write_openearthmap_sar_archives,
+    write_sen1floods11_files,
     write_torchgeo_download_files,
     write_v1_shards,
 )
@@ -259,3 +261,22 @@ def test_download_rejects_corrupted_snapshot_bytes(
     monkeypatch.chdir(destination)
     with pytest.raises(SystemExit, match="checksum mismatch"):
         main(["download", "m-eurosat"])
+
+
+@pytest.mark.usefixtures("small_sen1floods11")
+def test_sen1floods11_http_download_then_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_download_sources: tuple[Path, list[dict[str, Any]]],
+) -> None:
+    source, _ = local_download_sources
+    checksums = sen1floods11_checksums(write_sen1floods11_files(source))
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
+    server = download.SAR_ARCHIVES[0].url.rsplit("/", 1)[0]
+    monkeypatch.setattr(download, "SEN1FLOODS11_URL", f"{server}/data/sen1floods11")
+    monkeypatch.chdir(tmp_path)
+    main(["download", "sen1floods11-s1"])
+    for name in ("sen1floods11-s1", "sen1floods11-s2"):
+        _, *loaders = get_datasets(name, batch_size=2, num_workers=0, return_val=True, image_size=8)
+        assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
+        assert loaders[0].dataset[0]["mask"][0, 0] == 255

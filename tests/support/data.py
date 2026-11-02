@@ -40,6 +40,8 @@ def require_dataset_data(name: str) -> None:
         "levir-cd-post",
     ):
         paths = [Path("data") / name]
+    elif name.startswith("sen1floods11"):
+        paths = [Path("data/sen1floods11")]
     else:
         paths = [Path("data/geobenchv2") / name]
     if not any(path.exists() for path in paths):
@@ -134,6 +136,52 @@ def write_openearthmap_sar_files(root: Path) -> Path:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(geotiff_bytes(pixels[None]))
     return directory
+
+
+def write_sen1floods11_files(root: Path) -> Path:
+    """Write 16 x 16 chips and split CSVs in the Sen1Floods11 v1.1 layout.
+
+    Each chip has label -1 at ``[:2, :2]``, S1 NaN at ``[2:4, :2]`` and S2 zero fill at
+    ``[:2, 2:4]``; the last val chip is entirely no data.
+    """
+    from geo_eval_harness.datasets.sen1floods11 import (
+        SPLIT_DIR,
+        SPLIT_FILES,
+        Sen1Floods11Base,
+        chip_path,
+    )
+
+    directory = root / "data" / "sen1floods11"
+    y, x = np.indices((16, 16))
+    for split, csv_name in SPLIT_FILES.items():
+        chips = [f"{split}_{i}" for i in range(Sen1Floods11Base.split_sizes[split])]
+        for i, chip in enumerate(chips):
+            water = (x // 4 + y // 4 + i) % 2
+            label = water.astype(np.int16)
+            label[:2, :2] = -1
+            if split == "val" and chip == chips[-1]:
+                label[:] = -1
+            s1 = np.stack([-8 - 14 * water, -15 - 13 * water]).astype(np.float32)
+            s1[:, 2:4, :2] = np.nan
+            s2 = np.stack([2500 - 2000 * water + band for band in range(13)]).astype(np.int16)
+            s2[:, :2, 2:4] = 0
+            for layer, pixels in (("S1Hand", s1), ("S2Hand", s2), ("LabelHand", label[None])):
+                path = directory / chip_path(chip, layer)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels))
+        path = directory / SPLIT_DIR / csv_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(f"{c}_S1Hand.tif,{c}_LabelHand.tif\r\n" for c in chips), newline="")
+    return directory
+
+
+def sen1floods11_checksums(directory: Path) -> dict[str, str]:
+    """Return a SHA-256 manifest of a written Sen1Floods11 directory."""
+    return {
+        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in directory.rglob("*")
+        if path.is_file()
+    }
 
 
 def write_openearthmap_sar_archives(root: Path) -> tuple:

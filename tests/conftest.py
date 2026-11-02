@@ -83,6 +83,14 @@ def small_levir_cd_post(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(LEVIRCDPost, "tile_size", 8)
 
 
+@pytest.fixture
+def small_sen1floods11(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the official split sizes for offline Sen1Floods11 workflows."""
+    from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11Base
+
+    monkeypatch.setattr(Sen1Floods11Base, "split_sizes", {"train": 3, "val": 2, "test": 2})
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Iterator[None]:
     """Keep child processes on this checkout and avoid CPU oversubscription."""

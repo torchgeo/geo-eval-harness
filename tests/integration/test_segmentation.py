@@ -20,6 +20,7 @@ from tests.support.data import (
     write_levir_cd_post_files,
     write_loveda_files,
     write_openearthmap_sar_files,
+    write_sen1floods11_files,
 )
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
@@ -133,6 +134,29 @@ def test_module_segmentation_training_and_resume(tmp_path: Path, *, cached: bool
     resumed = run_cli(*arguments, "--resume", cwd=tmp_path)
     assert resumed.returncode == 0, cli_output(resumed)
     assert output.read_bytes() == before
+
+
+@pytest.mark.usefixtures("small_sen1floods11")
+@pytest.mark.parametrize("dataset", ["sen1floods11-s1", "sen1floods11-s2"])
+def test_sen1floods11_public_segmentation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dataset: str
+) -> None:
+    write_sen1floods11_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "flood.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = [dataset]
+    config.input.bands = "all"
+    config.segmentation.epochs = 1
+    config.segmentation.ignore_index = 255
+    path = tmp_path / "flood.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    row = pd.read_csv(output).iloc[0]
+    assert row[["n_train", "n_val", "n_test"]].tolist() == [3, 2, 2]
+    # One val chip is entirely ignored; metrics must stay finite.
+    assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
 
 
 def _segmentation_config(output: Path, *, cached: bool) -> RunConfig:
