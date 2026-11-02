@@ -81,4 +81,6 @@ torchgeo wrappers
 
 .. autoclass:: OpenEarthMapSAR
 
+.. autoclass:: LoveDA
+
 .. autoclass:: UCMerced

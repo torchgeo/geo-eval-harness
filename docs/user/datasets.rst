@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, and the Open Cities AI Challenge building segmentation set. All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, and LoveDA land-cover segmentation (torchgeo). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -49,6 +49,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``openearthmap-sar``
      - ``data/openearthmap-sar/``
      - Four checksum-verified DFC2025 Track I Zenodo archives
+   * - ``loveda``
+     - ``data/loveda/``
+     - torchgeo's ``LoveDA`` downloader (labelled ``Train.zip`` and ``Val.zip`` only)
 
 Downloading
 -----------
@@ -70,6 +73,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
    $ geo-eval-harness download hotosm_buildings                         # HOTOSM VHR buildings
    $ geo-eval-harness download openearthmap-sar                         # OpenEarthMap-SAR
+   $ geo-eval-harness download loveda                                   # torchgeo LoveDA
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -234,6 +238,7 @@ CLI name             Class
 ``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
 ``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
 ``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
+``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
 ==================== ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
@@ -305,6 +310,30 @@ The chips and their train/val/test assignment are fixed in the packaged ``open_c
 ``geo-eval-harness download open_cities`` fetches the 31 scenes and their label GeoJSONs (about 34 GB) from source.coop and verifies them against packaged SHA-256 checksums. The imagery is kept byte-identical. The download then rasterises one mask GeoTIFF per scene on the same pixel grid, with 0 for background, 1 for building, and 255 where the image is transparent or black, which the loss and metrics ignore. Normalization statistics exclude these nodata pixels.
 
 A label audit against Google and Microsoft building footprints found the tier-1 labels well aligned with the imagery, while the Dar es Salaam scenes miss about 5% of buildings. In addition, Monrovia scenes ``207cc7`` and ``401175`` are stored in UTM zone 36N instead of 29N, so their ground pixels are not square. Labels are ODbL 1.0; the imagery is CC BY 4.0 or ODbL depending on the scene.
+
+LoveDA — segmentation
+---------------------
+
+``loveda`` is seven-class land-cover segmentation of 0.3 m Google Earth RGB tiles from Nanjing, Changzhou, and Wuhan (Wang et al., 2021), with the urban and rural scenes combined. Tiles are **1024 x 1024** RGB PNGs. The official Test release has no public labels, so **test** is the official Val release (**1,669** tiles) and **train / val** (**2,269 / 253**) hold out 10% of each scene of the official Train release by a seeded hash. The memberships are checked in under ``src/geo_eval_harness/datasets/splits/loveda/``. Tile ids encode no location, so validation shares districts with train; the test release is region-disjoint from Train.
+
+The classes, in model output order, are background, building, road, water, barren, forest, and agriculture (native ``1..7``). Native ``0`` is no-data (3.7% of training pixels, on near-black padding); it maps to ``255`` and is ignored in loss and mIoU. Images are raw float32 RGB in ``0..255``; normalization statistics use the training pixels that have a valid label.
+
+.. code-block:: text
+
+   data/loveda/
+     Train.zip  Val.zip
+     Train/{Urban,Rural}/{images_png,masks_png}/<id>.png
+     Val/{Urban,Rural}/{images_png,masks_png}/<id>.png
+
+.. code-block:: console
+
+   $ geo-eval-harness download loveda
+   $ geo-eval-harness run --config docs/examples/loveda-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/loveda-run.yaml
+
+The download fetches the MD5-verified ``Train.zip`` (4.0 GB) and ``Val.zip`` (2.4 GB) from `Zenodo record 5706578 <https://zenodo.org/records/5706578>`__ through torchgeo and needs about 13 GB of disk. The unlabelled ``Test.zip`` is not downloaded. The :download:`example config </examples/loveda-run.yaml>` is a no-weight-download smoke configuration, not an accuracy baseline.
+
+Sources and attribution: the `LoveDA repository <https://github.com/Junjue-Wang/LoveDA>`__ and `paper <https://arxiv.org/abs/2110.08733>`__. The repository states CC BY-NC-SA 4.0 (no commercial use), while the Zenodo record is labelled CC BY 4.0; follow the more restrictive terms.
 
 Selecting datasets
 ------------------

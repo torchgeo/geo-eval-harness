@@ -56,6 +56,22 @@ def small_openearthmap_sar(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(OpenEarthMapSAR, "raster_size", 16)
 
 
+@pytest.fixture
+def small_loveda(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Use 2/1/2 tiles; torchgeo requires both scene folders in each release."""
+    from geo_eval_harness.datasets.loveda import LoveDA
+
+    members = {
+        "train": "Train/Rural/0.png Train/Urban/2.png",
+        "val": "Train/Urban/3.png",
+        "test": "Val/Rural/4.png Val/Urban/5.png",
+    }
+    directory = tmp_path_factory.mktemp("loveda_splits")
+    for split, paths in members.items():
+        (directory / f"{split}.txt").write_text(paths)
+    monkeypatch.setattr(LoveDA, "splits_dir", directory)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Iterator[None]:
     """Keep child processes on this checkout and avoid CPU oversubscription."""

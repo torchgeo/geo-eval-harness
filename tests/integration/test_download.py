@@ -18,6 +18,7 @@ from urllib.request import urlopen
 import pytest
 import torch
 from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial
+from torchgeo.datasets import LoveDA as TGLoveDA
 
 from geo_eval_harness import download, hub
 from geo_eval_harness.cli import main
@@ -25,6 +26,7 @@ from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
     write_caffe_files,
+    write_loveda_archives,
     write_openearthmap_sar_archives,
     write_torchgeo_download_files,
     write_v1_shards,
@@ -86,6 +88,14 @@ def local_download_sources(
             "SAR_ARCHIVES",
             tuple(replace(a, url=f"{url}/{a.filename}") for a in download.SAR_ARCHIVES),
         )
+        monkeypatch.setattr(
+            TGLoveDA,
+            "info_dict",
+            {
+                split: {**info, "url": f"{url}/loveda/{info['filename']}"}
+                for split, info in TGLoveDA.info_dict.items()
+            },
+        )
         for dataset_class in (EuroSAT, EuroSATSpatial):
             monkeypatch.setattr(dataset_class, "url", f"{url}/eurosat/")
             monkeypatch.setattr(
@@ -144,6 +154,24 @@ def test_openearthmap_sar_http_download_then_load(
         assert sample["mask"].shape == (8, 8)
         assert sample["mask"][0, 0] == 255
         assert torch.isfinite(sample["image"]).all()
+
+
+@pytest.mark.usefixtures("small_loveda")
+def test_loveda_http_download_then_load(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_download_sources: tuple[Path, list[dict[str, Any]]],
+) -> None:
+    source, _ = local_download_sources
+    for split, md5 in write_loveda_archives(source / "loveda").items():
+        monkeypatch.setitem(TGLoveDA.info_dict[split], "md5", md5)
+    monkeypatch.chdir(tmp_path)
+    main(["download", "loveda"])
+    _, *loaders = get_datasets("loveda", batch_size=2, num_workers=0, return_val=True, image_size=8)
+    assert [len(loader.dataset) for loader in loaders] == [2, 1, 2]
+    sample = loaders[0].dataset[0]
+    assert sample["image"].shape == (3, 8, 8)
+    assert sample["mask"][0, 0] == 255
 
 
 @pytest.mark.parametrize("selection", ["named", "collection"])

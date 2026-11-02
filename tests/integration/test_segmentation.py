@@ -15,7 +15,11 @@ from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 from tests.support.cli import cli_output, run_cli
-from tests.support.data import write_caffe_files, write_openearthmap_sar_files
+from tests.support.data import (
+    write_caffe_files,
+    write_loveda_files,
+    write_openearthmap_sar_files,
+)
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("isolated_torch_rng")]
@@ -44,6 +48,30 @@ def test_openearthmap_sar_public_segmentation(
     assert row["num_classes"] == 8
     assert row[["n_train", "n_val", "n_test"]].tolist() == [3, 2, 2]
     assert row["method"] == "seg-linear"
+    assert row["metric_name"] == "mIoU"
+    assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
+
+
+@pytest.mark.usefixtures("small_loveda")
+def test_loveda_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_loveda_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "loveda.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = ["loveda"]
+    config.input.bands = ["red", "green", "blue"]
+    config.segmentation.epochs = 1
+    config.segmentation.ignore_index = 255
+    path = tmp_path / "loveda.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    rows = pd.read_csv(output)
+    assert len(rows) == 1
+    row = rows.iloc[0]
+    assert row["dataset"] == "loveda"
+    assert row["num_classes"] == 7
+    assert row[["n_train", "n_val", "n_test"]].tolist() == [2, 1, 2]
     assert row["metric_name"] == "mIoU"
     assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
 
