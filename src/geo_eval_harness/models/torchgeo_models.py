@@ -8,7 +8,7 @@ normalization strategies use the shared ``BenchModel`` implementation.
 """
 
 from collections.abc import Iterable
-from typing import Any, cast, override
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -680,13 +680,13 @@ _DEO_S2_STD = (
 
 
 class TorchGeoDEOBench(BenchModel):
-    """Frozen DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
+    """DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
 
     DEO has separate RGB and ten-channel Sentinel-2 patch embeddings. With
     ``model_native`` normalization, RGB uses DEO-FM's normalize_hr (torchgeo's
     bundled transform) and S2 uses normalize_s2 on raw DN, as in DEO-FM's own
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
-    channel order instead.
+    channel order instead. It is frozen by default; LoRA adapters make it trainable.
     """
 
     _deo_mean: torch.Tensor
@@ -754,14 +754,6 @@ class TorchGeoDEOBench(BenchModel):
         self.backbone.requires_grad_(False)
         self.eval()
 
-    @override
-    def train(self, mode: bool = True) -> "TorchGeoDEOBench":
-        """Keep the pretrained DEO backbone frozen in evaluation mode."""
-        del mode
-        super().train(False)
-        self.backbone.eval()
-        return self
-
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Select DEO's channel order, then apply DEO's native or the configured normalization."""
         if images.shape[1] != len(self.bands):
@@ -786,8 +778,10 @@ class TorchGeoDEOBench(BenchModel):
             inputs = to_s2_dn(selected, self._input_unit)
         return (inputs - self._deo_mean.to(inputs)) / self._deo_std.to(inputs)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
+        # No no_grad here: segmentation reads the stage outputs through hooks and needs
+        # gradients for LoRA; frozen probes and classification extraction already run
+        # without gradients.
         if self.auto_resize:
             images = _auto_resize(images, self.target_size)
         features = self.backbone(images)
