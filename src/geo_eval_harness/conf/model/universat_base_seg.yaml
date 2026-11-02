@@ -1,0 +1,16 @@
+name: universat_base_seg
+target: geo_eval_harness.models.UniverSatBenchModel
+kwargs:
+  modality: null
+  patch_px: 16
+  output_grid: null
+  input_res: null
+  normalize: false
+segmentation:
+  # Self-attention trunk blocks 1-12 (block 0 fuses the inputs, 13-14 resample the output grid).
+  lora_target_modules: 'model\.model\.blocks\.([1-9]|1[0-2])\.(attn\.(wq|wk|wv|proj)|mlp\.fc[12])'
+  layers:
+    - model.model.blocks.12
+    - model.model.blocks.9
+    - model.model.blocks.6
+    - model.model.blocks.3

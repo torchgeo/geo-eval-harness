@@ -15,6 +15,7 @@ Added
 
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
+* UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
 * UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
 * NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
