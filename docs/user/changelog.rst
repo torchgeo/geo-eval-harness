@@ -14,6 +14,7 @@ Added
 ^^^^^
 
 * CaFFe serves its grayscale SAR channel as identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths), so every model uses its standard RGB setup; earlier CaFFe results used one channel and are not comparable.
+* OpenEarthMap-SAR accepts opt-in ``vv``/``vh`` band aliases that feed its single ``sar`` channel (same statistics), so Sentinel-1-only models can run it; the default selection stays ``sar``.
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
