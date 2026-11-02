@@ -11,7 +11,14 @@ import torch
 
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import UniverSatBenchModel
-from geo_eval_harness.models.universat import _build_sensor_groups, _resolve_subpatch, _sar_code
+from geo_eval_harness.models.universat import (
+    UNIVERSAT_REF,
+    UNIVERSAT_REPO,
+    UNIVERSAT_WEIGHTS_REVISION,
+    _build_sensor_groups,
+    _resolve_subpatch,
+    _sar_code,
+)
 
 
 def _s2_band(name: str, wavelength_um: float) -> BandSpec:
@@ -101,11 +108,41 @@ def test_forward_routes_interleaved_sensors_and_pools_tokens(
     assert seen["load"] == (
         "fixture/model:pinned",
         "from_pretrained",
-        {"trust_repo": True, "skip_validation": True, "compile": False},
+        {
+            "trust_repo": True,
+            "skip_validation": True,
+            "compile": False,
+            "revision": UNIVERSAT_WEIGHTS_REVISION,
+        },
     )
     assert not model.model.training
     expected = torch.tensor([[0.6, 0.8]]) if normalize else torch.tensor([[3.0, 4.0]])
     torch.testing.assert_close(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("override", "expected"),
+    [
+        ({}, {"revision": UNIVERSAT_WEIGHTS_REVISION}),
+        ({"weights_revision": "abc123"}, {"revision": "abc123"}),
+        ({"weights_revision": None}, {}),
+    ],
+)
+def test_pins_code_and_weights_revision(
+    monkeypatch: pytest.MonkeyPatch, override: dict[str, Any], expected: dict[str, str]
+) -> None:
+    seen: dict[str, Any] = {}
+
+    def load(source: str, entrypoint: str, **kwargs: object) -> torch.nn.Module:
+        seen["load"] = (source, entrypoint, kwargs)
+        return torch.nn.Identity()
+
+    monkeypatch.setattr(torch.hub, "load", load)
+    UniverSatBenchModel(_RGB, normalization="identity", **override)
+    source, entrypoint, kwargs = seen["load"]
+    assert source == f"{UNIVERSAT_REPO}:{UNIVERSAT_REF}"
+    assert entrypoint == "from_pretrained"
+    assert {k: v for k, v in kwargs.items() if k == "revision"} == expected
 
 
 @pytest.mark.slow
