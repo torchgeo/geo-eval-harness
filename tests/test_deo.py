@@ -118,3 +118,60 @@ def test_segmentation_training_updates_only_the_intended_weights(
         b_grads = [g for n, g in grads.items() if "lora_B" in n]
         assert len(b_grads) == 96
         assert all(torch.isfinite(g).all() and g.abs().sum() > 0 for g in b_grads)
+
+
+def _sar_bands(dataset: str, selection: list[str]) -> list[BandSpec]:
+    from geo_eval_harness.datasets import get_bench_dataset_class
+
+    return get_bench_dataset_class(dataset)().resolve_band_specs(selection)
+
+
+@pytest.mark.parametrize(
+    ("dataset", "selection", "order"),
+    [("kuro_siwo", ["vv", "vh"], [0, 1, 0]), ("openearthmap-sar", ["sar"], [0, 0, 0])],
+)
+def test_sar_bands_stack_into_rgb_after_zscore(
+    unweighted: None, dataset: str, selection: list[str], order: list[int]
+) -> None:
+    del unweighted
+    bands = _sar_bands(dataset, selection)
+    model = TorchGeoDEOBench(
+        bands, mode="rgb", normalization="bandspec_zscore", stack_channels=True
+    )
+    x = torch.stack([torch.full((2, 2), b.mean + (i + 1) * b.std) for i, b in enumerate(bands)])[
+        None
+    ]
+    out = model.normalize_inputs(x)
+    assert out.shape == (1, 3, 2, 2)
+    expected = torch.tensor([float(i + 1) for i in order]).view(1, 3, 1, 1).expand(1, 3, 2, 2)
+    torch.testing.assert_close(out, expected)
+
+
+def test_sar_stacking_rejects_native_normalization_and_unstacked_sar(unweighted: None) -> None:
+    del unweighted
+    bands = _sar_bands("kuro_siwo", ["vv", "vh"])
+    with pytest.raises(ValueError, match="non-native normalization"):
+        TorchGeoDEOBench(bands, mode="rgb", stack_channels=True)
+    with pytest.raises(ValueError, match="red, green, blue"):
+        TorchGeoDEOBench(bands, mode="rgb", normalization="bandspec_zscore")
+
+
+def test_stacked_sar_segmentation_step(unweighted: None) -> None:
+    from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+
+    del unweighted
+    net = TorchGeoDEOBench(
+        _sar_bands("kuro_siwo", ["vv", "vh"]),
+        mode="rgb",
+        normalization="bandspec_zscore",
+        stack_channels=True,
+    )
+    cfg = SegmentationConfig(head="upernet", layers=_LAYERS, batch_size=2, cache_features=False)
+    _, solver = build_seg_probe_and_solver(net, 4, cfg, torch.device("cpu"))
+    solver._set_train_mode()
+    loss = solver.criterion(
+        solver.model(torch.randn(2, 2, 224, 224)), torch.randint(0, 4, (2, 224, 224))
+    )
+    loss.backward()
+    assert torch.isfinite(loss)
