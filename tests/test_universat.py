@@ -290,6 +290,25 @@ def test_upe_chunking_matches_full_batch(
     assert encoder.model.batches == [5]
 
 
+@pytest.mark.parametrize(("trainable", "expected"), [(False, [5]), (True, [2, 2, 1])])
+def test_upe_training_chunks_are_capped_by_pixels(
+    monkeypatch: pytest.MonkeyPatch, *, trainable: bool, expected: list[int]
+) -> None:
+    from geo_eval_harness.models import universat
+
+    encoder = torch.nn.Module()
+    encoder.model = _FakeUPE()
+    encoder.model.spatial_encoder.requires_grad_(trainable)
+    universat._install_upe_chunking(encoder)
+    # The value budget would keep all 5 samples together; the training pixel budget (2 samples of
+    # 4x4 pixels, regardless of the 3 bands) must split them when the UPE trains.
+    monkeypatch.setattr(universat, "UPE_PIXEL_BUDGET", 10**9)
+    monkeypatch.setattr(universat, "UPE_GRAD_PIXEL_BUDGET", 2 * 4 * 4)
+    x = {"s2": torch.randn(5, 3, 4, 4)}
+    encoder.model.UPE_forward(x, ["s2"], {"s2": [0.5]}, {"s2": 10.0}, 1.0, {"s2": 1})
+    assert encoder.model.batches == expected
+
+
 class _FakeTrunk(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

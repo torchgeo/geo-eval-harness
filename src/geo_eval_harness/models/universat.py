@@ -116,6 +116,11 @@ def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) ->
 # chunks of at most this many pixel x band values; the trunk still sees the
 # full batch.
 UPE_PIXEL_BUDGET = 2**20
+# When the UPE trains, each checkpointed chunk rebuilds its whole per-pixel
+# graph in backward. Past the spectral step that graph scales with pixels, not
+# bands, so few-band inputs (S1, S2 RGBN) got large chunks and OOMed in full
+# fine-tuning. Training chunks are also capped at this many pixels per chunk.
+UPE_GRAD_PIXEL_BUDGET = 2**17
 
 
 def _merge_upe_chunks(chunks: list[tuple[Any, ...]]) -> tuple[Any, ...]:
@@ -151,18 +156,23 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET``.
 
     Masked (pretraining) and dataset-projector calls bypass chunking. When the
-    UPE itself trains (full fine-tuning), each chunk is checkpointed so its
-    per-pixel activations are recomputed in backward instead of stored.
+    UPE itself trains (full fine-tuning), chunks are further capped at
+    ``UPE_GRAD_PIXEL_BUDGET`` pixels and each is checkpointed, so its per-pixel
+    activations are recomputed in backward instead of stored.
     """
     batch = x[modalities[0]].shape[0]
     per_sample = sum(x[m][0].numel() for m in modalities)
     chunk = max(1, UPE_PIXEL_BUDGET // max(per_sample, 1))
+    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
+    if needs_grad:
+        # Pixels (x timesteps) per sample, without the band axis (dim -3).
+        pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
+        chunk = min(chunk, max(1, UPE_GRAD_PIXEL_BUDGET // max(pixels, 1)))
     if mask_in is not None or dataset or batch <= chunk:
         return upe_forward(
             x, modalities, wavelengths, input_res, scale, subpatches, mask_in, dataset
         )
 
-    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
     outs = []
     for start in range(0, batch, chunk):
         part = {
