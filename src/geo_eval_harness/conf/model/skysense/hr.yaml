@@ -2,5 +2,7 @@ name: skysense_hr
 target: geo_eval_harness.models.SkySenseBench
 kwargs:
   modality: hr
+input:
+  image_size: 256
 segmentation:
   layers: ["stages.3.blocks.1", "stages.2.blocks.17", "stages.1.blocks.1", "stages.0.blocks.1"]
