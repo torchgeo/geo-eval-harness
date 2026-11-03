@@ -28,30 +28,33 @@ def test_splits_are_official_cities_with_a_seeded_val_draw() -> None:
 
 
 @pytest.mark.usefixtures("small_oscd_post")
-def test_tiles_are_raw_zero_padded_and_remapped(
+def test_edge_tiles_shift_inward_and_score_each_pixel_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = write_oscd_post_files(tmp_path)
     monkeypatch.chdir(tmp_path)
     dataset = OSCDPost().get_dataset("train", bands=("b04", "b03", "b02"))
-    assert dataset.tiles == [("alpha", r, c) for r in range(2) for c in range(3)] + [
-        ("bravo", 0, 0)
-    ]
-    # Bottom-right tile of the 12 x 20 city: only the top-left 4 x 4 pixels are real.
-    sample = dataset[5]
+    # alpha is 12 x 20, so the last tile row/column is shifted up/left by 4 pixels.
+    assert dataset.tiles == [
+        ("alpha", y, x, oy, ox) for y, oy in ((0, 0), (4, 4)) for x, ox in ((0, 0), (8, 0), (12, 4))
+    ] + [("bravo", 0, 0, 0, 0)]
     with rasterio.open(OSCDPost.label_path(root, "alpha")) as raster:
-        native = raster.read(1)[8:, 16:]
+        native = torch.from_numpy(raster.read(1)).long()
     with rasterio.open(OSCDPost.image_dir(root, "alpha") / "B04.tif") as raster:
-        red = raster.read(1)[8:, 16:]
-    assert sample["image"].dtype == torch.float32
-    assert sample["image"].shape == (3, 8, 8)
-    assert torch.equal(sample["image"][0, :4, :4], torch.from_numpy(red.astype(np.float32)))
-    assert sample["mask"].dtype == torch.int64
-    assert torch.equal(sample["mask"][:4, :4], torch.from_numpy(native - 1).long())
-    padding = torch.ones(8, 8, dtype=torch.bool)
-    padding[:4, :4] = False
-    assert (sample["image"][:, padding] == 0).all()
-    assert (sample["mask"][padding] == 255).all()
+        red = torch.from_numpy(raster.read(1).astype(np.float32))
+    corner = dataset[5]
+    assert corner["image"].dtype == torch.float32
+    assert torch.equal(corner["image"][0], red[4:, 12:])
+    assert corner["mask"].dtype == torch.int64
+    assert torch.equal(corner["mask"][4:, 4:], native[8:, 16:] - 1)
+    assert (corner["mask"][:4] == 255).all()
+    assert (corner["mask"][:, :4] == 255).all()
+    # bravo (6 x 8) is shorter than a tile: its two missing rows are zero-padded and ignored.
+    small = dataset[6]
+    assert (small["image"][:, 6:] == 0).all()
+    assert (small["mask"][6:] == 255).all()
+    scored = sum(int((dataset[i]["mask"] != 255).sum()) for i in range(len(dataset)))
+    assert scored == 12 * 20 + 6 * 8
 
 
 @pytest.mark.usefixtures("small_oscd_post")

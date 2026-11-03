@@ -296,7 +296,7 @@ def write_bright_post_sar_archives(root: Path) -> dict[str, str]:
 
 
 #: Fixture cities; with 8-pixel tiles they give 7 / 4 / 4 train/val/test tiles.
-OSCD_SHAPES = {"alpha": (12, 20), "bravo": (8, 8), "charlie": (10, 9), "delta": (16, 16)}
+OSCD_SHAPES = {"alpha": (12, 20), "bravo": (6, 8), "charlie": (10, 9), "delta": (16, 16)}
 
 
 def write_oscd_post_files(root: Path) -> Path:

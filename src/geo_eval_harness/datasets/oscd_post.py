@@ -2,7 +2,6 @@
 
 import warnings
 from collections.abc import Callable
-from math import ceil
 from pathlib import Path
 from typing import ClassVar
 
@@ -40,13 +39,18 @@ def read_window(path: Path, window: Window | None = None) -> np.ndarray:
             return raster.read(1, window=window, boundless=window is not None, fill_value=0)
 
 
+def _tile_starts(length: int, size: int) -> list[tuple[int, int]]:
+    """Return ``(grid start, read start)`` per tile; the last tile ends at the border."""
+    return [(start, max(min(start, length - size), 0)) for start in range(0, length, size)]
+
+
 class OSCDTileDataset(Dataset):
-    """Read one zero-padded post-image tile and its change mask per index."""
+    """Read one post-image tile and its change mask per index."""
 
     def __init__(
         self,
         root: Path,
-        tiles: list[tuple[str, int, int]],
+        tiles: list[tuple[str, int, int, int, int]],
         bands: list[str],
         transform: Callable[[Sample], Sample] | None,
     ) -> None:
@@ -59,9 +63,9 @@ class OSCDTileDataset(Dataset):
         return len(self.tiles)
 
     def __getitem__(self, index: int) -> Sample:
-        city, row, col = self.tiles[index]
+        city, top, left, overlap_rows, overlap_cols = self.tiles[index]
         size = OSCDPost.tile_size
-        window = Window(col * size, row * size, size, size)
+        window = Window(left, top, size, size)
         image = np.stack(
             [
                 read_window(OSCDPost.image_dir(self.root, city) / f"{b}.tif", window)
@@ -74,6 +78,9 @@ class OSCDTileDataset(Dataset):
             raise ValueError(f"OSCD: native labels outside {{1, 2}} in {label_path}")
         # Native 1/2 are no change/change; 0 only appears as padding.
         mask = np.where(native == 0, 255, native.astype(np.int64) - 1)
+        # Pixels already covered by the previous tile in the row or column are ignored.
+        mask[:overlap_rows] = 255
+        mask[:, :overlap_cols] = 255
         sample = {
             "image": torch.from_numpy(image.astype(np.float32)),
             "mask": torch.from_numpy(mask),
@@ -92,8 +99,10 @@ class OSCDPost(BenchDataset):
 
     Splits are by city: ``test`` is the 10 official test cities, ``val`` three of the 14 official
     training cities (``VAL_CITIES``, drawn with ``random.Random(0)``) and ``train`` the other 11.
-    Cities are cut row-major into non-overlapping 256 px tiles (2.56 km); edge tiles are
-    zero-padded with mask 255. The dataset is tiny (119 / 31 / 69 tiles) and noisy.
+    Cities are cut row-major into 256 px tiles (2.56 km). Edge tiles are shifted inward to end
+    at the image border, so they show real imagery instead of padding; the part overlapping the
+    previous tile is masked 255 and every pixel is scored exactly once. Only a city smaller than
+    a tile is zero-padded (mask 255). The dataset is tiny (119 / 31 / 69 tiles) and noisy.
 
     Labels come from ``<city>-cm.tif`` (1 = no change, 2 = change), remapped to 0 / 1; the
     ``cm.png`` previews are not used because the aguasclaras one is anti-aliased.
@@ -117,8 +126,8 @@ class OSCDPost(BenchDataset):
     }
     split_sizes: ClassVar[dict[str, int]] = {"train": 119, "val": 31, "test": 69}
 
-    # Mean/std/min/max over every pixel of the 11 train-city rasters, i.e. all non-padding
-    # train tile pixels (5,087,269 per band).
+    # Mean/std/min/max over every pixel of the 11 train-city rasters, i.e. every train pixel
+    # scored once (5,087,269 per band).
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
         BandSpec("s2", "b01", "B01", mean=1571.8888, std=283.9952, min=0, max=3988, wavelength_um=0.443),
@@ -154,8 +163,8 @@ class OSCDPost(BenchDataset):
         return root / f"{RELEASE} - {kind} Labels" / city / "cm" / f"{city}-cm.tif"
 
     @classmethod
-    def split_tiles(cls, root: Path, split: str) -> list[tuple[str, int, int]]:
-        """Return ``(city, row, col)`` tiles in city then row-major order."""
+    def split_tiles(cls, root: Path, split: str) -> list[tuple[str, int, int, int, int]]:
+        """Return ``(city, top, left, overlap_rows, overlap_cols)`` in city then row-major order."""
         tiles = []
         for city in cls.split_cities[split]:
             paths = [cls.label_path(root, city)]
@@ -167,9 +176,9 @@ class OSCDPost(BenchDataset):
             height, width = read_window(paths[0]).shape
             size = cls.tile_size
             tiles += [
-                (city, row, col)
-                for row in range(ceil(height / size))
-                for col in range(ceil(width / size))
+                (city, y, x, grid_y - y, grid_x - x)
+                for grid_y, y in _tile_starts(height, size)
+                for grid_x, x in _tile_starts(width, size)
             ]
         if len(tiles) != cls.split_sizes[split]:
             raise ValueError(
@@ -185,7 +194,7 @@ class OSCDPost(BenchDataset):
         bands: tuple[str, ...] | None = None,
         transform: Callable[[Sample], Sample] | None = None,
     ) -> Dataset:
-        """Load raw L1C DN tiles as float32 and change masks as int64 (255 = padding)."""
+        """Load raw L1C DN tiles as float32 and change masks as int64 (255 = ignore)."""
         if partition != "default":
             raise ValueError("OSCD supports only the default partition")
         names = [spec.source_name for spec in self.select_band_specs(bands)]
