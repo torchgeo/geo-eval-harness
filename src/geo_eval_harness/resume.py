@@ -46,10 +46,10 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
 
     Excludes device and worker count, which only control execution. Includes batch size because
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
-    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``weight_decay``,
-    ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its ``backbone_learning_rate``)
-    and ``early_stopping_patience`` count only when set, and ``neck_norm`` only when a neck uses
-    it, so hashes from before these options are unchanged.
+    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
+    ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
+    ``backbone_learning_rate``) and ``early_stopping_patience`` count only when set, and
+    ``neck_norm`` only when a neck uses it, so hashes from before these options are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
@@ -69,6 +69,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         segmentation_exclude.add("weight_decay")
     if not segmentation.head_dropout:
         segmentation_exclude.add("head_dropout")
+    if segmentation.upsampler == "none":
+        segmentation_exclude.add("upsampler")
     if segmentation.early_stopping_patience is None:
         segmentation_exclude.add("early_stopping_patience")
     payload = {

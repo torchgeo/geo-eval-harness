@@ -266,6 +266,23 @@ def test_head_dropout_needs_upernet_and_a_probability() -> None:
             validate_run_config(config)
 
 
+def test_anyup_upsampler_names_runs_and_needs_upernet_without_feature_cache() -> None:
+    config = valid_config()
+    config["segmentation"] = {
+        "head": "upernet",
+        "neck": "vit",
+        "upsampler": "anyup",
+        "cache_features": False,
+    }
+    assert validate_run_config(config).segmentation.method == "seg-upernet-vitneck-anyup"
+    config["segmentation"] = {"head": "fpn", "upsampler": "anyup", "cache_features": False}
+    with pytest.raises(ValueError, match="requires head 'upernet'"):
+        validate_run_config(config)
+    config["segmentation"] = {"head": "upernet", "upsampler": "anyup"}
+    with pytest.raises(ValueError, match="cache_features: false"):
+        validate_run_config(config)
+
+
 def test_lora_requires_targets_from_the_preset_or_config() -> None:
     from geo_eval_harness.config.presets import resolve_run_config
 

@@ -188,6 +188,7 @@ Segmentation
      head: fpn
      neck: none
      neck_norm: layernorm
+     upsampler: none
      weight_decay: 0.0
      head_dropout: 0.0
      layers: []
@@ -210,7 +211,7 @@ Segmentation
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
 ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
-backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. Omit ``layers`` to inherit the model's selection. An explicit
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, and appends ``-anyup`` to the method; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.

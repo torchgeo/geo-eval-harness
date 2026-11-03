@@ -15,6 +15,7 @@ Added
 
 * ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
+* ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks (method ``seg-<head>-lora-last<k>``); unset leaves hashes unchanged.

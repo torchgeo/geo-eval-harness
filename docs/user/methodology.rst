@@ -381,6 +381,9 @@ Training knobs
    * - ``head_dropout``
      - ``0``
      - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
+   * - ``upsampler``
+     - ``none``
+     - ``anyup`` upsamples UPerNet's fused features to input resolution with frozen AnyUp before the classifier; ``head_dropout`` then applies after AnyUp.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.

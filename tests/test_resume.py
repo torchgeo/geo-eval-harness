@@ -52,6 +52,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "backbone_learning_rate",
                 "neck",
                 "neck_norm",
+                "upsampler",
                 "weight_decay",
                 "head_dropout",
                 "full_finetune",
@@ -161,6 +162,14 @@ def test_unet_head_has_its_own_hash() -> None:
 
     assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
     assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
+def test_upsampler_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
+
+    assert _hash(upernet(upsampler="none")) == _hash(upernet())
+    assert _hash(upernet(upsampler="anyup")) != _hash(upernet())
 
 
 def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:
