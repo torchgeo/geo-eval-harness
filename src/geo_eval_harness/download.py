@@ -47,11 +47,8 @@ from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial, 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
-from geo_eval_harness.datasets.hotosm_buildings import (
-    UPSTREAM_SPLITS,
-    HOTOSMBuildings,
-    convert_hotosm_split,
-)
+from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
+from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
 from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
@@ -222,7 +219,7 @@ def download_hotosm_buildings(output_dir: Path) -> None:
         rows = convert_hotosm_split(
             (upstream / "data").glob(f"{prefix}-*.parquet"),
             target / f"{split}.parquet",
-            expected_rows=HOTOSMBuildings.split_sizes[split],
+            expected_rows=HOTOSM_FILE_ROWS[split],
         )
         logger.info("Converted HOTOSM buildings %s split (%d rows).", split, rows)
     shutil.rmtree(upstream)
