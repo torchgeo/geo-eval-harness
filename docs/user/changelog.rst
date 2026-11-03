@@ -7,6 +7,7 @@ Unreleased
 Changed
 ^^^^^^^
 
+* Segmentation ``method`` is ``seg-<head>`` for every setup. Result rows gain setup columns (``adaptation``, ``decoder``, ``neck``, ``upsampler``, ``epochs``, ``head_lr``, ``backbone_lr``, ``weight_decay``, ``head_dropout``, ``lora_rank``, ``lora_alpha``, ``lora_last_blocks``, ``class_weights``, ``selection_metric``, ``early_stopping_patience``) that join the de-duplication key of ``load_results``; ``config_hash`` and the resume key are unchanged. ``scripts/migrations/migrate_setup_columns.py`` adds the empty columns to existing CSVs; ``results/models`` is migrated. See :ref:`segmentation-setup-columns`.
 * Package, CLI, and repository name: ``geo-eval-harness``. Python imports and fully qualified model targets use ``geo_eval_harness``. Stored results and resume hashes remain compatible; update custom imports and YAML targets as described in :doc:`installation`.
 * TerraTorch models use a separate source installation because the published backend's TorchGeo requirement is incompatible. See :doc:`installation` for the pinned command.
 * ``hotosm_buildings`` trains on a fixed 5,000-tile subset of the official train split by default. This is the benchmark and leaderboard version. ``--partition full`` restores the whole 57,890-tile train split; val and test are unchanged. HOTOSM results produced before this change used the full split and correspond to ``--partition full``, although their result rows say ``partition=default``. Write new HOTOSM runs to a fresh output file so resume does not treat those rows as done. See :doc:`datasets`.
@@ -17,9 +18,9 @@ Added
 * ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
-* ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
+* ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
-* ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks (method ``seg-<head>-lora-last<k>``); unset leaves hashes unchanged.
+* ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks; unset leaves hashes unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
   seven African cities, cut into 512x512 chips on each scene's native grid (0.02-0.20 m GSD).

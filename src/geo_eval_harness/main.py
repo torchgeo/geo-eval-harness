@@ -48,7 +48,9 @@ from geo_eval_harness.results import (
     bootstrap_accuracy,
     bootstrap_map,
     bootstrap_miou,
+    format_setup_value,
     model_results_path,
+    segmentation_setup_columns,
 )
 from geo_eval_harness.resume import (
     KEY_COLS,
@@ -750,9 +752,10 @@ def run_segmentation(
         f1=metrics.get("f1"),
         boundary_iou=metrics["boundary_IoU"],
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
-        best_val_epoch=outcome.best_epoch,
-        best_val_miou=outcome.best_val_miou,
+        best_val_epoch=format_setup_value(outcome.best_epoch),
+        best_val_miou=format_setup_value(outcome.best_val_miou),
     ).to_row()
+    row.update(segmentation_setup_columns(cfg.segmentation))
     yield [row]
 
 

@@ -312,20 +312,12 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
+        """Return ``seg-<head>``.
 
-        Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
-        blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck.
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
         """
-        neck = "" if self.neck == "none" else f"-{self.neck}neck"
-        if self.upsampler != "none":
-            neck += f"-{self.upsampler}"
-        lora = "" if self.lora_rank is None else "-lora"
-        if self.full_finetune:
-            lora = "-full"
-        if self.lora_last_blocks is not None:
-            lora += f"-last{self.lora_last_blocks}"
-        return f"seg-{self.head}{neck}{lora}"
+        return f"seg-{self.head}"
 
 
 class RuntimeConfig(StrictModel):

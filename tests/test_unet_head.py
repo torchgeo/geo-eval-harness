@@ -90,4 +90,4 @@ def test_probe_unet_needs_the_vit_neck_for_single_resolution_blocks() -> None:
 def test_unet_config_names_runs() -> None:
     assert SegmentationConfig(head="unet").method == "seg-unet"
     lora = SegmentationConfig(head="unet", neck="vit", lora_rank=8, backbone_learning_rate=1e-4)
-    assert lora.method == "seg-unet-vitneck-lora"
+    assert lora.method == "seg-unet"
