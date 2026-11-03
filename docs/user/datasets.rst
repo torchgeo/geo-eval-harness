@@ -229,7 +229,7 @@ GeoBench V2 — segmentation
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
 ``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
-``caffe``            4      1     aerial grayscale                             :class:`~geo_eval_harness.datasets.CaFFe`
+``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
 ``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
@@ -284,7 +284,7 @@ than being silently omitted.
 
 The eight classes, in model output order, are bareland, grass/rangeland, pavement/developed space, road, tree, water, cropland/agricultural land, and building. Native labels ``1..8`` map to model classes ``0..7``; native ``0`` maps to ``255`` and is ignored in both training loss and mIoU. This deliberately differs from the official baseline, which trains a ninth background output but excludes it from foreground mIoU.
 
-Only the single ``sar`` band is installed and exposed. Training RGB is intentionally excluded because validation and test inputs are SAR-only. The default ``rgb`` selector resolves to ``sar``, following the grayscale dataset convention. The adapter emits raw float32 values in ``0..255`` units, without scaling, augmentation, or cropping. Dataset normalization uses statistics measured over all 4,333 native-resolution training SAR images; the runner owns resizing and the model owns normalization. The official baseline instead scales bytes to ``[0, 1]`` and uses random 512-pixel training crops.
+Only the single ``sar`` band is installed and exposed. Training RGB is intentionally excluded because validation and test inputs are SAR-only. The default ``rgb`` selector resolves to ``sar``, following the grayscale dataset convention. For models that accept only Sentinel-1 polarisations, ``--bands vv`` or ``--bands vv,vh`` opts in to feeding the same ``sar`` channel under those names, with the same statistics; the source polarisation is not declared, so this is an adapter for comparison, not a physical match. The adapter emits raw float32 values in ``0..255`` units, without scaling, augmentation, or cropping. Dataset normalization uses statistics measured over all 4,333 native-resolution training SAR images; the runner owns resizing and the model owns normalization. The official baseline instead scales bytes to ``[0, 1]`` and uses random 512-pixel training crops.
 
 .. code-block:: text
 

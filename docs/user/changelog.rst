@@ -15,6 +15,8 @@ Added
 ^^^^^
 
 * ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
+* CaFFe serves its grayscale SAR channel as identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths), so every model uses its standard RGB setup; earlier CaFFe results used one channel and are not comparable.
+* OpenEarthMap-SAR accepts opt-in ``vv``/``vh`` band aliases that feed its single ``sar`` channel (same statistics), so Sentinel-1-only models can run it; the default selection stays ``sar``.
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
 * ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
