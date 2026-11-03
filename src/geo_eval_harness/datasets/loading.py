@@ -61,6 +61,7 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "sen1floods11-s2": ("sen1floods11", "Sen1Floods11S2", "segmentation"),
     "bright-post-sar": ("bright_post_sar", "BRIGHTPostSAR", "segmentation"),
     "oscd-post": ("oscd_post", "OSCDPost", "segmentation"),
+    "bright-post-sar-rgb": ("bright_post_sar", "BRIGHTPostSARRGB", "segmentation"),
 }
 
 
@@ -105,6 +106,8 @@ def get_dataset_task(name: str) -> Literal["classification", "segmentation"]:
 
 def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
+    if name == "bright-post-sar-rgb":
+        name = "bright-post-sar"
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
     if name in {
