@@ -686,7 +686,8 @@ class TorchGeoDEOBench(BenchModel):
     ``model_native`` normalization, RGB uses DEO-FM's normalize_hr (torchgeo's
     bundled transform) and S2 uses normalize_s2 on raw DN, as in DEO-FM's own
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
-    channel order instead. It is frozen by default; LoRA adapters make it trainable.
+    channel order instead. It is frozen by default; segmentation supports LoRA
+    adapters or full fine-tuning.
     """
 
     _deo_mean: torch.Tensor
@@ -768,6 +769,10 @@ class TorchGeoDEOBench(BenchModel):
         self.backbone = _resolve_torchgeo_factory("deo_base")(weights=weights)
         self.backbone.requires_grad_(False)
         self.eval()
+
+    def enable_full_finetune(self) -> None:
+        """Make every backbone weight trainable (segmentation full fine-tuning)."""
+        self.backbone.requires_grad_(True)
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Select DEO's channel order, then apply DEO's native or the configured normalization."""

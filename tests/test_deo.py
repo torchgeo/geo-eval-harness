@@ -120,6 +120,36 @@ def test_segmentation_training_updates_only_the_intended_weights(
         assert all(torch.isfinite(g).all() and g.abs().sum() > 0 for g in b_grads)
 
 
+def test_full_finetune_trains_every_backbone_weight(unweighted: None) -> None:
+    from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+
+    del unweighted
+    torch.manual_seed(0)
+    net = TorchGeoDEOBench(_rgb_bands(), mode="rgb")
+    before = {k: v.detach().clone() for k, v in net.backbone.named_parameters()}
+    cfg = SegmentationConfig(
+        head="upernet",
+        layers=_LAYERS,
+        batch_size=2,
+        cache_features=False,
+        full_finetune=True,
+        backbone_learning_rate=1e-3,
+    )
+    _, solver = build_seg_probe_and_solver(net, 2, cfg, torch.device("cpu"))
+    assert all(p.requires_grad for p in net.backbone.parameters())
+    solver._set_train_mode()
+    solver.optimizer.zero_grad()
+    x, y = torch.rand(2, 3, 224, 224) * 255, torch.randint(0, 2, (2, 224, 224))
+    loss = solver.criterion(solver.model(x), y)
+    loss.backward()
+    solver.optimizer.step()
+
+    assert torch.isfinite(loss)
+    after = dict(net.backbone.named_parameters())
+    assert any(not torch.equal(before[k], after[k]) for k in before)
+
+
 def _sar_bands(dataset: str, selection: list[str]) -> list[BandSpec]:
     from geo_eval_harness.datasets import get_bench_dataset_class
 
