@@ -445,8 +445,10 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     shards = sorted(glob.glob(str(directory / "shard_*.tar")))
     hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
     hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
-    geotiffs = sorted(directory.glob("*/sar_images/*.tif")) or sorted(
-        directory.glob("data/flood_events/HandLabeled/LabelHand/*.tif")
+    geotiffs = (
+        sorted(directory.glob("*/sar_images/*.tif"))
+        or sorted(directory.glob("data/flood_events/HandLabeled/LabelHand/*.tif"))
+        or sorted(directory.glob("post-event/*.tif"))
     )
 
     if tortillas:

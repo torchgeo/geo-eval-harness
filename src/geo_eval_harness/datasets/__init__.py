@@ -32,6 +32,7 @@ __all__ = [
     "FLAIR2",
     "PASTIS",
     "RESISC45",
+    "BRIGHTPostSAR",
     "BandSpec",
     "BenchDataset",
     "BurnScars",
@@ -71,6 +72,7 @@ __all__ = [
 _LAZY_CLASSES: dict[str, str] = {
     "AID": "aid",
     "BENV2": "benv2",
+    "BRIGHTPostSAR": "bright_post_sar",
     "BurnScars": "burn_scars",
     "CaFFe": "caffe",
     "CloudSEN12": "cloudsen12",

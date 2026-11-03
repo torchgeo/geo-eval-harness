@@ -26,6 +26,7 @@ from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
     sen1floods11_checksums,
+    write_bright_post_sar_archives,
     write_caffe_files,
     write_levir_cd_post_files,
     write_loveda_archives,
@@ -280,3 +281,27 @@ def test_sen1floods11_http_download_then_load(
         _, *loaders = get_datasets(name, batch_size=2, num_workers=0, return_val=True, image_size=8)
         assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
         assert loaders[0].dataset[0]["mask"][0, 0] == 255
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_bright_post_sar_download_then_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    checksums = write_bright_post_sar_archives(source)
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
+
+    def snapshot_download(local_dir: Path, **kwargs: Any) -> None:
+        for name in checksums:
+            shutil.copy(source / name, local_dir / name)
+
+    monkeypatch.setattr(hub, "snapshot_download", snapshot_download)
+    monkeypatch.chdir(tmp_path)
+    main(["download", "bright-post-sar"])
+    _, *loaders = get_datasets(
+        "bright-post-sar", batch_size=2, num_workers=0, return_val=True, image_size=8
+    )
+    assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
+    sample = loaders[0].dataset[0]
+    assert sample["image"].shape == (1, 8, 8)
+    assert sample["mask"].shape == (8, 8)

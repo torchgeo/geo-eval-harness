@@ -38,6 +38,7 @@ def require_dataset_data(name: str) -> None:
         "open_cities",
         "loveda",
         "levir-cd-post",
+        "bright-post-sar",
     ):
         paths = [Path("data") / name]
     elif name.startswith("sen1floods11"):
@@ -258,6 +259,39 @@ def write_levir_cd_post_files(root: Path) -> Path:
             mask = rng.choice(np.array([0, 0, 156, 254, 255], dtype=np.uint8), (size, size))
             Image.fromarray(mask).save(directory / "label" / name)
     return directory
+
+
+def write_bright_post_sar_files(root: Path) -> Path:
+    """Write tiny SAR tiles and four-class masks for the active BRIGHT splits."""
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    directory = root / "data" / "bright-post-sar"
+    y, x = np.indices((BRIGHTPostSAR.raster_size,) * 2)
+    for split in BRIGHTPostSAR.split_sizes:
+        for index, tile in enumerate(BRIGHTPostSAR.split_ids(split)):
+            mask = ((x // 2 + y // 4 + index) % 4).astype(np.uint8)
+            for path, pixels in (
+                (directory / "post-event" / f"{tile}_post_disaster.tif", mask * 60 + index),
+                (directory / "target" / f"{tile}_building_damage.tif", mask),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels[None].astype(np.uint8)))
+    return directory
+
+
+def write_bright_post_sar_archives(root: Path) -> dict[str, str]:
+    """Zip the toy tiles like the upstream release and return their SHA-256 manifest."""
+    import hashlib
+
+    directory = write_bright_post_sar_files(root / "files")
+    checksums = {}
+    for kind in ("post-event", "target"):
+        path = root / f"{kind}.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            for member in (directory / kind).iterdir():
+                archive.write(member, f"{kind}/{member.name}")
+        checksums[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return checksums
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:
