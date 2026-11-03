@@ -769,6 +769,10 @@ class TorchGeoDEOBench(BenchModel):
         self.backbone.requires_grad_(False)
         self.eval()
 
+    def enable_full_finetune(self) -> None:
+        """Make every backbone weight trainable (segmentation full fine-tuning)."""
+        self.backbone.requires_grad_(True)
+
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Select DEO's channel order, then apply DEO's native or the configured normalization."""
         if images.shape[1] != len(self.bands):
