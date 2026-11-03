@@ -508,3 +508,66 @@ def test_runner_invalid_validation_does_not_write_results(
     with pytest.raises(ValueError, match=r"non-empty validation|must be finite"):
         main(cfg)
     assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("cached", "full_finetune"),
+    [(False, False), (True, False), (True, True)],
+    ids=["uncached", "cached", "full-finetune"],
+)
+def test_class_weights_enter_the_hash_and_the_loss(
+    tmp_path: Path, *, cached: bool, full_finetune: bool
+):
+    from geo_eval_harness import main as main_module
+
+    solvers: list[SegmentationSolver] = []
+    apply_weights = main_module._apply_class_weights
+
+    def spy(solver: SegmentationSolver, *args: object) -> None:
+        apply_weights(solver, *args)
+        solvers.append(solver)
+
+    hashes = {}
+    for name, extra in {"plain": {}, "weighted": {"class_weights": "median_frequency"}}.items():
+        out = tmp_path / f"{name}.csv"
+        curves = tmp_path / f"{name}.jsonl"
+        cfg = _cfg_for_segmentation(
+            out,
+            overrides={
+                "model": _TINY_VIT,
+                "segmentation": {
+                    "head": "upernet",
+                    "layers": _TINY_VIT_LAYERS,
+                    "epochs": 1,
+                    "batch_size": 2,
+                    "cache_features": cached,
+                    "full_finetune": full_finetune,
+                    "backbone_learning_rate": 1e-5 if full_finetune else None,
+                }
+                | extra,
+                "output": {"epoch_metrics": str(curves)},
+            },
+        )
+        with (
+            mock.patch(
+                "geo_eval_harness.main.get_datasets",
+                return_value=_synthetic_segmentation_loaders(),
+            ),
+            mock.patch.object(main_module, "_apply_class_weights", spy),
+        ):
+            main(cfg)
+        hashes[name] = pd.read_csv(out).iloc[0]["config_hash"]
+        records = _read_jsonl(curves)
+        assert [record["event"] for record in records] == ["epoch", "selected"]
+        assert all(record["config_hash"] == hashes[name] for record in records)
+        assert math.isfinite(records[0]["train_loss"])
+        assert math.isfinite(records[0]["val_loss"])
+        assert records[1]["best_epoch"] == 1
+
+    plain, weighted = solvers
+    assert hashes["plain"] != hashes["weighted"]
+    assert getattr(plain.criterion, "weight", None) is None
+    assert weighted.criterion.weight is not None
+    assert weighted.criterion.weight.shape == (3,)
+    assert torch.all(weighted.criterion.weight > 0)
+    assert weighted.model.freeze_backbone is not full_finetune

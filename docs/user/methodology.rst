@@ -417,6 +417,9 @@ Training knobs
    * - ``backbone_learning_rate``
      - ``null``
      - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``class_weights``
+     - ``none``
+     - ``median_frequency`` weights cross-entropy by ``median(f) / f_c`` from the training-label pixel frequencies (median over classes with training pixels; classes without training pixels get 0). Counting the training masks does not change the training RNG stream. Validation loss uses the same weights; model selection and metrics are unchanged.
    * - ``full_finetune``
      - ``false``
      - Train every backbone weight (reference regime; norms and dropout stay in eval mode).

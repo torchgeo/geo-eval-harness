@@ -275,6 +275,9 @@ class SegmentationConfig(StrictModel):
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
     lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+    # "median_frequency": cross-entropy class weights median(f) / f_c from training-label pixel
+    # frequencies (classes without training pixels get weight 0).
+    class_weights: Literal["none", "median_frequency"] = "none"
     full_finetune: StrictBool = False
 
     @model_validator(mode="after")
