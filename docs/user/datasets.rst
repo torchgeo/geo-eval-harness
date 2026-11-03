@@ -58,7 +58,7 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``sen1floods11-s1``, ``sen1floods11-s2``
      - ``data/sen1floods11/``
      - Public GCS bucket ``sen1floods11`` (v1.1) over HTTPS, checksum-verified per file
-   * - ``bright-post-sar``
+   * - ``bright-post-sar``, ``bright-post-sar-rgb``
      - ``data/bright-post-sar/``
      - Hugging Face ``Kullervo/BRIGHT``, pinned commit, two SHA-256-verified ZIPs
    * - ``oscd-post``
@@ -243,24 +243,25 @@ CLI name             #cls   bands notes                                        C
 Other
 -----
 
-==================== ============================================================================
-CLI name             Class
-==================== ============================================================================
-``eurosat``          :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
-``eurosat-spatial``  :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
-``resisc45``         :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
-``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+======================= ============================================================================
+CLI name                Class
+======================= ============================================================================
+``eurosat``             :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
+``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
+``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
+``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 
-``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
-``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
-``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
-``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
-``sen1floods11-s1``  :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
-``sen1floods11-s2``  :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
-``bright-post-sar``  :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
-``oscd-post``        :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
-==================== ============================================================================
+``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
+``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
+``openearthmap-sar``    :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
+``loveda``              :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
+``levir-cd-post``       :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
+``sen1floods11-s1``     :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
+``sen1floods11-s2``     :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
+``bright-post-sar``     :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
+``bright-post-sar-rgb`` :class:`~geo_eval_harness.datasets.BRIGHTPostSARRGB`  (building damage segmentation, repeated SAR)
+``oscd-post``           :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
+======================= ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
 published 60/20/20 split.  It is the most-divergent benchmark in the GFM
@@ -374,6 +375,8 @@ It uses the authors' ``standard_ML`` split, which the BRIGHT maintainers recomme
 Classes are 0 background, 1 intact, 2 damaged, and 3 destroyed, kept as native labels; no pixel is ignored. Training pixels are 86.0% background, 11.7% intact, 1.5% damaged, and 0.9% destroyed; validation and test are similar.
 
 Images are single-band ``uint8`` amplitude (display-scaled, not calibrated backscatter) at **1024 x 1024** pixels, exposed as one ``sar`` band in raw float32 ``0..255`` units; the default ``rgb`` selector resolves to ``sar``. The polarisation is not recorded in the files, so the band has no ``vv``/``hh`` alias and no ``unit``. Zero is the swath fill value (12.5% of training pixels). It is kept as input, and its labels are kept, because labelled buildings overlap it. Dataset normalization uses statistics over all 2,918 native-resolution training images, zeros included. The runner owns resizing; tiles are not cropped.
+
+``bright-post-sar-rgb`` serves the same SAR tile as three identical ``red``/``green``/``blue`` channels, using sensor ``aerial``, no wavelengths, and the SAR statistics for each channel (mean 56.8231, std 45.8553). Both the default ``rgb`` selector and ``all`` select all three; explicit band names select fewer copies. This pseudo-RGB representation lets models use their RGB input paths; it is not optical imagery. Tiles, masks, split memberships, geography, and the installation below are identical to ``bright-post-sar``. Download once with ``geo-eval-harness download bright-post-sar``, then select ``--dataset bright-post-sar-rgb`` for evaluation. The two dataset ids distinguish result rows and run hashes; the single-band dataset is unchanged.
 
 .. code-block:: text
 
