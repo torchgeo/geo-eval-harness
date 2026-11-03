@@ -61,7 +61,8 @@ Segmentation views are built from the setup columns of each result row (see
 * **Bands** adds **Native bands** for segmentation: each model is ranked on its
   own input bands per dataset (RGB, multispectral or SAR), so models that mix
   modalities across datasets keep one row. Per-modality configurations of one
-  model are merged (``NATIVE_MODEL_ALIASES``: DEO Swin RGB/S2, TerraFM S1/S2);
+  model are merged (``native_alias_of`` in :file:`results/leaderboard.yaml`:
+  DEO Swin RGB/S2, TerraFM S1/S2);
   where two of them, or two band lists, cover a dataset, the better seed mean
   counts. Coverage is relaxed: a model is ranked on the datasets it has, and a
   Datasets column shows how many. Average rank ranks the models that have a
@@ -70,8 +71,8 @@ Segmentation views are built from the setup columns of each result row (see
   results tables; Improvability averages over the model's own datasets. ELO
   needs a complete score matrix and is not offered. Native views are left out
   of the sensitivity heatmap and have no GFLOPs points.
-* By default every dataset uses its canonical protocol (``SEG_PROTOCOL`` in
-  :file:`scripts/regen_leaderboard.py`): head LR ``1e-3`` and full fine-tuning
+* By default every dataset uses its canonical protocol
+  (``segmentation_protocol`` in :file:`results/leaderboard.yaml`): head LR ``1e-3`` and full fine-tuning
   backbone LR ``1e-5`` everywhere; 20 epochs with a per-dataset LoRA backbone
   LR (``5e-4`` or ``1e-4``) on the original grid datasets (burn_scars, caffe,
   cloudsen12, fotw, kuro_siwo, flair2, openearthmap-sar, spacenet2,
@@ -119,3 +120,17 @@ reads its empty JSON anchors and writes the self-contained documentation asset:
 
 Use ``--template`` and ``--html`` to render a synthetic template/output pair
 in tests. Do not hand-edit :file:`docs/_static/ranking_explorer.html`.
+
+The leaderboard policy is declared in :file:`results/leaderboard.yaml`, not in
+the generator: model display names, baseline flags and config merges
+(``alias_of`` in every view, ``native_alias_of`` in Native bands only,
+``rgb_sweep`` for the TerraMind off-modality sweeps); datasets with their
+display label, task, RGB-only and dropped flags, in column order; the canonical
+segmentation protocol per dataset; and the view defaults (the opening view,
+selector order, and the Native band class's coverage rule, aggregations and
+default-pyramid sources). The generator validates the file on load: unknown
+keys, wrong types and dangling references are errors. Write floats with a
+decimal point (``1.0e-4``), because YAML reads ``1e-4`` as a string.
+:file:`tests/test_leaderboard_spec.py` fails when a result CSV in
+:file:`results/models` uses a dataset the spec does not declare, so a results
+PR that adds a dataset also adds its entry.
