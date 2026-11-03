@@ -17,7 +17,7 @@ from urllib.request import urlopen
 
 import pytest
 import torch
-from torchgeo.datasets import LEVIRCD, RESISC45, EuroSAT, EuroSATSpatial
+from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial
 from torchgeo.datasets import LoveDA as TGLoveDA
 
 from geo_eval_harness import download, hub
@@ -26,10 +26,12 @@ from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import geobench_v2, get_bench_dataset_class, get_datasets
 from tests.support.data import (
     sen1floods11_checksums,
+    write_bright_post_sar_archives,
     write_caffe_files,
     write_levir_cd_post_files,
     write_loveda_archives,
     write_openearthmap_sar_archives,
+    write_oscd_post_archives,
     write_sen1floods11_files,
     write_torchgeo_download_files,
     write_v1_shards,
@@ -199,6 +201,25 @@ def test_levir_cd_post_download_then_load(tmp_path: Path, monkeypatch: pytest.Mo
     assert set(sample["mask"].unique().tolist()) <= {0, 1}
 
 
+@pytest.mark.usefixtures("small_oscd_post")
+def test_oscd_post_download_then_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    archives = write_oscd_post_archives(tmp_path / "source")
+    monkeypatch.setattr(OSCD, "urls", {path.name: path.as_uri() for path in archives})
+    monkeypatch.setattr(OSCD, "sha256s", {path.name: _sha256(path) for path in archives})
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    monkeypatch.chdir(destination)
+    main(["download", "oscd-post"])
+    main(["download", "oscd-post"])
+    _, *loaders = get_datasets(
+        "oscd-post", batch_size=2, num_workers=0, return_val=True, image_size=8, bands="rgb"
+    )
+    assert [len(loader.dataset) for loader in loaders] == [7, 4, 4]
+    batch = next(iter(loaders[0]))
+    assert batch["image"].shape == (2, 3, 8, 8)
+    assert set(batch["mask"].unique().tolist()) <= {0, 1, 255}
+
+
 @pytest.mark.parametrize("selection", ["named", "collection"])
 def test_download_every_family_then_load_real_splits(
     tmp_path: Path,
@@ -226,7 +247,7 @@ def test_download_every_family_then_load_real_splits(
         assert archive.read_bytes() == (source / name / dataset_class.filename).read_bytes()
     for name, counts, channels in (
         ("m-eurosat", [24, 8, 8], 3),
-        ("caffe", [6, 4, 4], 1),
+        ("caffe", [6, 4, 4], 3),
         ("eurosat", [2, 2, 2], 3),
         ("eurosat-spatial", [2, 2, 2], 3),
         ("resisc45", [2, 2, 2], 3),
@@ -280,3 +301,27 @@ def test_sen1floods11_http_download_then_load(
         _, *loaders = get_datasets(name, batch_size=2, num_workers=0, return_val=True, image_size=8)
         assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
         assert loaders[0].dataset[0]["mask"][0, 0] == 255
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_bright_post_sar_download_then_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    checksums = write_bright_post_sar_archives(source)
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
+
+    def snapshot_download(local_dir: Path, **kwargs: Any) -> None:
+        for name in checksums:
+            shutil.copy(source / name, local_dir / name)
+
+    monkeypatch.setattr(hub, "snapshot_download", snapshot_download)
+    monkeypatch.chdir(tmp_path)
+    main(["download", "bright-post-sar"])
+    _, *loaders = get_datasets(
+        "bright-post-sar", batch_size=2, num_workers=0, return_val=True, image_size=8
+    )
+    assert [len(loader.dataset) for loader in loaders] == [3, 2, 2]
+    sample = loaders[0].dataset[0]
+    assert sample["image"].shape == (1, 8, 8)
+    assert sample["mask"].shape == (8, 8)

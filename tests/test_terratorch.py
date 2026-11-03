@@ -337,3 +337,37 @@ def test_full_finetune_undoes_only_the_wrapper_freeze(monkeypatch: pytest.Monkey
 
     assert model.backbone.weight.requires_grad
     assert not model.backbone.pos_embed.requires_grad
+
+
+@pytest.mark.parametrize("mode", ["full", "lora"])
+def test_clay_forward_backpropagates_into_backbone(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Full fine-tuning and LoRA need gradients through Clay's forward."""
+    from geo_eval_harness.segmentation_lora import apply_lora
+
+    class _TinyClay(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.patch_embed = nn.Conv2d(3, 8, 32, stride=32)
+            self.block = nn.Linear(8, 8)
+
+        def forward(self, x: torch.Tensor, waves: torch.Tensor, gsd: float) -> torch.Tensor:
+            del waves, gsd
+            return self.block(self.patch_embed(x).flatten(2).transpose(1, 2))
+
+    monkeypatch.setattr(
+        "geo_eval_harness.models.terratorch_models._build_backbone", lambda name, **_: _TinyClay()
+    )
+    model = TerraTorchClayBench(bands=_bands(["red", "green", "blue"]), normalization="identity")
+    if mode == "full":
+        model.enable_full_finetune()
+    else:
+        apply_lora(model, "block", rank=2, alpha=4.0)
+    trainable = {n: p for n, p in model.backbone.named_parameters() if p.requires_grad}
+    assert trainable
+    assert mode == "full" or all("lora_" in n for n in trainable)
+
+    model.forward_patch_features(torch.rand(2, 3, 64, 64)).sum().backward()
+
+    assert all(p.grad is not None for p in trainable.values())

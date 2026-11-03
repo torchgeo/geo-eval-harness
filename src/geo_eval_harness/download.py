@@ -19,6 +19,9 @@ Targets:
 - ``sen1floods11-s1`` / ``sen1floods11-s2``: the 431 hand-labelled Sen1Floods11 v1.1 chips of the
   official train/valid/test splits (S1, S2 and labels, shared by both ids), into
   ``<output>/sen1floods11``.
+- ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
+  ``<output>/bright-post-sar``.
+- ``oscd-post`` — torchgeo's OSCD downloader, into ``<output>/oscd-post``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -39,16 +42,13 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from torchgeo.datasets import LEVIRCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
+from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
-from geo_eval_harness.datasets.hotosm_buildings import (
-    UPSTREAM_SPLITS,
-    HOTOSMBuildings,
-    convert_hotosm_split,
-)
+from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
+from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
 from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,9 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
+BRIGHT_REPO = "Kullervo/BRIGHT"
+BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
+
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
 V1_DATASETS: tuple[str, ...] = (
@@ -71,8 +74,21 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda", "levir-cd-post")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
+TORCHGEO_DATASETS: tuple[str, ...] = (
+    "eurosat",
+    "resisc45",
+    "ucmerced",
+    "loveda",
+    "levir-cd-post",
+    "oscd-post",
+)
+DIRECT_DATASETS: tuple[str, ...] = (
+    "aid",
+    "hotosm_buildings",
+    "openearthmap-sar",
+    "open_cities",
+    "bright-post-sar",
+)
 SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
     V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS + SEN1FLOODS11_DATASETS
@@ -203,7 +219,7 @@ def download_hotosm_buildings(output_dir: Path) -> None:
         rows = convert_hotosm_split(
             (upstream / "data").glob(f"{prefix}-*.parquet"),
             target / f"{split}.parquet",
-            expected_rows=HOTOSMBuildings.split_sizes[split],
+            expected_rows=HOTOSM_FILE_ROWS[split],
         )
         logger.info("Converted HOTOSM buildings %s split (%d rows).", split, rows)
     shutil.rmtree(upstream)
@@ -332,6 +348,20 @@ def download_levir_cd_post(output_dir: Path) -> None:
     for split in LEVIRCDPost.image_counts:
         LEVIRCDPost.split_paths(target, split)
     logger.info("LEVIR-CD download complete.")
+
+
+def download_oscd_post(output_dir: Path) -> None:
+    """Download verified OSCD archives into ``output_dir/oscd-post`` and check the tile splits."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    target = Path(output_dir) / "oscd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo OSCD -> %s", target)
+    for split in ("train", "test"):
+        OSCD(root=str(target), split=split, download=True, checksum=True)
+    for split in OSCDPost.split_sizes:
+        OSCDPost.split_tiles(target, split)
+    logger.info("OSCD download complete.")
 
 
 @dataclass(frozen=True)
@@ -486,6 +516,32 @@ def download_sen1floods11(output_dir: Path) -> None:
     for split in Sen1Floods11S1.split_sizes:
         Sen1Floods11S1.split_chips(target, split)
     logger.info("Sen1Floods11 download complete.")
+
+
+def download_bright_post_sar(output_dir: Path) -> None:
+    """Install BRIGHT post-event SAR and damage masks from the pinned, verified ZIPs.
+
+    The ZIPs (3.3 GB) are kept, so a rerun reverifies them and only re-extracts missing or
+    truncated TIFFs.
+    """
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    target = Path(output_dir) / "bright-post-sar"
+    target.mkdir(parents=True, exist_ok=True)
+    checksums = load_checksums("bright_post_sar.sha256")
+    logger.info("Downloading %s@%s -> %s", BRIGHT_REPO, BRIGHT_REVISION, target)
+    fetch_pinned(BRIGHT_REPO, BRIGHT_REVISION, target, checksums, allow_patterns=list(checksums))
+    for name in checksums:
+        with zipfile.ZipFile(target / name) as archive:
+            for member in archive.infolist():
+                path = target / member.filename
+                if member.filename.endswith(".tif") and not (
+                    path.is_file() and path.stat().st_size == member.file_size
+                ):
+                    archive.extract(member, target)
+    for split in BRIGHTPostSAR.split_sizes:
+        BRIGHTPostSAR.split_paths(target, split)
+    logger.info("BRIGHT post-event SAR download complete.")
 
 
 def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None:

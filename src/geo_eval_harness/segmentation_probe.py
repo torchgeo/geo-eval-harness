@@ -10,16 +10,21 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 
 from geo_eval_harness.config.schema import NECK_HEADS
+from geo_eval_harness.models import anyup
 from geo_eval_harness.models.segmentation_heads import (
     ConvBlockHead,
     DPTHead,
+    FeatureStandardizer,
     FPNHead,
     LinearHead,
     NeckedHead,
     PatchLinearHead,
+    StandardizedHead,
+    SweepPatchLinearHead,
     UNetHead,
     UPerNetHead,
     ViTNeck,
+    feature_moments,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,6 +177,14 @@ class SegmentationProbe(nn.Module):
             ``"none"``.
         head_dropout: Channel dropout (``nn.Dropout2d``, as mmsegmentation's UPerHead) before the
             UPerNet classifier; ``0`` (default) adds none.
+        upsampler: ``"none"`` (default) or ``"anyup"``. ``"anyup"`` (UPerNet only) puts frozen
+            pretrained AnyUp between the fused features and the classifier, guided by the input's
+            RGB bands (see :class:`~geo_eval_harness.models.anyup.AnyUpClassifier`).
+        sweep_heads: With ``head_type="patch_linear"``, train this many independent probes at
+            once as a ``SweepPatchLinearHead`` (one per learning-rate x weight-decay cell).
+            ``0`` (default) builds a single ``PatchLinearHead``.
+        feature_standardize: Z-score each hooked feature channel with statistics fit on the
+            training split (:meth:`fit_standardizer`) before the head. Frozen backbones only.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -186,7 +199,10 @@ class SegmentationProbe(nn.Module):
         temporal_pool: str = "mean",
         neck: str = "none",
         neck_norm: str = "layernorm",
+        upsampler: str = "none",
         head_dropout: float = 0.0,
+        sweep_heads: int = 0,
+        feature_standardize: bool = False,
     ) -> None:
         super().__init__()
         if temporal_pool not in ("mean", "max"):
@@ -219,7 +235,11 @@ class SegmentationProbe(nn.Module):
                 self.channels_list, num_classes, hidden_dim=hdim
             )
         elif head_type == "patch_linear":
-            self.head = PatchLinearHead(self.channels_list, num_classes).to(self._backbone_device())
+            self.head = (
+                SweepPatchLinearHead(self.channels_list, num_classes, sweep_heads)
+                if sweep_heads
+                else PatchLinearHead(self.channels_list, num_classes)
+            ).to(self._backbone_device())
             dry_run_features = [
                 torch.zeros(
                     (1, channels, height, width),
@@ -236,8 +256,99 @@ class SegmentationProbe(nn.Module):
                 "Unknown head_type: "
                 f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet, unet"
             )
+        if sweep_heads and head_type != "patch_linear":
+            raise ValueError(f"sweep_heads requires the patch_linear head, got {head_type!r}.")
         self._attach_neck(neck, head_type, neck_norm)
         self._attach_head_dropout(head_dropout, head_type)
+        self._anyup = None
+        self._attach_upsampler(upsampler, head_type)
+        self.standardizer: FeatureStandardizer | None = None
+        if feature_standardize:
+            if not self.freeze_backbone:
+                raise ValueError("feature_standardize requires a frozen backbone.")
+            self.standardizer = FeatureStandardizer(self.channels_list).to(self._backbone_device())
+            self.head = StandardizedHead(self.standardizer, self.head)
+
+    @property
+    def sweep_head(self) -> SweepPatchLinearHead | None:
+        """Return the ``SweepPatchLinearHead``, if the probe trains a sweep."""
+        head = self.head.head if isinstance(self.head, StandardizedHead) else self.head
+        return head if isinstance(head, SweepPatchLinearHead) else None
+
+    def _require_standardizer(self) -> FeatureStandardizer:
+        if self.standardizer is None:
+            raise RuntimeError("This probe was built without feature_standardize.")
+        return self.standardizer
+
+    @torch.no_grad()
+    def fit_standardizer(
+        self,
+        train: "CachedFeaturesDataset | torch.utils.data.DataLoader",
+        chunk_size: int = 256,
+    ) -> None:
+        """Fit the feature standardizer on every position of the training split.
+
+        ``train`` is either the cached training features or the training loader; a loader costs
+        one extra backbone pass. Both feed the same exact float64 moment accumulation.
+        """
+        standardizer = self._require_standardizer()
+        sums: list[torch.Tensor] = []
+        sq_sums: list[torch.Tensor] = []
+        counts: list[int] = []
+        for features in self._standardizer_features(train, chunk_size):
+            if not sums:
+                sums = [
+                    torch.zeros(f.shape[1], dtype=torch.float64, device=f.device) for f in features
+                ]
+                sq_sums = [torch.zeros_like(total) for total in sums]
+                counts = [0] * len(features)
+            for index, layer in enumerate(features):
+                total, sq_total, count = feature_moments(layer)
+                sums[index] += total
+                sq_sums[index] += sq_total
+                counts[index] += count
+        if not sums:
+            raise ValueError("Feature standardization needs a non-empty training split.")
+        standardizer.set_moments(sums, sq_sums, counts)
+        logger.info("Feature standardization fit on %d training positions.", counts[0])
+
+    def _standardizer_features(
+        self, train: "CachedFeaturesDataset | torch.utils.data.DataLoader", chunk_size: int
+    ) -> Iterator[list[torch.Tensor]]:
+        """Yield per-layer training features from the cache in chunks, or from the backbone."""
+        device = self._backbone_device()
+        if isinstance(train, CachedFeaturesDataset):
+            for start in range(0, len(train), chunk_size):
+                yield [
+                    layer[start : start + chunk_size].to(device) for layer in train.layer_tensors
+                ]
+            return
+        was_training = self.backbone.training
+        try:
+            for batch in train:
+                images = (batch["image"] if isinstance(batch, dict) else batch[0]).to(device)
+                yield self._backbone_features(images)
+        finally:
+            self.backbone.train(was_training)
+
+    def _backbone_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        """Run the backbone on images or a time series and return the hooked feature maps."""
+        steps = 0
+        if x.ndim == 5:
+            batch, steps = x.shape[0], x.shape[1]
+            x = x.reshape(batch * steps, *x.shape[2:])
+        self._features.clear()
+        if self.freeze_backbone:
+            self.backbone.eval()
+            use_amp = x.device.type == "cuda"
+            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
+                _ = self.backbone(x)
+        else:
+            _ = self.backbone(x)
+        features = [self._process_feature(self._features[n]) for n in self.layer_names]
+        if steps:
+            features = [self._pool_time(f, steps) for f in features]
+        return features
 
     def _upernet_decoder(self) -> nn.Module:
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
@@ -252,6 +363,22 @@ class SegmentationProbe(nn.Module):
         decoder = self._upernet_decoder()
         classifier = cast(nn.Module, decoder.classifier)
         decoder.classifier = nn.Sequential(nn.Dropout2d(head_dropout), classifier)
+
+    def _attach_upsampler(self, upsampler: str, head_type: str) -> None:
+        """Wrap the UPerNet classifier (after any head dropout) with frozen AnyUp when requested."""
+        if upsampler == "none":
+            return
+        if upsampler != "anyup":
+            raise ValueError(f"Unknown upsampler: {upsampler!r}. Choose from: none, anyup")
+        if head_type != "upernet":
+            raise ValueError(f"upsampler 'anyup' requires the upernet head, got {head_type!r}.")
+        decoder = self._upernet_decoder()
+        self._anyup = anyup.AnyUpClassifier(
+            decoder.get_submodule("classifier"), anyup.load_anyup().to(self._backbone_device())
+        )
+        decoder.classifier = self._anyup
+        self._anyup_rgb = anyup.rgb_guidance_indices(list(getattr(self.backbone, "bands", [])))
+        logger.info("AnyUp before the classifier, guidance channels %s", self._anyup_rgb)
 
     def _attach_neck(self, neck: str, head_type: str, neck_norm: str = "layernorm") -> None:
         """Put the requested neck before the head after checking the hooked feature maps."""
@@ -472,6 +599,14 @@ class SegmentationProbe(nn.Module):
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
             features = [self._pool_time(f, steps) for f in features]
+        if self._anyup is not None:
+            if steps:
+                raise ValueError("upsampler 'anyup' does not support time series inputs.")
+            self._anyup.guidance = anyup.anyup_guidance(x, self._anyup_rgb)
+            try:
+                return self.head(features, input_h, input_w)
+            finally:
+                self._anyup.guidance = None
         return self.head(features, input_h, input_w)
 
     def _pool_time(self, feat: torch.Tensor, steps: int) -> torch.Tensor:

@@ -188,6 +188,7 @@ Segmentation
      head: fpn
      neck: none
      neck_norm: layernorm
+     upsampler: none
      weight_decay: 0.0
      head_dropout: 0.0
      layers: []
@@ -206,11 +207,14 @@ Segmentation
      lora_last_blocks: null
      backbone_learning_rate: null
      full_finetune: false
+     feature_standardize: false
+     sweep_learning_rates: []
+     sweep_weight_decays: [0.0]
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
 ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
-backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. Omit ``layers`` to inherit the model's selection. An explicit
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, and appends ``-anyup`` to the method; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.
@@ -232,6 +236,20 @@ Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of free
      head: upernet
      lora_rank: 8
      backbone_learning_rate: 1e-4
+
+``feature_standardize: true`` z-scores every hooked feature channel with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before the head (method suffix ``-std``). The statistics use every training position, from the feature cache or, with ``cache_features: false``, from one extra backbone pass over the training split. It requires a frozen backbone.
+
+``sweep_learning_rates`` (with ``head: patch_linear``, no neck, frozen backbone) trains one LayerNorm + linear ``patch_linear`` probe per (learning rate, weight decay) cell of ``sweep_learning_rates`` x ``sweep_weight_decays`` in one vectorised pass, each with its own AdamW group and a cosine decay to zero. Every head keeps its best validation epoch; the head with the highest best-epoch validation mIoU is restored and alone scored on test. ``learning_rate`` and ``weight_decay`` are ignored; the selected values are written to ``best_lr`` and the ``selected`` epoch-metrics event. The method gains ``-sweep<n>`` with ``n`` cells. Together they reproduce UniverSat's ``LP_eval.py`` segmentation probe:
+
+.. code-block:: yaml
+
+   segmentation:
+     head: patch_linear
+     layers: [blocks.11]
+     feature_standardize: true
+     sweep_learning_rates: [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 1e-1]
+     sweep_weight_decays: [0.0, 0.01, 0.1]
+     epochs: 50
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

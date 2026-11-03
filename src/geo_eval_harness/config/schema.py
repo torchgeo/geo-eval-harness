@@ -257,6 +257,7 @@ class SegmentationConfig(StrictModel):
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
     neck: Literal["none", "vit"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
+    upsampler: Literal["none", "anyup"] = "none"
     weight_decay: StrictFloat = Field(default=0.0, ge=0)
     head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
     early_stopping_patience: StrictInt | None = Field(default=None, gt=0)
@@ -275,6 +276,36 @@ class SegmentationConfig(StrictModel):
     lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
+    feature_standardize: StrictBool = False
+    sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
+    sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
+        default_factory=lambda: [0.0]
+    )
+
+    @property
+    def sweep_grid(self) -> list[tuple[float, float]]:
+        """Return the (learning rate, weight decay) cells of the probe sweep, or ``[]``."""
+        return [(lr, wd) for lr in self.sweep_learning_rates for wd in self.sweep_weight_decays]
+
+    @model_validator(mode="after")
+    def validate_probe_protocol(self) -> "SegmentationConfig":
+        """Restrict the linear-probe sweep and feature standardization to frozen probes."""
+        frozen = self.lora_rank is None and not self.full_finetune
+        if self.feature_standardize and (not frozen or self.upsampler != "none"):
+            raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
+        if not self.sweep_learning_rates:
+            if self.sweep_weight_decays != [0.0]:
+                raise ValueError("sweep_weight_decays requires sweep_learning_rates")
+            return self
+        if not self.sweep_weight_decays:
+            raise ValueError("sweep_weight_decays must not be empty")
+        if self.head != "patch_linear" or self.neck != "none" or not frozen:
+            raise ValueError(
+                "sweep_learning_rates requires head 'patch_linear', no neck, and a frozen backbone"
+            )
+        if len(set(self.sweep_grid)) != len(self.sweep_grid):
+            raise ValueError("sweep learning rates and weight decays must not repeat")
+        return self
 
     @model_validator(mode="after")
     def validate_lora(self) -> "SegmentationConfig":
@@ -303,6 +334,10 @@ class SegmentationConfig(StrictModel):
             raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
         if self.head_dropout and self.head != "upernet":
             raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.head != "upernet":
+            raise ValueError(f"upsampler 'anyup' requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.cache_features:
+            raise ValueError("upsampler 'anyup' needs input images; set cache_features: false")
         return self
 
     @property
@@ -310,15 +345,21 @@ class SegmentationConfig(StrictModel):
         """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
 
         Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
-        blocks appends ``-last<k>``.
+        blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck. Feature
+        standardization appends ``-std`` and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
         """
         neck = "" if self.neck == "none" else f"-{self.neck}neck"
+        if self.upsampler != "none":
+            neck += f"-{self.upsampler}"
         lora = "" if self.lora_rank is None else "-lora"
         if self.full_finetune:
             lora = "-full"
         if self.lora_last_blocks is not None:
             lora += f"-last{self.lora_last_blocks}"
-        return f"seg-{self.head}{neck}{lora}"
+        probe = "-std" if self.feature_standardize else ""
+        if self.sweep_grid:
+            probe += f"-sweep{len(self.sweep_grid)}"
+        return f"seg-{self.head}{neck}{lora}{probe}"
 
 
 class RuntimeConfig(StrictModel):

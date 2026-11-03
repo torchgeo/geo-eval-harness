@@ -16,10 +16,12 @@ from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import (
+    write_bright_post_sar_files,
     write_caffe_files,
     write_levir_cd_post_files,
     write_loveda_files,
     write_openearthmap_sar_files,
+    write_oscd_post_files,
     write_sen1floods11_files,
 )
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
@@ -94,6 +96,45 @@ def test_levir_cd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.M
     row = pd.read_csv(output).iloc[0]
     assert row["num_classes"] == 2
     assert row[["n_train", "n_val", "n_test"]].tolist() == [12, 8, 8]
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+@pytest.mark.parametrize("dataset_name", ["bright-post-sar", "bright-post-sar-rgb"])
+def test_bright_post_sar_public_segmentation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dataset_name: str
+) -> None:
+    write_bright_post_sar_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "bright.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = [dataset_name]
+    config.input.bands = "rgb"
+    config.segmentation.epochs = 1
+    path = tmp_path / "bright.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    (row,) = pd.read_csv(output).to_dict("records")
+    assert row["dataset"] == dataset_name
+    assert (row["num_classes"], row["n_train"], row["n_test"]) == (4, 3, 2)
+
+
+@pytest.mark.usefixtures("small_oscd_post")
+def test_oscd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_oscd_post_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    output = tmp_path / "oscd.csv"
+    config = _segmentation_config(output, cached=True)
+    config.datasets = ["oscd-post"]
+    config.input.bands = "all"
+    config.input.image_size = 8
+    config.segmentation.epochs = 1
+    path = tmp_path / "oscd.yaml"
+    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+    main(["run", "--config", str(path)])
+    row = pd.read_csv(output).iloc[0]
+    assert row[["num_classes", "n_train", "n_val", "n_test"]].tolist() == [2, 7, 4, 4]
     assert np.isfinite(row["metric_value"])
 
 
@@ -273,3 +314,25 @@ def _assert_segmentation_results(output: Path, *, cached: bool) -> None:
     assert row["feature_dim"] == 64
     assert row["best_lr"] == 0.05
     assert row["best_batch_size"] == (2 if cached else 4)
+
+
+def test_caffe_serves_gray_as_identical_rgb_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_caffe_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    train, loader, *_ = get_datasets(
+        "caffe", num_workers=1, return_val=True, image_size=12, bands="rgb"
+    )
+    image = next(iter(loader))["image"]
+    assert image.shape[1] == 3
+    torch.testing.assert_close(image[:, 1], image[:, 0], rtol=0, atol=0)
+    torch.testing.assert_close(image[:, 2], image[:, 0], rtol=0, atol=0)
+    specs = get_bench_dataset_class("caffe")().resolve_band_specs("rgb")
+    assert [(b.name, b.sensor, b.wavelength_um) for b in specs] == [
+        ("red", "aerial", None),
+        ("green", "aerial", None),
+        ("blue", "aerial", None),
+    ]
+    single, *_ = get_datasets("caffe", num_workers=0, return_val=True, image_size=12, bands=["red"])
+    torch.testing.assert_close(single[0]["image"], train[0]["image"][:1], rtol=0, atol=0)

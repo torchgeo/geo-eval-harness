@@ -91,4 +91,10 @@ torchgeo wrappers
 
 .. autoclass:: Sen1Floods11S2
 
+.. autoclass:: BRIGHTPostSAR
+
+.. autoclass:: BRIGHTPostSARRGB
+
+.. autoclass:: OSCDPost
+
 .. autoclass:: UCMerced

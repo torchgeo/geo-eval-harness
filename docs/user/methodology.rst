@@ -327,6 +327,8 @@ Each fit call resets these attributes. Without validation, ``best_epoch`` and ``
 
 The solver keeps one independent CPU snapshot of the selected state: head parameters and buffers, trainable backbone parameters, and backbone buffers. Restoration copies values into the existing model tensors without replacing modules or hooks. Frozen backbone weights are not copied. The snapshot is for evaluation, not for resuming training.
 
+With a probe sweep (``segmentation.sweep_learning_rates``), :class:`~geo_eval_harness.segmentation_task.SweepSegmentationSolver` applies the same rule per head: each head keeps a snapshot of its own best validation epoch, and the head whose best epoch scores highest (ties: first in learning-rate-major grid order) is restored and alone evaluated on test. ``best_epoch`` and ``best_val_miou`` describe that head; ``head_val_history`` holds every head's validation mIoU per epoch; ``val_history`` holds the best head's score per epoch. The decay is a per-epoch cosine to zero (UniverSat ``LP_eval.py``) rather than to 1e-6.
+
 Segmentation knobs
 ------------------
 
@@ -381,6 +383,9 @@ Training knobs
    * - ``head_dropout``
      - ``0``
      - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
+   * - ``upsampler``
+     - ``none``
+     - ``anyup`` upsamples UPerNet's fused features to input resolution with frozen AnyUp before the classifier; ``head_dropout`` then applies after AnyUp.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
@@ -417,6 +422,16 @@ Training knobs
    * - ``full_finetune``
      - ``false``
      - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
+   * - ``feature_standardize``
+     - ``false``
+     - Z-score each feature channel with train-split statistics before the head (frozen only).
+   * - ``sweep_learning_rates``
+     - ``[]``
+     - ``patch_linear`` only: train one probe per learning rate x ``sweep_weight_decays`` cell
+       and keep the head with the best validation mIoU.
+   * - ``sweep_weight_decays``
+     - ``[0.0]``
+     - AdamW weight decays of the probe sweep.
 
 Feature caching
 ^^^^^^^^^^^^^^^

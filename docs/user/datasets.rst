@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, and Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -58,6 +58,12 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``sen1floods11-s1``, ``sen1floods11-s2``
      - ``data/sen1floods11/``
      - Public GCS bucket ``sen1floods11`` (v1.1) over HTTPS, checksum-verified per file
+   * - ``bright-post-sar``, ``bright-post-sar-rgb``
+     - ``data/bright-post-sar/``
+     - Hugging Face ``Kullervo/BRIGHT``, pinned commit, two SHA-256-verified ZIPs
+   * - ``oscd-post``
+     - ``data/oscd-post/``
+     - torchgeo's ``OSCD`` downloader
 
 Downloading
 -----------
@@ -82,6 +88,8 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download loveda                                   # torchgeo LoveDA
    $ geo-eval-harness download levir-cd-post                            # LEVIR-CD post image
    $ geo-eval-harness download sen1floods11-s1                          # Sen1Floods11 (S1 + S2)
+   $ geo-eval-harness download bright-post-sar                          # BRIGHT post-event SAR
+   $ geo-eval-harness download oscd-post                                # torchgeo OSCD (post image)
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -221,7 +229,7 @@ GeoBench V2 — segmentation
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
 ``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
-``caffe``            4      1     aerial grayscale                             :class:`~geo_eval_harness.datasets.CaFFe`
+``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
 ``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
@@ -235,22 +243,25 @@ CLI name             #cls   bands notes                                        C
 Other
 -----
 
-==================== ============================================================================
-CLI name             Class
-==================== ============================================================================
-``eurosat``          :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
-``eurosat-spatial``  :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
-``resisc45``         :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
-``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+======================= ============================================================================
+CLI name                Class
+======================= ============================================================================
+``eurosat``             :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
+``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
+``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
+``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 
-``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
-``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
-``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
-``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
-``sen1floods11-s1``  :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
-``sen1floods11-s2``  :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
-==================== ============================================================================
+``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
+``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
+``openearthmap-sar``    :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
+``loveda``              :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
+``levir-cd-post``       :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
+``sen1floods11-s1``     :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
+``sen1floods11-s2``     :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
+``bright-post-sar``     :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
+``bright-post-sar-rgb`` :class:`~geo_eval_harness.datasets.BRIGHTPostSARRGB`  (building damage segmentation, repeated SAR)
+``oscd-post``           :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
+======================= ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
 published 60/20/20 split.  It is the most-divergent benchmark in the GFM
@@ -274,7 +285,7 @@ than being silently omitted.
 
 The eight classes, in model output order, are bareland, grass/rangeland, pavement/developed space, road, tree, water, cropland/agricultural land, and building. Native labels ``1..8`` map to model classes ``0..7``; native ``0`` maps to ``255`` and is ignored in both training loss and mIoU. This deliberately differs from the official baseline, which trains a ninth background output but excludes it from foreground mIoU.
 
-Only the single ``sar`` band is installed and exposed. Training RGB is intentionally excluded because validation and test inputs are SAR-only. The default ``rgb`` selector resolves to ``sar``, following the grayscale dataset convention. The adapter emits raw float32 values in ``0..255`` units, without scaling, augmentation, or cropping. Dataset normalization uses statistics measured over all 4,333 native-resolution training SAR images; the runner owns resizing and the model owns normalization. The official baseline instead scales bytes to ``[0, 1]`` and uses random 512-pixel training crops.
+Only the single ``sar`` band is installed and exposed. Training RGB is intentionally excluded because validation and test inputs are SAR-only. The default ``rgb`` selector resolves to ``sar``, following the grayscale dataset convention. For models that accept only Sentinel-1 polarisations, ``--bands vv`` or ``--bands vv,vh`` opts in to feeding the same ``sar`` channel under those names, with the same statistics; the source polarisation is not declared, so this is an adapter for comparison, not a physical match. The adapter emits raw float32 values in ``0..255`` units, without scaling, augmentation, or cropping. Dataset normalization uses statistics measured over all 4,333 native-resolution training SAR images; the runner owns resizing and the model owns normalization. The official baseline instead scales bytes to ``[0, 1]`` and uses random 512-pixel training crops.
 
 .. code-block:: text
 
@@ -356,6 +367,86 @@ Either id downloads the shared data: the 1,293 TIFFs referenced by the three spl
 For OlmoEarth on ``sen1floods11-s1``, use ``olmoearth_nano`` (or another preset that leaves ``sar_log_scale`` unset), not ``olmoearth_nano_sar_db``: the values are already in dB, and that preset converts linear power to dB.
 
 Sources and attribution: `Sen1Floods11 <https://github.com/cloudtostreet/Sen1Floods11>`__, generated by Cloud to Street. Cite Bonafilia, D., Tellman, B., Anderson, T., Issenberg, E. (2020), *Sen1Floods11: a georeferenced dataset to train and test deep learning flood algorithms for Sentinel-1*, CVPR Workshops. The imagery contains modified Copernicus Sentinel data. Upstream specifies no license for the dataset; check the upstream terms before redistribution.
+
+``bright-post-sar`` is four-class building damage segmentation from very-high-resolution **post-event SAR only**, taken from BRIGHT (Chen et al., 2025), the dataset of IEEE GRSS DFC 2025 Track II. It covers 14 disasters (earthquakes, floods, hurricanes, wildfires, volcanoes, explosions, and a conflict) with Capella and Umbra X-band SAR at **0.3-0.6 m** GSD. The pre-event optical images are not used or installed.
+
+It uses the authors' ``standard_ML`` split, which the BRIGHT maintainers recommend now that the contest is over: **2,918 training, 450 validation, and 878 test** tiles, with every event present in every split (event-stratified, not event-held-out). The memberships are packaged with the harness, copied and sorted from ``bda_benchmark/dataset/splitname/standard_ML`` of the `BRIGHT repository <https://github.com/ChenHongruixuan/BRIGHT>`__ at commit ``59269142``. All three splits are labelled. The test split contains torchgeo's ``BRIGHTDFC2025`` ``val`` (contest holdout) split; torchgeo's ``test`` split (contest validation, whose labels are now public) is part of this validation split.
+
+Classes are 0 background, 1 intact, 2 damaged, and 3 destroyed, kept as native labels; no pixel is ignored. Training pixels are 86.0% background, 11.7% intact, 1.5% damaged, and 0.9% destroyed; validation and test are similar.
+
+Images are single-band ``uint8`` amplitude (display-scaled, not calibrated backscatter) at **1024 x 1024** pixels, exposed as one ``sar`` band in raw float32 ``0..255`` units; the default ``rgb`` selector resolves to ``sar``. The polarisation is not recorded in the files, so the band has no ``vv``/``hh`` alias and no ``unit``. Zero is the swath fill value (12.5% of training pixels). It is kept as input, and its labels are kept, because labelled buildings overlap it. Dataset normalization uses statistics over all 2,918 native-resolution training images, zeros included. The runner owns resizing; tiles are not cropped.
+
+``bright-post-sar-rgb`` serves the same SAR tile as three identical ``red``/``green``/``blue`` channels, using sensor ``aerial``, no wavelengths, and the SAR statistics for each channel (mean 56.8231, std 45.8553). Both the default ``rgb`` selector and ``all`` select all three; explicit band names select fewer copies. This pseudo-RGB representation lets models use their RGB input paths; it is not optical imagery. Tiles, masks, split memberships, geography, and the installation below are identical to ``bright-post-sar``. Download once with ``geo-eval-harness download bright-post-sar``, then select ``--dataset bright-post-sar-rgb`` for evaluation. The two dataset ids distinguish result rows and run hashes; the single-band dataset is unchanged.
+
+.. code-block:: text
+
+   data/bright-post-sar/
+     post-event.zip  target.zip
+     post-event/<event>_<id>_post_disaster.tif     (4,246 files)
+     target/<event>_<id>_building_damage.tif       (4,246 files)
+
+Missing files, invalid raster dimensions or dtypes, and labels outside ``0..3`` are errors. Custom partitions are unsupported.
+
+.. code-block:: console
+
+   $ geo-eval-harness download bright-post-sar
+   $ geo-eval-harness run --config docs/examples/bright-post-sar-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/bright-post-sar-run.yaml
+
+The :download:`example config </examples/bright-post-sar-run.yaml>` uses a randomly initialized ResNet-18 with a linear segmentation head as a smoke configuration that downloads no weights; it is not an accuracy baseline.
+
+The downloader fetches ``post-event.zip`` (3.29 GB) and ``target.zip`` (48 MB) from `Kullervo/BRIGHT <https://huggingface.co/datasets/Kullervo/BRIGHT>`__ at commit ``46f202d9``, verifies their SHA-256 digests, extracts the TIFFs, and keeps the ZIPs. The installation needs about **12 GB** because the extracted TIFFs are uncompressed. Rerunning the download reverifies the archives and repairs missing or truncated files without downloading again.
+
+Geography is read from the post-event GeoTIFF headers; all 4,246 tiles are georeferenced.
+
+Sources and attribution: the `BRIGHT paper <https://essd.copernicus.org/articles/17/6217/2025/>`__ (Chen et al., Earth System Science Data 17, 2025) and the `BRIGHT repository <https://github.com/ChenHongruixuan/BRIGHT>`__. The SAR images come from the Capella Open Data Gallery and the Umbra Open Data Program under CC BY 4.0. The labels carry the licence of each event's optical imagery, which is mostly Maxar Open Data under CC BY-NC 4.0. Check these terms before any non-research use.
+
+``oscd-post`` poses the Onera Satellite Change Detection dataset (OSCD; Caye Daudt et al., IGARSS 2018) as **single-image binary segmentation of the post-change image**. Each of the 24 cities has a Sentinel-2 **Level-1C** image pair and a pixel-level urban change map. Only the later image is used. There is no bi-temporal input, so a model must recognise new construction from appearance alone, and scores are not comparable with published change-detection results on OSCD.
+
+* **Splits (by city).** ``test`` is the 10 official test cities. ``val`` is three of the 14 official training cities, ``cupertino``, ``rennes``, and ``saclay_e``, drawn with ``sorted(random.Random(0).sample(sorted(official_train), 3))``. ``train`` is the remaining 11.
+* **Tiles.** Cities range from 241 to 1180 px a side, all at 10 m, so they are tiled rather than resized. Each city is cut row-major into 256 x 256 tiles (2.56 km), giving **119 / 31 / 69** train/val/test tiles. The last tile in each row and column is shifted inward to end at the image border, so it shows real imagery instead of padding. The part of it that overlaps the previous tile is masked ``255``, so every pixel is scored exactly once; this is about a third of all tile pixels. Only norcia, which is 241 px tall, is zero-padded, and its padded pixels are also ``255``.
+* **Labels.** These come from ``<city>-cm.tif``, where native ``1`` = no change and ``2`` = change. They map to classes ``0`` (no change) and ``1`` (change). The ``cm.png`` previews are not used because the aguasclaras PNG is anti-aliased. Change covers 2.4 % / 2.0 % / 5.2 % of the labelled train/val/test pixels.
+* **Bands.** All 13 bands come from the authors' ``imgs_2_rect`` stacks, which are resampled to 10 m: ``b01`` ... ``b12`` and ``b8a``. The cirrus band ``b10`` is included because the data is L1C; models that do not use cirrus drop it through band mapping. ``rgb`` is ``b04, b03, b02``.
+* **Values and normalization.** Values are raw L1C digital numbers (reflectance x 10\ :sup:`4`) as float32. A few edge pixels of the 20 m and 60 m bands are 0 from the resampling and are kept. Dataset normalization uses statistics over every pixel of the 11 training cities.
+* **L1C models.** ``BandSpec`` has no processing-level field, so select an L1C model variant explicitly, for example ``terrafm/base_s2_l1c``.
+
+The dataset is tiny and the change class is rare, so expect noisy scores and report several seeds.
+
+The data is torchgeo's ``OSCD`` layout under ``data/oscd-post/``. Only ``<city>/imgs_2_rect/*.tif`` and the ``<city>-cm.tif`` change maps are read. Missing files and tile counts that differ from the split sizes are errors. Custom partitions are unsupported.
+
+.. code-block:: console
+
+   $ geo-eval-harness download oscd-post
+   $ geo-eval-harness run --config docs/examples/oscd-post-run.yaml --dry-run
+   $ geo-eval-harness run --config docs/examples/oscd-post-run.yaml
+
+The :download:`example config </examples/oscd-post-run.yaml>` uses a randomly initialized ResNet-18 with a linear head as a no-weight-download smoke test. The download is about 490 MB. torchgeo verifies the SHA-256 digests and extracts the archives, which leaves 1.2 GB on disk.
+
+Sources and attribution: the `OSCD project page <https://rcdaudt.github.io/oscd/>`__ and the `paper <https://doi.org/10.1109/IGARSS.2018.8518015>`__. The imagery contains modified Copernicus Sentinel data (2015-2018). The change labels are released under **CC BY-NC-SA** (non-commercial); contact the authors for commercial use.
+
+HOTOSM buildings — segmentation
+-------------------------------
+
+``hotosm_buildings`` is building footprint segmentation on 256 x 256 OpenAerialMap RGB tiles (about 0.3 m) from 93 HOT Tasking Manager projects, with OpenStreetMap labels. Validation (**7,237** tiles) and test (**7,236**) are the official splits.
+
+.. important::
+
+   **The benchmark trains on a fixed 5,000-tile subset of the official train split.** This
+   ``default`` partition is the version reported on the leaderboard. HOTOSM results on the
+   full train split are not comparable with leaderboard rows.
+
+======================== ============ ===============================================================
+``--partition``          train tiles  use
+======================== ============ ===============================================================
+``default``              5,000        benchmark and leaderboard version
+``full``                 57,890       the whole official train split (the behaviour before the 5k default)
+======================== ============ ===============================================================
+
+The subset is packaged as ``hotosm_buildings_train_5k.csv.gz``, which lists each tile's ``project_id``, ``tile_id``, and row in the converted ``train.parquet``. Loading checks that every listed row holds the listed tile, so a train file converted differently fails instead of silently training on other tiles. The tiles were drawn per project in proportion to its size, after excluding train tiles that also appear in val or test, so the subset keeps the project and country mix of the full split (76% Myanmar).
+
+Why 5k: in a training-budget study (13 models, frozen and LoRA, UPerNet, 10 epochs, budgets 1k to all 57,880 eligible tiles, 3 subsets x 3 training seeds), the model ranking at 5k tiles matched full-data training with Kendall tau-b 0.97 (frozen) and 0.88 (LoRA). Rankings from two training seeds on the full data agree only at 0.87 to 0.94, so 5k is within seed noise, at about 1/12 of the training compute. The packaged subset is the study's subset seed 1. Normalization statistics remain those of the full train split.
+
+Imagery CC-BY 4.0 (OpenAerialMap); labels ODbL 1.0 (OpenStreetMap).
 
 Open Cities AI Challenge — segmentation
 ---------------------------------------
@@ -459,12 +550,14 @@ Model compatibility
   Sentinel-2 RGB wavelengths — see
   `#15 <https://github.com/torchgeo/geo-eval-harness/issues/15>`__.
 
-Data partitions (V1 only)
--------------------------
+Data partitions
+---------------
 
-V1 datasets honour the ``--partition`` argument (which selects one
-of the partition JSON files distributed with each dataset).  V2 datasets
-ignore it.
+V1 datasets and ``hotosm_buildings`` honour the ``--partition`` argument; other
+datasets ignore it or reject non-default values. For HOTOSM, ``default`` is the
+5k benchmark training subset and ``full`` is the whole train split (see
+`HOTOSM buildings — segmentation`_). For V1 datasets, ``--partition`` selects one
+of the partition JSON files distributed with each dataset.
 
 .. code-block:: console
 

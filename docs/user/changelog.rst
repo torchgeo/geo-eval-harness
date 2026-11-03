@@ -9,13 +9,19 @@ Changed
 
 * Package, CLI, and repository name: ``geo-eval-harness``. Python imports and fully qualified model targets use ``geo_eval_harness``. Stored results and resume hashes remain compatible; update custom imports and YAML targets as described in :doc:`installation`.
 * TerraTorch models use a separate source installation because the published backend's TorchGeo requirement is incompatible. See :doc:`installation` for the pinned command.
+* ``hotosm_buildings`` trains on a fixed 5,000-tile subset of the official train split by default. This is the benchmark and leaderboard version. ``--partition full`` restores the whole 57,890-tile train split; val and test are unchanged. HOTOSM results produced before this change used the full split and correspond to ``--partition full``, although their result rows say ``partition=default``. Write new HOTOSM runs to a fresh output file so resume does not treat those rows as done. See :doc:`datasets`.
 
 Added
 ^^^^^
 
 * Classification dataset classes declare ``class_names`` in label-index order, so per-class results can be labelled without loading data.
+* ``bright-post-sar-rgb`` repeats BRIGHT's post-event SAR channel into identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths) for RGB model inputs. It shares ``bright-post-sar`` tiles, labels, splits, normalization statistics, and installation; the single-band dataset is unchanged.
+* Linear-probe protocol (UniverSat ``LP_eval.py``) for any frozen backbone, off by default with unchanged hashes. ``segmentation.sweep_learning_rates`` x ``sweep_weight_decays`` trains one ``patch_linear`` head per cell in a single vectorised pass, each with its own AdamW group and a cosine decay to zero, and evaluates only the head with the best validation epoch on test (the selected learning rate and weight decay are reported; method suffix ``-sweep<n>``). ``segmentation.feature_standardize`` z-scores each hooked feature channel with exact training-split statistics, from the feature cache or one extra backbone pass (method suffix ``-std``).
 * ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
+* CaFFe serves its grayscale SAR channel as identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths), so every model uses its standard RGB setup; earlier CaFFe results used one channel and are not comparable.
+* OpenEarthMap-SAR accepts opt-in ``vv``/``vh`` band aliases that feed its single ``sar`` channel (same statistics), so Sentinel-1-only models can run it; the default selection stays ``sar``.
 * OpenEarthMap-SAR (``openearthmap-sar``): SAR-only eight-class segmentation on the official 4,333 / 210 / 490 splits, verified multi-record downloads, training-split normalization statistics, and GeoTIFF-derived geography. Native zero is ignored in loss and metrics.
+* ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime (method ``seg-<head>-full``).
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
 * ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks (method ``seg-<head>-lora-last<k>``); unset leaves hashes unchanged.

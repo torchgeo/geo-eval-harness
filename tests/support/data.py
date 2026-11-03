@@ -38,6 +38,8 @@ def require_dataset_data(name: str) -> None:
         "open_cities",
         "loveda",
         "levir-cd-post",
+        "bright-post-sar",
+        "oscd-post",
     ):
         paths = [Path("data") / name]
     elif name.startswith("sen1floods11"):
@@ -258,6 +260,76 @@ def write_levir_cd_post_files(root: Path) -> Path:
             mask = rng.choice(np.array([0, 0, 156, 254, 255], dtype=np.uint8), (size, size))
             Image.fromarray(mask).save(directory / "label" / name)
     return directory
+
+
+def write_bright_post_sar_files(root: Path) -> Path:
+    """Write tiny SAR tiles and four-class masks for the active BRIGHT splits."""
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    directory = root / "data" / "bright-post-sar"
+    y, x = np.indices((BRIGHTPostSAR.raster_size,) * 2)
+    for split in BRIGHTPostSAR.split_sizes:
+        for index, tile in enumerate(BRIGHTPostSAR.split_ids(split)):
+            mask = ((x // 2 + y // 4 + index) % 4).astype(np.uint8)
+            for path, pixels in (
+                (directory / "post-event" / f"{tile}_post_disaster.tif", mask * 60 + index),
+                (directory / "target" / f"{tile}_building_damage.tif", mask),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels[None].astype(np.uint8)))
+    return directory
+
+
+def write_bright_post_sar_archives(root: Path) -> dict[str, str]:
+    """Zip the toy tiles like the upstream release and return their SHA-256 manifest."""
+    import hashlib
+
+    directory = write_bright_post_sar_files(root / "files")
+    checksums = {}
+    for kind in ("post-event", "target"):
+        path = root / f"{kind}.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            for member in (directory / kind).iterdir():
+                archive.write(member, f"{kind}/{member.name}")
+        checksums[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return checksums
+
+
+#: Fixture cities; with 8-pixel tiles they give 7 / 4 / 4 train/val/test tiles.
+OSCD_SHAPES = {"alpha": (12, 20), "bravo": (6, 8), "charlie": (10, 9), "delta": (16, 16)}
+
+
+def write_oscd_post_files(root: Path) -> Path:
+    """Write the ``small_oscd_post`` cities in torchgeo's OSCD layout."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    directory = root / "data" / "oscd-post"
+    for index, (city, shape) in enumerate(OSCD_SHAPES.items()):
+        y, x = np.indices(shape)
+        mask = ((x // 3 + y // 2 + index) % 2 + 1).astype(np.uint8)
+        label = OSCDPost.label_path(directory, city)
+        label.parent.mkdir(parents=True)
+        label.write_bytes(geotiff_bytes(mask[None]))
+        # torchgeo's OSCD also indexes the unused pre image and dates.txt.
+        post = OSCDPost.image_dir(directory, city)
+        for images in (post, post.parent / "imgs_1_rect"):
+            images.mkdir(parents=True)
+            for band_index, band in enumerate(OSCDPost.bands):
+                pixels = 1000 + 100 * band_index + 50 * mask.astype(int) + index + x
+                (images / f"{band.source_name}.tif").write_bytes(
+                    geotiff_bytes(pixels.astype(np.uint16)[None])
+                )
+        (post.parent / "dates.txt").write_text("date_1: 20160101\ndate_2: 20180101\n")
+    return directory
+
+
+def write_oscd_post_archives(root: Path) -> list[Path]:
+    """Zip the fixture into torchgeo's three OSCD release archives."""
+    directory = write_oscd_post_files(root)
+    return [
+        Path(shutil.make_archive(str(root / folder.name), "zip", directory, folder.name))
+        for folder in sorted(directory.iterdir())
+    ]
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:

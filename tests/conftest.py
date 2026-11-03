@@ -91,6 +91,31 @@ def small_sen1floods11(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(Sen1Floods11Base, "split_sizes", {"train": 3, "val": 2, "test": 2})
 
 
+@pytest.fixture
+def small_bright_post_sar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install tiny BRIGHT memberships and raster size for offline workflows."""
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    ids = {
+        "train": ["a_1", "a_2", "b_1"],
+        "val": ["a_3", "b_2"],
+        "test": ["b_3", "c_1"],
+    }
+    monkeypatch.setattr(BRIGHTPostSAR, "split_ids", classmethod(lambda cls, split: ids[split]))
+    monkeypatch.setattr(BRIGHTPostSAR, "raster_size", 16)
+
+
+@pytest.fixture
+def small_oscd_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the four tiny ``OSCD_SHAPES`` cities and 8-pixel tiles."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    cities = {"train": ("alpha", "bravo"), "val": ("charlie",), "test": ("delta",)}
+    monkeypatch.setattr(OSCDPost, "split_cities", cities)
+    monkeypatch.setattr(OSCDPost, "split_sizes", {"train": 7, "val": 4, "test": 4})
+    monkeypatch.setattr(OSCDPost, "tile_size", 8)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def test_environment() -> Iterator[None]:
     """Keep child processes on this checkout and avoid CPU oversubscription."""
