@@ -55,6 +55,12 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
     "openearthmap-sar": ("openearthmap_sar", "OpenEarthMapSAR", "segmentation"),
     "open_cities": ("open_cities", "OpenCities", "segmentation"),
+    "loveda": ("loveda", "LoveDA", "segmentation"),
+    "levir-cd-post": ("levir_cd_post", "LEVIRCDPost", "segmentation"),
+    "sen1floods11-s1": ("sen1floods11", "Sen1Floods11S1", "segmentation"),
+    "sen1floods11-s2": ("sen1floods11", "Sen1Floods11S2", "segmentation"),
+    "bright-post-sar": ("bright_post_sar", "BRIGHTPostSAR", "segmentation"),
+    "oscd-post": ("oscd_post", "OSCDPost", "segmentation"),
 }
 
 
@@ -110,6 +116,12 @@ def download_command(name: str) -> str:
         "hotosm_buildings",
         "openearthmap-sar",
         "open_cities",
+        "loveda",
+        "levir-cd-post",
+        "sen1floods11-s1",
+        "sen1floods11-s2",
+        "bright-post-sar",
+        "oscd-post",
     }:
         return f"geo-eval-harness download {name.removesuffix('-spatial')}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"

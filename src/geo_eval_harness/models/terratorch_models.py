@@ -71,8 +71,15 @@ class _TerraTorchBench(BenchModel):
         self.pool = pool
         self.backbone = _build_backbone(self.backbone_name, **(backbone_kwargs or {}))
         self.backbone.eval()
+        # Full fine-tuning undoes only this blanket freeze, not the backbone's own frozen weights.
+        self._trainable_before_freeze = [p for p in self.backbone.parameters() if p.requires_grad]
         for p in self.backbone.parameters():
             p.requires_grad_(False)
+
+    def enable_full_finetune(self) -> None:
+        """Make the backbone trainable again; weights the backbone itself freezes stay frozen."""
+        for p in self._trainable_before_freeze:
+            p.requires_grad_(True)
 
     def _prepare_input(self, images: torch.Tensor) -> torch.Tensor:
         return images

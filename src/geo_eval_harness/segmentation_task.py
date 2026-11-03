@@ -220,6 +220,7 @@ class SegmentationSolver:
                 the first epochs of the full run. ``None`` trains all epochs.
         """
         self.model = model.to(device)
+        self.backbone_eval_mode = False
         self.num_classes = num_classes
         self.device = device
         self.lr_scheduler_type = lr_scheduler
@@ -336,9 +337,13 @@ class SegmentationSolver:
         return True
 
     def _set_train_mode(self) -> None:
-        """Train the head; a frozen or LoRA-adapted backbone stays in eval mode except adapters."""
+        """Train the head; a frozen or LoRA-adapted backbone stays in eval mode except adapters.
+
+        With ``backbone_eval_mode`` (full fine-tuning) every backbone weight trains, but dropout,
+        stochastic depth, and normalisation statistics behave as at inference, like LoRA.
+        """
         self.model.train()
-        if self.model.freeze_backbone:
+        if self.model.freeze_backbone or self.backbone_eval_mode:
             self.model.backbone.eval()
         elif has_lora_adapters(self.model.backbone):
             set_lora_train_mode(self.model.backbone)
@@ -774,7 +779,8 @@ def build_seg_probe_and_solver(
 ) -> tuple[SegmentationProbe, SegmentationSolver]:
     """Build the probe and solver from validated segmentation settings.
 
-    The backbone is frozen unless ``config.lora_rank`` adds LoRA adapters, which then train at
+    The backbone is frozen unless ``config.lora_rank`` adds LoRA adapters or
+    ``config.full_finetune`` trains every backbone weight, both at
     ``config.backbone_learning_rate``.
     """
     layer_names = config.layers
@@ -785,7 +791,23 @@ def build_seg_probe_and_solver(
         )
     if config.lora_rank is not None:
         assert config.lora_target_modules is not None
-        apply_lora(model, config.lora_target_modules, config.lora_rank, config.lora_alpha)
+        apply_lora(
+            model,
+            config.lora_target_modules,
+            config.lora_rank,
+            config.lora_alpha,
+            last_blocks=config.lora_last_blocks,
+        )
+    if config.full_finetune:
+        # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
+        enable = getattr(model, "enable_full_finetune", None)
+        if callable(enable):
+            enable()
+        if not any(p.requires_grad for p in model.parameters()):
+            raise ValueError(
+                f"full_finetune: {type(model).__name__} has no trainable backbone parameter; "
+                "its wrapper freezes the backbone and does not define enable_full_finetune()."
+            )
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,
@@ -793,7 +815,9 @@ def build_seg_probe_and_solver(
         head_type=config.head,
         neck=config.neck,
         neck_norm=config.neck_norm,
-        freeze_backbone=config.lora_rank is None,
+        upsampler=config.upsampler,
+        head_dropout=config.head_dropout,
+        freeze_backbone=config.lora_rank is None and not config.full_finetune,
         temporal_pool=config.temporal_pool,
     )
     criterion = nn.CrossEntropyLoss(ignore_index=config.ignore_index)
@@ -806,6 +830,8 @@ def build_seg_probe_and_solver(
         lr_scheduler=config.scheduler,
         ignore_index=config.ignore_index,
         backbone_lr=config.backbone_learning_rate,
+        weight_decay=config.weight_decay,
         early_stopping_patience=config.early_stopping_patience,
     )
+    solver.backbone_eval_mode = config.full_finetune
     return probe, solver

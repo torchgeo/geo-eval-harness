@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from torchmetrics.functional.classification import (
     multiclass_confusion_matrix,
@@ -1427,6 +1428,149 @@ def test_build_seg_probe_and_solver_attaches_the_configured_neck() -> None:
     probe, _ = build_seg_probe_and_solver(FourBlockViT(), NUM_CLASSES, config, torch.device("cpu"))
 
     assert isinstance(probe.head, NeckedHead)
+
+
+def test_head_dropout_sits_before_the_upernet_classifier_and_trains_only() -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        head_dropout=0.5,
+    )
+    classifier = probe.head.head.decoder.classifier
+    assert isinstance(classifier, nn.Sequential)
+    assert isinstance(classifier[0], nn.Dropout2d)
+    assert classifier[0].p == 0.5
+    x = torch.randn(2, 3, 64, 64)
+    probe.eval()
+    torch.testing.assert_close(probe(x), probe(x))
+    probe.train()
+    assert not torch.equal(probe(x), probe(x))
+    with pytest.raises(ValueError, match="requires the upernet head"):
+        SegmentationProbe(
+            FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", head_dropout=0.1
+        )
+
+
+def test_build_seg_probe_and_solver_applies_weight_decay_and_dropout() -> None:
+    config = SegmentationConfig(
+        head="upernet", neck="vit", layers=_VIT_LAYERS, weight_decay=0.05, head_dropout=0.2
+    )
+    probe, solver = build_seg_probe_and_solver(
+        FourBlockViT(), NUM_CLASSES, config, torch.device("cpu")
+    )
+    assert {g["weight_decay"] for g in solver.optimizer.param_groups} == {0.05}
+    assert probe.head.head.decoder.classifier[0].p == 0.2
+    _, default = build_seg_probe_and_solver(
+        FourBlockViT(),
+        NUM_CLASSES,
+        SegmentationConfig(head="upernet", layers=_VIT_LAYERS, neck="vit"),
+        torch.device("cpu"),
+    )
+    assert {g["weight_decay"] for g in default.optimizer.param_groups} == {0.0}
+
+
+class _StandInAnyUp(nn.Module):
+    """Frozen stand-in with AnyUp's call signature: bilinear upsampling plus a frozen weight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(()), requires_grad=False)
+        self.calls: list[tuple] = []
+
+    def forward(self, guidance, features, output_size):
+        self.calls.append((tuple(guidance.shape), tuple(features.shape), output_size))
+        return F.interpolate(features, size=output_size, mode="bilinear") * self.weight
+
+
+def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    stand_in = _StandInAnyUp()
+    monkeypatch.setattr(anyup, "load_anyup", lambda: stand_in)
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        upsampler="anyup",
+    )
+    decoder = probe.head.head.decoder
+    assert isinstance(decoder.classifier, anyup.AnyUpClassifier)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    assert decoder.classifier.guidance is None
+    guidance, features, size = stand_in.calls[-1]
+    assert guidance == (2, 3, 64, 64)
+    assert size == (64, 64)
+    assert features[-2:] != (64, 64)
+    probe.train()
+    assert not stand_in.training
+    assert decoder.classifier.classifier.training
+    with pytest.raises(ValueError, match="requires the upernet head"):
+        SegmentationProbe(
+            FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", upsampler="anyup"
+        )
+
+
+def test_anyup_guidance_bands_follow_wavelengths() -> None:
+    from geo_eval_harness.datasets.base import BandSpec
+    from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
+
+    def band(name: str, wavelength: float | None, sensor: str = "s2") -> BandSpec:
+        return BandSpec(name, sensor, name, mean=0, std=1, min=0, max=1, wavelength_um=wavelength)
+
+    s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
+    assert rgb_guidance_indices(s2) == (2, 1, 0)
+    assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
+    assert guide.shape == (2, 3, 8, 8)
+    assert guide.abs().max() < 3
+
+
+def test_anyup_chunks_large_attention_with_checkpointing(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    stand_in = _StandInAnyUp()
+    classifier = nn.Conv2d(4, 2, 1)
+    module = anyup.AnyUpClassifier(classifier, stand_in)
+    module.guidance = torch.randn(5, 3, 16, 16)
+    features = torch.randn(5, 4, 4, 4, requires_grad=True)
+    whole = module(features)
+    assert len(stand_in.calls) == 1
+    monkeypatch.setattr(anyup, "ATTENTION_BUDGET", 4 * 16 * 16 * 4 * 4)
+    monkeypatch.setattr(anyup, "CHUNK_BUDGET", 2 * 16 * 16 * 4 * 4)
+    stand_in.calls.clear()
+    chunked = module(features)
+    chunked.sum().backward()
+    assert [c[1][0] for c in stand_in.calls[:3]] == [2, 2, 1]
+    torch.testing.assert_close(chunked, whole)
+    assert features.grad is not None
+
+
+def test_anyup_wraps_the_head_dropout_and_classifier(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    monkeypatch.setattr(anyup, "load_anyup", _StandInAnyUp)
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        head_dropout=0.5,
+        upsampler="anyup",
+    )
+    wrapper = probe.head.head.decoder.classifier
+    assert isinstance(wrapper, anyup.AnyUpClassifier)
+    assert isinstance(wrapper.classifier, nn.Sequential)
+    assert isinstance(wrapper.classifier[0], nn.Dropout2d)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
 
 
 def _stock_and_separable_upernet(channels: int, num_classes: int):

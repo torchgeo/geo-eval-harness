@@ -48,9 +48,14 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "lora_rank",
                 "lora_target_modules",
                 "lora_alpha",
+                "lora_last_blocks",
                 "backbone_learning_rate",
                 "neck",
                 "neck_norm",
+                "upsampler",
+                "weight_decay",
+                "head_dropout",
+                "full_finetune",
                 "early_stopping_patience",
                 "class_weights",
             },
@@ -125,6 +130,21 @@ def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
     assert _hash(vit(**lora)) != _hash(vit())
     assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
     assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+    full = {"full_finetune": True, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(full_finetune=False)) == _hash(vit())
+    assert _hash(vit(**full)) not in {_hash(vit()), _hash(vit(**lora))}
+    assert _hash(vit(**full)) != _hash(vit(**(full | {"backbone_learning_rate": 3e-5})))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora, lora_last_blocks=3))
+
+
+def test_regularisation_changes_the_hash_only_when_set() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _hash(upernet())
+    assert _hash(upernet(weight_decay=0.05)) != _hash(upernet())
+    assert _hash(upernet(head_dropout=0.1)) != _hash(upernet())
 
 
 def test_neck_changes_the_hash_only_when_enabled() -> None:
@@ -144,6 +164,14 @@ def test_unet_head_has_its_own_hash() -> None:
 
     assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
     assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
+def test_upsampler_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
+
+    assert _hash(upernet(upsampler="none")) == _hash(upernet())
+    assert _hash(upernet(upsampler="anyup")) != _hash(upernet())
 
 
 def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:

@@ -13,6 +13,7 @@ import torch
 from PIL import Image
 
 from geo_eval_harness import download, hub
+from geo_eval_harness.datasets import hotosm_buildings
 from geo_eval_harness.datasets.hotosm_buildings import HOTOSMBuildings, convert_hotosm_split
 
 RGB = (11, 22, 33)
@@ -79,7 +80,7 @@ def test_conversion_keeps_metadata_and_marks_nodata(converted: Path) -> None:
     assert table["lon"].to_pylist() == [11.0] * 3
     assert table["lat"].to_pylist() == [-4.0] * 3
 
-    dataset = HOTOSMBuildings().get_dataset("train")
+    dataset = HOTOSMBuildings().get_dataset("train", partition="full")
     assert len(dataset) == 3
     for index, has_nodata in enumerate((False, True, False)):
         sample = dataset[index]
@@ -112,7 +113,9 @@ def test_band_selection_precedes_transform(
         seen.append(sample["image"].clone())
         return sample
 
-    sample = HOTOSMBuildings().get_dataset("train", bands=bands, transform=transform)[0]
+    sample = HOTOSMBuildings().get_dataset(
+        "train", partition="full", bands=bands, transform=transform
+    )[0]
     assert seen[0].shape == (len(expected), 8, 8)
     torch.testing.assert_close(sample["image"][:, 4, 4], torch.tensor(expected))
 
@@ -124,7 +127,7 @@ def test_missing_split_points_to_download(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_download_converts_pinned_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(HOTOSMBuildings, "split_sizes", {"train": 2, "val": 1, "test": 1})
+    monkeypatch.setattr(download, "HOTOSM_FILE_ROWS", {"train": 2, "val": 1, "test": 1})
     monkeypatch.setattr(download, "load_checksums", lambda manifest: {})
 
     def fake_snapshot(*, local_dir: Path, **_: object) -> None:
@@ -181,7 +184,7 @@ def test_download_rejects_row_count_mismatch(
 def test_spawn_serialization_requires_zero_workers(converted: Path) -> None:
     del converted
     pickle.dumps(HOTOSMBuildings())
-    dataset = HOTOSMBuildings().get_dataset("train")
+    dataset = HOTOSMBuildings().get_dataset("train", partition="full")
     assert isinstance(dataset, HOTOSMBuildings)
     with pytest.raises(ValueError, match="--workers 0"):
         pickle.dumps(dataset)
@@ -189,3 +192,49 @@ def test_spawn_serialization_requires_zero_workers(converted: Path) -> None:
     batch = next(iter(torch.utils.data.DataLoader(dataset, batch_size=3, num_workers=0)))
     assert batch["image"].shape == (3, 3, 8, 8)
     torch.testing.assert_close(batch["mask"][1, :2], torch.full((2, 8), 255))
+
+
+def _subset(*records: tuple[int, int, str]) -> list[dict[str, str]]:
+    return [{"row": str(r), "project_id": str(p), "tile_id": t} for r, p, t in records]
+
+
+def test_default_partition_is_the_benchmark_subset(
+    converted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del converted
+    monkeypatch.setattr(hotosm_buildings, "_packaged_subset", lambda: _subset((1, 7, "b")))
+    train = HOTOSMBuildings().get_dataset("train")
+    assert len(train) == 1
+    torch.testing.assert_close(train[0]["mask"][:2], torch.full((2, 8), 255))
+    assert len(HOTOSMBuildings().get_dataset("train", partition="full")) == 3
+
+
+def test_default_partition_rejects_other_tiles(
+    converted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    del converted
+    monkeypatch.setattr(hotosm_buildings, "_packaged_subset", lambda: _subset((1, 7, "c")))
+    with pytest.raises(ValueError, match="holds 7:b at row 1, expected 7:c"):
+        HOTOSMBuildings().get_dataset("train")
+    monkeypatch.setattr(hotosm_buildings, "_packaged_subset", lambda: _subset((5, 7, "a")))
+    with pytest.raises(ValueError, match="inside"):
+        HOTOSMBuildings().get_dataset("train")
+
+
+def test_partition_leaves_val_and_test_whole(
+    converted: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (converted / "train.parquet").rename(converted / "val.parquet")
+    monkeypatch.setattr(hotosm_buildings, "_packaged_subset", lambda: _subset((0, 7, "a")))
+    assert len(HOTOSMBuildings().get_dataset("val")) == 3
+    with pytest.raises(ValueError, match="Unknown HOTOSM partition"):
+        HOTOSMBuildings().get_dataset("val", partition="0.01x_train")
+
+
+def test_packaged_subset_has_5000_distinct_tiles() -> None:
+    subset = hotosm_buildings._packaged_subset()
+    assert len(subset) == HOTOSMBuildings.split_sizes["train"] == 5000
+    assert len({(r["project_id"], r["tile_id"]) for r in subset}) == 5000
+    rows = [int(r["row"]) for r in subset]
+    assert rows == sorted(set(rows))
+    assert rows[-1] < hotosm_buildings.FILE_ROWS["train"]
