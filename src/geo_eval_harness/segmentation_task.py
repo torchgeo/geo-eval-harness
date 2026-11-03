@@ -324,13 +324,14 @@ class SegmentationSolver:
             if self._tracks_cuda_memory()
             else None
         )
+        head_lr, backbone_lr = self._epoch_lrs(tracker)
         record = EpochRecord(
             epoch=tracker.epoch,
             train_loss=train_loss,
             val_loss=None if val_metrics is None else val_metrics.get("loss"),
             val_miou=None if val_metrics is None else val_metrics["mIoU"],
-            head_lr=tracker.lrs[0],
-            backbone_lr=tracker.lrs[1] if len(tracker.lrs) > 1 else None,
+            head_lr=head_lr,
+            backbone_lr=backbone_lr,
             train_steps=tracker.steps,
             skipped_batches=tracker.skipped,
             epoch_seconds=time.perf_counter() - tracker.started,
@@ -340,6 +341,10 @@ class SegmentationSolver:
         self.epoch_history.append(record)
         if on_epoch is not None:
             on_epoch(record)
+
+    def _epoch_lrs(self, tracker: _EpochTracker) -> tuple[float, float | None]:
+        """Return the epoch's head and backbone learning rates (parameter groups 0 and 1)."""
+        return tracker.lrs[0], tracker.lrs[1] if len(tracker.lrs) > 1 else None
 
     def _select_epoch(self, epoch: int, miou: float, *, verbose: bool) -> None:
         """Snapshot mutable evaluation state on strict validation improvement."""
@@ -811,12 +816,18 @@ class SweepSegmentationSolver(SegmentationSolver):
         self._last_head_mious = []
         self._head_best = [None] * self.sweep_head.n_heads
 
+    def _leading_head(self) -> int:
+        return max(range(len(self._head_best)), key=self._head_score, default=0)
+
     def _tracked_logits(self, logits: torch.Tensor) -> torch.Tensor:
         """Report training mIoU of the head that currently leads on validation."""
         if logits.ndim != 5:
             return logits
-        best = max(range(len(self._head_best)), key=self._head_score, default=0)
-        return logits[best]
+        return logits[self._leading_head()]
+
+    def _epoch_lrs(self, tracker: _EpochTracker) -> tuple[float, float | None]:
+        """Report the learning rate of the head leading on validation; the backbone is frozen."""
+        return tracker.lrs[self._leading_head()], None
 
     def _head_score(self, index: int) -> float:
         best = self._head_best[index]

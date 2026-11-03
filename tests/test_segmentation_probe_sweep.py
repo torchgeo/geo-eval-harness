@@ -1,5 +1,7 @@
 """Linear-probe protocol: vectorised lr x wd sweep heads and train-fit feature standardization."""
 
+import math
+
 import pytest
 import torch
 import torch.nn as nn
@@ -156,6 +158,13 @@ def test_sweep_selects_best_head_at_its_best_epoch_and_evaluates_only_it() -> No
     assert probe.sweep_head.selected == index
     metrics = solver.evaluate_cached(cache, batch_size=3)
     assert metrics["mIoU"] == pytest.approx(best, abs=1e-6)
+
+    for epoch, record in enumerate(solver.epoch_history):
+        seen = history[:epoch].max(dim=0).values.tolist() if epoch else [0.0] * 6
+        leader = max(range(6), key=lambda i: seen[i]) if epoch else 0
+        decay = 0.5 * (1.0 + math.cos(math.pi * epoch / 4))
+        assert record.head_lr == pytest.approx(solver.grid[leader][0] * decay)
+        assert record.backbone_lr is None
 
 
 def test_sweep_trains_from_images_without_a_cache() -> None:
