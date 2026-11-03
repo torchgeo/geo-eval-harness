@@ -199,7 +199,7 @@ def load_spec(path: Path) -> LeaderboardSpec:
     raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     try:
         return LeaderboardSpec.model_validate(raw)
-    except ValidationError as error:
+    except ValidationError as error:  # allow-except: re-raised as ValueError naming the spec file
         raise ValueError(f"Invalid leaderboard spec {path}:\n{error}") from error
 
 
