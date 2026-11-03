@@ -283,6 +283,8 @@ Plain ViTs give every hooked block on one patch grid, so a pyramid head would co
 
 ``neck: vit_fine`` (method ``seg-<head>-vitfineneck``) is for backbones that also produce a finer output map than their trunk, such as UniverSat's block-14 output tokens. The first three layers are trunk blocks on one grid and fill the 1/2, 1, and 2 levels as above; the last layer replaces the two transposed convs as the finest level, bilinearly resized to 4× the trunk grid unless it is already there (UniverSat's ``output_scale: 4``).
 
+With ``neck: vit`` and a single layer the neck builds all four levels from that one map, the ViTDet simple feature pyramid (e.g. ``layers: [model.model.blocks.14]`` for UniverSat's output tokens alone).
+
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
 
@@ -375,7 +377,7 @@ Training knobs
      - Backbone layer names to hook.  For FPN / DPT, deepest layer first.
    * - ``neck``
      - ``none``
-     - ``vit`` adds the ViT neck before an ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers); ``vit_fine`` takes the finest level from a fourth, finer layer.
+     - ``vit`` adds the ViT neck before an ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.

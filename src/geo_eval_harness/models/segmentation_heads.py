@@ -736,8 +736,12 @@ class ViTNeck(nn.Module):
     grid). It replaces the two transposed convs: after its input norm it is bilinearly resized to
     4x the grid of the other three inputs, unless already there.
 
+    A single input (``channels_list`` of length 1) builds all four levels from that one map, the
+    ViTDet simple feature pyramid (e.g. from UniverSat's block-14 output alone).
+
     Args:
-        channels_list: Channel count for each of the four layers (coarse-to-fine, all equal).
+        channels_list: Channel count for each of the four layers (coarse-to-fine, all equal), or
+            one entry for a single-map pyramid.
         input_norm: ``"layernorm"`` (default) or ``"none"``.
         native_finest: Take the finest level from the last input instead of upsampling a trunk
             block.
@@ -754,9 +758,14 @@ class ViTNeck(nn.Module):
         from transformers import BeitConfig
         from transformers.models.beit.modeling_beit import BeitFPNNeck
 
+        self.single_input = len(channels_list) == 1
+        if self.single_input and native_finest:
+            raise ValueError("native_finest needs 4 inputs; a single-map pyramid has none finer.")
+        if self.single_input:
+            channels_list = list(channels_list) * 4
         if len(channels_list) != 4 or len(set(channels_list)) != 1:
             raise ValueError(
-                f"ViTNeck needs 4 layers with one channel count, got {list(channels_list)}."
+                f"ViTNeck needs 1 or 4 layers with one channel count, got {list(channels_list)}."
             )
         if input_norm not in ("layernorm", "none"):
             raise ValueError(f"input_norm must be 'layernorm' or 'none', got {input_norm!r}.")
@@ -773,6 +782,8 @@ class ViTNeck(nn.Module):
 
     def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
         """Normalise each level (if enabled), then rescale coarse-to-fine maps by 1/2, 1, 2, 4."""
+        if self.single_input:
+            features = list(features) * 4
         normed = [norm(f) for norm, f in zip(self.input_norms, features, strict=True)]
         if self.native_finest:
             grid = normed[0].shape[-2:]

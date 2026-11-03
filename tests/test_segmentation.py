@@ -1418,6 +1418,38 @@ def test_vit_fine_neck_takes_the_finest_level_from_the_last_input() -> None:
     assert neck([*trunk, torch.randn(2, 8, 14, 14)])[-1].shape[-2:] == (56, 56)
 
 
+def test_vit_neck_builds_a_simple_pyramid_from_one_map() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8], input_norm="none")
+    feature = torch.randn(2, 8, 14, 14)
+
+    levels = neck([feature])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[1], feature)
+    with pytest.raises(ValueError, match="native_finest needs 4 inputs"):
+        ViTNeck([8], native_finest=True)
+
+
+@pytest.mark.parametrize("head_type", ["upernet", "unet"])
+def test_probe_vit_neck_trains_from_a_single_layer(head_type: str) -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=False)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type="upernet", neck="vit_fine"
+        )
+
+
 class FineOutputViT(FourBlockViT):
     """Three trunk blocks on a 16-pixel grid plus a fine output block on a 4-pixel grid."""
 

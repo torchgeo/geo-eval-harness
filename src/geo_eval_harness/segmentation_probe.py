@@ -232,8 +232,12 @@ class SegmentationProbe(nn.Module):
         if head_type == "linear":
             self.head = LinearHead(self.channels_list, num_classes)
         elif head_type in _HIDDEN_DIM_HEADS:
+            # A single-layer ViT neck builds four pyramid levels from that one map.
+            single_map = neck == "vit" and len(self.channels_list) == 1
             self.head = _HIDDEN_DIM_HEADS[head_type](
-                self.channels_list, num_classes, hidden_dim=hdim
+                self.channels_list * 4 if single_map else self.channels_list,
+                num_classes,
+                hidden_dim=hdim,
             )
         elif head_type == "patch_linear":
             self.head = (
@@ -397,12 +401,13 @@ class SegmentationProbe(nn.Module):
                 f"neck {neck!r} requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
             )
         trunk_hw = self.feature_hw_list[:3] if neck == "vit_fine" else self.feature_hw_list
-        if len(self.layer_names) != 4 or len(set(trunk_hw)) != 1:
+        single = neck == "vit" and len(self.layer_names) == 1
+        if not single and (len(self.layer_names) != 4 or len(set(trunk_hw)) != 1):
             raise ValueError(
                 f"neck {neck!r} needs exactly 4 layers sharing one resolution (ViT blocks; with "
-                f"'vit_fine' only the first three must); got {len(self.layer_names)} layers with "
-                f"sizes {self.feature_hw_list}. Pyramid backbones already provide multi-scale "
-                "features."
+                f"'vit_fine' only the first three must; 'vit' also takes a single layer); got "
+                f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
+                "backbones already provide multi-scale features."
             )
         self.head = NeckedHead(
             ViTNeck(self.channels_list, input_norm=neck_norm, native_finest=neck == "vit_fine"),
