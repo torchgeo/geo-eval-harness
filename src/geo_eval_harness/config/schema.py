@@ -255,7 +255,7 @@ class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
-    neck: Literal["none", "vit"] = "none"
+    neck: Literal["none", "vit", "vit_fine"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
     upsampler: Literal["none", "anyup"] = "none"
     weight_decay: StrictFloat = Field(default=0.0, ge=0)
@@ -330,8 +330,10 @@ class SegmentationConfig(StrictModel):
     @model_validator(mode="after")
     def validate_neck(self) -> "SegmentationConfig":
         """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
-        if self.neck == "vit" and self.head not in NECK_HEADS:
-            raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        if self.neck != "none" and self.head not in NECK_HEADS:
+            raise ValueError(
+                f"neck {self.neck!r} requires head in {sorted(NECK_HEADS)}, got {self.head!r}"
+            )
         if self.head_dropout and self.head != "upernet":
             raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
         if self.upsampler == "anyup" and self.head != "upernet":
@@ -342,13 +344,13 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
+        """Return ``seg-<head>``, ``-<neck>neck`` (``-vitneck``, ``-vitfineneck``) and ``-lora``.
 
         Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
         blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck. Feature
         standardization appends ``-std`` and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
         """
-        neck = "" if self.neck == "none" else f"-{self.neck}neck"
+        neck = "" if self.neck == "none" else f"-{self.neck.replace('_', '')}neck"
         if self.upsampler != "none":
             neck += f"-{self.upsampler}"
         lora = "" if self.lora_rank is None else "-lora"

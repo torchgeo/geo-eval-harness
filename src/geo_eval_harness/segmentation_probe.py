@@ -170,9 +170,10 @@ class SegmentationProbe(nn.Module):
             ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``, ``"unet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
             ``dpt``, ``upernet``, and ``unet`` heads (default 256).
-        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a
+        neck: ``"none"`` (default), ``"vit"`` or ``"vit_fine"``. ``"vit"`` puts a
             :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn``, ``upernet``, or ``unet``
-            head; it needs exactly four layers at one resolution.
+            head; it needs exactly four layers at one resolution. ``"vit_fine"`` takes the finest
+            level from the last layer at its own resolution, so only the first three must share one.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
         head_dropout: Channel dropout (``nn.Dropout2d``, as mmsegmentation's UPerHead) before the
@@ -389,19 +390,24 @@ class SegmentationProbe(nn.Module):
                     f"{self.feature_hw_list[0]}. Use neck 'vit' for ViT blocks."
                 )
             return
-        if neck != "vit":
-            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit")
+        if neck not in ("vit", "vit_fine"):
+            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit, vit_fine")
         if head_type not in NECK_HEADS:
             raise ValueError(
-                f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
+                f"neck {neck!r} requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
             )
-        if len(self.layer_names) != 4 or len(set(self.feature_hw_list)) != 1:
+        trunk_hw = self.feature_hw_list[:3] if neck == "vit_fine" else self.feature_hw_list
+        if len(self.layer_names) != 4 or len(set(trunk_hw)) != 1:
             raise ValueError(
-                "neck 'vit' needs exactly 4 layers sharing one resolution (ViT blocks); got "
-                f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
-                "backbones already provide multi-scale features."
+                f"neck {neck!r} needs exactly 4 layers sharing one resolution (ViT blocks; with "
+                f"'vit_fine' only the first three must); got {len(self.layer_names)} layers with "
+                f"sizes {self.feature_hw_list}. Pyramid backbones already provide multi-scale "
+                "features."
             )
-        self.head = NeckedHead(ViTNeck(self.channels_list, input_norm=neck_norm), self.head)
+        self.head = NeckedHead(
+            ViTNeck(self.channels_list, input_norm=neck_norm, native_finest=neck == "vit_fine"),
+            self.head,
+        )
 
     def register_hooks(self) -> None:
         """Register feature hooks and reject missing or duplicate layer names."""

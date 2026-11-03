@@ -7,10 +7,36 @@ kwargs:
   input_res: null
   normalize: false
 segmentation:
-  # Self-attention trunk blocks 1-12 (block 0 fuses the inputs, 13-14 resample the output grid).
-  lora_target_modules: 'model\.model\.blocks\.([1-9]|1[0-2])\.(attn\.(wq|wk|wv|proj)|mlp\.fc[12])'
+  # Block 14 (sub-patch cross-attention) produces UniverSat's output tokens; with no output_px it
+  # stays on the patch grid like trunk blocks 3-9 (block 0 fuses inputs, 13 is a no-op resize).
+  lora_target_modules: 'model\.model\.blocks\.([1-9]|1[0-2]|14)\.(attn\.(wq|wk|wv|proj)|mlp\.fc[12])'
   layers:
-    - model.model.blocks.12
+    - model.model.blocks.14
     - model.model.blocks.9
     - model.model.blocks.6
     - model.model.blocks.3
+# Native GSD and UniverSat's per-sensor patch sizes in metres (S2/HLS 4 px, S1 8 px, VHR 4-8 m;
+# https://github.com/gastruc/UniverSat/tree/d4e8712/configs/dataset), rounded to pixel counts that
+# divide 224 so no remainder is dropped. Images are resized to 224 px before the model.
+dataset_overrides:
+  burn_scars:
+    kwargs: {modality: hls, patch_px: 4}
+  cloudsen12:
+    kwargs: {patch_px: 4}
+  fotw:
+    kwargs: {patch_px: 4}
+  kuro_siwo:
+    kwargs: {patch_px: 8}
+  # Single-channel SAR amplitude passed once with a VV code, not as grey RGB.
+  caffe:
+    kwargs: {modality: s1, wavelengths: [VV], input_res: 6.0, patch_px: 8}
+    input: {bands: [red]}
+  openearthmap-sar:
+    kwargs: {input_res: 0.5, patch_px: 8}
+    input: {bands: [vv]}
+  flair2:
+    kwargs: {modality: aerialflair, patch_px: 32}
+  loveda:
+    kwargs: {input_res: 0.3, patch_px: 16}
+  levir-cd-post:
+    kwargs: {input_res: 0.5, patch_px: 8}

@@ -48,6 +48,7 @@ _SENSOR_TO_MODALITY: dict[str, str] = {
     "aerial": "aerial",
     "spot": "spot",
     "landsat": "l8",
+    "hls": "hls",
 }
 
 # Physical resolution (m/px) and sub-patch factor per UniverSat modality,
@@ -57,19 +58,27 @@ _MODALITY_INPUT_RES: dict[str, float] = {
     "s1": 10.0,
     "naip": 1.25,
     "aerial": 0.2,
+    "aerialflair": 0.2,
     "spot": 1.0,
     "l8": 10.0,
     "l7": 30.0,
+    "hls": 30.0,
+    "alos": 30.0,
 }
 _MODALITY_SUBPATCH: dict[str, int] = {
     "s2": 1,
     "s1": 1,
     "naip": 10,
     "aerial": 10,
+    "aerialflair": 8,
     "spot": 10,
     "l8": 1,
     "l7": 1,
+    "hls": 1,
+    "alos": 1,
 }
+# Modalities whose channels are named by polarisation codes rather than wavelengths.
+_SAR_MODALITIES = frozenset({"s1", "alos"})
 
 
 def _patch_pixels(patch_size: float, input_res: float) -> int:
@@ -230,29 +239,36 @@ def _install_block_checkpointing(encoder: object) -> int:
     return len(blocks)
 
 
-# SAR bands are sensor codes (not wavelengths) in UniverSat's s1 modality.
+# SAR bands are polarisation codes (not wavelengths) in UniverSat's SAR modalities; the patch
+# encoder holds one learned embedding per code, shared across modalities.
+_SAR_CODES = ("VV", "VH", "Ratio_VV_VH", "HH", "HV", "Ratio_HH_HV")
+
+
 def _sar_code(name: str) -> str:
     n = name.lower()
+    if "hh_hv" in n or "hv_hh" in n or ("ratio" in n and ("hh" in n or "hv" in n)):
+        return "Ratio_HH_HV"
     if "ratio" in n or "vv_vh" in n or "vh_vv" in n:
         return "Ratio_VV_VH"
-    if "vv" in n:
-        return "VV"
-    if "vh" in n:
-        return "VH"
-    raise ValueError(f"Cannot map SAR band {name!r} to a UniverSat s1 code (VV/VH/Ratio_VV_VH).")
+    for code in ("VV", "VH", "HH", "HV"):
+        if code.lower() in n:
+            return code
+    raise ValueError(f"Cannot map SAR band {name!r} to a UniverSat SAR code {list(_SAR_CODES)}.")
 
 
 def _build_sensor_groups(
     bands: list[BandSpec],
     modality: str | None = None,
     input_res: float | None = None,
+    wavelengths: list[float | str] | None = None,
 ) -> list[dict]:
     """Group channels by sensor and resolve each group's UniverSat modality.
 
     Returns one dict per sensor (first-seen order) with keys ``modality``,
     ``indices`` (channel positions in ``bands``), ``wavelengths`` (floats, or
-    s1 sensor codes), ``input_res``, and ``subpatch``. ``modality`` / ``input_res``
-    overrides apply only when the input has a single sensor.
+    SAR polarisation codes), ``input_res``, and ``subpatch``. ``modality`` /
+    ``input_res`` / ``wavelengths`` overrides apply only when the input has a
+    single sensor.
     """
     sensor_to_indices: dict[str, list[int]] = defaultdict(list)
     order: list[str] = []
@@ -262,6 +278,11 @@ def _build_sensor_groups(
             order.append(s)
         sensor_to_indices[s].append(i)
     single_sensor = len(order) == 1
+    if wavelengths is not None and (not single_sensor or len(wavelengths) != len(bands)):
+        raise ValueError(
+            f"UniverSat wavelengths override needs a single-sensor input with one entry per "
+            f"channel; got {len(wavelengths)} entries for {len(bands)} channels from {order}."
+        )
 
     groups: list[dict] = []
     seen: set[str] = set()
@@ -280,37 +301,45 @@ def _build_sensor_groups(
         seen.add(mod)
         indices = sensor_to_indices[sensor]
         group_bands = [bands[i] for i in indices]
-        if mod == "s1":
-            wavelengths: list[float | str] = [_sar_code(b.name) for b in group_bands]
-        else:
-            # Bands without wavelength_um fall back to the Sentinel-2 centre of their canonical
-            # name (red/green/blue/nir/...), as DOFA and Panopticon do.
-            band_wavelengths = [
-                b.wavelength_um
-                if b.wavelength_um is not None
-                else S2_WAVELENGTHS_UM.get(canonical_band_name(b.name))
-                for b in group_bands
-            ]
-            if any(w is None for w in band_wavelengths):
-                missing = [
-                    b.name for b, w in zip(group_bands, band_wavelengths, strict=True) if w is None
-                ]
-                raise ValueError(
-                    f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
-                    f"have wavelength_um=None and no standard band name."
-                )
-            wavelengths = [w for w in band_wavelengths if w is not None]
         res = input_res if (input_res is not None and single_sensor) else _MODALITY_INPUT_RES[mod]
         groups.append(
             {
                 "modality": mod,
                 "indices": indices,
-                "wavelengths": wavelengths,
+                "wavelengths": _group_wavelengths(group_bands, mod, wavelengths),
                 "input_res": res,
                 "subpatch": _MODALITY_SUBPATCH.get(mod, 1),
             }
         )
     return groups
+
+
+def _group_wavelengths(
+    bands: list[BandSpec], modality: str, override: list[float | str] | None
+) -> list[float | str]:
+    """Return one wavelength (µm) or SAR code per band of a sensor group."""
+    if override is not None:
+        unknown = [w for w in override if isinstance(w, str) and w not in _SAR_CODES]
+        if unknown:
+            raise ValueError(f"Unknown UniverSat channel codes {unknown}; use {_SAR_CODES}.")
+        return list(override)
+    if modality in _SAR_MODALITIES:
+        return [_sar_code(b.name) for b in bands]
+    # Bands without wavelength_um fall back to the Sentinel-2 centre of their canonical
+    # name (red/green/blue/nir/...), as DOFA and Panopticon do.
+    band_wavelengths = [
+        b.wavelength_um
+        if b.wavelength_um is not None
+        else S2_WAVELENGTHS_UM.get(canonical_band_name(b.name))
+        for b in bands
+    ]
+    missing = [b.name for b, w in zip(bands, band_wavelengths, strict=True) if w is None]
+    if missing:
+        raise ValueError(
+            f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
+            f"have wavelength_um=None and no standard band name."
+        )
+    return [w for w in band_wavelengths if w is not None]
 
 
 class UniverSatEncoder(Protocol):
@@ -356,10 +385,14 @@ class UniverSatBenchModel(BenchModel):
         patch_px: Patch size in input pixels. When set it replaces ``patch_size``
             with ``patch_px`` times the first sensor's ``input_res`` (metres), so
             a ``H x W`` input gives an ``H/patch_px`` latent grid regardless of
-            sensor, and ``output_grid`` defaults to that grid. Segmentation presets
-            use 16 (14x14 tokens at 224 px, as ViT-B/16).
+            sensor, and ``output_grid`` defaults to that grid. The segmentation preset sets it per
+            dataset to UniverSat's own recipes (patch size in metres per sensor).
         input_res: Override the physical resolution (m/px), single-sensor only;
             ``None`` uses the registry value per modality.
+        wavelengths: Override the per-channel spectral identity, single-sensor only: one
+            centre wavelength (µm) or SAR polarisation code (``VV``, ``VH``, ``HH``, ``HV``,
+            ``Ratio_VV_VH``, ``Ratio_HH_HV``) per input channel. ``None`` derives them from
+            the band specs (wavelengths, or codes from SAR band names).
         subpatch: Sub-patch factor (pixels per sub-patch side) for every sensor, or a
             ``{modality: factor}`` mapping. It must divide each patch. ``None`` (default)
             uses the registry factor when it divides the patch, else the largest divisor
@@ -369,6 +402,8 @@ class UniverSatBenchModel(BenchModel):
             ``W // output_px`` per call, so the final encoder tokens (after UniverSat's
             bilinear resampling and sub-patch cross-attention) form a dense grid; 1 gives
             one token per pixel, as in UniverSat's PangaeaBench linear probe.
+        output_scale: Output token grid as a multiple of the patch grid; 4 turns a 14x14 patch
+            grid into 56x56 output tokens. Exclusive with ``output_px`` and ``output_grid``.
         normalize: If True, L2-normalize the output embeddings.
         gradient_checkpointing: Recompute trunk-block activations in backward (exact; for full
             fine-tuning, whose stored activations exceed 32 GB on some datasets).
@@ -389,9 +424,11 @@ class UniverSatBenchModel(BenchModel):
         patch_size: float = 10.0,
         output_grid: int | None = None,
         input_res: float | None = None,
+        wavelengths: list[float | str] | None = None,
         patch_px: int | None = None,
         subpatch: int | dict[str, int] | None = None,
         output_px: int | None = None,
+        output_scale: int | None = None,
         normalize: bool = False,
         gradient_checkpointing: bool = False,
         repo: str = UNIVERSAT_REPO,
@@ -402,7 +439,9 @@ class UniverSatBenchModel(BenchModel):
     ) -> None:
         super().__init__(bands=bands, normalization=normalization, **_kwargs)
 
-        self._groups = _build_sensor_groups(self.bands, modality=modality, input_res=input_res)
+        self._groups = _build_sensor_groups(
+            self.bands, modality=modality, input_res=input_res, wavelengths=wavelengths
+        )
 
         self.patch_px = patch_px
         self.patch_size = patch_px * self._groups[0]["input_res"] if patch_px else patch_size
@@ -418,7 +457,12 @@ class UniverSatBenchModel(BenchModel):
             raise ValueError(
                 f"patch_px={patch_px} resolves to {self._groups[0]['patch_pixels']} px in UniverSat."
             )
+        if output_scale is not None and (output_scale < 1 or output_px or output_grid):
+            raise ValueError(
+                "UniverSat output_scale must be >= 1 and excludes output_px and output_grid."
+            )
         self.output_px = output_px
+        self.output_scale = output_scale
         self.output_grid = output_grid
         self.do_normalize = normalize
 
@@ -469,6 +513,8 @@ class UniverSatBenchModel(BenchModel):
         output_grid = self.output_grid
         if self.output_px:
             output_grid = images.shape[-1] // self.output_px
+        elif self.output_scale:
+            output_grid = images.shape[-1] // self._groups[0]["patch_pixels"] * self.output_scale
         elif output_grid is None and self.patch_px:
             output_grid = images.shape[-1] // self.patch_px
         if not self._warned_remainder:

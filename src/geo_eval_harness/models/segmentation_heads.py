@@ -731,12 +731,25 @@ class ViTNeck(nn.Module):
     Raw block outputs of some ViTs carry outlier channels; without it the max-pool level passes
     them into UPerNet, whose BatchNorm running statistics then misrepresent eval batches.
 
+    With ``native_finest=True`` (neck ``vit_fine``) the last, finest input is a map the backbone
+    already produces at its own resolution (e.g. UniverSat's block-14 output on a finer output
+    grid). It replaces the two transposed convs: after its input norm it is bilinearly resized to
+    4x the grid of the other three inputs, unless already there.
+
     Args:
         channels_list: Channel count for each of the four layers (coarse-to-fine, all equal).
         input_norm: ``"layernorm"`` (default) or ``"none"``.
+        native_finest: Take the finest level from the last input instead of upsampling a trunk
+            block.
     """
 
-    def __init__(self, channels_list: list[int], input_norm: str = "layernorm") -> None:
+    def __init__(
+        self,
+        channels_list: list[int],
+        input_norm: str = "layernorm",
+        *,
+        native_finest: bool = False,
+    ) -> None:
         super().__init__()
         from transformers import BeitConfig
         from transformers.models.beit.modeling_beit import BeitFPNNeck
@@ -754,10 +767,20 @@ class ViTNeck(nn.Module):
             ]
         )
         self.fpn = BeitFPNNeck(BeitConfig(hidden_size=channels_list[0]))
+        self.native_finest = native_finest
+        if native_finest:
+            self.fpn.fpn1 = nn.Identity()
 
     def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
         """Normalise each level (if enabled), then rescale coarse-to-fine maps by 1/2, 1, 2, 4."""
         normed = [norm(f) for norm, f in zip(self.input_norms, features, strict=True)]
+        if self.native_finest:
+            grid = normed[0].shape[-2:]
+            finest_size = (4 * grid[0], 4 * grid[1])
+            if normed[-1].shape[-2:] != finest_size:
+                normed[-1] = F.interpolate(
+                    normed[-1], size=finest_size, mode="bilinear", align_corners=False
+                )
         return list(reversed(self.fpn(normed[::-1])))
 
 

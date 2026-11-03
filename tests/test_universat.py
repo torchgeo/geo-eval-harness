@@ -56,6 +56,26 @@ def test_sar_code_mapping() -> None:
     assert _sar_code("vh_lee_real") == "VH"
     assert _sar_code("vv_imag") == "VV"
     assert _sar_code("vv_vh") == "Ratio_VV_VH"
+    assert _sar_code("hh") == "HH"
+    assert _sar_code("hv") == "HV"
+    assert _sar_code("hh_hv") == "Ratio_HH_HV"
+
+
+def test_hls_and_aerialflair_use_their_registry_resolution_and_subpatch() -> None:
+    hls = [_s2_band("b02", 0.49), _s2_band("b12", 2.19)]
+    (group,) = _build_sensor_groups(hls, modality="hls")
+    assert (group["input_res"], group["subpatch"]) == (30.0, 1)
+    assert _resolve_subpatch("aerialflair", 32, None) == 8
+
+
+def test_wavelengths_override_sends_grey_sar_as_one_coded_channel() -> None:
+    gray = BandSpec("aerial", "red", "gray", mean=0, std=1, min=0, max=1)
+    (group,) = _build_sensor_groups([gray], modality="s1", input_res=6.0, wavelengths=["VV"])
+    assert (group["modality"], group["wavelengths"], group["input_res"]) == ("s1", ["VV"], 6.0)
+    with pytest.raises(ValueError, match="one entry per channel"):
+        _build_sensor_groups([gray, gray], modality="s1", wavelengths=["VV"])
+    with pytest.raises(ValueError, match="Unknown UniverSat channel codes"):
+        _build_sensor_groups([gray], modality="s1", wavelengths=["XX"])
 
 
 def test_rejects_unmapped_sensor() -> None:
@@ -248,6 +268,45 @@ def test_output_px_sets_a_dense_output_grid(monkeypatch: pytest.MonkeyPatch) -> 
     model = UniverSatBenchModel(_AERIAL, patch_px=16, output_px=2, normalization="identity")
     model(torch.rand(1, 3, 64, 64))
     assert seen["output_grid"] == 32
+
+
+def test_output_scale_multiplies_the_patch_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _vhr_encoder(seen))
+    model = UniverSatBenchModel(_AERIAL, patch_px=16, output_scale=4, normalization="identity")
+    model(torch.rand(1, 3, 64, 64))
+    assert seen["output_grid"] == 16
+    with pytest.raises(ValueError, match="output_scale"):
+        UniverSatBenchModel(_AERIAL, output_scale=4, output_px=2, normalization="identity")
+
+
+@pytest.mark.parametrize(
+    ("dataset", "patch_px", "modality"),
+    [("burn_scars", 4, "hls"), ("cloudsen12", 4, None), ("flair2", 32, "aerialflair")],
+)
+def test_seg_preset_sets_universat_recipe_per_dataset(
+    dataset: str, patch_px: int, modality: str | None
+) -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base_seg")).for_dataset(dataset)
+    assert preset.kwargs["patch_px"] == patch_px
+    assert preset.kwargs["modality"] == modality
+    assert preset.segmentation.layers[0] == "model.model.blocks.14"
+
+
+def test_seg_preset_feeds_caffe_once_as_vv_sar() -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base_seg")).for_dataset("caffe")
+    assert preset.input.bands == ["red"]
+    assert {k: preset.kwargs[k] for k in ("modality", "wavelengths", "input_res")} == {
+        "modality": "s1",
+        "wavelengths": ["VV"],
+        "input_res": 6.0,
+    }
 
 
 @pytest.mark.slow

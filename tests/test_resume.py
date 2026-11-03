@@ -154,6 +154,7 @@ def test_neck_changes_the_hash_only_when_enabled() -> None:
 
     assert _hash(upernet(neck="none")) == _hash(upernet())
     assert _hash(upernet(neck="vit")) != _hash(upernet())
+    assert _hash(upernet(neck="vit_fine")) != _hash(upernet(neck="vit"))
     # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
     assert _hash(upernet(neck_norm="none")) == _hash(upernet())
     assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))

@@ -1405,6 +1405,44 @@ def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) ->
     assert any(not torch.equal(p, neck_before[n]) for n, p in probe.head.neck.named_parameters())
 
 
+def test_vit_fine_neck_takes_the_finest_level_from_the_last_input() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8] * 4, input_norm="none", native_finest=True)
+    trunk = [torch.randn(2, 8, 14, 14) for _ in range(3)]
+    fine = torch.randn(2, 8, 56, 56)
+
+    levels = neck([*trunk, fine])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[-1], fine)
+    assert neck([*trunk, torch.randn(2, 8, 14, 14)])[-1].shape[-2:] == (56, 56)
+
+
+class FineOutputViT(FourBlockViT):
+    """Three trunk blocks on a 16-pixel grid plus a fine output block on a 4-pixel grid."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fine = nn.Conv2d(3, 8, kernel_size=4, stride=4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        trunk = super().forward(x)
+        return trunk.mean() + self.fine(x).flatten(2).transpose(1, 2)
+
+
+def test_probe_vit_fine_neck_accepts_a_finer_last_layer() -> None:
+    layers = ["blocks.3", "blocks.2", "blocks.1", "fine"]
+    probe = SegmentationProbe(
+        FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit_fine"
+    )
+    assert probe.feature_hw_list == [(14, 14)] * 3 + [(56, 56)]
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit"
+        )
+
+
 def test_probe_vit_neck_rejects_pyramid_layers_and_other_heads() -> None:
     with pytest.raises(ValueError, match="4 layers sharing one resolution"):
         SegmentationProbe(
