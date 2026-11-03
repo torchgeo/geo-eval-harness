@@ -141,7 +141,8 @@ def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
                 tmp / "images.npy", mode="w+", dtype=np.float32, shape=(n, *image.shape[1:])
             )
         images_mm[offset : offset + len(image)] = image.numpy()
-        mask_chunks.append(mask)
+        # Worker batches live in /dev/shm; keeping them would exhaust it on large splits.
+        mask_chunks.append(mask.clone())
         offset += len(image)
     if offset != n or images_mm is None:
         raise RuntimeError(f"Sample cache read {offset} of {n} samples.")
