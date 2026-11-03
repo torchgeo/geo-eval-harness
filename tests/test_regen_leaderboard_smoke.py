@@ -261,6 +261,8 @@ ROW_KEYS = {
     "overall_ci",
     "n_tasks",
     "per_task",
+    "per_task_sd",
+    "per_task_n",
 }
 
 
@@ -383,3 +385,209 @@ def test_generator_renders_a_synthetic_template_and_output(tmp_path) -> None:
     assert match is not None
     rankings = json.loads(match.group(1))
     assert rankings["classification"]["linear"]["RGB"]["avg_rank"]["rows"]
+
+
+SEG_MODELS = {"seg_a": 0.60, "seg_b": 0.50, "seg_c": 0.40}
+SEG_SEEDS = (0, 1, 2)
+# burn_scars is an original grid dataset (20 epochs, LoRA 5e-4); loveda uses the
+# 30-epoch protocol (LoRA 1e-4).
+SEG_CANONICAL_SETUP = {
+    "burn_scars": {"frozen": ("20", ""), "lora": ("20", "0.0005")},
+    "loveda": {"frozen": ("30", ""), "lora": ("30", "0.0001")},
+}
+
+
+def _seg_row(  # noqa: PLR0913 - mirrors the setup columns varied by these fixtures
+    name: str,
+    dataset: str,
+    score: float,
+    *,
+    adaptation: str = "frozen",
+    epochs: str = "20",
+    backbone_lr: str = "",
+    seed: int = 0,
+    neck: str = "vit",
+    upsampler: str = "none",
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "dataset": dataset,
+        "method": "seg-upernet",
+        "metric_name": "mIoU",
+        "metric_value": score,
+        "bands": "rgb",
+        "normalization": "bandspec_zscore",
+        "seed": seed,
+        "adaptation": adaptation,
+        "decoder": "upernet",
+        "neck": neck,
+        "upsampler": upsampler,
+        "epochs": epochs,
+        "head_lr": "0.001",
+        "backbone_lr": backbone_lr,
+        "weight_decay": "0",
+        "head_dropout": "0",
+        "lora_rank": "16" if adaptation == "lora" else "",
+        "lora_alpha": "32" if adaptation == "lora" else "",
+        "lora_last_blocks": "",
+        "class_weights": "none",
+        "selection_metric": "val_miou",
+        "early_stopping_patience": "",
+    }
+
+
+def _seg_raw_df() -> pd.DataFrame:
+    """Two setups (frozen, LoRA) x 3 seeds x 2 datasets, one 50-epoch variant, legacy rows."""
+    rows: list[dict[str, object]] = []
+    for name, base in SEG_MODELS.items():
+        for dataset, setups in SEG_CANONICAL_SETUP.items():
+            for adaptation, (epochs, backbone_lr) in setups.items():
+                offset = 0.1 if adaptation == "lora" else 0.0
+                rows.extend(
+                    _seg_row(
+                        name,
+                        dataset,
+                        base + offset + 0.01 * seed,
+                        adaptation=adaptation,
+                        epochs=epochs,
+                        backbone_lr=backbone_lr,
+                        seed=seed,
+                    )
+                    for seed in SEG_SEEDS
+                )
+        # Variant: frozen, 50 epochs on burn_scars only (one seed).
+        rows.append(_seg_row(name, "burn_scars", base + 0.05, epochs="50"))
+        # Legacy pre-setup-column row: retired from display.
+        legacy = _seg_row(name, "burn_scars", 0.99, adaptation="")
+        legacy["method"] = "seg-fpn"
+        rows.append(legacy)
+    return pd.DataFrame(rows)
+
+
+FROZEN = "frozen/upernet/vit/canonical"
+LORA = "lora/upernet/vit/canonical"
+VARIANT = "frozen/upernet/vit/epochs=50"
+
+
+def test_segmentation_protocol_table_is_per_dataset() -> None:
+    assert rl.segmentation_protocol("burn_scars") == (20, 5e-4)
+    assert rl.segmentation_protocol("flair2") == (20, 1e-4)
+    assert rl.segmentation_protocol("loveda") == (30, 1e-4)
+    assert rl.segmentation_protocol("oscd-post") == (30, 1e-4)
+    setup = {"adaptation": "full", "epochs": "30", "backbone_lr": "1e-05", "head_lr": "1e-3"}
+    assert rl.segmentation_variant(setup, "loveda") == "canonical"
+    assert rl.segmentation_variant(setup, "burn_scars") == "epochs=30"
+    lora = {"adaptation": "lora", "epochs": "20", "backbone_lr": "0.0001", "head_lr": "0.001"}
+    assert rl.segmentation_variant(lora, "caffe") == "backbone_lr=0.0001"
+    assert rl.segmentation_variant(lora, "spacenet7") == "canonical"
+
+
+def test_segmentation_pyramid_names_neck_and_anyup() -> None:
+    raw = pd.DataFrame(
+        [
+            _seg_row("seg_a", "burn_scars", 0.5, neck="none"),
+            _seg_row("seg_a", "burn_scars", 0.5, neck="none", upsampler="anyup"),
+            _seg_row("seg_a", "burn_scars", 0.5),
+        ]
+    )
+    probes = set(rl.harmonize(raw)["probe"])
+    assert probes == {
+        "frozen/upernet/native/canonical",
+        "frozen/upernet/anyup/canonical",
+        FROZEN,
+    }
+
+
+def test_segmentation_seeds_average_per_setup_and_legacy_rows_are_retired() -> None:
+    out = rl.harmonize(_seg_raw_df())
+    assert set(out["probe"]) == {FROZEN, LORA, VARIANT}
+    assert (out["score"] < 0.9).all()  # the 0.99 legacy rows are gone
+    frozen = out[(out["probe"] == FROZEN) & (out["base_model"] == "seg_a")]
+    assert len(frozen) == 2  # one cell per dataset
+    cell = frozen[frozen["dataset"] == "loveda"].iloc[0]
+    assert cell["n_seeds"] == 3
+    assert cell["score"] == pytest.approx(0.61)
+    assert cell["score_sd"] == pytest.approx(0.01)
+    variant = out[out["probe"] == VARIANT].iloc[0]
+    assert variant["n_seeds"] == 1
+    assert pd.isna(variant["score_sd"])
+
+
+def test_frozen_and_lora_rows_of_one_model_do_not_collide() -> None:
+    rankings, sensitivity, _default = rl.assemble(rl.harmonize(_seg_raw_df()), n_bootstrap=10)
+    seg = rankings["segmentation"]
+    assert list(seg) == [FROZEN, VARIANT, LORA]
+    for probe in (FROZEN, LORA):
+        rows = seg[probe]["RGB"]["avg_rank"]["rows"]
+        assert [row["model"] for row in rows] == ["seg_a", "seg_b", "seg_c"]
+        assert all(row["per_task_n"] == {"burn_scars": 3, "loveda": 3} for row in rows)
+        assert rows[0]["per_task_sd"]["loveda"] == pytest.approx(0.01)
+    lora_a = seg[LORA]["RGB"]["avg_rank"]["rows"][0]
+    assert lora_a["per_task"]["burn_scars"] == pytest.approx(0.71)
+    variant_rows = seg[VARIANT]["RGB"]["avg_rank"]["rows"]
+    assert all(row["per_task_n"] == {"burn_scars": 1} for row in variant_rows)
+    assert all(row["per_task_sd"] == {"burn_scars": None} for row in variant_rows)
+    # Variants are ranked but stay out of the sensitivity matrix.
+    assert {view["probe"] for view in sensitivity["views"]} == {FROZEN, LORA}
+    json.dumps(rankings, allow_nan=False)
+
+
+def test_distinct_setups_in_one_cell_are_rejected() -> None:
+    raw = pd.DataFrame(
+        [
+            _seg_row("seg_a", "burn_scars", 0.5),
+            {**_seg_row("seg_a", "burn_scars", 0.6, seed=1), "head_dropout": "0.1"},
+        ]
+    )
+    with pytest.raises(ValueError, match="Different segmentation setups share one"):
+        rl.harmonize(raw)
+
+
+def test_two_band_lists_in_one_cell_exclude_the_model() -> None:
+    raw = _seg_raw_df()
+    extra = raw[(raw["name"] == "seg_a") & (raw["adaptation"] == "frozen")].copy()
+    extra = extra[extra["epochs"].isin(["20", "30"])].assign(bands="red,green")
+    out = rl.harmonize(pd.concat([raw, extra], ignore_index=True))
+    rankings, _sensitivity, _default = rl.assemble(out, n_bootstrap=10)
+    # ``rgb`` and ``red,green`` are both RGB: seg_a has two cells per dataset.
+    block = rankings["segmentation"][FROZEN]["RGB"]["avg_rank"]
+    assert [row["model"] for row in block["rows"]] == ["seg_b", "seg_c"]
+    assert [row["model"] for row in block["excluded"]] == ["seg_a"]
+
+
+def test_explicit_rgb_band_list_is_rgb() -> None:
+    raw = pd.DataFrame([{**_seg_row("seg_a", "burn_scars", 0.5), "bands": "red,green,blue"}])
+    assert set(rl.harmonize(raw)["bandclass"]) == {"RGB"}
+
+
+def test_generator_renders_segmentation_views(tmp_path) -> None:
+    csv_path = tmp_path / "all_results.csv"
+    compute_path = tmp_path / "compute_cost.csv"
+    html_path = tmp_path / "ranking_explorer.html"
+    pd.concat([_raw_df(), _seg_raw_df()], ignore_index=True).to_csv(csv_path, index=False)
+    _compute_df().to_csv(compute_path, index=False)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPTS / "regen_leaderboard.py"),
+            "--csv",
+            str(csv_path),
+            "--compute",
+            str(compute_path),
+            "--template",
+            str(TEMPLATE_PATH),
+            "--html",
+            str(html_path),
+            "--bootstrap",
+            "10",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    text = html_path.read_text(encoding="utf-8")
+    match = re.search(r"const RANKINGS = (.*?);", text, re.DOTALL)
+    assert match is not None
+    rankings = json.loads(match.group(1))
+    assert set(rankings["segmentation"]) == {FROZEN, LORA, VARIANT}

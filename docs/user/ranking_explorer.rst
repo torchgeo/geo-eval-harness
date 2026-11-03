@@ -20,8 +20,8 @@ community can use to converge on reliable performance information—not a
 declaration of a final winner.
 
 Rankings are summaries: choose the task (classification or segmentation), how
-datasets are combined, then the probe and input bands whose results are being
-summarized. If a result is wrong, missing, or implausible, please `open an
+datasets are combined, then the probe (classification) or segmentation setup,
+and the input bands whose results are being summarized. If a result is wrong, missing, or implausible, please `open an
 issue <https://github.com/torchgeo/geo-eval-harness/issues>`__ with the model,
 view, and any supporting evidence. General feedback is welcome too.
 
@@ -45,6 +45,28 @@ The fixed methodology and coverage rules are:
   otherwise uses complete ``bandspec_zscore`` results; it never combines the
   two.
 * Models without a complete row are named below the table.
+
+Segmentation views are built from the setup columns of each result row (see
+:ref:`segmentation-setup-columns`):
+
+* **Adaptation** (``adaptation``): frozen backbone, LoRA, or full fine-tuning.
+* **Decoder** (``decoder``): UPerNet or U-Net.
+* **Pyramid**: the backbone's native features, the ViT neck (``neck: vit``),
+  or AnyUp upsampling (``upsampler: anyup``).
+* By default every dataset uses its canonical protocol (``SEG_PROTOCOL`` in
+  :file:`scripts/regen_leaderboard.py`): head LR ``1e-3`` and full fine-tuning
+  backbone LR ``1e-5`` everywhere; 20 epochs with a per-dataset LoRA backbone
+  LR (``5e-4`` or ``1e-4``) on the original grid datasets (burn_scars, caffe,
+  cloudsen12, fotw, kuro_siwo, flair2, openearthmap-sar, spacenet2,
+  spacenet7); 30 epochs and LoRA LR ``1e-4`` on every other dataset.
+  **Show variants** adds a **Protocol** selector for the other epoch and
+  learning-rate setups. Variants are ranked like any view but left out of the
+  sensitivity heatmap.
+* Each cell is the mean over seeds, with the standard deviation and the
+  number of seeds underneath. Seeds must share every setup column; two
+  different setups in one cell stop the generator with an error.
+* Segmentation rows without setup columns (the legacy ``seg-linear`` /
+  ``seg-fpn`` / ``seg-dpt`` / ``seg-conv_block`` grids) are not shown.
 
 The GFLOPs chart directly below the table pairs positive, measured 224-pixel
 backbone GFLOPs with the selected aggregation. It labels the displayed models

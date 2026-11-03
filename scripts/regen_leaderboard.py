@@ -18,7 +18,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from geo_eval_harness.results import load_results
+from geo_eval_harness.results import (
+    NUMERIC_SETUP_COLS,
+    SETUP_COLS,
+    format_setup_value,
+    load_results,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,8 @@ DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln"})
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
 RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "open_cities", "resisc45", "ucmerced"})
+# An explicit band list made only of these names (``red,green,blue``) is RGB too.
+RGB_BAND_NAMES = frozenset({"red", "green", "blue"})
 
 # The plain (S2L2A) TerraMind configs were additionally swept with
 # ``dataset.bands=rgb``, which forces their S2L2A-modality pathway onto
@@ -65,7 +72,35 @@ SMALL_N_MODELS = 8
 SEGMENTATION_METHOD_PREFIX = "seg-"
 
 TASK_ORDER = ["classification", "segmentation"]
-PROBE_ORDER = ["linear", "knn5", "seg-linear", "seg-fpn", "seg-dpt", "seg-conv_block"]
+PROBE_ORDER = ["linear", "knn5"]
+
+# Canonical segmentation protocol per dataset: ``dataset -> (epochs, LoRA backbone LR)``.
+# The original grid datasets train 20 epochs with a per-dataset LoRA LR; every
+# other dataset (loveda, levir-cd-post, sen1floods11-*, bright-post-sar*,
+# oscd-post, ...) uses SEG_PROTOCOL_DEFAULT.  Full fine-tuning and the head LR
+# are the same everywhere.  Setups off this protocol are variants.
+SEG_PROTOCOL: dict[str, tuple[int, float]] = {
+    "burn_scars": (20, 5e-4),
+    "caffe": (20, 5e-4),
+    "cloudsen12": (20, 5e-4),
+    "fotw": (20, 5e-4),
+    "kuro_siwo": (20, 5e-4),
+    "flair2": (20, 1e-4),
+    "openearthmap-sar": (20, 1e-4),
+    "spacenet2": (20, 1e-4),
+    "spacenet7": (20, 1e-4),
+}
+SEG_PROTOCOL_DEFAULT: tuple[int, float] = (30, 1e-4)
+SEG_HEAD_LR = 1e-3
+SEG_FULL_BACKBONE_LR = 1e-5
+
+# A segmentation probe is ``<adaptation>/<decoder>/<pyramid>/<protocol>``; the
+# explorer exposes each part as its own selector.
+SEG_PROBE_SEP = "/"
+SEG_CANONICAL = "canonical"
+SEG_ADAPTATION_ORDER = ["frozen", "lora", "full"]
+SEG_DECODER_ORDER = ["upernet", "unet"]
+SEG_PYRAMID_ORDER = ["native", "vit", "anyup"]
 BANDCLASS_ORDER = ["RGB", "Multispectral"]
 
 # ``*_rgb`` is a band-specific TerraMind configuration, not a different model.
@@ -145,6 +180,15 @@ DATASET_DISPLAY = {
     "pastis": "PASTIS · V2",
     "hotosm_buildings": "HOTOSM Buildings",
     "open_cities": "Open Cities",
+    "openearthmap-sar": "OpenEarthMap-SAR",
+    "spacenet2": "SpaceNet 2",
+    "spacenet7": "SpaceNet 7",
+    "loveda": "LoveDA",
+    "levir-cd-post": "LEVIR-CD (post)",
+    "sen1floods11-s1": "Sen1Floods11 · S1",
+    "sen1floods11-s2": "Sen1Floods11 · S2",
+    "bright-post-sar": "BRIGHT (post, SAR)",
+    "oscd-post": "OSCD (post)",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.
@@ -186,6 +230,134 @@ def ordered_values(values: pd.Series, preferred: list[str]) -> list[str]:
     return pinned + sorted(value for value in observed if value not in set(preferred))
 
 
+def _setup_text(value: object, column: str) -> str:
+    """Return a setup cell as comparable text; empty and NaN cells become ``""``."""
+    if value is None or (isinstance(value, float) and math.isnan(value)) or pd.isna(value):
+        return ""
+    text = str(value).strip()
+    if column in NUMERIC_SETUP_COLS and text:
+        try:
+            number = float(text)
+        except ValueError:  # allow-except: a malformed cell compares as its own text
+            return text
+        return format_setup_value(number) or ""
+    return text
+
+
+def _same_number(text: str, expected: float) -> bool:
+    try:
+        return math.isclose(float(text), expected, rel_tol=1e-9, abs_tol=0.0)
+    except ValueError:  # allow-except: a non-numeric cell never matches the protocol
+        return False
+
+
+def segmentation_protocol(dataset: str) -> tuple[int, float]:
+    """Return the canonical ``(epochs, LoRA backbone LR)`` of a segmentation dataset."""
+    return SEG_PROTOCOL.get(dataset, SEG_PROTOCOL_DEFAULT)
+
+
+def segmentation_variant(setup: dict[str, str], dataset: str) -> str:
+    """Name how a segmentation setup departs from the dataset's canonical protocol.
+
+    Returns :data:`SEG_CANONICAL`, or ``key=value`` parts joined by ``,`` for the
+    epochs, backbone LR and head LR that differ (for example ``epochs=50``).
+    """
+    epochs, lora_lr = segmentation_protocol(dataset)
+    backbone_lr = {"frozen": None, "lora": lora_lr, "full": SEG_FULL_BACKBONE_LR}.get(
+        setup["adaptation"]
+    )
+    parts: list[str] = []
+    if not _same_number(setup["epochs"], epochs):
+        parts.append(f"epochs={setup['epochs'] or 'unset'}")
+    if backbone_lr is None:
+        if setup["backbone_lr"]:
+            parts.append(f"backbone_lr={setup['backbone_lr']}")
+    elif not _same_number(setup["backbone_lr"], backbone_lr):
+        parts.append(f"backbone_lr={setup['backbone_lr'] or 'unset'}")
+    if not _same_number(setup["head_lr"], SEG_HEAD_LR):
+        parts.append(f"head_lr={setup['head_lr'] or 'unset'}")
+    return ",".join(parts) or SEG_CANONICAL
+
+
+def segmentation_pyramid(setup: dict[str, str]) -> str:
+    """Return the feature-pyramid choice: ``anyup``, a neck name, or ``native``."""
+    if setup["upsampler"] not in ("", "none"):
+        return setup["upsampler"]
+    if setup["neck"] not in ("", "none"):
+        return setup["neck"]
+    return "native"
+
+
+def segmentation_probe(setup: dict[str, str], dataset: str) -> str:
+    """Return the ``<adaptation>/<decoder>/<pyramid>/<protocol>`` view key of a setup."""
+    return SEG_PROBE_SEP.join(
+        [
+            setup["adaptation"],
+            setup["decoder"],
+            segmentation_pyramid(setup),
+            segmentation_variant(setup, dataset),
+        ]
+    )
+
+
+def is_segmentation_variant(probe: str) -> bool:
+    """Return whether a probe key is a segmentation setup off the canonical protocol."""
+    parts = probe.split(SEG_PROBE_SEP)
+    return len(parts) == 4 and parts[3] != SEG_CANONICAL
+
+
+def _probe_sort_key(probe: str) -> tuple[object, ...]:
+    """Order segmentation probes by adaptation, decoder, pyramid, then canonical first."""
+    parts = probe.split(SEG_PROBE_SEP)
+    if len(parts) != 4:
+        return (1,)  # classification probes keep their PROBE_ORDER position (stable sort)
+
+    def position(value: str, order: list[str]) -> tuple[int, str]:
+        return (order.index(value), "") if value in order else (len(order), value)
+
+    adaptation, decoder, pyramid, protocol = parts
+    return (
+        0,
+        position(adaptation, SEG_ADAPTATION_ORDER),
+        position(decoder, SEG_DECODER_ORDER),
+        position(pyramid, SEG_PYRAMID_ORDER),
+        protocol != SEG_CANONICAL,
+        protocol,
+    )
+
+
+def _aggregate_seeds(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    """Average the seeds of each segmentation setup into one cell (mean, sd, n).
+
+    Seeds share every setup column, band list and source config.  Two different
+    setups with the same band list that land in the same leaderboard cell are an
+    error: the view axes do not distinguish them, so averaging them would mix
+    experiments.  Two band lists of one band class (``vv,vh`` and ``vv``) stay
+    separate cells, so, as for classification, the model is not complete in that
+    view and is listed as excluded.
+    """
+    seg = df["task"] == "segmentation"
+    other = df[~seg].assign(score_sd=float("nan"), n_seeds=1)
+    if not seg.any():
+        return other
+    group = [*keys, "source_model", "bands", *SETUP_COLS]
+    stats = (
+        df[seg]
+        .groupby(group, dropna=False, sort=False)["score"]
+        .agg(score="mean", score_sd="std", n_seeds="count")
+        .reset_index()
+    )
+    clash = stats.duplicated([*keys, "source_model", "bands"], keep=False)
+    if clash.any():
+        offenders = stats.loc[clash, [*group, "n_seeds"]].sort_values([*keys, "source_model"])
+        raise ValueError(
+            "Different segmentation setups share one leaderboard cell; the view axes "
+            "(adaptation, decoder, pyramid, protocol) do not separate them.\n"
+            f"{offenders.to_string(index=False)}"
+        )
+    return pd.concat([other, stats], ignore_index=True)
+
+
 def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw result rows into canonical quality rows.
 
@@ -221,11 +393,29 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     df["source_model"] = base
     df["base_model"] = base.map(canonical_slug)
 
-    is_rgb = (df["bands"].astype(str) == "rgb") | df["dataset"].isin(RGB_ONLY_DATASETS)
+    band_lists = df["bands"].astype(str).str.lower().str.replace(" ", "").str.split(",")
+    rgb_list = band_lists.map(lambda bands: bool(bands) and set(bands) <= RGB_BAND_NAMES)
+    is_rgb = (df["bands"].astype(str) == "rgb") | rgb_list | df["dataset"].isin(RGB_ONLY_DATASETS)
     df["bandclass"] = is_rgb.map({True: "RGB", False: "Multispectral"})
     df["probe"] = df["method"].astype(str)
     is_segmentation = df["probe"].str.startswith(SEGMENTATION_METHOD_PREFIX)
     df["task"] = is_segmentation.map({True: "segmentation", False: "classification"})
+    for column in SETUP_COLS:
+        values = df[column] if column in df else pd.Series(pd.NA, index=df.index)
+        df[column] = [_setup_text(value, column) for value in values]
+    # Rows without setup columns predate them (legacy seg-linear/fpn/dpt/conv_block
+    # grids); they are retired from display.
+    df = df[~(is_segmentation & (df["adaptation"] == ""))].copy()
+    is_segmentation = df["task"] == "segmentation"
+    if is_segmentation.any():
+        df.loc[is_segmentation, "probe"] = [
+            segmentation_probe(setup, dataset)
+            for setup, dataset in zip(
+                df.loc[is_segmentation, list(SETUP_COLS)].to_dict("records"),
+                df.loc[is_segmentation, "dataset"],
+                strict=True,
+            )
+        ]
     df["normalization"] = df["normalization"].astype("string").str.strip()
     missing_norm = df["normalization"].isna() | (df["normalization"] == "")
     if missing_norm.any():
@@ -252,7 +442,9 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     ]
     has_landsat = df.groupby(keys)["is_landsat_sub"].transform("any")
     df = df[~(has_landsat & ~df["is_landsat_sub"])]
-    return df[[*keys, "source_model", "score"]].reset_index(drop=True)
+    df = df.assign(bands=df["bands"].astype(str))
+    df = _aggregate_seeds(df[[*keys, "source_model", "bands", *SETUP_COLS, "score"]], keys)
+    return df[[*keys, "source_model", "score", "score_sd", "n_seeds"]].reset_index(drop=True)
 
 
 def _describe_view(task: str, probe: str, bandclass: str) -> str:
@@ -312,21 +504,20 @@ def _complete_rows(rows: pd.DataFrame, universe: set[tuple[str, str]]) -> bool:
     return len(set(cells)) == len(universe) and set(cells) == universe
 
 
-def build_view(
+def select_view(
     harmonized: pd.DataFrame,
     task: str,
     probe: str,
     bandclass: str,
-) -> tuple[object | None, list[dict[str, object]]]:
-    """Build a complete hybrid-normalization benchmark for one quality view.
+) -> tuple[pd.DataFrame | None, list[dict[str, object]]]:
+    """Select one complete normalization row per model for one quality view.
 
     The dataset/metric universe is established before choosing a normalization.
     A model uses ``model_native`` only when that *entire* row is complete;
     otherwise it uses its complete ``bandspec_zscore`` row.  Partial native
-    measurements cannot displace or mix with a z-score row.
+    measurements cannot displace or mix with a z-score row.  Returns the
+    selected ``model, dataset, metric, score, score_sd, n_seeds`` cells.
     """
-    import evaluma
-
     sub = harmonized[
         (harmonized["task"] == task)
         & (harmonized["probe"] == probe)
@@ -362,9 +553,31 @@ def build_view(
         return None, excluded
     frame = pd.concat(selected, ignore_index=True)
     _raise_on_duplicate_selected_cells(frame, task=task, probe=probe, bandclass=bandclass)
-    frame = frame.rename(columns={"base_model": "model"})[["model", "dataset", "metric", "score"]]
-    bench = evaluma.load_df(frame, metric_type_bounds=METRIC_BOUNDS, drop_incomplete=True)
-    return bench, excluded
+    frame = frame.rename(columns={"base_model": "model"})
+    return frame[["model", "dataset", "metric", "score", "score_sd", "n_seeds"]], excluded
+
+
+def _load_bench(frame: pd.DataFrame) -> object:
+    import evaluma
+
+    return evaluma.load_df(
+        frame[["model", "dataset", "metric", "score"]],
+        metric_type_bounds=METRIC_BOUNDS,
+        drop_incomplete=True,
+    )
+
+
+def build_view(
+    harmonized: pd.DataFrame,
+    task: str,
+    probe: str,
+    bandclass: str,
+) -> tuple[object | None, list[dict[str, object]]]:
+    """Build a complete hybrid-normalization benchmark for one quality view."""
+    frame, excluded = select_view(harmonized, task, probe, bandclass)
+    if frame is None:
+        return None, excluded
+    return _load_bench(frame), excluded
 
 
 def avg_rank(bench: object) -> list[dict[str, object]]:
@@ -431,10 +644,24 @@ def _enrich_rows(
     ranked: list[dict[str, object]],
     compute: dict[tuple[str, str], float],
     bandclass: str,
+    cells: pd.DataFrame | None = None,
 ) -> list[dict[str, object]]:
-    """Attach the remaining table/scatter fields to a ranked model row."""
+    """Attach the remaining table/scatter fields to a ranked model row.
+
+    ``per_task`` holds the score (the seed mean for segmentation) and
+    ``per_task_sd`` / ``per_task_n`` its seed standard deviation (``None`` for
+    one seed) and seed count, taken from the selected ``cells``.
+    """
     band_config = "rgb" if bandclass == "RGB" else "s2"
     scores = bench.scores_
+    seeds: dict[tuple[str, str], tuple[float | None, int]] = {}
+    if cells is not None:
+        for cell in cells.itertuples(index=False):
+            sd = float(cell.score_sd)
+            seeds[(str(cell.model), str(cell.dataset))] = (
+                None if math.isnan(sd) else sd,
+                int(cell.n_seeds),
+            )
     n_tasks = len(bench.datasets_)
     rows: list[dict[str, object]] = []
     for row in ranked:
@@ -451,6 +678,12 @@ def _enrich_rows(
                 "overall_ci": list(ci) if ci is not None else None,
                 "n_tasks": n_tasks,
                 "per_task": {dataset: float(value) for dataset, value in scores.loc[model].items()},
+                "per_task_sd": {
+                    dataset: seeds.get((model, dataset), (None, 1))[0] for dataset in scores.columns
+                },
+                "per_task_n": {
+                    dataset: seeds.get((model, dataset), (None, 1))[1] for dataset in scores.columns
+                },
             }
         )
     return rows
@@ -497,7 +730,7 @@ def _view_keys(harmonized: pd.DataFrame) -> list[dict[str, str]]:
     """Enumerate all patch-mean quality views in display order."""
     patch_mean = harmonized[harmonized["pooling"] == "patch-mean"]
     tasks = ordered_values(patch_mean["task"], TASK_ORDER)
-    probes = ordered_values(patch_mean["probe"], PROBE_ORDER)
+    probes = sorted(ordered_values(patch_mean["probe"], PROBE_ORDER), key=_probe_sort_key)
     bands = ordered_values(patch_mean["bandclass"], BANDCLASS_ORDER)
     keys: list[dict[str, str]] = []
     for task in tasks:
@@ -619,7 +852,8 @@ def assemble(
     benches: list[object] = []
 
     for view in _view_keys(harmonized):
-        bench, excluded = build_view(harmonized, **view)
+        cells, excluded = select_view(harmonized, **view)
+        bench = None if cells is None else _load_bench(cells)
         if bench is None or len(bench.models_) < 2:
             continue
         aggregation_blocks: dict[str, object] = {}
@@ -628,7 +862,7 @@ def assemble(
                 bench, aggregation, n_bootstrap=n_bootstrap, random_state=random_state
             )
             aggregation_blocks[aggregation] = {
-                "rows": _enrich_rows(bench, ranked, compute, view["bandclass"]),
+                "rows": _enrich_rows(bench, ranked, compute, view["bandclass"], cells),
                 "overall_meta": meta,
                 "dataset_meta": dataset_meta(harmonized, list(bench.datasets_)),
                 "excluded": excluded,
@@ -636,6 +870,9 @@ def assemble(
         rankings.setdefault(view["task"], {}).setdefault(view["probe"], {})[view["bandclass"]] = (
             aggregation_blocks
         )
+        if is_segmentation_variant(view["probe"]):
+            # Variants are ranked but left out of the cross-view sensitivity matrix.
+            continue
         views.append(view)
         benches.append(bench)
 
