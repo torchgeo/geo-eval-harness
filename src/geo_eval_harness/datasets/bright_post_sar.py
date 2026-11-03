@@ -131,3 +131,37 @@ class BRIGHTPostSAR(BenchDataset):
             raise ValueError("BRIGHT requires exactly the single sar band")
         transform = select_bands([0], 1, transform)
         return BRIGHTSegmentationDataset(self.split_paths(self.data_root(), split), transform)
+
+
+class BRIGHTPostSARRGB(BRIGHTPostSAR):
+    """BRIGHT post-event SAR served as a 3-channel RGB-like image (same tiles, labels and splits).
+
+    The single SAR amplitude channel is repeated into ``red``/``green``/``blue`` band specs on
+    sensor ``aerial`` without wavelengths, with the SAR statistics on each, as CaFFe-as-RGB does.
+    Every model then uses its standard RGB setup (timm stems, DOFA/Panopticon default RGB
+    wavelengths, TerraMind's RGB modality, OlmoEarth's aerial RGB path), so models without a
+    single-band SAR input can run BRIGHT. Pseudo-RGB from SAR is a modelling choice; selecting
+    fewer bands gives fewer copies of the same channel.
+    """
+
+    name = "bright-post-sar-rgb"
+    rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
+    bands: ClassVar[list[BandSpec]] = [
+        BandSpec("aerial", name, "sar", mean=56.8231, std=45.8553, min=0, max=255)
+        for name in ("red", "green", "blue")
+    ]
+
+    def get_dataset(
+        self,
+        split: str,
+        *,
+        partition: str = "default",
+        bands: tuple[str, ...] | None = None,
+        transform: Callable[[Sample], Sample] | None = None,
+    ) -> Dataset:
+        """Load the SAR tile once and repeat it into one identical channel per selected band."""
+        if partition != "default":
+            raise ValueError("BRIGHT supports only the default partition")
+        copies = len(self.select_band_specs(bands))
+        transform = select_bands([0] * copies, 1, transform)
+        return BRIGHTSegmentationDataset(self.split_paths(self.data_root(), split), transform)

@@ -6,7 +6,8 @@ import pytest
 import rasterio
 import torch
 
-from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR, BRIGHTPostSARRGB
 from geo_eval_harness.models._input_units import InputUnit, detect_input_unit
 from geo_eval_harness.models._normalization import build_normalizer
 from tests.support.data import write_bright_post_sar_files
@@ -56,3 +57,21 @@ def test_sar_band_is_uint8_and_zscores_to_unit_scale() -> None:
     normalized = build_normalizer("bandspec_zscore", BRIGHTPostSAR.bands)(images)
     assert abs(float(normalized.mean())) < 0.05
     assert abs(float(normalized.std()) - 1) < 0.05
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_rgb_variant_repeats_sar_into_identical_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_bright_post_sar_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert get_bench_dataset_class("bright-post-sar-rgb") is BRIGHTPostSARRGB
+    sar = BRIGHTPostSAR().get_dataset("train")[0]
+    rgb = BRIGHTPostSARRGB().get_dataset("train")[0]
+    assert rgb["image"].shape == (3, *sar["image"].shape[-2:])
+    assert all(torch.equal(rgb["image"][i], sar["image"][0]) for i in range(3))
+    assert torch.equal(rgb["mask"], sar["mask"])
+    assert [b.name for b in BRIGHTPostSARRGB.bands] == ["red", "green", "blue"]
+    assert all(b.wavelength_um is None and b.sensor == "aerial" for b in BRIGHTPostSARRGB.bands)
+    two = BRIGHTPostSARRGB().get_dataset("train", bands=("red", "green"))[0]
+    assert two["image"].shape[0] == 2
