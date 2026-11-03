@@ -9,6 +9,7 @@ Changed
 
 * Package, CLI, and repository name: ``geo-eval-harness``. Python imports and fully qualified model targets use ``geo_eval_harness``. Stored results and resume hashes remain compatible; update custom imports and YAML targets as described in :doc:`installation`.
 * TerraTorch models use a separate source installation because the published backend's TorchGeo requirement is incompatible. See :doc:`installation` for the pinned command.
+* ``hotosm_buildings`` trains on a fixed 5,000-tile subset of the official train split by default. This is the benchmark and leaderboard version. ``--partition full`` restores the whole 57,890-tile train split; val and test are unchanged. HOTOSM results produced before this change used the full split and correspond to ``--partition full``, although their result rows say ``partition=default``. Write new HOTOSM runs to a fresh output file so resume does not treat those rows as done. See :doc:`datasets`.
 
 Added
 ^^^^^

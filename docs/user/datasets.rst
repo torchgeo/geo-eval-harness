@@ -252,7 +252,7 @@ CLI name             Class
 ``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 
 ``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB)
+``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
 ``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
 ``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
 ``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
@@ -421,6 +421,30 @@ The :download:`example config </examples/oscd-post-run.yaml>` uses a randomly in
 
 Sources and attribution: the `OSCD project page <https://rcdaudt.github.io/oscd/>`__ and the `paper <https://doi.org/10.1109/IGARSS.2018.8518015>`__. The imagery contains modified Copernicus Sentinel data (2015-2018). The change labels are released under **CC BY-NC-SA** (non-commercial); contact the authors for commercial use.
 
+HOTOSM buildings — segmentation
+-------------------------------
+
+``hotosm_buildings`` is building footprint segmentation on 256 x 256 OpenAerialMap RGB tiles (about 0.3 m) from 93 HOT Tasking Manager projects, with OpenStreetMap labels. Validation (**7,237** tiles) and test (**7,236**) are the official splits.
+
+.. important::
+
+   **The benchmark trains on a fixed 5,000-tile subset of the official train split.** This
+   ``default`` partition is the version reported on the leaderboard. HOTOSM results on the
+   full train split are not comparable with leaderboard rows.
+
+======================== ============ ===============================================================
+``--partition``          train tiles  use
+======================== ============ ===============================================================
+``default``              5,000        benchmark and leaderboard version
+``full``                 57,890       the whole official train split (the behaviour before the 5k default)
+======================== ============ ===============================================================
+
+The subset is packaged as ``hotosm_buildings_train_5k.csv.gz``, which lists each tile's ``project_id``, ``tile_id``, and row in the converted ``train.parquet``. Loading checks that every listed row holds the listed tile, so a train file converted differently fails instead of silently training on other tiles. The tiles were drawn per project in proportion to its size, after excluding train tiles that also appear in val or test, so the subset keeps the project and country mix of the full split (76% Myanmar).
+
+Why 5k: in a training-budget study (13 models, frozen and LoRA, UPerNet, 10 epochs, budgets 1k to all 57,880 eligible tiles, 3 subsets x 3 training seeds), the model ranking at 5k tiles matched full-data training with Kendall tau-b 0.97 (frozen) and 0.88 (LoRA). Rankings from two training seeds on the full data agree only at 0.87 to 0.94, so 5k is within seed noise, at about 1/12 of the training compute. The packaged subset is the study's subset seed 1. Normalization statistics remain those of the full train split.
+
+Imagery CC-BY 4.0 (OpenAerialMap); labels ODbL 1.0 (OpenStreetMap).
+
 Open Cities AI Challenge — segmentation
 ---------------------------------------
 
@@ -523,12 +547,14 @@ Model compatibility
   Sentinel-2 RGB wavelengths — see
   `#15 <https://github.com/torchgeo/geo-eval-harness/issues/15>`__.
 
-Data partitions (V1 only)
--------------------------
+Data partitions
+---------------
 
-V1 datasets honour the ``--partition`` argument (which selects one
-of the partition JSON files distributed with each dataset).  V2 datasets
-ignore it.
+V1 datasets and ``hotosm_buildings`` honour the ``--partition`` argument; other
+datasets ignore it or reject non-default values. For HOTOSM, ``default`` is the
+5k benchmark training subset and ``full`` is the whole train split (see
+`HOTOSM buildings — segmentation`_). For V1 datasets, ``--partition`` selects one
+of the partition JSON files distributed with each dataset.
 
 .. code-block:: console
 
