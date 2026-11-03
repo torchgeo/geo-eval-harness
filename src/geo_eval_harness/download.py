@@ -21,6 +21,7 @@ Targets:
   ``<output>/sen1floods11``.
 - ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
   ``<output>/bright-post-sar``.
+- ``oscd-post`` — torchgeo's OSCD downloader, into ``<output>/oscd-post``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -41,7 +42,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from torchgeo.datasets import LEVIRCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
+from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
@@ -76,7 +77,14 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced", "loveda", "levir-cd-post")
+TORCHGEO_DATASETS: tuple[str, ...] = (
+    "eurosat",
+    "resisc45",
+    "ucmerced",
+    "loveda",
+    "levir-cd-post",
+    "oscd-post",
+)
 DIRECT_DATASETS: tuple[str, ...] = (
     "aid",
     "hotosm_buildings",
@@ -343,6 +351,20 @@ def download_levir_cd_post(output_dir: Path) -> None:
     for split in LEVIRCDPost.image_counts:
         LEVIRCDPost.split_paths(target, split)
     logger.info("LEVIR-CD download complete.")
+
+
+def download_oscd_post(output_dir: Path) -> None:
+    """Download verified OSCD archives into ``output_dir/oscd-post`` and check the tile splits."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    target = Path(output_dir) / "oscd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo OSCD -> %s", target)
+    for split in ("train", "test"):
+        OSCD(root=str(target), split=split, download=True, checksum=True)
+    for split in OSCDPost.split_sizes:
+        OSCDPost.split_tiles(target, split)
+    logger.info("OSCD download complete.")
 
 
 @dataclass(frozen=True)

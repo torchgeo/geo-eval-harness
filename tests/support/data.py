@@ -39,6 +39,7 @@ def require_dataset_data(name: str) -> None:
         "loveda",
         "levir-cd-post",
         "bright-post-sar",
+        "oscd-post",
     ):
         paths = [Path("data") / name]
     elif name.startswith("sen1floods11"):
@@ -292,6 +293,43 @@ def write_bright_post_sar_archives(root: Path) -> dict[str, str]:
                 archive.write(member, f"{kind}/{member.name}")
         checksums[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
     return checksums
+
+
+#: Fixture cities; with 8-pixel tiles they give 7 / 4 / 4 train/val/test tiles.
+OSCD_SHAPES = {"alpha": (12, 20), "bravo": (6, 8), "charlie": (10, 9), "delta": (16, 16)}
+
+
+def write_oscd_post_files(root: Path) -> Path:
+    """Write the ``small_oscd_post`` cities in torchgeo's OSCD layout."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    directory = root / "data" / "oscd-post"
+    for index, (city, shape) in enumerate(OSCD_SHAPES.items()):
+        y, x = np.indices(shape)
+        mask = ((x // 3 + y // 2 + index) % 2 + 1).astype(np.uint8)
+        label = OSCDPost.label_path(directory, city)
+        label.parent.mkdir(parents=True)
+        label.write_bytes(geotiff_bytes(mask[None]))
+        # torchgeo's OSCD also indexes the unused pre image and dates.txt.
+        post = OSCDPost.image_dir(directory, city)
+        for images in (post, post.parent / "imgs_1_rect"):
+            images.mkdir(parents=True)
+            for band_index, band in enumerate(OSCDPost.bands):
+                pixels = 1000 + 100 * band_index + 50 * mask.astype(int) + index + x
+                (images / f"{band.source_name}.tif").write_bytes(
+                    geotiff_bytes(pixels.astype(np.uint16)[None])
+                )
+        (post.parent / "dates.txt").write_text("date_1: 20160101\ndate_2: 20180101\n")
+    return directory
+
+
+def write_oscd_post_archives(root: Path) -> list[Path]:
+    """Zip the fixture into torchgeo's three OSCD release archives."""
+    directory = write_oscd_post_files(root)
+    return [
+        Path(shutil.make_archive(str(root / folder.name), "zip", directory, folder.name))
+        for folder in sorted(directory.iterdir())
+    ]
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:

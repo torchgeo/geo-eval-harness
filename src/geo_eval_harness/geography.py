@@ -100,7 +100,7 @@ class GeoRecord:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
         version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
-            ``"geotiff"``/``"index"``. ``None`` when nothing was read.
+            ``"geotiff"``/``"index"``/``"geojson"``. ``None`` when nothing was read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -191,6 +191,31 @@ def _extract_open_cities() -> dict:
         "lat": index.lat.to_numpy(),
         "place": index.city.map(CITY_NAME).to_numpy(dtype=object),
         "version": "index",
+    }
+
+
+def _extract_oscd(root: Path) -> dict:
+    """Place OSCD tile centres in each city's GeoJSON bounding box; the rasters have no CRS."""
+    from .datasets.oscd_post import OSCDPost, read_window
+
+    lon, lat, place = [], [], []
+    for split in ("train", "val", "test"):
+        for city in OSCDPost.split_cities[split]:
+            footprint = OSCDPost.image_dir(root, city).parent / f"{city}.geojson"
+            ring = json.loads(footprint.read_text())["features"][0]["geometry"]["coordinates"][0]
+            (west, south), (east, north) = np.min(ring, axis=0), np.max(ring, axis=0)
+            height, width = read_window(OSCDPost.label_path(root, city)).shape
+            rows = np.arange(0, height, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            cols = np.arange(0, width, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            y, x = np.meshgrid(np.minimum(rows, height) / height, np.minimum(cols, width) / width)
+            lon += (west + x.ravel() * (east - west)).tolist()
+            lat += (north - y.ravel() * (north - south)).tolist()
+            place += [city] * x.size
+    return {
+        "lon": np.asarray(lon),
+        "lat": np.asarray(lat),
+        "place": np.asarray(place, dtype=object),
+        "version": "geojson",
     }
 
 
@@ -460,6 +485,9 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
+    elif name == "oscd-post":
+        data = _extract_oscd(directory)
+        reason = "city footprints have no coordinates"
     elif geotiffs:
         data = extract_geotiffs(geotiffs)
         reason = "no image carries a usable GeoTIFF transform/crs"
