@@ -45,6 +45,8 @@ The fixed methodology and coverage rules are:
   otherwise uses complete ``bandspec_zscore`` results; it never combines the
   two.
 * Models without a complete row are named below the table.
+* Exception: segmentation **Native bands** views (below) rank each model on the
+  datasets it has.
 
 Segmentation views are built from the setup columns of each result row (see
 :ref:`segmentation-setup-columns`):
@@ -52,7 +54,22 @@ Segmentation views are built from the setup columns of each result row (see
 * **Adaptation** (``adaptation``): frozen backbone, LoRA, or full fine-tuning.
 * **Decoder** (``decoder``): UPerNet or U-Net.
 * **Pyramid**: the backbone's native features, the ViT neck (``neck: vit``),
-  or AnyUp upsampling (``upsampler: anyup``).
+  or AnyUp upsampling (``upsampler: anyup``). **Default** is each model's own
+  pyramid (native features for hierarchical backbones, the ViT neck for ViTs),
+  so hierarchical and ViT backbones share one view; it exists only with Native
+  bands. A model with both pyramids in one setup stops the generator.
+* **Bands** adds **Native bands** for segmentation: each model is ranked on its
+  own input bands per dataset (RGB, multispectral or SAR), so models that mix
+  modalities across datasets keep one row. Per-modality configurations of one
+  model are merged (``NATIVE_MODEL_ALIASES``: DEO Swin RGB/S2, TerraFM S1/S2);
+  where two of them, or two band lists, cover a dataset, the better seed mean
+  counts. Coverage is relaxed: a model is ranked on the datasets it has, and a
+  Datasets column shows how many. Average rank ranks the models that have a
+  dataset among themselves (ties share the best rank) and averages each model's
+  ranks over its own datasets, which is the per-cell rank of the per-model
+  results tables; Improvability averages over the model's own datasets. ELO
+  needs a complete score matrix and is not offered. Native views are left out
+  of the sensitivity heatmap and have no GFLOPs points.
 * By default every dataset uses its canonical protocol (``SEG_PROTOCOL`` in
   :file:`scripts/regen_leaderboard.py`): head LR ``1e-3`` and full fine-tuning
   backbone LR ``1e-5`` everywhere; 20 epochs with a per-dataset LoRA backbone

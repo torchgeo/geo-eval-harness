@@ -467,6 +467,9 @@ def _seg_raw_df() -> pd.DataFrame:
 FROZEN = "frozen/upernet/vit/canonical"
 LORA = "lora/upernet/vit/canonical"
 VARIANT = "frozen/upernet/vit/epochs=50"
+FROZEN_DEFAULT = "frozen/upernet/default/canonical"
+LORA_DEFAULT = "lora/upernet/default/canonical"
+VARIANT_DEFAULT = "frozen/upernet/default/epochs=50"
 
 
 def test_segmentation_protocol_table_is_per_dataset() -> None:
@@ -526,7 +529,9 @@ def test_segmentation_seeds_average_per_setup_and_legacy_rows_are_retired() -> N
 def test_frozen_and_lora_rows_of_one_model_do_not_collide() -> None:
     rankings, sensitivity, _default = rl.assemble(rl.harmonize(_seg_raw_df()), n_bootstrap=10)
     seg = rankings["segmentation"]
-    assert list(seg) == [FROZEN, VARIANT, LORA]
+    assert list(seg) == [FROZEN_DEFAULT, VARIANT_DEFAULT, FROZEN, VARIANT, LORA_DEFAULT, LORA]
+    assert list(seg[FROZEN]) == ["RGB", "Native"]
+    assert list(seg[FROZEN_DEFAULT]) == ["Native"]
     for probe in (FROZEN, LORA):
         rows = seg[probe]["RGB"]["avg_rank"]["rows"]
         assert [row["model"] for row in rows] == ["seg_a", "seg_b", "seg_c"]
@@ -600,4 +605,102 @@ def test_generator_renders_segmentation_views(tmp_path) -> None:
     match = re.search(r"const RANKINGS = (.*?);", text, re.DOTALL)
     assert match is not None
     rankings = json.loads(match.group(1))
-    assert set(rankings["segmentation"]) == {FROZEN, LORA, VARIANT}
+    assert set(rankings["segmentation"]) == {
+        FROZEN,
+        LORA,
+        VARIANT,
+        FROZEN_DEFAULT,
+        LORA_DEFAULT,
+        VARIANT_DEFAULT,
+    }
+    assert rankings["segmentation"][FROZEN_DEFAULT]["Native"]["avg_rank"]["coverage"] == "partial"
+
+
+def _native_raw_df() -> pd.DataFrame:
+    """Models mixing modalities and pyramids across three datasets, with holes.
+
+    ``vit_rgb`` runs RGB everywhere (ViT neck).  ``vit_mixed`` runs S2 on
+    burn_scars, RGB on loveda and lacks caffe.  ``swin`` is a hierarchical
+    backbone (native pyramid) split into per-modality DEO configs that both
+    cover burn_scars.
+    """
+    s2 = "b02,b03,b04,b08"
+    rows = [
+        _seg_row("vit_rgb", "burn_scars", 0.50),
+        _seg_row("vit_rgb", "loveda", 0.50, epochs="30"),
+        _seg_row("vit_rgb", "caffe", 0.70),
+        {**_seg_row("vit_mixed", "burn_scars", 0.60), "bands": s2},
+        _seg_row("vit_mixed", "loveda", 0.40, epochs="30"),
+        _seg_row("tgeo_deo_swin_rgb", "burn_scars", 0.55, neck="none"),
+        {**_seg_row("tgeo_deo_swin_s2", "burn_scars", 0.65, neck="none"), "bands": s2},
+        _seg_row("tgeo_deo_swin_rgb", "loveda", 0.45, epochs="30", neck="none"),
+        _seg_row("tgeo_deo_swin_rgb", "caffe", 0.60, neck="none"),
+        _seg_row("vit_rgb", "burn_scars", 0.99, upsampler="anyup"),
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_native_band_rows_merge_modalities_configs_and_default_pyramid() -> None:
+    native = rl.native_band_rows(rl.harmonize(_native_raw_df()))
+    assert set(native["bandclass"]) == {"Native"}
+    assert set(native["base_model"]) == {"vit_rgb", "vit_mixed", "tgeo_deo_swin"}
+    default = native[native["probe"] == FROZEN_DEFAULT]
+    # AnyUp stays out of the default pyramid; both DEO configs land on burn_scars.
+    assert (default["score"] < 0.9).all()
+    assert len(default[default["dataset"] == "burn_scars"]) == 4
+    cells = rl.select_native_view(native, FROZEN_DEFAULT)
+    swin = cells[(cells["model"] == "tgeo_deo_swin") & (cells["dataset"] == "burn_scars")]
+    assert swin["score"].tolist() == [pytest.approx(0.65)]  # the better config counts
+    assert len(cells) == 8  # one cell per (model, dataset); vit_mixed lacks caffe
+
+
+def test_native_view_ranks_every_model_on_its_own_datasets() -> None:
+    rankings, sensitivity, _default = rl.assemble(rl.harmonize(_native_raw_df()), n_bootstrap=10)
+    view = rankings["segmentation"][FROZEN_DEFAULT]["Native"]
+    assert list(view) == ["avg_rank", "improvability"]
+    block = view["avg_rank"]
+    assert block["coverage"] == "partial"
+    assert block["excluded"] == []
+    rows = {row["model"]: row for row in block["rows"]}
+    # burn_scars: swin 1, vit_mixed 2, vit_rgb 3; loveda: vit_rgb 1, swin 2, vit_mixed 3;
+    # caffe: vit_rgb 1, swin 2.
+    assert rows["tgeo_deo_swin"]["overall"] == pytest.approx(5 / 3)
+    assert rows["vit_rgb"]["overall"] == pytest.approx(5 / 3)
+    assert rows["vit_mixed"]["overall"] == pytest.approx(2.5)
+    assert [row["model"] for row in block["rows"]] == ["tgeo_deo_swin", "vit_rgb", "vit_mixed"]
+    assert rows["vit_mixed"]["n_tasks"] == 2
+    assert rows["vit_mixed"]["per_task"]["caffe"] is None
+    assert rows["vit_mixed"]["per_task_n"]["caffe"] is None
+    assert rows["tgeo_deo_swin"]["display"] == "DEO Swin"
+    assert all(row["gflops_backbone"] is None for row in block["rows"])
+    improvability = {row["model"]: row["overall"] for row in view["improvability"]["rows"]}
+    # vit_mixed: burn_scars (0.35 - 0.4) / 0.4 -> 12.5 %, loveda (0.5 - 0.6) / 0.6 -> 16.7 %.
+    assert improvability["vit_mixed"] == pytest.approx((12.5 + 100 / 6) / 2)
+    # Native views are partial and stay out of the sensitivity matrix.
+    assert all(entry["bandclass"] != "Native" for entry in sensitivity["views"])
+    json.dumps(rankings, allow_nan=False)
+
+
+def test_two_pyramids_in_one_setup_have_no_default() -> None:
+    raw = pd.DataFrame(
+        [
+            _seg_row("seg_a", "burn_scars", 0.5),
+            _seg_row("seg_a", "loveda", 0.5, epochs="30", neck="none"),
+        ]
+    )
+    with pytest.raises(ValueError, match="default pyramid is ambiguous"):
+        rl.native_band_rows(rl.harmonize(raw))
+
+
+def test_native_view_prefers_model_native_over_a_better_zscore_cell() -> None:
+    raw = pd.DataFrame(
+        [
+            {**_seg_row("seg_a", "burn_scars", 0.5), "normalization": "model_native"},
+            {**_seg_row("seg_a", "burn_scars", 0.7), "bands": "b02,b03,b04,b08"},
+            _seg_row("seg_b", "burn_scars", 0.6),
+        ]
+    )
+    cells = rl.select_native_view(rl.native_band_rows(rl.harmonize(raw)), FROZEN_DEFAULT)
+    assert cells.set_index("model")["score"].to_dict() == pytest.approx(
+        {"seg_a": 0.5, "seg_b": 0.6}
+    )

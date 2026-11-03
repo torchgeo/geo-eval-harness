@@ -101,8 +101,29 @@ SEG_PROBE_SEP = "/"
 SEG_CANONICAL = "canonical"
 SEG_ADAPTATION_ORDER = ["frozen", "lora", "full"]
 SEG_DECODER_ORDER = ["upernet", "unet"]
-SEG_PYRAMID_ORDER = ["native", "vit", "anyup"]
-BANDCLASS_ORDER = ["RGB", "Multispectral"]
+SEG_PYRAMID_ORDER = ["default", "native", "vit", "anyup"]
+BANDCLASS_ORDER = ["RGB", "Multispectral", "Native"]
+
+# Segmentation-only band class: every model is ranked on its own input bands per
+# dataset (RGB, multispectral or SAR), so models that mix modalities across
+# datasets still get one row.  Coverage is relaxed: a model is ranked on the
+# datasets it has (see :func:`rank_native_view`).
+NATIVE_BANDCLASS = "Native"
+# The ``default`` pyramid is each model's own feature pyramid: the backbone's
+# native features for hierarchical backbones, the ViT neck for ViTs.  AnyUp is
+# an add-on and stays out.  It exists only in the Native band class.
+SEG_DEFAULT_PYRAMID = "default"
+SEG_DEFAULT_PYRAMID_SOURCES = frozenset({"native", "vit"})
+# Per-modality configurations of one model, merged in the Native band class only.
+# Where two of them cover the same dataset, the better-scoring cell is kept.
+NATIVE_MODEL_ALIASES = {
+    "tgeo_deo_swin_rgb": "tgeo_deo_swin",
+    "tgeo_deo_swin_s2": "tgeo_deo_swin",
+    "terrafm_base_s1": "terrafm_base",
+    "terrafm_base_s2": "terrafm_base",
+}
+# Aggregations that need a complete score matrix are not offered on Native views.
+NATIVE_AGGREGATIONS = ("avg_rank", "improvability")
 
 # ``*_rgb`` is a band-specific TerraMind configuration, not a different model.
 # Apply aliases before any coverage or duplicate validation.
@@ -116,6 +137,8 @@ MODEL_ALIASES = {
 MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "rcf": ("Random conv. features", True),
     "imagestats": ("Image statistics", True),
+    "convnext_large": ("ConvNeXt-L (ImageNet)", False),
+    "convnext_large_dinov3": ("ConvNeXt-L DINOv3", False),
     "olmoearth_v1_nano": ("OlmoEarth v1 nano", False),
     "olmoearth_v1_tiny": ("OlmoEarth v1 tiny", False),
     "olmoearth_v1_base": ("OlmoEarth v1 base", False),
@@ -129,6 +152,8 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "olmoearth_v1_2_base": ("OlmoEarth v1.2 base", False),
     "tgeo_croma_base": ("CROMA base", False),
     "tgeo_croma_large": ("CROMA large", False),
+    "terrafm_base": ("TerraFM base", False),
+    "tgeo_deo_swin": ("DEO Swin", False),
     "tgeo_dofa_base": ("DOFA base", False),
     "tgeo_dofa_large": ("DOFA large", False),
     "tgeo_earthloc_s2_resnet50": ("EarthLoc ResNet-50", False),
@@ -151,6 +176,8 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "tt_prithvi_eo_v2_600": ("Prithvi-EO-v2 600M", False),
     "tt_terramind_v1_base": ("TerraMind v1 base", False),
     "tt_terramind_v1_large": ("TerraMind v1 large", False),
+    "universat_base_seg": ("UniverSat base", False),
+    "vit_base_patch16_224": ("ViT-B/16 (ImageNet)", False),
     "vit_large_patch16_dinov3": ("DINOv3 ViT-L/16", False),
     "vit_large_patch16_dinov3sat": ("DINOv3-SAT ViT-L/16", False),
 }
@@ -581,6 +608,138 @@ def build_view(
     return _load_bench(frame), excluded
 
 
+def native_band_rows(harmonized: pd.DataFrame) -> pd.DataFrame:
+    """Return the segmentation cells of the Native band class.
+
+    Every segmentation cell, RGB or multispectral, is copied into
+    :data:`NATIVE_BANDCLASS` under its :data:`NATIVE_MODEL_ALIASES` identity.
+    Cells on the ``native`` or ``vit`` pyramid are copied once more under the
+    ``default`` pyramid.  A model with both pyramids in one setup has no single
+    default and is rejected.
+    """
+    seg = harmonized[
+        (harmonized["task"] == "segmentation") & (harmonized["pooling"] == "patch-mean")
+    ]
+    if seg.empty:
+        return seg.copy()
+    seg = seg.assign(
+        bandclass=NATIVE_BANDCLASS,
+        base_model=seg["base_model"].map(lambda model: NATIVE_MODEL_ALIASES.get(model, model)),
+    )
+    parts = seg["probe"].str.split(SEG_PROBE_SEP)
+    pyramid = parts.str[2]
+    default = seg[pyramid.isin(SEG_DEFAULT_PYRAMID_SOURCES)].copy()
+    default_parts = parts[default.index]
+    default["probe"] = [
+        SEG_PROBE_SEP.join([*part[:2], SEG_DEFAULT_PYRAMID, *part[3:]]) for part in default_parts
+    ]
+    sources = default.assign(source_pyramid=pyramid[default.index])
+    mixed = sources.groupby(["base_model", "probe"])["source_pyramid"].nunique()
+    if (mixed > 1).any():
+        raise ValueError(
+            "A model has both a native and a ViT-neck pyramid in one setup, so its default "
+            f"pyramid is ambiguous: {sorted(mixed[mixed > 1].index.tolist())}"
+        )
+    return pd.concat([seg, default], ignore_index=True)
+
+
+def select_native_view(native: pd.DataFrame, probe: str) -> pd.DataFrame | None:
+    """Pick one cell per (model, dataset) of a Native view, without a coverage filter.
+
+    A model's per-modality configurations can both cover a dataset (DEO RGB and
+    S2 on CloudSEN12); the better-scoring cell is kept, like the per-model
+    results tables.  ``model_native`` cells are preferred over z-scored ones,
+    as in :func:`select_view`.
+    """
+    sub = native[(native["probe"] == probe) & (native["bandclass"] == NATIVE_BANDCLASS)]
+    if sub.empty:
+        return None
+    ordered = sub.assign(zscored=sub["normalization"] != "model_native").sort_values(
+        ["zscored", "score"], ascending=[True, False], kind="stable"
+    )
+    frame = ordered.drop_duplicates(["base_model", "dataset", "metric"])
+    frame = frame.rename(columns={"base_model": "model"})
+    return frame[["model", "dataset", "metric", "score", "score_sd", "n_seeds"]].reset_index(
+        drop=True
+    )
+
+
+def rank_native_view(cells: pd.DataFrame, aggregation: str) -> list[dict[str, object]]:
+    """Rank the models of a Native view on the datasets each one has.
+
+    ``avg_rank`` ranks the models that have a dataset among themselves (ties
+    share the best rank) and averages each model's ranks over its own datasets,
+    which is the per-cell rank of the per-model results tables.
+    ``improvability`` averages each model's percent error reduction to the
+    dataset's best score over its own datasets.
+    """
+    from evaluma.methods.improvability import compute_improvability
+    from evaluma.metric_registry import get_direction, get_error_optimum
+
+    matrix = cells.pivot(index="model", columns="dataset", values="score")
+    if aggregation == "avg_rank":
+        overall = matrix.rank(ascending=False, axis=0, method="min").mean(axis=1)
+    elif aggregation == "improvability":
+        metrics = cells.groupby("dataset")["metric"].first()
+        table = compute_improvability(
+            matrix,
+            {dataset: get_direction(metric) for dataset, metric in metrics.items()},
+            {dataset: get_error_optimum(metric) for dataset, metric in metrics.items()},
+        ).table
+        overall = table.set_index("model")["improvability"]
+    else:
+        raise ValueError(f"Unsupported Native-view aggregation: {aggregation}")
+    order = sorted(overall.items(), key=lambda item: (float(item[1]), str(item[0])))
+    return [{"model": str(model), "overall": float(value)} for model, value in order]
+
+
+def _native_rows(
+    cells: pd.DataFrame, ranked: list[dict[str, object]], datasets: list[str]
+) -> list[dict[str, object]]:
+    """Return Native-view table rows; a dataset a model lacks is ``None``."""
+    by_cell = {(str(cell.model), str(cell.dataset)): cell for cell in cells.itertuples(index=False)}
+    rows: list[dict[str, object]] = []
+    for row in ranked:
+        model = str(row["model"])
+        display, is_baseline = resolve_meta(model)
+        mine = {dataset: by_cell.get((model, dataset)) for dataset in datasets}
+        rows.append(
+            {
+                "model": model,
+                "display": display,
+                "is_baseline": is_baseline,
+                "gflops_backbone": None,
+                "overall": row["overall"],
+                "overall_ci": None,
+                "n_tasks": sum(cell is not None for cell in mine.values()),
+                "per_task": {d: None if c is None else float(c.score) for d, c in mine.items()},
+                "per_task_sd": {
+                    d: None if c is None or math.isnan(float(c.score_sd)) else float(c.score_sd)
+                    for d, c in mine.items()
+                },
+                "per_task_n": {d: None if c is None else int(c.n_seeds) for d, c in mine.items()},
+            }
+        )
+    return rows
+
+
+def _native_block(harmonized: pd.DataFrame, cells: pd.DataFrame) -> dict[str, object] | None:
+    """Return the aggregation blocks of one Native view, or ``None`` below two models."""
+    if cells["model"].nunique() < 2:
+        return None
+    datasets = ordered_values(cells["dataset"], list(DATASET_DISPLAY))
+    return {
+        aggregation: {
+            "rows": _native_rows(cells, rank_native_view(cells, aggregation), datasets),
+            "overall_meta": AGG_META[aggregation],
+            "dataset_meta": dataset_meta(harmonized, datasets),
+            "excluded": [],
+            "coverage": "partial",
+        }
+        for aggregation in NATIVE_AGGREGATIONS
+    }
+
+
 def avg_rank(bench: object) -> list[dict[str, object]]:
     """Return average dataset ranks, where lower is better."""
     scores = bench.scores_
@@ -851,8 +1010,18 @@ def assemble(
     rankings: dict[str, object] = {}
     views: list[dict[str, str]] = []
     benches: list[object] = []
+    native = native_band_rows(harmonized)
 
-    for view in _view_keys(harmonized):
+    for view in _view_keys(pd.concat([harmonized, native], ignore_index=True)):
+        if view["bandclass"] == NATIVE_BANDCLASS:
+            # Partial coverage: ranked, but left out of the cross-view sensitivity matrix.
+            cells = select_native_view(native, view["probe"])
+            blocks = None if cells is None else _native_block(harmonized, cells)
+            if blocks is not None:
+                rankings.setdefault(view["task"], {}).setdefault(view["probe"], {})[
+                    view["bandclass"]
+                ] = blocks
+            continue
         cells, excluded = select_view(harmonized, **view)
         bench = None if cells is None else _load_bench(cells)
         if bench is None or len(bench.models_) < 2:
