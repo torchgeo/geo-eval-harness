@@ -181,8 +181,8 @@ class SegmentationProbe(nn.Module):
             pretrained AnyUp between the fused features and the classifier, guided by the input's
             RGB bands (see :class:`~geo_eval_harness.models.anyup.AnyUpClassifier`).
         sweep_heads: With ``head_type="patch_linear"``, train this many independent probes at
-            once as a :class:`SweepPatchLinearHead` (one per learning-rate x weight-decay cell).
-            ``0`` (default) builds a single :class:`PatchLinearHead`.
+            once as a ``SweepPatchLinearHead`` (one per learning-rate x weight-decay cell).
+            ``0`` (default) builds a single ``PatchLinearHead``.
         feature_standardize: Z-score each hooked feature channel with statistics fit on the
             training split (:meth:`fit_standardizer`) before the head. Frozen backbones only.
     """
@@ -271,7 +271,7 @@ class SegmentationProbe(nn.Module):
 
     @property
     def sweep_head(self) -> SweepPatchLinearHead | None:
-        """Return the :class:`SweepPatchLinearHead`, if the probe trains a sweep."""
+        """Return the ``SweepPatchLinearHead``, if the probe trains a sweep."""
         head = self.head.head if isinstance(self.head, StandardizedHead) else self.head
         return head if isinstance(head, SweepPatchLinearHead) else None
 

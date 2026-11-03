@@ -738,7 +738,7 @@ class SweepCrossEntropy(nn.Module):
 class SweepSegmentationSolver(SegmentationSolver):
     """Train a learning-rate x weight-decay grid of linear probes at once and keep the best.
 
-    UniverSat's ``LP_eval.py`` protocol: every head of a :class:`SweepPatchLinearHead` has its own
+    UniverSat's ``LP_eval.py`` protocol: every head of a ``SweepPatchLinearHead`` has its own
     AdamW learning rate and weight decay and a cosine schedule to zero without warmup. After each
     epoch every head is scored on validation mIoU and keeps a snapshot of its best epoch. Training
     ends by restoring the head with the highest best-epoch validation mIoU (ties: first in grid
