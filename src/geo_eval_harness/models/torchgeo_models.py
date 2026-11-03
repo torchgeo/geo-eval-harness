@@ -686,7 +686,8 @@ class TorchGeoDEOBench(BenchModel):
     ``model_native`` normalization, RGB uses DEO-FM's normalize_hr (torchgeo's
     bundled transform) and S2 uses normalize_s2 on raw DN, as in DEO-FM's own
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
-    channel order instead. It is frozen by default; LoRA adapters make it trainable.
+    channel order instead. It is frozen by default; segmentation supports LoRA
+    adapters or full fine-tuning.
     """
 
     _deo_mean: torch.Tensor
