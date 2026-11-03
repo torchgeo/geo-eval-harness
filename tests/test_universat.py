@@ -405,6 +405,21 @@ def test_upe_training_chunks_are_capped_by_pixels(
     assert encoder.model.batches == expected
 
 
+def test_upe_chunks_are_capped_by_pixels_without_gradients(monkeypatch: pytest.MonkeyPatch) -> None:
+    from geo_eval_harness.models import universat
+
+    encoder = torch.nn.Module()
+    encoder.model = _FakeUPE()
+    encoder.model.spatial_encoder.requires_grad_(False)
+    universat._install_upe_chunking(encoder)
+    # One band keeps the value budget slack; the pixel cap (2 samples of 4x4) must still split.
+    monkeypatch.setattr(universat, "UPE_PIXEL_BUDGET", 10**9)
+    monkeypatch.setattr(universat, "UPE_PIXEL_CAP", 2 * 4 * 4)
+    x = {"s2": torch.randn(5, 1, 4, 4)}
+    encoder.model.UPE_forward(x, ["s2"], {"s2": [0.5]}, {"s2": 10.0}, 1.0, {"s2": 1})
+    assert encoder.model.batches == [2, 2, 1]
+
+
 class _FakeTrunk(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()

@@ -128,6 +128,10 @@ def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) ->
 # chunks of at most this many pixel x band values; the trunk still sees the
 # full batch.
 UPE_PIXEL_BUDGET = 2**20
+# Past the spectral step the UPE's spatial attention scales with pixels, not
+# bands: one-band 224 px CaFFe at batch 16 needed a single 4.9 GiB RoPE tensor
+# with 8 px patches. Every chunk is also capped at this many pixels.
+UPE_PIXEL_CAP = 2**18
 # When the UPE trains, each checkpointed chunk rebuilds its whole per-pixel
 # graph in backward. Past the spectral step that graph scales with pixels, not
 # bands, so few-band inputs (S1, S2 RGBN) got large chunks and OOMed in full
@@ -165,7 +169,7 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     mask_in: object = None,
     dataset: str = "",
 ) -> tuple[Any, ...]:
-    """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET``.
+    """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET`` and ``UPE_PIXEL_CAP``.
 
     Masked (pretraining) and dataset-projector calls bypass chunking. When the
     UPE itself trains (full fine-tuning), chunks are further capped at
@@ -174,11 +178,11 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     """
     batch = x[modalities[0]].shape[0]
     per_sample = sum(x[m][0].numel() for m in modalities)
-    chunk = max(1, UPE_PIXEL_BUDGET // max(per_sample, 1))
+    # Pixels (x timesteps) per sample, without the band axis (dim -3).
+    pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
+    chunk = max(1, min(UPE_PIXEL_BUDGET // max(per_sample, 1), UPE_PIXEL_CAP // max(pixels, 1)))
     needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
     if needs_grad:
-        # Pixels (x timesteps) per sample, without the band axis (dim -3).
-        pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
         chunk = min(chunk, max(1, UPE_GRAD_PIXEL_BUDGET // max(pixels, 1)))
     if mask_in is not None or dataset or batch <= chunk:
         return upe_forward(
