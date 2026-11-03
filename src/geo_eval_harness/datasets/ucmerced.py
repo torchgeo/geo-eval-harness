@@ -21,6 +21,29 @@ class UCMerced(BenchDataset):
     name = "ucmerced"
     task = "classification"
     num_classes = 21
+    class_names: ClassVar[tuple[str, ...]] = (
+        "agricultural",
+        "airplane",
+        "baseballdiamond",
+        "beach",
+        "buildings",
+        "chaparral",
+        "denseresidential",
+        "forest",
+        "freeway",
+        "golfcourse",
+        "harbor",
+        "intersection",
+        "mediumresidential",
+        "mobilehomepark",
+        "overpass",
+        "parkinglot",
+        "river",
+        "runway",
+        "sparseresidential",
+        "storagetanks",
+        "tenniscourt",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 1260, "val": 420, "test": 420}

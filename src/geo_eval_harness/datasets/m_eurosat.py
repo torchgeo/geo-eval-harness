@@ -15,6 +15,18 @@ class MEurosat(_V1Dataset):
     name = "m-eurosat"
     task = "classification"
     num_classes = 10
+    class_names: ClassVar[tuple[str, ...]] = (
+        "Industrial Buildings",
+        "Residential Buildings",
+        "Annual Crop",
+        "Permanent Crop",
+        "River",
+        "Sea and Lake",
+        "Herbaceous Vegetation",
+        "Highway",
+        "Pasture",
+        "Forest",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 2000, "val": 1000, "test": 1000}
