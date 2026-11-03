@@ -61,6 +61,11 @@ GeoBench V2 — segmentation
 .. autoclass:: SpaceNet2
 .. autoclass:: SpaceNet7
 
+Other segmentation
+------------------
+
+.. autoclass:: OpenCities
+
 torchgeo wrappers
 -----------------
 
@@ -75,5 +80,19 @@ torchgeo wrappers
 .. autoclass:: HOTOSMBuildings
 
 .. autoclass:: OpenEarthMapSAR
+
+.. autoclass:: LoveDA
+
+.. autoclass:: LEVIRCDPost
+
+.. autoclass:: Sen1Floods11Base
+
+.. autoclass:: Sen1Floods11S1
+
+.. autoclass:: Sen1Floods11S2
+
+.. autoclass:: BRIGHTPostSAR
+
+.. autoclass:: OSCDPost
 
 .. autoclass:: UCMerced

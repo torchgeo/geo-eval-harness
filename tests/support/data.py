@@ -1,7 +1,9 @@
 """Small, disjoint on-disk datasets read by the production dataset adapters."""
 
+import hashlib
 import io
 import json
+import shutil
 import struct
 import tarfile
 import zipfile
@@ -28,8 +30,20 @@ def require_dataset_data(name: str) -> None:
         ]
     elif name in ("eurosat", "eurosat-spatial"):
         paths = [Path("data/eurosat")]
-    elif name in ("resisc45", "ucmerced", "hotosm_buildings", "openearthmap-sar"):
+    elif name in (
+        "resisc45",
+        "ucmerced",
+        "hotosm_buildings",
+        "openearthmap-sar",
+        "open_cities",
+        "loveda",
+        "levir-cd-post",
+        "bright-post-sar",
+        "oscd-post",
+    ):
         paths = [Path("data") / name]
+    elif name.startswith("sen1floods11"):
+        paths = [Path("data/sen1floods11")]
     else:
         paths = [Path("data/geobenchv2") / name]
     if not any(path.exists() for path in paths):
@@ -126,6 +140,52 @@ def write_openearthmap_sar_files(root: Path) -> Path:
     return directory
 
 
+def write_sen1floods11_files(root: Path) -> Path:
+    """Write 16 x 16 chips and split CSVs in the Sen1Floods11 v1.1 layout.
+
+    Each chip has label -1 at ``[:2, :2]``, S1 NaN at ``[2:4, :2]`` and S2 zero fill at
+    ``[:2, 2:4]``; the last val chip is entirely no data.
+    """
+    from geo_eval_harness.datasets.sen1floods11 import (
+        SPLIT_DIR,
+        SPLIT_FILES,
+        Sen1Floods11Base,
+        chip_path,
+    )
+
+    directory = root / "data" / "sen1floods11"
+    y, x = np.indices((16, 16))
+    for split, csv_name in SPLIT_FILES.items():
+        chips = [f"{split}_{i}" for i in range(Sen1Floods11Base.split_sizes[split])]
+        for i, chip in enumerate(chips):
+            water = (x // 4 + y // 4 + i) % 2
+            label = water.astype(np.int16)
+            label[:2, :2] = -1
+            if split == "val" and chip == chips[-1]:
+                label[:] = -1
+            s1 = np.stack([-8 - 14 * water, -15 - 13 * water]).astype(np.float32)
+            s1[:, 2:4, :2] = np.nan
+            s2 = np.stack([2500 - 2000 * water + band for band in range(13)]).astype(np.int16)
+            s2[:, :2, 2:4] = 0
+            for layer, pixels in (("S1Hand", s1), ("S2Hand", s2), ("LabelHand", label[None])):
+                path = directory / chip_path(chip, layer)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels))
+        path = directory / SPLIT_DIR / csv_name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(f"{c}_S1Hand.tif,{c}_LabelHand.tif\r\n" for c in chips), newline="")
+    return directory
+
+
+def sen1floods11_checksums(directory: Path) -> dict[str, str]:
+    """Return a SHA-256 manifest of a written Sen1Floods11 directory."""
+    return {
+        path.relative_to(directory).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in directory.rglob("*")
+        if path.is_file()
+    }
+
+
 def write_openearthmap_sar_archives(root: Path) -> tuple:
     """Package tiny release ZIPs, preserving production URLs and directory ownership."""
     import hashlib
@@ -152,6 +212,124 @@ def write_openearthmap_sar_archives(root: Path) -> tuple:
             )
         )
     return tuple(artifacts)
+
+
+def write_loveda_files(root: Path) -> Path:
+    """Write tiny RGB/mask PNG pairs for the active LoveDA memberships."""
+    from geo_eval_harness.datasets.loveda import LoveDA
+
+    directory = root / "data" / "loveda"
+    mask = (np.arange(64).reshape(8, 8) % 8).astype(np.uint8)  # native 0 (no-data) at the origin
+    image = np.stack([mask * 30 + band for band in range(3)], axis=-1)
+    for split in LoveDA.split_sizes:
+        for member in LoveDA.split_members(split):
+            release, scene, name = member.split("/")
+            for kind, pixels in (("images_png", image), ("masks_png", mask)):
+                path = directory / release / scene / kind / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                Image.fromarray(pixels).save(path)
+    return directory
+
+
+def write_loveda_archives(root: Path) -> dict[str, str]:
+    """Package the tiny tiles as torchgeo's ``Train.zip``/``Val.zip``; return their MD5s."""
+    directory = write_loveda_files(root / "tiles")
+    md5s = {}
+    for release in ("Train", "Val"):
+        path = root / f"{release}.zip"
+        shutil.make_archive(str(path.with_suffix("")), "zip", directory, release)
+        md5s[release.lower()] = hashlib.md5(path.read_bytes()).hexdigest()
+    return md5s
+
+
+def write_levir_cd_post_files(root: Path) -> Path:
+    """Write random pre/post images and masks (including stray 156/254) in torchgeo's layout."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    directory = root / "data" / "levir-cd-post"
+    size = LEVIRCDPost.raster_size
+    rng = np.random.default_rng(0)
+    for kind in ("A", "B", "label"):
+        (directory / kind).mkdir(parents=True, exist_ok=True)
+    for split, count in LEVIRCDPost.image_counts.items():
+        for index in range(1, count + 1):
+            name = f"{split}_{index}.png"
+            image = Image.fromarray(rng.integers(0, 256, (size, size, 3), dtype=np.uint8))
+            image.save(directory / "A" / name)
+            image.save(directory / "B" / name)
+            mask = rng.choice(np.array([0, 0, 156, 254, 255], dtype=np.uint8), (size, size))
+            Image.fromarray(mask).save(directory / "label" / name)
+    return directory
+
+
+def write_bright_post_sar_files(root: Path) -> Path:
+    """Write tiny SAR tiles and four-class masks for the active BRIGHT splits."""
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    directory = root / "data" / "bright-post-sar"
+    y, x = np.indices((BRIGHTPostSAR.raster_size,) * 2)
+    for split in BRIGHTPostSAR.split_sizes:
+        for index, tile in enumerate(BRIGHTPostSAR.split_ids(split)):
+            mask = ((x // 2 + y // 4 + index) % 4).astype(np.uint8)
+            for path, pixels in (
+                (directory / "post-event" / f"{tile}_post_disaster.tif", mask * 60 + index),
+                (directory / "target" / f"{tile}_building_damage.tif", mask),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(geotiff_bytes(pixels[None].astype(np.uint8)))
+    return directory
+
+
+def write_bright_post_sar_archives(root: Path) -> dict[str, str]:
+    """Zip the toy tiles like the upstream release and return their SHA-256 manifest."""
+    import hashlib
+
+    directory = write_bright_post_sar_files(root / "files")
+    checksums = {}
+    for kind in ("post-event", "target"):
+        path = root / f"{kind}.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            for member in (directory / kind).iterdir():
+                archive.write(member, f"{kind}/{member.name}")
+        checksums[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return checksums
+
+
+#: Fixture cities; with 8-pixel tiles they give 7 / 4 / 4 train/val/test tiles.
+OSCD_SHAPES = {"alpha": (12, 20), "bravo": (6, 8), "charlie": (10, 9), "delta": (16, 16)}
+
+
+def write_oscd_post_files(root: Path) -> Path:
+    """Write the ``small_oscd_post`` cities in torchgeo's OSCD layout."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    directory = root / "data" / "oscd-post"
+    for index, (city, shape) in enumerate(OSCD_SHAPES.items()):
+        y, x = np.indices(shape)
+        mask = ((x // 3 + y // 2 + index) % 2 + 1).astype(np.uint8)
+        label = OSCDPost.label_path(directory, city)
+        label.parent.mkdir(parents=True)
+        label.write_bytes(geotiff_bytes(mask[None]))
+        # torchgeo's OSCD also indexes the unused pre image and dates.txt.
+        post = OSCDPost.image_dir(directory, city)
+        for images in (post, post.parent / "imgs_1_rect"):
+            images.mkdir(parents=True)
+            for band_index, band in enumerate(OSCDPost.bands):
+                pixels = 1000 + 100 * band_index + 50 * mask.astype(int) + index + x
+                (images / f"{band.source_name}.tif").write_bytes(
+                    geotiff_bytes(pixels.astype(np.uint16)[None])
+                )
+        (post.parent / "dates.txt").write_text("date_1: 20160101\ndate_2: 20180101\n")
+    return directory
+
+
+def write_oscd_post_archives(root: Path) -> list[Path]:
+    """Zip the fixture into torchgeo's three OSCD release archives."""
+    directory = write_oscd_post_files(root)
+    return [
+        Path(shutil.make_archive(str(root / folder.name), "zip", directory, folder.name))
+        for folder in sorted(directory.iterdir())
+    ]
 
 
 def _tortilla_bytes(samples: list[tuple[dict[str, Any], bytes]]) -> bytes:

@@ -206,6 +206,13 @@ def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
         ({"lora_rank": 8}, "lora_rank requires backbone_learning_rate"),
         ({"backbone_learning_rate": 1e-4}, "require lora_rank"),
         ({"lora_alpha": 32.0}, "require lora_rank"),
+        ({"full_finetune": True}, "full_finetune requires backbone_learning_rate"),
+        (
+            {"full_finetune": True, "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "mutually exclusive",
+        ),
+        ({"lora_last_blocks": 6}, "require lora_rank"),
+        ({"lora_rank": 8, "backbone_learning_rate": 1e-4, "lora_last_blocks": 0}, "greater than 0"),
     ],
 )
 def test_lora_settings_require_each_other(segmentation: dict, message: str) -> None:
@@ -224,6 +231,8 @@ def test_lora_targets_alone_keep_the_frozen_probe_and_name_lora_runs() -> None:
 
     assert frozen.method == "seg-upernet"
     assert lora.method == "seg-upernet-lora"
+    config["segmentation"] |= {"lora_last_blocks": 6}
+    assert validate_run_config(config).segmentation.method == "seg-upernet-lora-last6"
 
 
 def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:
@@ -237,6 +246,40 @@ def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:
     assert lora.method == "seg-upernet-vitneck-lora"
     config["segmentation"] = {"head": "linear", "neck": "vit"}
     with pytest.raises(ValueError, match="neck 'vit' requires head in"):
+        validate_run_config(config)
+
+
+def test_head_dropout_needs_upernet_and_a_probability() -> None:
+    config = valid_config()
+    config["segmentation"] = {"head": "upernet", "head_dropout": 0.1, "weight_decay": 0.05}
+    segmentation = validate_run_config(config).segmentation
+    assert (segmentation.head_dropout, segmentation.weight_decay) == (0.1, 0.05)
+    config["segmentation"] = {"head": "fpn", "head_dropout": 0.1}
+    with pytest.raises(ValueError, match="head_dropout requires head 'upernet'"):
+        validate_run_config(config)
+    for bad in (
+        {"head": "upernet", "head_dropout": 1.0},
+        {"head": "upernet", "weight_decay": -0.1},
+    ):
+        config["segmentation"] = bad
+        with pytest.raises(ValueError, match=r"greater than or equal|less than"):
+            validate_run_config(config)
+
+
+def test_anyup_upsampler_names_runs_and_needs_upernet_without_feature_cache() -> None:
+    config = valid_config()
+    config["segmentation"] = {
+        "head": "upernet",
+        "neck": "vit",
+        "upsampler": "anyup",
+        "cache_features": False,
+    }
+    assert validate_run_config(config).segmentation.method == "seg-upernet-vitneck-anyup"
+    config["segmentation"] = {"head": "fpn", "upsampler": "anyup", "cache_features": False}
+    with pytest.raises(ValueError, match="requires head 'upernet'"):
+        validate_run_config(config)
+    config["segmentation"] = {"head": "upernet", "upsampler": "anyup"}
+    with pytest.raises(ValueError, match="cache_features: false"):
         validate_run_config(config)
 
 

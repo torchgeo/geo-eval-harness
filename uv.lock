@@ -1011,6 +1011,7 @@ dependencies = [
     { name = "faissknn", extra = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "filelock" },
     { name = "geobenchv2" },
+    { name = "geopandas" },
     { name = "h5py" },
     { name = "huggingface-hub" },
     { name = "lazy-loader" },
@@ -1019,8 +1020,10 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "rasterio" },
     { name = "safetensors" },
     { name = "scikit-learn" },
+    { name = "shapely" },
     { name = "timm" },
     { name = "torch" },
     { name = "torchgeo" },
@@ -1103,6 +1106,7 @@ requires-dist = [
     { name = "geo-eval-harness", extras = ["lora"], marker = "extra == 'dev'" },
     { name = "geo-eval-harness", extras = ["olmoearth"], marker = "extra == 'all'" },
     { name = "geobenchv2", specifier = ">=0.9" },
+    { name = "geopandas", specifier = ">=0.14" },
     { name = "h5py", specifier = ">=3.8" },
     { name = "huggingface-hub", specifier = ">=0.20" },
     { name = "lazy-loader", specifier = ">=0.4" },
@@ -1123,16 +1127,18 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "rasterio", specifier = ">=1.3" },
     { name = "rshf", marker = "extra == 'coordbench'", specifier = ">=0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.10" },
     { name = "safetensors", specifier = ">=0.4" },
     { name = "scikit-learn", specifier = ">=1.3" },
+    { name = "shapely", specifier = ">=2" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
     { name = "sphinx-design", marker = "extra == 'docs'", specifier = ">=0.5" },
     { name = "timm", specifier = ">=0.9" },
     { name = "torch", specifier = ">=2" },
-    { name = "torchgeo", specifier = ">=0.10,<0.11" },
+    { name = "torchgeo", specifier = ">=0.10.1,<0.11" },
     { name = "torchid", marker = "python_full_version >= '3.13' and extra == 'id'", specifier = ">=0.3" },
     { name = "torchmetrics", specifier = ">=1.4" },
     { name = "torchvision", specifier = ">=0.15" },
@@ -4050,7 +4056,7 @@ wheels = [
 
 [[package]]
 name = "torchgeo"
-version = "0.10.0"
+version = "0.10.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
@@ -4076,9 +4082,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f2/12/1d58f5a917835a72a80175185713c4234d382b55388b72dbdb95ae1ee583/torchgeo-0.10.0.tar.gz", hash = "sha256:fc0357a4d6847cbd7cd5baa0f6a48b61c9a7b83f11d2d1a4c8c9d35de9f0bc26", size = 533365, upload-time = "2026-08-14T19:05:39.984Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/c2/c9d99976e8d3da7515fa7cca54087220cb145fd157fa06e269d1f96fe890/torchgeo-0.10.1.tar.gz", hash = "sha256:9dfb36737e1ddb4156cd51244bf4247c4a2bafd0d177e7b6d59288ca8ae848b7", size = 534146, upload-time = "2026-09-29T08:58:36.851Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/c8/b194040e4870c9f256f8d61065e46b6fb08f44d53b3ec3521bfec70097fb/torchgeo-0.10.0-py3-none-any.whl", hash = "sha256:02fa19466dfae2065570e8f76b635e0398672331f0fb777c5bbd144b12551d58", size = 811424, upload-time = "2026-08-14T19:05:38.235Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/45/5fa67dff2698f684320cb31a5605ea1b9f5a519e176a0fc44a7334b25192/torchgeo-0.10.1-py3-none-any.whl", hash = "sha256:b002fee686a34dcdec019adf28ce7cf912b39c26f92896ce549209490f9ac753", size = 812367, upload-time = "2026-09-29T08:58:35.407Z" },
 ]
 
 [[package]]

@@ -80,3 +80,4 @@ backbone family.
 .. autoclass:: UNetHead
 .. autoclass:: ViTNeck
 .. autoclass:: NeckedHead
+.. autoclass:: geo_eval_harness.models.anyup.AnyUpClassifier

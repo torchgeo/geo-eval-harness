@@ -32,7 +32,13 @@ KEY_COLS = (
     "config_hash",
 )
 
-_LORA_FIELDS = {"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"}
+_LORA_FIELDS = {
+    "lora_rank",
+    "lora_target_modules",
+    "lora_alpha",
+    "lora_last_blocks",
+    "backbone_learning_rate",
+}
 
 
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
@@ -40,18 +46,33 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
 
     Excludes device and worker count, which only control execution. Includes batch size because
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
-    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck`` counts only when
-    set, and ``neck_norm`` only when a neck uses it, so
-    hashes from before these options are unchanged.
+    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
+    ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
+    ``backbone_learning_rate``) and ``early_stopping_patience`` count only when set, and
+    ``neck_norm`` only when a neck uses it, so hashes from before these options are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
     segmentation = config.segmentation
     segmentation_exclude = set(_LORA_FIELDS) if segmentation.lora_rank is None else set()
+    if segmentation.full_finetune:
+        segmentation_exclude.discard("backbone_learning_rate")
+    else:
+        segmentation_exclude.add("full_finetune")
     if segmentation.neck == "none":
         segmentation_exclude.add("neck")
+    if segmentation.lora_last_blocks is None:
+        segmentation_exclude.add("lora_last_blocks")
     if segmentation.neck == "none" or segmentation.neck_norm == "none":
         segmentation_exclude.add("neck_norm")
+    if not segmentation.weight_decay:
+        segmentation_exclude.add("weight_decay")
+    if not segmentation.head_dropout:
+        segmentation_exclude.add("head_dropout")
+    if segmentation.upsampler == "none":
+        segmentation_exclude.add("upsampler")
+    if segmentation.early_stopping_patience is None:
+        segmentation_exclude.add("early_stopping_patience")
     payload = {
         "schema_version": config.schema_version,
         "model": {

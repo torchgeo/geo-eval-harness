@@ -310,7 +310,9 @@ Boundary IoU measures overlap within each class's inner contour band, following 
 Model selection
 ^^^^^^^^^^^^^^^
 
-All segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no early stopping or configurable final-epoch option.
+By default, all segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no configurable final-epoch option.
+
+``segmentation.early_stopping_patience`` (default ``null``, off) stops training once validation mIoU has not strictly improved for that many epochs; a tie does not count as an improvement. The learning-rate schedule still spans ``epochs``, so a stopped run matches the first epochs of the full run, and selection and test evaluation are unchanged. Early stopping requires validation; without it, training runs every epoch.
 
 Benchmark runs require a non-empty validation loader before training or feature extraction. Direct solver calls may omit validation and retain the final epoch; supplied validation must be non-empty. Non-finite validation mIoU raises an error. A failed run does not write a successful result.
 
@@ -319,8 +321,9 @@ After fitting, :class:`~geo_eval_harness.segmentation_task.SegmentationSolver` e
 * ``best_epoch``: the selected epoch, numbered from one.
 * ``best_val_miou``: the selected validation dataset-level macro mIoU.
 * ``val_history``: every epoch's validation mIoU in chronological order.
+* ``epoch_history``: one :class:`~geo_eval_harness.segmentation_task.EpochRecord` per epoch with training and validation loss, validation mIoU, learning rates, step counts, wall time, and peak CUDA memory.
 
-Each fit call resets these attributes. Without validation, ``best_epoch`` and ``best_val_miou`` are ``None`` and ``val_history`` is empty.
+Each fit call resets these attributes. Without validation, ``best_epoch`` and ``best_val_miou`` are ``None``, ``val_history`` is empty, and epoch records have no validation values. ``fit`` and ``fit_cached`` accept an ``on_epoch`` callback that receives each record before epoch selection; ``output.epoch_metrics`` uses it to stream curves (see :ref:`segmentation-epoch-metrics`).
 
 The solver keeps one independent CPU snapshot of the selected state: head parameters and buffers, trainable backbone parameters, and backbone buffers. Restoration copies values into the existing model tensors without replacing modules or hooks. Frozen backbone weights are not copied. The snapshot is for evaluation, not for resuming training.
 
@@ -372,9 +375,21 @@ Training knobs
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
+   * - ``weight_decay``
+     - ``0``
+     - AdamW weight decay for every trainable parameter (head, neck, LoRA adapters).
+   * - ``head_dropout``
+     - ``0``
+     - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
+   * - ``upsampler``
+     - ``none``
+     - ``anyup`` upsamples UPerNet's fused features to input resolution with frozen AnyUp before the classifier; ``head_dropout`` then applies after AnyUp.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
+   * - ``early_stopping_patience``
+     - ``null``
+     - Stop once validation mIoU has not improved for this many epochs; ``null`` trains every epoch.
    * - ``learning_rate``
      - ``1e-3``
      - Initial learning rate (AdamW).
@@ -396,9 +411,15 @@ Training knobs
    * - ``lora_alpha``
      - ``16.0``
      - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
+   * - ``lora_last_blocks``
+     - ``null``
+     - Adapt only targets in the last ``k`` backbone blocks; ``null`` adapts every match.
    * - ``backbone_learning_rate``
      - ``null``
-     - Learning rate for LoRA adapters; required with ``lora_rank``.
+     - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``full_finetune``
+     - ``false``
+     - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
 
 Feature caching
 ^^^^^^^^^^^^^^^
