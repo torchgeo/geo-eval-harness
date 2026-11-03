@@ -250,7 +250,6 @@ class TerraTorchClayBench(_TerraTorchBench):
         )
         return mapped
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         x = _maybe_resize(self._prepare_input(images), self.target_size)
         return _reduce_to_vec(
