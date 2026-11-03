@@ -11,6 +11,7 @@ from geo_eval_harness.models.segmentation_heads import (
     PatchLinearHead,
     StandardizedHead,
     SweepPatchLinearHead,
+    feature_moments,
 )
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 from geo_eval_harness.segmentation_task import (
@@ -181,24 +182,60 @@ def test_standardizer_fit_from_cache_and_loader_agree_with_direct_moments() -> N
     expected_mean = flat.mean(dim=1)
     expected_std = torch.sqrt(flat.var(dim=1, unbiased=False) + 1e-6)
 
-    probe.fit_standardizer_from_cache(cache, chunk_size=4)
+    probe.fit_standardizer(cache, chunk_size=4)
     assert probe.standardizer is not None
     mean, std = probe.standardizer.stats(0)
     torch.testing.assert_close(mean.double(), expected_mean, rtol=1e-5, atol=1e-5)
     torch.testing.assert_close(std.double(), expected_std, rtol=1e-5, atol=1e-5)
 
-    probe.fit_standardizer_from_loader(loader)
+    probe.fit_standardizer(loader)
     torch.testing.assert_close(probe.standardizer.stats(0)[0].double(), expected_mean)
-    probe.fit_standardizer_from_loader(loader, max_batches=1)
-    first = flat[:, : flat.shape[1] // 2]
-    torch.testing.assert_close(probe.standardizer.stats(0)[0].double(), first.mean(dim=1))
+    torch.testing.assert_close(probe.standardizer.stats(0)[1].double(), expected_std)
+
+
+def test_standardizer_cache_fit_matches_original_chunked_algorithm_bitwise() -> None:
+    images, masks = _data()
+    loader = DataLoader(TensorDataset(images, masks), batch_size=3)
+    probe = _probe(2, standardize=True)
+    cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float16)
+    sums, sq_sums, count = [], [], 0
+    for layer in cache.layer_tensors:
+        total = torch.zeros(layer.shape[1], dtype=torch.float64)
+        sq_total = torch.zeros_like(total)
+        count = 0
+        for start in range(0, len(layer), 2):
+            s, sq, n = feature_moments(layer[start : start + 2])
+            total += s
+            sq_total += sq
+            count += n
+        sums.append(total)
+        sq_sums.append(sq_total)
+    reference = FeatureStandardizer(probe.channels_list)
+    reference.set_moments(sums, sq_sums, [count] * len(sums))
+
+    probe.fit_standardizer(cache, chunk_size=2)
+    assert probe.standardizer is not None
+    for index in range(len(probe.channels_list)):
+        for got, want in zip(probe.standardizer.stats(index), reference.stats(index), strict=True):
+            assert torch.equal(got, want)
+
+
+def test_standardizer_uses_each_layers_own_position_count() -> None:
+    standardizer = FeatureStandardizer([2, 2])
+    coarse, fine = torch.ones(1, 2, 2, 2), torch.full((1, 2, 4, 4), 3.0)
+    moments = [feature_moments(coarse), feature_moments(fine)]
+    standardizer.set_moments([m[0] for m in moments], [m[1] for m in moments], [4, 16])
+    torch.testing.assert_close(standardizer.stats(0)[0], torch.ones(2))
+    torch.testing.assert_close(standardizer.stats(1)[0], torch.full((2,), 3.0))
+    with pytest.raises(ValueError, match="at least one"):
+        standardizer.set_moments([m[0] for m in moments], [m[1] for m in moments], [4, 0])
 
 
 def test_standardized_head_feeds_z_scored_features_to_the_head() -> None:
     standardizer = FeatureStandardizer([8])
     features = torch.randn(4, 8, 2, 2) * 5 + 3
     total, sq_total = features.sum(dim=(0, 2, 3)), (features**2).sum(dim=(0, 2, 3))
-    standardizer.set_moments([total], [sq_total], 16)
+    standardizer.set_moments([total], [sq_total], [16])
     inner = PatchLinearHead([8], NUM_CLASSES)
     head = StandardizedHead(standardizer, inner)
     mean = features.mean(dim=(0, 2, 3), keepdim=True)
@@ -249,7 +286,7 @@ def test_sweep_config_rejects_unsupported_settings(overrides: dict, message: str
 def test_protocol_config_rejects_orphan_options() -> None:
     with pytest.raises(ValueError, match="requires sweep_learning_rates"):
         SegmentationConfig(sweep_weight_decays=[0.1])
-    with pytest.raises(ValueError, match="requires feature_standardize"):
+    with pytest.raises(ValueError, match="standardize_batches"):
         SegmentationConfig(standardize_batches=4)
     with pytest.raises(ValueError, match="frozen"):
         SegmentationConfig(

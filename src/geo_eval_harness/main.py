@@ -647,7 +647,7 @@ def evaluate_segmentation(
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
         if seg_cfg.feature_standardize:
-            probe.fit_standardizer_from_cache(train_cache)
+            probe.fit_standardizer(train_cache)
         solver.fit_cached(
             train_cache=train_cache,
             val_cache=val_cache,
@@ -663,7 +663,7 @@ def evaluate_segmentation(
         )
     else:
         if seg_cfg.feature_standardize:
-            probe.fit_standardizer_from_loader(train_loader, seg_cfg.standardize_batches)
+            probe.fit_standardizer(train_loader)
         solver.fit(
             train_loader=train_loader,
             val_loader=val_loader,

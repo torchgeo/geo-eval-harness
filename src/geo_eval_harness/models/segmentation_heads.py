@@ -242,14 +242,14 @@ class FeatureStandardizer(nn.Module):
 
     @torch.no_grad()
     def set_moments(
-        self, sums: list[torch.Tensor], sq_sums: list[torch.Tensor], count: int
+        self, sums: list[torch.Tensor], sq_sums: list[torch.Tensor], counts: list[int]
     ) -> None:
-        """Set statistics from per-channel sums and squared sums over ``count`` positions."""
-        if len(sums) != self.num_layers or len(sq_sums) != self.num_layers:
+        """Set statistics from per-channel sums and squared sums over each layer's positions."""
+        if not len(sums) == len(sq_sums) == len(counts) == self.num_layers:
             raise ValueError(f"Expected moments for {self.num_layers} layers.")
-        if count <= 0:
+        if min(counts) <= 0:
             raise ValueError("Feature standardization needs at least one training position.")
-        for index, (total, sq_total) in enumerate(zip(sums, sq_sums, strict=True)):
+        for index, (total, sq_total, count) in enumerate(zip(sums, sq_sums, counts, strict=True)):
             mean, std = self.stats(index)
             mu = total.double() / count
             var = (sq_total.double() / count - mu * mu).clamp(min=0.0)

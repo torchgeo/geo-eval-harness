@@ -49,8 +49,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
     LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
-    ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize``,
-    ``standardize_batches`` and the probe sweep count only when set, and ``neck_norm`` only when a neck uses it, so hashes from
+    ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` and the
+    probe sweep count only when set, and ``neck_norm`` only when a neck uses it, so hashes from
     before these options are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
@@ -82,7 +82,6 @@ _OPTIONAL_SEGMENTATION_FIELDS = (
     "early_stopping_patience",
     "lora_last_blocks",
     "feature_standardize",
-    "standardize_batches",
 )
 
 

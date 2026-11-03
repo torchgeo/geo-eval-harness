@@ -184,8 +184,7 @@ class SegmentationProbe(nn.Module):
             once as a :class:`SweepPatchLinearHead` (one per learning-rate x weight-decay cell).
             ``0`` (default) builds a single :class:`PatchLinearHead`.
         feature_standardize: Z-score each hooked feature channel with statistics fit on the
-            training split (:meth:`fit_standardizer_from_cache` or
-            :meth:`fit_standardizer_from_loader`) before the head. Frozen backbones only.
+            training split (:meth:`fit_standardizer`) before the head. Frozen backbones only.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -282,60 +281,55 @@ class SegmentationProbe(nn.Module):
         return self.standardizer
 
     @torch.no_grad()
-    def fit_standardizer_from_cache(
-        self, cache: "CachedFeaturesDataset", chunk_size: int = 256
+    def fit_standardizer(
+        self,
+        train: "CachedFeaturesDataset | torch.utils.data.DataLoader",
+        chunk_size: int = 256,
     ) -> None:
-        """Fit the feature standardizer on every position of cached training features."""
-        standardizer = self._require_standardizer()
-        device = self._backbone_device()
-        sums, sq_sums, count = [], [], 0
-        for layer in cache.layer_tensors:
-            total = torch.zeros(layer.shape[1], dtype=torch.float64, device=device)
-            sq_total = torch.zeros_like(total)
-            count = 0
-            for start in range(0, len(layer), chunk_size):
-                s, sq, n = feature_moments(layer[start : start + chunk_size].to(device))
-                total += s
-                sq_total += sq
-                count += n
-            sums.append(total)
-            sq_sums.append(sq_total)
-        standardizer.set_moments(sums, sq_sums, count)
-        logger.info("Feature standardization fit on %d cached training positions.", count)
+        """Fit the feature standardizer on every position of the training split.
 
-    @torch.no_grad()
-    def fit_standardizer_from_loader(
-        self, dataloader: "torch.utils.data.DataLoader", max_batches: int | None = None
-    ) -> None:
-        """Fit the feature standardizer on backbone features of up to ``max_batches`` batches."""
+        ``train`` is either the cached training features or the training loader; a loader costs
+        one extra backbone pass. Both feed the same exact float64 moment accumulation.
+        """
         standardizer = self._require_standardizer()
-        device = self._backbone_device()
-        sums: list[torch.Tensor] | None = None
+        sums: list[torch.Tensor] = []
         sq_sums: list[torch.Tensor] = []
-        count = 0
+        counts: list[int] = []
+        for features in self._standardizer_features(train, chunk_size):
+            if not sums:
+                sums = [
+                    torch.zeros(f.shape[1], dtype=torch.float64, device=f.device) for f in features
+                ]
+                sq_sums = [torch.zeros_like(total) for total in sums]
+                counts = [0] * len(features)
+            for index, layer in enumerate(features):
+                total, sq_total, count = feature_moments(layer)
+                sums[index] += total
+                sq_sums[index] += sq_total
+                counts[index] += count
+        if not sums:
+            raise ValueError("Feature standardization needs a non-empty training split.")
+        standardizer.set_moments(sums, sq_sums, counts)
+        logger.info("Feature standardization fit on %d training positions.", counts[0])
+
+    def _standardizer_features(
+        self, train: "CachedFeaturesDataset | torch.utils.data.DataLoader", chunk_size: int
+    ) -> Iterator[list[torch.Tensor]]:
+        """Yield per-layer training features from the cache in chunks, or from the backbone."""
+        device = self._backbone_device()
+        if isinstance(train, CachedFeaturesDataset):
+            for start in range(0, len(train), chunk_size):
+                yield [
+                    layer[start : start + chunk_size].to(device) for layer in train.layer_tensors
+                ]
+            return
         was_training = self.backbone.training
-        self.backbone.eval()
         try:
-            for index, batch in enumerate(dataloader):
-                if max_batches is not None and index >= max_batches:
-                    break
+            for batch in train:
                 images = (batch["image"] if isinstance(batch, dict) else batch[0]).to(device)
-                features = self._backbone_features(images)
-                moments = [feature_moments(f) for f in features]
-                if sums is None:
-                    sums = [m[0] for m in moments]
-                    sq_sums = [m[1] for m in moments]
-                else:
-                    for li, (s, sq, _) in enumerate(moments):
-                        sums[li] += s
-                        sq_sums[li] += sq
-                count += moments[0][2]
+                yield self._backbone_features(images)
         finally:
             self.backbone.train(was_training)
-        if sums is None:
-            raise ValueError("Feature standardization needs a non-empty training loader.")
-        standardizer.set_moments(sums, sq_sums, count)
-        logger.info("Feature standardization fit on %d training positions.", count)
 
     def _backbone_features(self, x: torch.Tensor) -> list[torch.Tensor]:
         """Run the backbone on images or a time series and return the hooked feature maps."""

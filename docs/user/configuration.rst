@@ -208,7 +208,6 @@ Segmentation
      backbone_learning_rate: null
      full_finetune: false
      feature_standardize: false
-     standardize_batches: null
      sweep_learning_rates: []
      sweep_weight_decays: [0.0]
 
@@ -238,7 +237,7 @@ Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of free
      lora_rank: 8
      backbone_learning_rate: 1e-4
 
-``feature_standardize: true`` z-scores every hooked feature channel with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before the head (method suffix ``-std``). With cached features the statistics use every training position; without a cache they use the first ``standardize_batches`` training batches (``null``: all). It requires a frozen backbone.
+``feature_standardize: true`` z-scores every hooked feature channel with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before the head (method suffix ``-std``). The statistics use every training position, from the feature cache or, with ``cache_features: false``, from one extra backbone pass over the training split. It requires a frozen backbone.
 
 ``sweep_learning_rates`` (with ``head: patch_linear``, no neck, frozen backbone) trains one LayerNorm + linear ``patch_linear`` probe per (learning rate, weight decay) cell of ``sweep_learning_rates`` x ``sweep_weight_decays`` in one vectorised pass, each with its own AdamW group and a cosine decay to zero. Every head keeps its best validation epoch; the head with the highest best-epoch validation mIoU is restored and alone scored on test. ``learning_rate`` and ``weight_decay`` are ignored; the selected values are written to ``best_lr`` and the ``selected`` epoch-metrics event. The method gains ``-sweep<n>`` with ``n`` cells. Together they reproduce UniverSat's ``LP_eval.py`` segmentation probe:
 

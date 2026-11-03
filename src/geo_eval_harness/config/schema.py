@@ -277,7 +277,6 @@ class SegmentationConfig(StrictModel):
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
     feature_standardize: StrictBool = False
-    standardize_batches: StrictInt | None = Field(default=None, gt=0)
     sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
     sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
         default_factory=lambda: [0.0]
@@ -294,8 +293,6 @@ class SegmentationConfig(StrictModel):
         frozen = self.lora_rank is None and not self.full_finetune
         if self.feature_standardize and (not frozen or self.upsampler != "none"):
             raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
-        if self.standardize_batches is not None and not self.feature_standardize:
-            raise ValueError("standardize_batches requires feature_standardize")
         if not self.sweep_learning_rates:
             if self.sweep_weight_decays != [0.0]:
                 raise ValueError("sweep_weight_decays requires sweep_learning_rates")

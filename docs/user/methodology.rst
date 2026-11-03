@@ -425,9 +425,6 @@ Training knobs
    * - ``feature_standardize``
      - ``false``
      - Z-score each feature channel with train-split statistics before the head (frozen only).
-   * - ``standardize_batches``
-     - ``null``
-     - Training batches used to fit the standardizer without a feature cache; ``null`` uses all.
    * - ``sweep_learning_rates``
      - ``[]``
      - ``patch_linear`` only: train one probe per learning rate x ``sweep_weight_decays`` cell

@@ -58,7 +58,6 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "full_finetune",
                 "early_stopping_patience",
                 "feature_standardize",
-                "standardize_batches",
                 "sweep_learning_rates",
                 "sweep_weight_decays",
             },
