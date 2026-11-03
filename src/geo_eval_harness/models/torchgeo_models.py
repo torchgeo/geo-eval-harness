@@ -8,7 +8,7 @@ normalization strategies use the shared ``BenchModel`` implementation.
 """
 
 from collections.abc import Iterable
-from typing import Any, cast, override
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -680,13 +680,14 @@ _DEO_S2_STD = (
 
 
 class TorchGeoDEOBench(BenchModel):
-    """Frozen DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
+    """DEO Swin-B wrapper for native RGB or Sentinel-2 inputs.
 
     DEO has separate RGB and ten-channel Sentinel-2 patch embeddings. With
     ``model_native`` normalization, RGB uses DEO-FM's normalize_hr (torchgeo's
     bundled transform) and S2 uses normalize_s2 on raw DN, as in DEO-FM's own
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
-    channel order instead.
+    channel order instead. It is frozen by default; segmentation supports LoRA
+    adapters or full fine-tuning.
     """
 
     _deo_mean: torch.Tensor
@@ -694,7 +695,7 @@ class TorchGeoDEOBench(BenchModel):
 
     expected_input_unit = InputUnit.REFLECTANCE_0_1
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - public YAML options
         self,
         bands: list[BandSpec],
         *,
@@ -702,6 +703,7 @@ class TorchGeoDEOBench(BenchModel):
         normalization: NormalizationStrategy | str = NormalizationStrategy.MODEL_NATIVE,
         auto_resize: bool = True,
         target_size: int = _DEO_TARGET_SIZE,
+        stack_channels: bool = False,
         **_kwargs: Any,
     ) -> None:
         if mode not in {"rgb", "s2"}:
@@ -718,12 +720,22 @@ class TorchGeoDEOBench(BenchModel):
         self.auto_resize = auto_resize
         self.target_size = target_size
 
+        self._stack_index: list[int] | None = None
         if mode == "rgb":
             actual = [canonical_band_name(band.name) for band in bands]
-            if actual != _DEO_RGB_BANDS:
+            if stack_channels and len(bands) in (1, 2):
+                # SAR into the RGB embedding: one band -> (b, b, b), two -> (b0, b1, b0),
+                # stacked after normalizing each source band.
+                if strategy is NormalizationStrategy.MODEL_NATIVE:
+                    raise ValueError(
+                        "TorchGeoDEOBench stack_channels needs a non-native normalization "
+                        "(DEO's RGB statistics are aerial reflectance)."
+                    )
+                self._stack_index = [0, 0, 0] if len(bands) == 1 else [0, 1, 0]
+            elif actual != _DEO_RGB_BANDS:
                 raise ValueError(
-                    "TorchGeoDEOBench RGB mode requires exactly ordered red, green, blue bands; "
-                    f"got {actual}."
+                    "TorchGeoDEOBench RGB mode requires exactly ordered red, green, blue bands "
+                    f"(or stack_channels with one or two bands); got {actual}."
                 )
             canonical_bands = list(bands)
             mean, std = _DEO_RGB_MEAN, _DEO_RGB_STD
@@ -738,7 +750,11 @@ class TorchGeoDEOBench(BenchModel):
                 )
             canonical_bands = [bands[source_indices[band]] for band in _DEO_S2_BANDS]
             mean, std = _DEO_S2_MEAN, _DEO_S2_STD
-        self._input_unit = detect_input_unit(canonical_bands)
+        self._input_unit = (
+            detect_input_unit(canonical_bands)
+            if self._stack_index is None
+            else InputUnit.REFLECTANCE_0_1
+        )
         self._generic_normalizer = (
             None
             if strategy is NormalizationStrategy.MODEL_NATIVE
@@ -754,13 +770,9 @@ class TorchGeoDEOBench(BenchModel):
         self.backbone.requires_grad_(False)
         self.eval()
 
-    @override
-    def train(self, mode: bool = True) -> "TorchGeoDEOBench":
-        """Keep the pretrained DEO backbone frozen in evaluation mode."""
-        del mode
-        super().train(False)
-        self.backbone.eval()
-        return self
+    def enable_full_finetune(self) -> None:
+        """Make every backbone weight trainable (segmentation full fine-tuning)."""
+        self.backbone.requires_grad_(True)
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Select DEO's channel order, then apply DEO's native or the configured normalization."""
@@ -778,7 +790,8 @@ class TorchGeoDEOBench(BenchModel):
                 policy=BandMappingPolicy(preferred_sensors=("s2",)),
             )
         if self._generic_normalizer is not None:
-            return self._generic_normalizer(selected)
+            normalized = self._generic_normalizer(selected)
+            return normalized if self._stack_index is None else normalized[:, self._stack_index]
         if self.mode == "rgb":
             inputs = to_reflectance(selected, self._input_unit).clamp(0.0, 1.0)
         else:
@@ -786,8 +799,10 @@ class TorchGeoDEOBench(BenchModel):
             inputs = to_s2_dn(selected, self._input_unit)
         return (inputs - self._deo_mean.to(inputs)) / self._deo_std.to(inputs)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
+        # No no_grad here: segmentation reads the stage outputs through hooks and needs
+        # gradients for LoRA; frozen probes and classification extraction already run
+        # without gradients.
         if self.auto_resize:
             images = _auto_resize(images, self.target_size)
         features = self.backbone(images)

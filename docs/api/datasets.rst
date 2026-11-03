@@ -81,4 +81,18 @@ torchgeo wrappers
 
 .. autoclass:: OpenEarthMapSAR
 
+.. autoclass:: LoveDA
+
+.. autoclass:: LEVIRCDPost
+
+.. autoclass:: Sen1Floods11Base
+
+.. autoclass:: Sen1Floods11S1
+
+.. autoclass:: Sen1Floods11S2
+
+.. autoclass:: BRIGHTPostSAR
+
+.. autoclass:: OSCDPost
+
 .. autoclass:: UCMerced

@@ -8,11 +8,20 @@ Targets:
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
+- ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
   into compact per-split files under ``<output>/hotosm_buildings``.
 - ``openearthmap-sar``: verified DFC2025 SAR images and labels.
 - ``open_cities`` — Open Cities AI Challenge tier-1 scenes from source.coop, plus native-grid
   masks built from the labels, into ``<output>/open_cities``.
+- ``loveda`` — torchgeo's LoveDA downloader (labelled Train and Val only), into
+  ``<output>/loveda``.
+- ``sen1floods11-s1`` / ``sen1floods11-s2``: the 431 hand-labelled Sen1Floods11 v1.1 chips of the
+  official train/valid/test splits (S1, S2 and labels, shared by both ids), into
+  ``<output>/sen1floods11``.
+- ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
+  ``<output>/bright-post-sar``.
+- ``oscd-post`` — torchgeo's OSCD downloader, into ``<output>/oscd-post``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -33,7 +42,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import Window
-from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, UCMerced
+from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
 from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
@@ -55,6 +64,9 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
+BRIGHT_REPO = "Kullervo/BRIGHT"
+BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
+
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
 V1_DATASETS: tuple[str, ...] = (
@@ -65,10 +77,24 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings", "openearthmap-sar", "open_cities")
+TORCHGEO_DATASETS: tuple[str, ...] = (
+    "eurosat",
+    "resisc45",
+    "ucmerced",
+    "loveda",
+    "levir-cd-post",
+    "oscd-post",
+)
+DIRECT_DATASETS: tuple[str, ...] = (
+    "aid",
+    "hotosm_buildings",
+    "openearthmap-sar",
+    "open_cities",
+    "bright-post-sar",
+)
+SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
-    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
+    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS + SEN1FLOODS11_DATASETS
 )
 
 
@@ -297,6 +323,50 @@ def download_ucmerced(output_dir: Path) -> None:
     logger.info("UCMerced download complete.")
 
 
+def download_loveda(output_dir: Path) -> None:
+    """Download torchgeo's labelled LoveDA Train and Val releases into ``output_dir/loveda``.
+
+    The unlabelled Test release is not downloaded; benchmark splits are checked at the end.
+    """
+    from geo_eval_harness.datasets.loveda import LoveDA as BenchLoveDA
+
+    target = Path(output_dir) / "loveda"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LoveDA -> %s", target)
+    for split in ("train", "val"):
+        LoveDA(root=str(target), split=split, download=True, checksum=True)
+    for split in BenchLoveDA.split_sizes:
+        BenchLoveDA.load_split(target, split)
+    logger.info("LoveDA download complete.")
+
+
+def download_levir_cd_post(output_dir: Path) -> None:
+    """Download torchgeo's MD5-verified LEVIR-CD archives into ``output_dir/levir-cd-post``."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    target = Path(output_dir) / "levir-cd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LEVIR-CD -> %s", target)
+    LEVIRCD(root=str(target), download=True, checksum=True)
+    for split in LEVIRCDPost.image_counts:
+        LEVIRCDPost.split_paths(target, split)
+    logger.info("LEVIR-CD download complete.")
+
+
+def download_oscd_post(output_dir: Path) -> None:
+    """Download verified OSCD archives into ``output_dir/oscd-post`` and check the tile splits."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    target = Path(output_dir) / "oscd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo OSCD -> %s", target)
+    for split in ("train", "test"):
+        OSCD(root=str(target), split=split, download=True, checksum=True)
+    for split in OSCDPost.split_sizes:
+        OSCDPost.split_tiles(target, split)
+    logger.info("OSCD download complete.")
+
+
 @dataclass(frozen=True)
 class SARArchive:
     """Immutable Zenodo artifact and the benchmark directories it supplies."""
@@ -410,6 +480,73 @@ def download_openearthmap_sar(output_dir: Path) -> None:
     logger.info("OpenEarthMap-SAR download complete.")
 
 
+SEN1FLOODS11_URL = "https://storage.googleapis.com/sen1floods11/v1.1"
+
+
+def _sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def download_sen1floods11(output_dir: Path) -> None:
+    """Fetch the checksum-listed split CSVs and hand-labelled chips, skipping verified files."""
+    from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
+
+    target = Path(output_dir) / "sen1floods11"
+
+    def fetch(item: tuple[str, str]) -> None:
+        name, digest = item
+        path = target / name
+        if _sha256(path) == digest:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(f"{path.name}.part")
+        with (
+            urlopen(f"{SEN1FLOODS11_URL}/{name}", timeout=120) as response,
+            partial.open("wb") as out,
+        ):
+            shutil.copyfileobj(response, out)
+        if _sha256(partial) != digest:
+            partial.unlink()
+            raise ValueError(f"Sen1Floods11 SHA-256 mismatch for {SEN1FLOODS11_URL}/{name}. Retry.")
+        partial.replace(path)
+
+    logger.info("Downloading Sen1Floods11 %s -> %s", SEN1FLOODS11_URL, target)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(fetch, load_checksums("sen1floods11.sha256").items()))
+    for split in Sen1Floods11S1.split_sizes:
+        Sen1Floods11S1.split_chips(target, split)
+    logger.info("Sen1Floods11 download complete.")
+
+
+def download_bright_post_sar(output_dir: Path) -> None:
+    """Install BRIGHT post-event SAR and damage masks from the pinned, verified ZIPs.
+
+    The ZIPs (3.3 GB) are kept, so a rerun reverifies them and only re-extracts missing or
+    truncated TIFFs.
+    """
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    target = Path(output_dir) / "bright-post-sar"
+    target.mkdir(parents=True, exist_ok=True)
+    checksums = load_checksums("bright_post_sar.sha256")
+    logger.info("Downloading %s@%s -> %s", BRIGHT_REPO, BRIGHT_REVISION, target)
+    fetch_pinned(BRIGHT_REPO, BRIGHT_REVISION, target, checksums, allow_patterns=list(checksums))
+    for name in checksums:
+        with zipfile.ZipFile(target / name) as archive:
+            for member in archive.infolist():
+                path = target / member.filename
+                if member.filename.endswith(".tif") and not (
+                    path.is_file() and path.stat().st_size == member.file_size
+                ):
+                    archive.extract(member, target)
+    for split in BRIGHTPostSAR.split_sizes:
+        BRIGHTPostSAR.split_paths(target, split)
+    logger.info("BRIGHT post-event SAR download complete.")
+
+
 def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None:
     """Download individually named benchmark datasets.
 
@@ -427,17 +564,9 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_geobench_v1(output_dir, datasets=[name])
     if v2:
         download_geobench_v2(output_dir, datasets=v2)
-    if "eurosat" in selected:
-        download_eurosat(output_dir)
-    if "resisc45" in selected:
-        download_resisc45(output_dir)
-    if "aid" in selected:
-        download_aid(output_dir)
-    if "ucmerced" in selected:
-        download_ucmerced(output_dir)
-    if "hotosm_buildings" in selected:
-        download_hotosm_buildings(output_dir)
-    if "openearthmap-sar" in selected:
-        download_openearthmap_sar(output_dir)
-    if "open_cities" in selected:
-        download_open_cities(output_dir)
+    for name in TORCHGEO_DATASETS + DIRECT_DATASETS:
+        if name in selected:
+            # Look up by name at call time so tests can monkeypatch individual downloaders.
+            globals()[f"download_{name.replace('-', '_')}"](output_dir)
+    if any(name in SEN1FLOODS11_DATASETS for name in selected):
+        download_sen1floods11(output_dir)
