@@ -63,3 +63,13 @@ def test_missing_pair_and_invalid_labels_fail(
     path.unlink()
     with pytest.raises(FileNotFoundError, match="geo-eval-harness download openearthmap-sar"):
         OpenEarthMapSAR().get_dataset("train")
+
+
+def test_vv_vh_aliases_feed_the_single_sar_channel() -> None:
+    """Opt-in aliases for Sentinel-1-only models: same statistics, default selection unchanged."""
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
+
+    specs = OpenEarthMapSAR.select_band_specs(["vv", "vh"])
+    assert [b.name for b in specs] == ["vv", "vh"]
+    assert {(b.mean, b.std, b.sensor) for b in specs} == {(49.4892, 34.9148, "sar")}
+    assert [b.name for b in OpenEarthMapSAR.select_band_specs(None)] == ["sar"]

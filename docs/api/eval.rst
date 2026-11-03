@@ -57,6 +57,7 @@ Segmentation
 
 .. currentmodule:: geo_eval_harness.segmentation_task
 .. autoclass:: SegmentationSolver
+.. autoclass:: SweepSegmentationSolver
 .. autoclass:: SegMetrics
 .. autoclass:: EpochRecord
 

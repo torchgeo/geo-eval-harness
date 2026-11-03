@@ -116,6 +116,7 @@ class SegmentationOutcome(NamedTuple):
     batch_size: int | None
     best_epoch: int | None
     best_val_miou: float | None
+    weight_decay: float | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -630,7 +631,10 @@ def evaluate_segmentation(
         raise ValueError("Segmentation benchmarks require a non-empty validation loader.")
     device = torch.device(cfg.runtime.device)
     seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
-    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+    from geo_eval_harness.segmentation_task import (
+        SweepSegmentationSolver,
+        build_seg_probe_and_solver,
+    )
 
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
@@ -644,6 +648,8 @@ def evaluate_segmentation(
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_cache)
         solver.fit_cached(
             train_cache=train_cache,
             val_cache=val_cache,
@@ -658,6 +664,8 @@ def evaluate_segmentation(
             collect_confusions=collect_confusions,
         )
     else:
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_loader)
         solver.fit(
             train_loader=train_loader,
             val_loader=val_loader,
@@ -684,6 +692,9 @@ def evaluate_segmentation(
         )
     else:
         metrics = eval_result
+    weight_decay = seg_cfg.weight_decay
+    if isinstance(solver, SweepSegmentationSolver):
+        lr, weight_decay = solver.selected_lr, solver.selected_weight_decay
     return SegmentationOutcome(
         metrics=metrics,
         feature_dim=sum(probe.channels_list),
@@ -691,6 +702,7 @@ def evaluate_segmentation(
         batch_size=actual_batch_size,
         best_epoch=solver.best_epoch,
         best_val_miou=solver.best_val_miou,
+        weight_decay=weight_decay,
     )
 
 
@@ -726,7 +738,12 @@ def run_segmentation(
         model, loaders, cfg, num_classes, on_epoch=None if writer is None else writer.epoch
     )
     if writer is not None:
-        writer.selected(outcome.best_epoch, outcome.best_val_miou)
+        writer.selected(
+            outcome.best_epoch,
+            outcome.best_val_miou,
+            lr=outcome.lr,
+            weight_decay=outcome.weight_decay,
+        )
     metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {

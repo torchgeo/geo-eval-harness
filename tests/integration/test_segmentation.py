@@ -312,3 +312,25 @@ def _assert_segmentation_results(output: Path, *, cached: bool) -> None:
     assert row["feature_dim"] == 64
     assert row["best_lr"] == 0.05
     assert row["best_batch_size"] == (2 if cached else 4)
+
+
+def test_caffe_serves_gray_as_identical_rgb_channels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_caffe_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    train, loader, *_ = get_datasets(
+        "caffe", num_workers=1, return_val=True, image_size=12, bands="rgb"
+    )
+    image = next(iter(loader))["image"]
+    assert image.shape[1] == 3
+    torch.testing.assert_close(image[:, 1], image[:, 0], rtol=0, atol=0)
+    torch.testing.assert_close(image[:, 2], image[:, 0], rtol=0, atol=0)
+    specs = get_bench_dataset_class("caffe")().resolve_band_specs("rgb")
+    assert [(b.name, b.sensor, b.wavelength_um) for b in specs] == [
+        ("red", "aerial", None),
+        ("green", "aerial", None),
+        ("blue", "aerial", None),
+    ]
+    single, *_ = get_datasets("caffe", num_workers=0, return_val=True, image_size=12, bands=["red"])
+    torch.testing.assert_close(single[0]["image"], train[0]["image"][:1], rtol=0, atol=0)

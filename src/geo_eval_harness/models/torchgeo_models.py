@@ -402,7 +402,6 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
         self.backbone.fc = nn.Identity()
         self._prepare_input_conv("conv1", weights_member)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
@@ -499,7 +498,6 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
         self.res = float(res)
         self.pool = pool
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
@@ -627,7 +625,6 @@ class TorchGeoEarthLocBench(_TorchGeoBackboneBench):
         # Non-RGB results are "adapted*": the ResNet50 input-convolution weights differ.
         _adapt_first_conv(self.backbone, "backbone.conv1", len(bands))
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
@@ -877,7 +874,6 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
         hi = (mean + self.std_multiplier * std).to(images.device, images.dtype)
         return ((images - lo) / (hi - lo).clamp_min(1e-8)).clamp(0.0, 1.0)
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         # CROMA.forward references sar_encodings even for optical-only inputs.
         from ._band_mapping import map_to_model_bands
