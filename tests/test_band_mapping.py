@@ -1,13 +1,20 @@
 """Tests for the BandSpec -> model-band mapping helper."""
 
+import dataclasses
+
 import pytest
 import torch
 
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models._band_mapping import (
+    S2_BANDWIDTH_UM,
+    S2_GSD_M,
+    S2_WAVELENGTHS_UM,
     BandMappingPolicy,
+    bandwidths_um,
     canonical_band_name,
+    gsds_m,
     map_to_model_bands,
     select_src_bands,
     wavelengths_um,
@@ -183,6 +190,48 @@ class TestWavelengthsUm:
         bands = [_band("red", 0.665), _band("vv", None, sensor="sar")]
         with pytest.raises(ValueError, match="Missing wavelengths"):
             wavelengths_um(bands)
+
+
+class TestBandwidthAndGsd:
+    def test_declared_values_win_over_the_s2_table(self) -> None:
+        band = dataclasses.replace(_band("red", 0.665), bandwidth_um=0.05, gsd_m=3.0)
+        assert bandwidths_um([band]) == [0.05]
+        assert gsds_m([band]) == [3.0]
+
+    def test_falls_back_to_s2_table_by_canonical_name(self) -> None:
+        bands = [_band("B05"), _band("nir"), _band("B01")]
+        assert bandwidths_um(bands) == [0.019, 0.145, 0.027]
+        assert gsds_m(bands) == [20.0, 10.0, 60.0]
+
+    def test_sar_raises_without_explicit_default(self) -> None:
+        bands = [_band("red", 0.665), _band("vv", sensor="sar")]
+        with pytest.raises(ValueError, match="Missing bandwidth"):
+            bandwidths_um(bands)
+        assert gsds_m(bands, default_m=10.0) == [10.0, 10.0]
+
+    def test_tables_cover_every_s2_wavelength(self) -> None:
+        assert set(S2_BANDWIDTH_UM) == set(S2_WAVELENGTHS_UM) == set(S2_GSD_M)
+
+    @pytest.mark.parametrize(
+        "dataset",
+        ["Sen1Floods11S2", "PASTIS", "FieldsOfTheWorld"],
+    )
+    def test_s2_datasets_declare_bandwidth_and_gsd(self, dataset: str) -> None:
+        """Declared values match the S2 table; other sensors' bands (e.g. PASTIS S1) stay unset."""
+        import geo_eval_harness.datasets as datasets
+
+        bands = getattr(datasets, dataset).bands
+        s2 = [b for b in bands if b.sensor == "s2"]
+        assert s2
+        for b in s2:
+            assert b.bandwidth_um == S2_BANDWIDTH_UM[canonical_band_name(b.name)]
+            assert b.gsd_m == S2_GSD_M[canonical_band_name(b.name)]
+        assert all(b.bandwidth_um is None for b in bands if b.sensor != "s2")
+
+    def test_spacenet7_declares_planet_gsd(self) -> None:
+        from geo_eval_harness.datasets import SpaceNet7
+
+        assert gsds_m(SpaceNet7.bands) == [4.77, 4.77, 4.77]
 
 
 class TestDofaWavelengths:
