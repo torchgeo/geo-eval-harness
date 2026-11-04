@@ -9,8 +9,8 @@ from contextlib import contextmanager
 
 import torch
 import torch.nn as nn
-from torch.nn.utils import parametrize
 from timm.models.swin_transformer_v2 import WindowAttention as TimmSwinV2WindowAttention
+from torch.nn.utils import parametrize
 from torchvision.models.swin_transformer import ShiftedWindowAttention, ShiftedWindowAttentionV2
 
 logger = logging.getLogger(__name__)
