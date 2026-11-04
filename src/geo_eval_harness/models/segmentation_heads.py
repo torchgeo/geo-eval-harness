@@ -778,7 +778,7 @@ class ViTNeck(nn.Module):
         self.fpn = BeitFPNNeck(BeitConfig(hidden_size=channels_list[0]))
         self.native_finest = native_finest
         if native_finest:
-            self.fpn.fpn1 = nn.Identity()
+            self.fpn.add_module("fpn1", nn.Identity())
 
     def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
         """Normalise each level (if enabled), then rescale coarse-to-fine maps by 1/2, 1, 2, 4."""
