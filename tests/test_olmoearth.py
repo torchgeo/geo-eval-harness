@@ -69,7 +69,11 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
             pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
-            return {"tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled)}
+            return {
+                "tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled),
+                "location_tokens": torch.arange(16, dtype=torch.float32).reshape(1, 2, 2, 4),
+                "student_location_tokens": torch.arange(8, dtype=torch.float32).reshape(1, 2, 2, 2),
+            }
 
     def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
         state["loads"].append((model_id, load_weights))
@@ -77,7 +81,7 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     exports = {
         "olmoearth_pretrain_minimal": {
-            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano"),
+            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano", OLMOEARTH_V1_3_BASE="v1_3_base"),
             "Normalizer": _Normalizer,
             "load_model_from_id": load_model,
         },
@@ -201,6 +205,73 @@ def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:
 
     with pytest.raises(ValueError, match="multiple input sensors"):
         _build_sensor_groups(bands)
+
+
+@pytest.mark.parametrize(
+    ("embedding", "expected"),
+    [
+        (None, [6.0, 7.0, 8.0, 9.0]),  # v1.3 defaults to the location-token grid
+        ("patch_tokens", [10.0, 11.0, 12.0, 13.0]),
+        ("student", [3.0, 4.0]),
+    ],
+)
+def test_v1_3_embedding_source(
+    tiny_olmoearth: dict[str, Any], embedding: str | None, expected: list[float]
+) -> None:
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base",
+        version="v1_3",
+        embedding=embedding,
+        normalization="identity",
+    )
+    out = model(torch.full((1, 3, 4, 4), 1500.0))
+    assert tiny_olmoearth["loads"] == [("v1_3_base", True)]
+    torch.testing.assert_close(out, torch.tensor([expected]))
+
+
+@pytest.mark.parametrize(
+    ("version", "missing_bands", "zeroed"),
+    [("v1_3", None, True), ("v1_3", "impute", False), ("v1", None, False)],
+)
+def test_missing_bands_are_zeroed_after_pretrained_normalization(
+    tiny_olmoearth: dict[str, Any], version: str, missing_bands: str | None, *, zeroed: bool
+) -> None:
+    """Band dropout showed v1.3 dropped bands as 0, not as the normalized zero-padding."""
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base" if version == "v1_3" else "nano",
+        version=version,
+        missing_bands=missing_bands,
+        normalization="identity",
+    )
+    group = model._sensor_groups[0]
+    actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), group)
+    present = actual[..., [0, 1, 2]]
+    np.testing.assert_allclose(present.ravel(), [1.5, 0.5, -0.5])
+    missing = actual[..., group["missing_dst"]]
+    if zeroed:
+        assert group["missing_dst"] == list(range(3, 12))
+        assert not missing.any()
+    else:
+        # B05 and B01 copy red and blue; channels without a source keep the padded value.
+        np.testing.assert_allclose(actual[..., 4], actual[..., 2])
+        np.testing.assert_allclose(actual[..., 10], actual[..., 0])
+        assert missing.all()
+
+
+def test_rejects_pooler_embeddings_without_attention_pooler(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="AttentionPooler"):
+        OlmoEarthBenchModel(
+            _rgb_bands(),
+            model_size="base",
+            version="v1_2",
+            embedding="location_tokens",
+            normalization="identity",
+        )
+    assert tiny_olmoearth["loads"] == []
 
 
 # Embedding widths from the released Hugging Face model configs.
@@ -690,6 +761,6 @@ def test_invalid_model_size_at_construction_not_forward() -> None:
             "load_model_from_id",
             side_effect=AssertionError("load_model_from_id should not be called"),
         ),
-        pytest.raises(AttributeError, match="OLMOEARTH_V1_XLARGE"),
+        pytest.raises(ValueError, match="no 'xlarge' checkpoint"),
     ):
         OlmoEarthBenchModel(bands=_rgb_bands(), model_size="xlarge", normalization="identity")
