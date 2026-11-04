@@ -14,6 +14,7 @@ Changed
 Added
 ^^^^^
 
+* ``BandSpec`` declares optional ``bandwidth_um`` and ``gsd_m``; ``bandwidths_um()`` and ``gsds_m()`` fall back to Sentinel-2 tables by canonical band name. Sen1Floods11 S2, PASTIS and Fields of the World declare both, SpaceNet7 its 4.77 m GSD. Hashes are unchanged.
 * Classification dataset classes declare ``class_names`` in label-index order, so per-class results can be labelled without loading data.
 * ``bright-post-sar-rgb`` repeats BRIGHT's post-event SAR channel into identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths) for RGB model inputs. It shares ``bright-post-sar`` tiles, labels, splits, normalization statistics, and installation; the single-band dataset is unchanged.
 * Linear-probe protocol (UniverSat ``LP_eval.py``) for any frozen backbone, off by default with unchanged hashes. ``segmentation.sweep_learning_rates`` x ``sweep_weight_decays`` trains one ``patch_linear`` head per cell in a single vectorised pass, each with its own AdamW group and a cosine decay to zero, and evaluates only the head with the best validation epoch on test (the selected learning rate and weight decay are reported; method suffix ``-sweep<n>``). ``segmentation.feature_standardize`` z-scores each hooked feature channel with exact training-split statistics, from the feature cache or one extra backbone pass (method suffix ``-std``).

@@ -171,18 +171,18 @@ class Sen1Floods11S2(Sen1Floods11Base):
     # Train split, valid (mask != 255) pixels only; see the PR body for the command.
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
-        BandSpec("s2", "b01", "B1", mean=1500.3681, std=327.8146, min=0, max=6885, wavelength_um=0.443),
-        BandSpec("s2", "b02", "B2", mean=1253.4041, std=351.7053, min=0, max=11630, wavelength_um=0.49),
-        BandSpec("s2", "b03", "B3", mean=1227.5549, std=374.3196, min=0, max=15100, wavelength_um=0.56),
-        BandSpec("s2", "b04", "B4", mean=1062.0387, std=531.9318, min=0, max=17418, wavelength_um=0.665),
-        BandSpec("s2", "b05", "B5", mean=1335.5951, std=451.5526, min=0, max=9760, wavelength_um=0.705),
-        BandSpec("s2", "b06", "B6", mean=2298.6829, std=686.3296, min=0, max=10788, wavelength_um=0.74),
-        BandSpec("s2", "b07", "B7", mean=2770.1801, std=881.719, min=0, max=11306, wavelength_um=0.783),
-        BandSpec("s2", "b08", "B8", mean=2558.1267, std=850.5444, min=0, max=15516, wavelength_um=0.842),
-        BandSpec("s2", "b8a", "B8A", mean=3007.48, std=1009.5349, min=0, max=13253, wavelength_um=0.865),
-        BandSpec("s2", "b09", "B9", mean=459.5132, std=294.0046, min=0, max=3947, wavelength_um=0.945),
-        BandSpec("s2", "b10", "B10", mean=62.3493, std=146.7964, min=0, max=1426, wavelength_um=1.375),
-        BandSpec("s2", "b11", "B11", mean=1934.905, std=808.4762, min=0, max=14093, wavelength_um=1.61),
-        BandSpec("s2", "b12", "B12", mean=1070.1452, std=603.4922, min=0, max=13472, wavelength_um=2.19),
+        BandSpec("s2", "b01", "B1", mean=1500.3681, std=327.8146, min=0, max=6885, wavelength_um=0.443, bandwidth_um=0.027, gsd_m=60),
+        BandSpec("s2", "b02", "B2", mean=1253.4041, std=351.7053, min=0, max=11630, wavelength_um=0.49, bandwidth_um=0.098, gsd_m=10),
+        BandSpec("s2", "b03", "B3", mean=1227.5549, std=374.3196, min=0, max=15100, wavelength_um=0.56, bandwidth_um=0.045, gsd_m=10),
+        BandSpec("s2", "b04", "B4", mean=1062.0387, std=531.9318, min=0, max=17418, wavelength_um=0.665, bandwidth_um=0.038, gsd_m=10),
+        BandSpec("s2", "b05", "B5", mean=1335.5951, std=451.5526, min=0, max=9760, wavelength_um=0.705, bandwidth_um=0.019, gsd_m=20),
+        BandSpec("s2", "b06", "B6", mean=2298.6829, std=686.3296, min=0, max=10788, wavelength_um=0.74, bandwidth_um=0.018, gsd_m=20),
+        BandSpec("s2", "b07", "B7", mean=2770.1801, std=881.719, min=0, max=11306, wavelength_um=0.783, bandwidth_um=0.028, gsd_m=20),
+        BandSpec("s2", "b08", "B8", mean=2558.1267, std=850.5444, min=0, max=15516, wavelength_um=0.842, bandwidth_um=0.145, gsd_m=10),
+        BandSpec("s2", "b8a", "B8A", mean=3007.48, std=1009.5349, min=0, max=13253, wavelength_um=0.865, bandwidth_um=0.033, gsd_m=20),
+        BandSpec("s2", "b09", "B9", mean=459.5132, std=294.0046, min=0, max=3947, wavelength_um=0.945, bandwidth_um=0.026, gsd_m=60),
+        BandSpec("s2", "b10", "B10", mean=62.3493, std=146.7964, min=0, max=1426, wavelength_um=1.375, bandwidth_um=0.075, gsd_m=60),
+        BandSpec("s2", "b11", "B11", mean=1934.905, std=808.4762, min=0, max=14093, wavelength_um=1.61, bandwidth_um=0.143, gsd_m=20),
+        BandSpec("s2", "b12", "B12", mean=1070.1452, std=603.4922, min=0, max=13472, wavelength_um=2.19, bandwidth_um=0.242, gsd_m=20),
     ]
     # fmt: on

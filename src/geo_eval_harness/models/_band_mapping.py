@@ -105,6 +105,41 @@ S2_WAVELENGTHS_UM: dict[str, float] = {
     "swir2": 2.190,
 }
 
+#: Sentinel-2 band bandwidth (full width at half maximum) in micrometres, as in the STAC
+#: ``eo:bands`` metadata of the Sentinel-2 collections (e.g. Earth Search).
+S2_BANDWIDTH_UM: dict[str, float] = {
+    "coastal": 0.027,
+    "blue": 0.098,
+    "green": 0.045,
+    "red": 0.038,
+    "rededge1": 0.019,
+    "rededge2": 0.018,
+    "rededge3": 0.028,
+    "nir": 0.145,
+    "nir_narrow": 0.033,
+    "watervapor": 0.026,
+    "cirrus": 0.075,
+    "swir1": 0.143,
+    "swir2": 0.242,
+}
+
+#: Sentinel-2 native band resolution in metres.
+S2_GSD_M: dict[str, float] = {
+    "coastal": 60.0,
+    "blue": 10.0,
+    "green": 10.0,
+    "red": 10.0,
+    "rededge1": 20.0,
+    "rededge2": 20.0,
+    "rededge3": 20.0,
+    "nir": 10.0,
+    "nir_narrow": 20.0,
+    "watervapor": 60.0,
+    "cirrus": 60.0,
+    "swir1": 20.0,
+    "swir2": 20.0,
+}
+
 
 def canonical_band_name(name: str) -> str:
     """Map an input band name to the canonical short name."""
@@ -260,4 +295,43 @@ def wavelengths_um(bands: list[BandSpec], default_um: float | None = None) -> li
             resolved.append(S2_WAVELENGTHS_UM[canonical_band_name(b.name)])
         else:
             resolved.append(float(cast(float, default_um)))
+    return resolved
+
+
+def bandwidths_um(bands: list[BandSpec], default_um: float | None = None) -> list[float]:
+    """Return per-band bandwidths in micrometres, as :func:`wavelengths_um` resolves wavelengths.
+
+    Bands without ``bandwidth_um`` use :data:`S2_BANDWIDTH_UM` by canonical name; others raise
+    unless the caller supplies ``default_um``.
+    """
+    return _resolve(bands, "bandwidth_um", S2_BANDWIDTH_UM, default_um, "bandwidth")
+
+
+def gsds_m(bands: list[BandSpec], default_m: float | None = None) -> list[float]:
+    """Return per-band native GSD in metres; bands without ``gsd_m`` use :data:`S2_GSD_M`."""
+    return _resolve(bands, "gsd_m", S2_GSD_M, default_m, "GSD")
+
+
+def _resolve(
+    bands: list[BandSpec],
+    attr: str,
+    table: dict[str, float],
+    default: float | None,
+    what: str,
+) -> list[float]:
+    resolved: list[float] = []
+    missing: list[str] = []
+    for b in bands:
+        value = getattr(b, attr)
+        if value is None:
+            value = table.get(canonical_band_name(b.name), default)
+        if value is None:
+            missing.append(b.name)
+        else:
+            resolved.append(float(value))
+    if missing:
+        raise ValueError(
+            f"Missing {what} for {missing}: not declared on the BandSpec nor a Sentinel-2 band name. "
+            "Declare it, or pass a default only for a deliberate fallback ablation."
+        )
     return resolved

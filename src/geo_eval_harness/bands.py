@@ -32,6 +32,12 @@ class BandSpec:
             ``None`` for non-optical bands (SAR, DEM, elevation).
         unit: Physical unit where a model's pretrained normalizer depends on
             it; for SAR ``"linear_power"`` or ``"db"``. ``None`` if undeclared.
+        bandwidth_um: Spectral bandwidth (full width at half maximum) in
+            micrometres, for models conditioned on the band's response.
+            ``None`` if undeclared or non-optical.
+        gsd_m: Native ground sample distance of the band in metres (e.g. 20
+            for Sentinel-2 B05 even when resampled to a 10 m grid). ``None``
+            if undeclared.
     """
 
     sensor: str
@@ -46,3 +52,5 @@ class BandSpec:
     #: ``"linear_power"`` (backscatter σ⁰ as a power ratio) or ``"db"`` (10·log10 σ⁰).
     #: ``None`` means not declared.
     unit: str | None = None
+    bandwidth_um: float | None = None
+    gsd_m: float | None = None

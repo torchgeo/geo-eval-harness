@@ -23,8 +23,9 @@ class SpaceNet7(_OffsetMaskV2Dataset):
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
-        BandSpec("planet", "red", "red", mean=117.85, std=61.9829, min=0, max=255),
-        BandSpec("planet", "green", "green", mean=104.531, std=49.7879, min=0, max=255),
-        BandSpec("planet", "blue", "blue", mean=77.561, std=46.01, min=0, max=255),
+        # Planet global monthly basemaps (4.77 m pixels).
+        BandSpec("planet", "red", "red", mean=117.85, std=61.9829, min=0, max=255, gsd_m=4.77),
+        BandSpec("planet", "green", "green", mean=104.531, std=49.7879, min=0, max=255, gsd_m=4.77),
+        BandSpec("planet", "blue", "blue", mean=77.561, std=46.01, min=0, max=255, gsd_m=4.77),
     ]
     # fmt: on
