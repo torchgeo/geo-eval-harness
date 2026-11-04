@@ -61,6 +61,7 @@ _MODALITY_INPUT_RES: dict[str, float] = {
     "aerialflair": 0.2,
     "spot": 1.0,
     "l8": 10.0,
+    "l8forestnet": 10.0,
     "l7": 30.0,
     "hls": 30.0,
     "alos": 30.0,
@@ -73,6 +74,7 @@ _MODALITY_SUBPATCH: dict[str, int] = {
     "aerialflair": 8,
     "spot": 10,
     "l8": 1,
+    "l8forestnet": 1,
     "l7": 1,
     "hls": 1,
     "alos": 1,
@@ -270,9 +272,9 @@ def _build_sensor_groups(
 
     Returns one dict per sensor (first-seen order) with keys ``modality``,
     ``indices`` (channel positions in ``bands``), ``wavelengths`` (floats, or
-    SAR polarisation codes), ``input_res``, and ``subpatch``. ``modality`` /
-    ``input_res`` / ``wavelengths`` overrides apply only when the input has a
-    single sensor.
+    SAR polarisation codes), ``input_res``, and ``subpatch``. ``modality`` and
+    ``wavelengths`` overrides need a single-sensor input. ``input_res`` applies to every
+    sensor: all channels share the resized pixel grid, so they share one GSD.
     """
     sensor_to_indices: dict[str, list[int]] = defaultdict(list)
     order: list[str] = []
@@ -305,7 +307,7 @@ def _build_sensor_groups(
         seen.add(mod)
         indices = sensor_to_indices[sensor]
         group_bands = [bands[i] for i in indices]
-        res = input_res if (input_res is not None and single_sensor) else _MODALITY_INPUT_RES[mod]
+        res = input_res if input_res is not None else _MODALITY_INPUT_RES[mod]
         groups.append(
             {
                 "modality": mod,
@@ -391,8 +393,9 @@ class UniverSatBenchModel(BenchModel):
             a ``H x W`` input gives an ``H/patch_px`` latent grid regardless of
             sensor, and ``output_grid`` defaults to that grid. The segmentation preset sets it per
             dataset to UniverSat's own recipes (patch size in metres per sensor).
-        input_res: Override the physical resolution (m/px), single-sensor only;
-            ``None`` uses the registry value per modality.
+        input_res: Physical resolution (m/px) of the pixels the model sees, for every sensor
+            (all channels share the resized pixel grid); ``None`` uses the registry value per
+            modality.
         wavelengths: Override the per-channel spectral identity, single-sensor only: one
             centre wavelength (µm) or SAR polarisation code (``VV``, ``VH``, ``HH``, ``HV``,
             ``Ratio_VV_VH``, ``Ratio_HH_HV``) per input channel. ``None`` derives them from

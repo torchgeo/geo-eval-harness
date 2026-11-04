@@ -50,6 +50,9 @@ def test_multi_sensor_grouping() -> None:
     assert groups["s2"]["indices"] == [0, 2]
     assert groups["s1"]["indices"] == [1, 3]
     assert groups["s1"]["wavelengths"] == ["VV", "VH"]
+    # Every sensor is resized to the same pixel grid, so one input_res applies to all of them.
+    resized = {g["modality"]: g["input_res"] for g in _build_sensor_groups(bands, input_res=2.5)}
+    assert resized == {"s2": 2.5, "s1": 2.5}
 
 
 def test_sar_code_mapping() -> None:
@@ -472,3 +475,24 @@ def test_block_checkpointing_is_exact_and_keeps_hooks(monkeypatch: pytest.Monkey
     encoder.requires_grad_(False)
     encoder.run(x)
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("dataset", "patch_px", "modality", "input_res"),
+    [
+        ("eurosat", 4, None, 2.8571),
+        ("so2sat", 7, None, 1.4286),
+        ("m-forestnet", 4, "l8forestnet", 22.2321),
+        ("treesatai", 16, None, 0.2714),
+    ],
+)
+def test_cls_preset_sets_resized_gsd_and_patch_per_dataset(
+    dataset: str, patch_px: int, modality: str | None, input_res: float
+) -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base")).for_dataset(dataset)
+    assert preset.kwargs["patch_px"] == patch_px
+    assert preset.kwargs["modality"] == modality
+    assert preset.kwargs["input_res"] == input_res
