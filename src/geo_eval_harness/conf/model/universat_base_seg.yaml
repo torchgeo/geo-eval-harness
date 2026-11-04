@@ -15,28 +15,35 @@ segmentation:
     - model.model.blocks.9
     - model.model.blocks.6
     - model.model.blocks.3
-# Native GSD and UniverSat's per-sensor patch sizes in metres (S2/HLS 4 px, S1 8 px, VHR 4-8 m;
-# https://github.com/gastruc/UniverSat/tree/d4e8712/configs/dataset), rounded to pixel counts that
-# divide 224 so no remainder is dropped. Images are resized to 224 px before the model.
+# input_res is the GSD of the pixels the model sees: images are resized to 224 px first, so it is
+# native GSD x native tile size / 224 (the UniverSat authors' guidance on this PR). These values
+# assume the default image_size of 224. Patch sizes follow UniverSat's per-sensor recipes in metres
+# (S2 40 m, S1 80 m, HLS 120 m, VHR 4-8 m; https://github.com/gastruc/UniverSat/tree/d4e8712/configs/dataset),
+# as pixel counts that divide 224. Burn Scars (274 m) and CloudSEN12 (91 m) stay coarser than the
+# recipe; 2 px patches would need a 112x112 token grid.
 dataset_overrides:
-  burn_scars:
-    kwargs: {modality: hls, patch_px: 4}
-  cloudsen12:
-    kwargs: {patch_px: 4}
-  fotw:
-    kwargs: {patch_px: 4}
-  kuro_siwo:
+  burn_scars:  # 30 m HLS, 512 px
+    kwargs: {modality: hls, input_res: 68.5714, patch_px: 4}
+  cloudsen12:  # 10 m, 512 px
+    kwargs: {input_res: 22.8571, patch_px: 4}
+  fotw:  # 10 m, 256 px
+    kwargs: {input_res: 11.4286, patch_px: 4}
+  kuro_siwo:  # 10 m, 224 px
     kwargs: {patch_px: 8}
-  # Single-channel SAR amplitude passed once with a VV code, not as grey RGB.
+  # Single-channel SAR amplitude passed once with a VV code, not as grey RGB (6 m, 512 px).
   caffe:
-    kwargs: {modality: s1, wavelengths: [VV], input_res: 6.0, patch_px: 8}
+    kwargs: {modality: s1, wavelengths: [VV], input_res: 13.7143, patch_px: 8}
     input: {bands: [red]}
-  openearthmap-sar:
-    kwargs: {input_res: 0.5, patch_px: 8}
+  openearthmap-sar:  # 0.5 m, 1024 px
+    kwargs: {input_res: 2.2857, patch_px: 4}
     input: {bands: [vv]}
-  flair2:
-    kwargs: {modality: aerialflair, patch_px: 32}
-  loveda:
-    kwargs: {input_res: 0.3, patch_px: 16}
-  levir-cd-post:
-    kwargs: {input_res: 0.5, patch_px: 8}
+  flair2:  # 0.2 m, 512 px
+    kwargs: {modality: aerialflair, input_res: 0.4571, patch_px: 16}
+  loveda:  # 0.3 m, 1024 px
+    kwargs: {input_res: 1.3714, patch_px: 4}
+  levir-cd-post:  # 0.5 m, 256 px
+    kwargs: {input_res: 0.5714, patch_px: 8}
+  sen1floods11-s1:  # 10 m, 512 px
+    kwargs: {input_res: 22.8571, patch_px: 4}
+  sen1floods11-s2:  # 10 m, 512 px
+    kwargs: {input_res: 22.8571, patch_px: 4}

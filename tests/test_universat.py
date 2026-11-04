@@ -281,11 +281,17 @@ def test_output_scale_multiplies_the_patch_grid(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.parametrize(
-    ("dataset", "patch_px", "modality"),
-    [("burn_scars", 4, "hls"), ("cloudsen12", 4, None), ("flair2", 32, "aerialflair")],
+    ("dataset", "patch_px", "modality", "input_res"),
+    [
+        ("burn_scars", 4, "hls", 68.5714),
+        ("cloudsen12", 4, None, 22.8571),
+        ("flair2", 16, "aerialflair", 0.4571),
+        ("loveda", 4, None, 1.3714),
+        ("kuro_siwo", 8, None, None),
+    ],
 )
 def test_seg_preset_sets_universat_recipe_per_dataset(
-    dataset: str, patch_px: int, modality: str | None
+    dataset: str, patch_px: int, modality: str | None, input_res: float | None
 ) -> None:
     from geo_eval_harness.config.presets import load_model_preset
     from geo_eval_harness.config.schema import ModelConfig
@@ -293,6 +299,8 @@ def test_seg_preset_sets_universat_recipe_per_dataset(
     preset = load_model_preset(ModelConfig(name="universat_base_seg")).for_dataset(dataset)
     assert preset.kwargs["patch_px"] == patch_px
     assert preset.kwargs["modality"] == modality
+    # GSD of the 224 px input the model sees, not the native GSD.
+    assert preset.kwargs["input_res"] == input_res
     assert preset.segmentation.layers[0] == "model.model.blocks.14"
 
 
@@ -305,7 +313,7 @@ def test_seg_preset_feeds_caffe_once_as_vv_sar() -> None:
     assert {k: preset.kwargs[k] for k in ("modality", "wavelengths", "input_res")} == {
         "modality": "s1",
         "wavelengths": ["VV"],
-        "input_res": 6.0,
+        "input_res": 13.7143,
     }
 
 
