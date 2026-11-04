@@ -288,7 +288,7 @@ class SegmentationSolver:
         with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
             try:
                 logits = self.model(images)
-            except NonFiniteFeaturesError:
+            except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
                 tracker.nonfinite += 1
                 return
             loss: torch.Tensor = self.criterion(logits, masks)
@@ -597,7 +597,7 @@ class SegmentationSolver:
                     continue
                 try:
                     check_finite_features(features)
-                except NonFiniteFeaturesError:
+                except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
                     tracker.nonfinite += 1
                     continue
                 self.optimizer.zero_grad()
