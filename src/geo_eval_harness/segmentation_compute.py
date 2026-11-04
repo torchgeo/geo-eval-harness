@@ -25,7 +25,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import nn
@@ -34,6 +34,9 @@ from torch.utils.flop_counter import FlopCounterMode
 
 from geo_eval_harness.config.presets import NORMALIZATIONS, ModelPreset, resolve_run_config
 from geo_eval_harness.config.run import RunConfig
+
+if TYPE_CHECKING:
+    from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 logger = logging.getLogger(__name__)
 
@@ -366,7 +369,7 @@ class ComponentCounts:
         return "ok" if not self.uncounted_ops else "lower_bound"
 
 
-def _components(probe: nn.Module) -> dict[str, list[nn.Module]]:
+def _components(probe: "SegmentationProbe") -> dict[str, list[nn.Module]]:
     """Map probe parts to their modules; inner registrations win over the decoder root."""
     from geo_eval_harness.models.segmentation_heads import NeckedHead, StandardizedHead
 
@@ -387,7 +390,7 @@ def _components(probe: nn.Module) -> dict[str, list[nn.Module]]:
     return parts
 
 
-def component_params(probe: nn.Module) -> dict[str, float]:
+def component_params(probe: "SegmentationProbe") -> dict[str, float]:
     """Parameters in millions; the decoder excludes the neck and a frozen upsampler it holds."""
 
     def count(module: nn.Module) -> int:
@@ -426,7 +429,7 @@ def _to_gflops(value: int, batch: int) -> float:
     return value / batch / 1e9
 
 
-def count_inference(probe: nn.Module, x: torch.Tensor) -> ComponentCounts:
+def count_inference(probe: "SegmentationProbe", x: torch.Tensor) -> ComponentCounts:
     """Count one evaluation forward (eval mode, no gradients, AMP on CUDA) per sample."""
     probe.eval()
     batch = x.shape[0]
@@ -478,7 +481,7 @@ class TrainStepCounts:
 
 
 def count_train_step(
-    probe: nn.Module, solver: Any, x: torch.Tensor, masks: torch.Tensor
+    probe: "SegmentationProbe", solver: Any, x: torch.Tensor, masks: torch.Tensor
 ) -> TrainStepCounts:
     """Count the solver's training step: train mode, AMP on CUDA, loss, backward."""
     solver._set_train_mode()
@@ -825,7 +828,7 @@ def iter_rows(  # noqa: PLR0913 - explicit cell options
         _free(device)
 
 
-def row_key(row: Mapping[str, Any]) -> tuple[str, str] | None:
+def row_key(row: Mapping[Any, Any]) -> tuple[str, str] | None:
     """Resume key of an output row."""
     kind = row.get("kind")
     if kind == "inference":
