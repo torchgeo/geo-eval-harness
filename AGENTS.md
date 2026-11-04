@@ -15,7 +15,7 @@ Guidelines for AI coding agents working in the geo-eval-harness repository.
 
 ```
 src/geo_eval_harness/        # Main source package (importable as geo_eval_harness)
-  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/coord
+  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/seg-flops/coord
   ├── main.py              # Benchmark runner (classification + segmentation)
   ├── config/              # Python schemas, preset resolution, and catalog discovery
   ├── coordbench/          # Location encoders, typed config, probes, and runner
@@ -28,6 +28,7 @@ src/geo_eval_harness/        # Main source package (importable as geo_eval_harne
   ├── knn.py               # FAISS-backed KNN via faissknn
   ├── segmentation_task.py # Segmentation task solver
   ├── segmentation_probe.py# Hook-based segmentation probe
+  ├── segmentation_compute.py # seg-flops: per-component segmentation FLOPs and training units
   ├── conf/                # Config YAMLs (packaged inside the source tree)
   └── models/              # Model implementations (interface.py, timm.py, torchgeo_models.py, etc.)
 data/                      # Datasets always live here (relative to CWD, untracked)
@@ -184,6 +185,7 @@ geo-eval-harness run --model rcf --dataset m-eurosat --device cuda:1
 
 # Measure per-sample compute cost (GFLOPs, params, throughput) -> results/compute_cost.csv
 geo-eval-harness flops --model timm/resnet50
+geo-eval-harness seg-flops --manifest cells.jsonl --device cuda  # segmentation compute
 
 # Measure a fixed real batch -> JSON stdout
 geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu
@@ -206,7 +208,7 @@ geo-eval-harness coord --model sincos --dataset california_housing --methods lin
 
 - Each model writes to its own `results/models/<model name>.csv` (not one shared file), so re-running one model only touches that file. Rows are appended, never rewritten in place.
 - `--resume` skips a (dataset, method, bands, normalization, ...) combo only if an existing row's `config_hash` matches the current run's config. Changing a hashed config field invalidates the match. Additive `profile` and `intrinsic_dim` settings do not invalidate equivalent classification results; their own metric completeness is checked separately.
-- One-time, hardware-dependent measurements (`geo-eval-harness flops`, intrinsic-dimension probes) live in their own side files — `results/compute_cost.csv`, `results/profiles/<model name>.csv`, and `results/intrinsic_dim/<model name>.csv` — so a routine metrics rerun doesn't touch them.
+- One-time, hardware-dependent measurements (`geo-eval-harness flops`, intrinsic-dimension probes) live in their own side files — `results/compute_cost.csv`, `results/compute_cost_segmentation.csv` (`seg-flops`; see `docs/user/segmentation-compute.md`), `results/profiles/<model name>.csv`, and `results/intrinsic_dim/<model name>.csv` — so a routine metrics rerun doesn't touch them.
 - `--output-dir` / `output.directory` sets one root for all command outputs. Image runs use `models/`, `profiles/`, and `intrinsic_dim/` beneath it; `flops` and `coord` use `compute_cost.csv` and `coordbench_results.csv`. `--output` / `output.file` overrides the root and combines image-run measurements in one CSV. Standalone `profile` defaults to JSON stdout, or writes `profile.json` under an explicit root. CoordBench retains its own CSV schema/resume key.
 - Don't hand-edit `config_hash`/`KEY_COLS` logic without checking `resume.py`'s docstring first; it's easy to silently invalidate every existing row across `results/models/`.
 

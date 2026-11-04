@@ -25,8 +25,8 @@ def _band_configs() -> list[BandConfig]:
 
 
 def _heads() -> list[Head]:
-    """Return the default multi-scale segmentation heads."""
-    return ["fpn", "dpt"]
+    """Return no segmentation heads: use ``geo-eval-harness seg-flops`` for segmentation compute."""
+    return []
 
 
 class FlopsRuntimeConfig(StrictModel):
@@ -76,9 +76,9 @@ class FlopsClassificationConfig(StrictModel):
 
 
 class FlopsSegmentationConfig(StrictModel):
-    """Head sweep and shared benchmark probe settings.
+    """Deprecated head-only sweep; ``seg-flops`` measures whole segmentation probes.
 
-    An empty head or band selection disables segmentation. ``probe.layers``
+    Disabled by default. An empty head or band selection disables segmentation. ``probe.layers``
     inherits model/dataset defaults unless explicitly supplied, including ``[]``.
     Each selected head replaces ``probe.head`` for its measurement.
     """

@@ -339,6 +339,11 @@ def segmentation_rows(
             )
         return
 
+    if options.heads:
+        logger.warning(
+            "flops segmentation heads are deprecated: they count the head only, without the "
+            "backbone, neck or upsampler. Use 'geo-eval-harness seg-flops' instead."
+        )
     for head_type in options.heads:
         seg_key = (model_name, band_config, "segmentation", head_type)
         if seg_key in completed:
