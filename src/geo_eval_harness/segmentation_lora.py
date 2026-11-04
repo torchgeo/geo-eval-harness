@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import torch
 import torch.nn as nn
 from torch.nn.utils import parametrize
+from timm.models.swin_transformer_v2 import WindowAttention as TimmSwinV2WindowAttention
 from torchvision.models.swin_transformer import ShiftedWindowAttention, ShiftedWindowAttentionV2
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 class _LoRAWeightDelta(nn.Module):
     """Parametrization adding a scaled low-rank update ``B @ A`` to a ``Linear`` weight.
 
-    torchvision's Swin attention passes ``qkv.weight`` and ``proj.weight`` to a functional kernel
+    torchvision's Swin attention passes ``qkv.weight`` and ``proj.weight`` to a functional kernel,
+    and timm's Swin V2 attention passes ``qkv.weight`` to ``F.linear`` (to add its q/v bias),
     instead of calling those modules, so PEFT adapters, which wrap the module forward, never run.
     A parametrization updates the weight wherever it is read. Initialisation matches PEFT's
     default: Kaiming-uniform ``lora_A`` and zero ``lora_B``.
@@ -110,7 +112,7 @@ def apply_lora(
         matches = {name: matches[name] for name in kept}
     linear = {name: module for name, module in matches.items() if isinstance(module, nn.Linear)}
 
-    swin_attention = (ShiftedWindowAttention, ShiftedWindowAttentionV2)
+    swin_attention = (ShiftedWindowAttention, ShiftedWindowAttentionV2, TimmSwinV2WindowAttention)
     attention_names = [
         name
         for name in linear
