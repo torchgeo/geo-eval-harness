@@ -5,3 +5,9 @@ kwargs:
   pretrained: true
   global_pool: avg
   auto_resize: true
+segmentation:
+  layers:
+    - layers.3
+    - layers.2
+    - layers.1
+    - layers.0
