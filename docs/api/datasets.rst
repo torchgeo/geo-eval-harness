@@ -93,6 +93,8 @@ torchgeo wrappers
 
 .. autoclass:: BRIGHTPostSAR
 
+.. autoclass:: BRIGHTPostSARRGB
+
 .. autoclass:: OSCDPost
 
 .. autoclass:: UCMerced

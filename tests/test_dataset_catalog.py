@@ -19,6 +19,7 @@ from geo_eval_harness.datasets import (
     list_datasets,
     loading,
 )
+from geo_eval_harness.datasets.geobench_v2 import _V2_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -115,6 +116,33 @@ def test_catalog_task_matches_registered_wrapper(
         "name": name,
         "task": get_bench_dataset_class(name).task,
     }
+
+
+_CLASSIFICATION = [name for name in list_datasets() if get_dataset_task(name) == "classification"]
+
+
+@pytest.mark.parametrize("name", _CLASSIFICATION)
+def test_classification_class_names_match_num_classes(name: str) -> None:
+    cls = get_bench_dataset_class(name)
+    assert len(cls.class_names) == cls.num_classes
+    assert len(set(cls.class_names)) == cls.num_classes
+
+
+@pytest.mark.parametrize("name", sorted(set(_CLASSIFICATION) & set(_V2_REGISTRY)))
+def test_v2_class_names_follow_upstream_label_order(name: str) -> None:
+    import geobench_v2.datasets
+
+    upstream = getattr(geobench_v2.datasets, _V2_REGISTRY[name])
+    assert get_bench_dataset_class(name).class_names == tuple(upstream.classes)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["aid", "eurosat", "resisc45", "ucmerced"])
+def test_folder_class_names_follow_loaded_label_order(name: str) -> None:
+    bench = get_bench_dataset_class(name)
+    if not bench.data_root().exists():
+        pytest.skip(f"{name} data not found at {bench.data_root()}")
+    assert bench.class_names == tuple(bench().get_dataset("test").classes)
 
 
 def test_unknown_dataset_task_raises() -> None:
