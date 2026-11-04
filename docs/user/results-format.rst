@@ -139,22 +139,24 @@ Set ``output.epoch_metrics`` to a JSON Lines path to record segmentation trainin
 
 Each epoch appends one ``"event": "epoch"`` line as soon as it completes, so a failed run keeps the epochs it finished. A completed fit then appends one ``"event": "selected"`` line. Every line carries ``run_id`` (unique per fit), ``timestamp`` (UTC), and the result-row identity ``dataset``, ``name``, ``method``, ``bands``, ``partition``, ``image_size``, ``seed``, and ``config_hash``. Join curves to result rows on ``config_hash`` and ``method``; use ``run_id`` to separate repeated runs.
 
-==================== ============================================================
-Epoch field          Description
-==================== ============================================================
-``epoch``            Epoch number, starting from one.
-``train_loss``       Sample-weighted mean training loss over the epoch's steps.
-``val_loss``         Validation loss: the criterion's mean over the whole split.
-``val_miou``         Validation dataset-level macro mIoU.
-``head_lr``          Head learning rate used during the epoch.
-``backbone_lr``      Trainable backbone learning rate; ``null`` for a frozen backbone.
-``train_steps``      Optimizer steps taken.
-``skipped_batches``  Training batches smaller than the head minimum.
-``epoch_seconds``    Wall time for training and validation.
-``peak_gpu_mem_mb``  Peak allocated CUDA memory in MiB; ``null`` off CUDA.
-``train_miou``       Macro mIoU of training-mode predictions accumulated over the
-                     epoch's steps (no extra pass; weights change during the epoch).
-==================== ============================================================
+====================== ============================================================
+Epoch field            Description
+====================== ============================================================
+``epoch``              Epoch number, starting from one.
+``train_loss``         Sample-weighted mean training loss over the epoch's steps.
+``val_loss``           Validation loss: the criterion's mean over the whole split.
+``val_miou``           Validation dataset-level macro mIoU.
+``head_lr``            Head learning rate used during the epoch.
+``backbone_lr``        Trainable backbone learning rate; ``null`` for a frozen backbone.
+``train_steps``        Optimizer steps taken.
+``skipped_batches``    Training batches smaller than the head minimum.
+``nonfinite_batches``  Training batches skipped before the head because the backbone
+                       features were not finite (for example a float16 overflow).
+``epoch_seconds``      Wall time for training and validation.
+``peak_gpu_mem_mb``    Peak allocated CUDA memory in MiB; ``null`` off CUDA.
+``train_miou``         Macro mIoU of training-mode predictions accumulated over the
+                       epoch's steps (no extra pass; weights change during the epoch).
+====================== ============================================================
 
 The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
 
