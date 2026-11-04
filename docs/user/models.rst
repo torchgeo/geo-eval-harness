@@ -39,7 +39,7 @@ SkySense
 
    $ geo-eval-harness run --model skysense/s2 --dataset m-eurosat
 
-The official `SkySense <https://github.com/Jack-bo1220/SkySense>`_ checkpoints are released through a Notion page for non-commercial research use only. The wrapper downloads the safetensors conversion `BiliSakura/SkySense-transformers <https://huggingface.co/BiliSakura/SkySense-transformers>`_ at a pinned commit and runs its ``trust_remote_code`` model definitions; the upstream non-commercial terms still apply to the weights. Only ``skysense/hr`` has published pretraining statistics (ImageNet), so ``skysense/s2`` and ``skysense/s1`` reject ``--normalization model``. Embeddings mean-pool the final feature map. ``skysense/hr`` defaults to 256 px inputs so the last Swin stage fills its 8×8 window without padding.
+The official `SkySense <https://github.com/Jack-bo1220/SkySense>`_ checkpoints are released through a Notion page for non-commercial research use only. The wrapper downloads the safetensors conversion `BiliSakura/SkySense-transformers <https://huggingface.co/BiliSakura/SkySense-transformers>`_ at a pinned commit and runs its ``trust_remote_code`` model definitions; the upstream non-commercial terms still apply to the weights. Only ``skysense/hr`` has published pretraining statistics (ImageNet), so ``skysense/s2`` and ``skysense/s1`` reject ``--normalization model``. Embeddings mean-pool the final feature map. ``skysense/hr`` defaults to 256 px inputs so the last Swin stage fills its 8×8 window without padding, and ``skysense/s2`` and ``skysense/s1`` default to the 64 px size they were pretrained at.
 
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

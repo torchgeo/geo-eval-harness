@@ -130,7 +130,9 @@ def test_pretrained_forward_and_segmentation_layers(
 ) -> None:
     config = load_model_preset(ModelConfig(name=preset))
     model = SkySenseBench(bands, **config.kwargs)
-    x = torch.rand(2, len(bands), 224, 224, generator=torch.Generator().manual_seed(0)) * 3000
+    size = config.input.image_size
+    assert isinstance(size, int)
+    x = torch.rand(2, len(bands), size, size, generator=torch.Generator().manual_seed(0)) * 3000
     out = model(x)
     assert out.shape == (2, embed_dim)
     assert torch.isfinite(out).all()
