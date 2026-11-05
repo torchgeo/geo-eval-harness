@@ -354,24 +354,17 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
+        """Return ``seg-<head>``.
 
-        Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
-        blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck. Feature
-        standardization appends ``-std`` and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
+        Linear-probe settings have no setup columns yet: feature standardization appends ``-std``
+        and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
         """
-        neck = "" if self.neck == "none" else f"-{self.neck}neck"
-        if self.upsampler != "none":
-            neck += f"-{self.upsampler}"
-        lora = "" if self.lora_rank is None else "-lora"
-        if self.full_finetune:
-            lora = "-full"
-        if self.lora_last_blocks is not None:
-            lora += f"-last{self.lora_last_blocks}"
         probe = "-std" if self.feature_standardize else ""
         if self.sweep_grid:
             probe += f"-sweep{len(self.sweep_grid)}"
-        return f"seg-{self.head}{neck}{lora}{probe}"
+        return f"seg-{self.head}{probe}"
 
 
 class RuntimeConfig(StrictModel):

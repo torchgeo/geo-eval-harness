@@ -53,6 +53,10 @@
     .tabulator .tabulator-col .tabulator-col-title { white-space: normal; text-overflow: clip; font-size: 12px; line-height: 1.25; }
     .tabulator-cell.column-best { font-weight: 700; }
     .overall-ci { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
+    .seed-sd { display: block; color: var(--muted); font-size: 10px; font-weight: 400; line-height: 1.3; }
+    .tabulator-cell.on-dark .seed-sd { color: inherit; opacity: .85; }
+    .control[hidden] { display: none; }
+    .control.toggle label.inline { display: flex; gap: 6px; align-items: center; min-height: 33px; color: var(--text); font: 14px/1 Inter, sans-serif; letter-spacing: 0; text-transform: none; }
     .sort-status { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin: 8px 0 0; color: var(--muted); font: 12px/1.5 Inter, sans-serif; }
     .sort-status button { padding: 2px 8px; color: var(--blue); background: var(--white); border: 1px solid var(--rule); border-radius: 2px; cursor: pointer; font: 600 12px/1.4 Inter, sans-serif; }
     .sort-status button:hover { color: var(--claret); border-color: var(--claret); }
@@ -102,7 +106,8 @@
     <ul class="intro-list">
       <li><strong>Aggregation</strong> sets how the per-dataset scores are combined into a single number.</li>
       <li><strong>Task</strong> switches between classification (per-image label) and segmentation (per-pixel mIoU) benchmarks.</li>
-      <li><strong>Probe</strong> sets how frozen embeddings become predictions: a fitted linear classifier or KNN-5 for classification, or a linear/DPT/FPN/conv-block decoder head for segmentation.</li>
+      <li><strong>Probe</strong> sets how frozen embeddings become predictions for classification: a fitted linear classifier or KNN-5.</li>
+      <li>For segmentation, <strong>Adaptation</strong> sets what trains with the decoder (frozen backbone, LoRA, or full fine-tuning), <strong>Decoder</strong> the head (UPerNet or U-Net), and <strong>Pyramid</strong> how the multi-scale features are built (the backbone's native features, a ViT neck, or AnyUp upsampling). Each dataset uses its canonical training protocol; <strong>Show variants</strong> adds the other epoch and backbone learning-rate setups. Cells are the mean over seeds, with the standard deviation and seed count underneath.</li>
       <li><strong>Bands</strong> sets the input modality for the backbone that configures the required bands and order, either RGB or the available multispectral channels.</li>
     </ul>
     <p class="intro">Each setting is a separate experiment rather than a filter applied to one result, so the table can reorder when you change one of them. A model is ranked only when it has a result on every eligible dataset in the selected view, and the models that fall short are named below the table. The <a href="../user/ranking_explorer.html">evaluation setup</a> documents the protocol, the coverage rules, and how each aggregation is computed.</p>
@@ -111,7 +116,12 @@
     <section class="controls" aria-label="Ranking controls">
       <div class="control aggregation"><label for="sel-aggregation">Aggregation</label><select id="sel-aggregation"></select></div>
       <div class="control"><label for="sel-task">Task</label><select id="sel-task"></select></div>
-      <div class="control"><label for="sel-probe">Probe</label><select id="sel-probe"></select></div>
+      <div class="control" id="ctl-probe"><label for="sel-probe">Probe</label><select id="sel-probe"></select></div>
+      <div class="control seg-control" hidden><label for="sel-adaptation">Adaptation</label><select id="sel-adaptation"></select></div>
+      <div class="control seg-control" hidden><label for="sel-decoder">Decoder</label><select id="sel-decoder"></select></div>
+      <div class="control seg-control" hidden><label for="sel-pyramid">Pyramid</label><select id="sel-pyramid"></select></div>
+      <div class="control seg-control toggle" hidden><label>Variants</label><label class="inline" for="chk-variants"><input type="checkbox" id="chk-variants"> Show variants</label></div>
+      <div class="control seg-control" id="ctl-protocol" hidden><label for="sel-protocol">Protocol</label><select id="sel-protocol"></select></div>
       <div class="control"><label for="sel-bands">Bands</label><select id="sel-bands"></select></div>
     </section>
 
@@ -155,10 +165,16 @@
 
     const AGGREGATION_LABELS = {avg_rank: "Average rank", elo: "ELO", improvability: "Improvability"};
     const TASK_LABELS = {classification: "Classification", segmentation: "Segmentation"};
-    const PROBE_LABELS = {
-      linear: "Linear probe", knn5: "KNN-5",
-      "seg-linear": "Linear probe", "seg-dpt": "DPT", "seg-fpn": "FPN", "seg-conv_block": "Conv block",
+    const PROBE_LABELS = {linear: "Linear probe", knn5: "KNN-5"};
+    // Segmentation probes are "<adaptation>/<decoder>/<pyramid>/<protocol>" keys.
+    const SEG_AXES = ["adaptation", "decoder", "pyramid", "protocol"];
+    const SEG_LABELS = {
+      adaptation: {frozen: "Frozen", lora: "LoRA", full: "Full fine-tuning"},
+      decoder: {upernet: "UPerNet", unet: "U-Net", patch_linear: "Patch linear"},
+      pyramid: {native: "Native", vit: "ViT neck", anyup: "AnyUp"},
+      protocol: {canonical: "Canonical"},
     };
+    const SEG_VARIANT_LABELS = {epochs: value => `${value} epochs`, backbone_lr: value => `backbone LR ${value}`, head_lr: value => `head LR ${value}`};
     const AGGREGATION_PROSE = {
       avg_rank: "Average rank first orders the models separately on each dataset by the performance metric, then averages each model's per-dataset rank into a final ranking. Because only the ordering matters, a narrow win counts the same as a wide one, and datasets with different score ranges carry equal weight in the average. The best possible score is 1.",
       elo: "ELO treats every dataset as a round of head-to-head comparisons, where the model with the higher raw score wins the pairing. Wins and losses across all datasets are pooled into a single rating, and the displayed interval is a bootstrapped 95% confidence interval around it.",
@@ -170,19 +186,49 @@
       aggregation: document.getElementById("sel-aggregation"),
       task: document.getElementById("sel-task"),
       probe: document.getElementById("sel-probe"),
+      adaptation: document.getElementById("sel-adaptation"),
+      decoder: document.getElementById("sel-decoder"),
+      pyramid: document.getElementById("sel-pyramid"),
+      protocol: document.getElementById("sel-protocol"),
       bandclass: document.getElementById("sel-bands"),
     };
-    const state = {...DEFAULT_SLICE, hoveredModel: null};
+    const variantsToggle = document.getElementById("chk-variants");
+    const state = {...DEFAULT_SLICE, showVariants: false, hoveredModel: null};
     let table = null;
 
     function labelView(view) {
-      return `${view.task} · ${view.probe} · ${view.bandclass}`;
+      return `${view.task} · ${probeLabel(view.probe)} · ${view.bandclass}`;
+    }
+
+    function parseSegProbe(probe) {
+      const parts = probe.split("/");
+      return parts.length === SEG_AXES.length ? Object.fromEntries(SEG_AXES.map((axis, index) => [axis, parts[index]])) : null;
+    }
+
+    function protocolLabel(protocol) {
+      if (protocol === "canonical") return SEG_LABELS.protocol.canonical;
+      return protocol.split(",").map(part => {
+        const [key, value] = part.split("=");
+        return SEG_VARIANT_LABELS[key] ? SEG_VARIANT_LABELS[key](value) : part;
+      }).join(", ");
+    }
+
+    function segAxisLabels(axis, options) {
+      if (axis === "protocol") return Object.fromEntries(options.map(option => [option, protocolLabel(option)]));
+      return SEG_LABELS[axis];
+    }
+
+    function probeLabel(probe) {
+      const seg = parseSegProbe(probe);
+      if (!seg) return PROBE_LABELS[probe] || probe;
+      const parts = ["adaptation", "decoder", "pyramid"].map(axis => SEG_LABELS[axis][seg[axis]] || seg[axis]);
+      if (seg.protocol !== "canonical") parts.push(protocolLabel(seg.protocol));
+      return parts.join(" · ");
     }
 
     function labelViewLines(view) {
       const task = TASK_LABELS[view.task] || view.task;
-      const probe = PROBE_LABELS[view.probe] || view.probe;
-      return [task, probe, view.bandclass];
+      return [task, probeLabel(view.probe), view.bandclass];
     }
 
     function values(object) {
@@ -206,7 +252,25 @@
       state.task = fillSelect(controls.task, tasks, state.task, TASK_LABELS);
       controls.task.disabled = tasks.length < 2;
       const probes = values(RANKINGS[state.task]);
-      state.probe = fillSelect(controls.probe, probes, state.probe, PROBE_LABELS);
+      const segProbes = probes.map(parseSegProbe);
+      const isSeg = segProbes.length > 0 && segProbes.every(Boolean);
+      document.getElementById("ctl-probe").hidden = isSeg;
+      document.querySelectorAll(".seg-control").forEach(control => { control.hidden = !isSeg; });
+      if (isSeg) {
+        // Cascade adaptation -> decoder -> pyramid -> protocol over the populated views.
+        const anyCanonical = segProbes.some(seg => seg.protocol === "canonical");
+        let candidates = segProbes.filter(seg => state.showVariants || !anyCanonical || seg.protocol === "canonical");
+        SEG_AXES.forEach(axis => {
+          const options = [...new Set(candidates.map(seg => seg[axis]))];
+          state[axis] = fillSelect(controls[axis], options, state[axis], segAxisLabels(axis, options));
+          candidates = candidates.filter(seg => seg[axis] === state[axis]);
+        });
+        document.getElementById("ctl-protocol").hidden = !state.showVariants;
+        variantsToggle.checked = state.showVariants;
+        state.probe = SEG_AXES.map(axis => state[axis]).join("/");
+      } else {
+        state.probe = fillSelect(controls.probe, probes, state.probe, PROBE_LABELS);
+      }
       const bands = values(RANKINGS[state.task][state.probe]);
       state.bandclass = fillSelect(controls.bandclass, bands, state.bandclass);
       const aggregations = values(RANKINGS[state.task][state.probe][state.bandclass]);
@@ -320,7 +384,14 @@
             element.style.backgroundColor = heatColor(fraction);
             element.classList.toggle("on-dark", fraction >= ON_DARK_FRACTION);
             element.classList.toggle("column-best", value === max);
-            return formatFixed(value);
+            const row = cell.getRow().getData();
+            const n = row.per_task_n?.[dataset] ?? 1;
+            element.title = "";
+            if (n <= 1) return formatFixed(value);
+            const sd = row.per_task_sd?.[dataset];
+            element.title = `Mean of ${n} seeds${sd === null || sd === undefined ? "" : ` ± ${formatFixed(sd)} sd`}`;
+            const spread = sd === null || sd === undefined ? "" : `±${formatFixed(sd)} `;
+            return `${formatFixed(value)}<span class="seed-sd">${spread}n=${n}</span>`;
           },
         })),
       ];
@@ -579,6 +650,7 @@
     }
 
     Object.entries(controls).forEach(([key, select]) => select.addEventListener("change", () => { state[key] = select.value; state.hoveredModel = null; render(); }));
+    variantsToggle.addEventListener("change", () => { state.showVariants = variantsToggle.checked; state.hoveredModel = null; render(); });
     if (Object.keys(RANKINGS).length) render();
   </script>
 </body>

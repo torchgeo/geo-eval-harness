@@ -278,13 +278,13 @@ A UPerNet decoder (:class:`~geo_eval_harness.models.UPerNetHead`) wrapping the `
 ViT neck
 ^^^^^^^^
 
-**Method name:** ``seg-<head>-vitneck`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
+**Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
 Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
 
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
 
-**Method name:** ``seg-<head>-lora`` or ``seg-<head>-vitneck-lora`` (YAML ``segmentation.lora_rank``).
+**Method name:** ``seg-<head>``, setup column ``adaptation: lora`` (YAML ``segmentation.lora_rank``).
 Any head can train together with low-rank adapters on backbone ``nn.Linear`` layers selected by ``segmentation.lora_target_modules``; all pretrained backbone weights stay frozen. Adapters come from PEFT with its default initialisation (Kaiming-uniform ``A``, zero ``B``, no dropout), so training starts from the pretrained model. torchvision's Swin attention reads its ``qkv`` and ``proj`` weights directly instead of calling those layers, so those two projections receive an equivalent weight parametrization instead of a PEFT adapter. Presets target transformer attention and MLP projections (ConvNeXt: MLP projections only); embedding layers, DOFA's wavelength weight generator, and unused decoders are not adapted. The head trains at ``learning_rate`` and the adapters at ``backbone_learning_rate``. During training the backbone stays in eval mode except for its adapters, so pretrained dropout, stochastic depth, and normalisation statistics behave as at inference. Evaluation follows :ref:`segmentation-model-selection`.
 
 Training & evaluation (all heads)

@@ -265,7 +265,7 @@ def test_solver_full_finetune_trains_every_backbone_weight_in_eval_mode() -> Non
     assert all(not torch.equal(p, b) for p, b in zip(used, base, strict=True))
     assert not any(m.training for m in model.modules())
     assert probe.head.training
-    assert config.method == "seg-fpn-full"
+    assert config.method == "seg-fpn"
 
 
 def test_full_finetune_rejects_a_backbone_that_stays_frozen() -> None:
