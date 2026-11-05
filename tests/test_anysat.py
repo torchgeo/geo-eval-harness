@@ -7,6 +7,7 @@ local clone to avoid the GitHub download) and one forward with the released Base
 
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -277,13 +278,21 @@ def test_multi_sensor_input_builds_one_entry_per_modality(fake_hub: dict[str, An
 
 
 def test_refuse_and_hub_namespace_guard(
-    fake_hub: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    fake_hub: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     with pytest.raises(ValueError, match="pretraining"):
         _fake(_S2, refuse="pretraining overlap")
+    # The harness checkout's own src directory (imported by pytest) is not a hub repo.
+    (tmp_path / "geo-eval-harness" / "src").mkdir(parents=True)
+    checkout = type(os)("src")
+    checkout.__path__ = [str(tmp_path / "geo-eval-harness" / "src")]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src", checkout)
+    _fake(_S2)
+    (tmp_path / "gastruc_UniverSat_abc" / "src").mkdir(parents=True)
+    (tmp_path / "gastruc_UniverSat_abc" / "hubconf.py").touch()
     other = type(os)("src")
-    other.__path__ = ["/cache/torch/hub/gastruc_UniverSat_abc/src"]  # type: ignore[attr-defined]
-    monkeypatch.setitem(__import__("sys").modules, "src", other)
+    other.__path__ = [str(tmp_path / "gastruc_UniverSat_abc" / "src")]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "src", other)
     with pytest.raises(RuntimeError, match="separate process"):
         _fake(_S2)
 

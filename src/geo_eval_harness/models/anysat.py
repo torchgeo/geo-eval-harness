@@ -351,21 +351,37 @@ def _install_block_checkpointing(any_module: nn.Module) -> int:
     return len(blocks)
 
 
+def _hub_repo_paths(module: object) -> list[str]:
+    """Paths of a package that sit inside a torch.hub repo (``hubconf.py`` one or two levels up)."""
+    paths = [str(p) for p in getattr(module, "__path__", [])]
+    file = getattr(module, "__file__", None)
+    if not paths and file:
+        paths = [str(Path(file).parent)]
+    return [
+        p
+        for p in dict.fromkeys(paths)
+        if any((parent / "hubconf.py").is_file() for parent in Path(p).parents[:2])
+    ]
+
+
 def _check_hub_namespace() -> None:
     """Refuse to load AnySat next to another hub repo that owns the top-level ``src`` package.
 
     AnySat's hubconf imports ``src.models...`` and its modules import ``models...``; UniverSat's
     hub repo uses the same names, so the second load would silently reuse the first's code.
+    Only packages inside a torch.hub repo count (the harness checkout's own ``src`` directory,
+    which pytest may import as a namespace package, does not).
     """
     for name in ("src", "models"):
         module = sys.modules.get(name)
         if module is None:
             continue
-        paths = [str(p) for p in getattr(module, "__path__", [])] or [str(module)]
-        if not any("anysat" in p.lower() for p in paths):
+        foreign = [p for p in _hub_repo_paths(module) if "anysat" not in p.lower()]
+        if foreign:
             raise RuntimeError(
-                f"A top-level {name!r} package from {paths} is already imported (UniverSat's hub "
-                "code uses the same name). Load AnySat in a separate process."
+                f"A top-level {name!r} package from the torch.hub repo at {foreign} is already "
+                "imported (UniverSat's hub code uses the same name). Load AnySat in a separate "
+                "process."
             )
 
 
