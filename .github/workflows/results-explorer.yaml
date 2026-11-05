@@ -67,7 +67,7 @@ jobs:
       - name: Show what changed
         run: git --no-pager diff --stat
 
-      # On a PR, don't demand the contributor commit a 40 MB artifact -- just
+      # On a PR, don't demand the contributor commit a multi-MB artifact -- just
       # prove the regeneration still works against their CSVs and let the
       # reviewer preview the page.  The refresh PR is opened from main.
       - name: Upload preview
@@ -87,7 +87,7 @@ jobs:
         uses: peter-evans/create-pull-request@v7
         with:
           # Reuses one branch, so repeated result merges update the open PR
-          # in place instead of piling up near-identical 40 MB PRs.
+          # in place instead of piling up near-identical multi-MB PRs.
           branch: automation/results-explorer
           base: main
           add-paths: |
@@ -102,7 +102,7 @@ jobs:
             Opened automatically because a results CSV changed. The diff is the
             re-inlined data plus the masthead, both derived from the CSVs — the
             page ships with no hand-written numbers, so this needs a read of the
-            summary line rather than of the 40 MB payload.
+            summary line rather than of the packed payload.
 
             Triggered by ${{ github.sha }}.
           labels: automation
