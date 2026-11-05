@@ -23,6 +23,7 @@ from geo_eval_harness.hub import load_checksums
 CHIP = oc.CHIP_SIZE
 ORIGIN = (500_000.0, 9_250_000.0)  # UTM 37S, near Dar es Salaam
 GSD = 0.1
+SPAWN_WORKER_TIMEOUT_S = 300
 
 
 def _pixel_lonlat(col: float, row: float) -> list[float]:
@@ -172,8 +173,14 @@ def test_spawn_worker_reads_dataset_after_parent_sample_access(
     monkeypatch.setattr(oc, "load_index", lambda: index)
     dataset = oc.OpenCities().get_dataset("train")
     expected = dataset[0]
+    # A spawned worker re-imports torch and the harness; on loaded CI runners (macOS under
+    # xdist) that alone can exceed 30 s. The timeout only guards against a hung worker.
     loader = DataLoader(
-        dataset, batch_size=1, num_workers=1, multiprocessing_context="spawn", timeout=30
+        dataset,
+        batch_size=1,
+        num_workers=1,
+        multiprocessing_context="spawn",
+        timeout=SPAWN_WORKER_TIMEOUT_S,
     )
     batches = list(loader)
     assert len(batches) == 1
