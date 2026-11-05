@@ -22,8 +22,6 @@ import functools
 import hashlib
 import logging
 import math
-import sys
-from collections import defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Any, ClassVar, Literal, cast
@@ -31,11 +29,18 @@ from typing import Any, ClassVar, Literal, cast
 import torch
 import torch.nn.functional as F
 from torch import nn
-from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import canonical_band_name
+from ._hub_helpers import (
+    check_hub_namespace,
+    group_by_sensor,
+    hub_source,
+    install_checkpointing,
+    parameters_train,
+    run_in_chunks,
+)
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -174,9 +179,7 @@ def _build_groups(  # noqa: C901, PLR0912 - one pass over the band mapping rules
             f"for {len(bands)} channels."
         )
     names = band_names if band_names is not None else [b.name for b in bands]
-    sensor_indices: dict[str, list[int]] = defaultdict(list)
-    for i, b in enumerate(bands):
-        sensor_indices[b.sensor.lower()].append(i)
+    sensor_indices = group_by_sensor(bands)
     sensors = list(sensor_indices)
     if isinstance(modality, str) and len(sensors) > 1:
         raise ValueError(
@@ -272,16 +275,17 @@ def _run_chunked(
     recomputed in backward instead of stored. ``fn`` may return a tensor or a tuple of tensors.
     """
     total = tensors[0].shape[0]
-    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
+    needs_grad = parameters_train(params())
     if total <= chunk and not needs_grad:
         return fn(*tensors, *rest)
-    outs = []
-    for start in range(0, total, chunk):
-        part = [t[start : start + chunk] for t in tensors]
-        if needs_grad:
-            outs.append(checkpoint(fn, *part, *rest, use_reentrant=False))
-        else:
-            outs.append(fn(*part, *rest))
+
+    def chunk_args(start: int, stop: int) -> tuple[Any, ...]:
+        return (*(t[start:stop] for t in tensors), *rest)
+
+    return run_in_chunks(fn, chunk_args, total, chunk, checkpointed=needs_grad, merge=_cat_chunks)
+
+
+def _cat_chunks(outs: list[Any]) -> Any:
     if isinstance(outs[0], tuple):
         return tuple(torch.cat(items, dim=0) for items in zip(*outs, strict=True))
     return torch.cat(outs, dim=0)
@@ -334,55 +338,8 @@ def _install_block_checkpointing(any_module: nn.Module) -> int:
     if not isinstance(blocks, nn.ModuleList):
         raise TypeError("AnySat gradient checkpointing needs model.model.blocks (a ModuleList).")
     for i, block in enumerate(blocks):
-        attr = "forward_release" if i == len(blocks) - 1 else "forward"
-        forward = getattr(block, attr)
-
-        def checkpointed(
-            *args: Any,
-            _forward: Callable[..., Any] = forward,
-            _block: nn.Module = block,
-            **kwargs: Any,
-        ) -> Any:
-            if torch.is_grad_enabled() and any(p.requires_grad for p in _block.parameters()):
-                return checkpoint(_forward, *args, use_reentrant=False, **kwargs)
-            return _forward(*args, **kwargs)
-
-        object.__setattr__(block, attr, checkpointed)
+        install_checkpointing(block, "forward_release" if i == len(blocks) - 1 else "forward")
     return len(blocks)
-
-
-def _hub_repo_paths(module: object) -> list[str]:
-    """Paths of a package that sit inside a torch.hub repo (``hubconf.py`` one or two levels up)."""
-    paths = [str(p) for p in getattr(module, "__path__", [])]
-    file = getattr(module, "__file__", None)
-    if not paths and file:
-        paths = [str(Path(file).parent)]
-    return [
-        p
-        for p in dict.fromkeys(paths)
-        if any((parent / "hubconf.py").is_file() for parent in Path(p).parents[:2])
-    ]
-
-
-def _check_hub_namespace() -> None:
-    """Refuse to load AnySat next to another hub repo that owns the top-level ``src`` package.
-
-    AnySat's hubconf imports ``src.models...`` and its modules import ``models...``; UniverSat's
-    hub repo uses the same names, so the second load would silently reuse the first's code.
-    Only packages inside a torch.hub repo count (the harness checkout's own ``src`` directory,
-    which pytest may import as a namespace package, does not).
-    """
-    for name in ("src", "models"):
-        module = sys.modules.get(name)
-        if module is None:
-            continue
-        foreign = [p for p in _hub_repo_paths(module) if "anysat" not in p.lower()]
-        if foreign:
-            raise RuntimeError(
-                f"A top-level {name!r} package from the torch.hub repo at {foreign} is already "
-                "imported (UniverSat's hub code uses the same name). Load AnySat in a separate "
-                "process."
-            )
 
 
 def _sha256(path: Path) -> str:
@@ -547,14 +504,8 @@ class AnySatBenchModel(BenchModel):
         self.output_tap = nn.Identity()
         self.dense_tap = nn.Identity()
 
-        _check_hub_namespace()
-        local = Path(repo).expanduser().is_dir()
-        source = (
-            str(Path(repo).expanduser()) if local else (f"{repo}:{repo_ref}" if repo_ref else repo)
-        )
-        hub_kwargs: dict[str, Any] = (
-            {"source": "local"} if local else {"trust_repo": True, "skip_validation": True}
-        )
+        check_hub_namespace("AnySat")
+        source, hub_kwargs = hub_source(repo, repo_ref)
         # flash_attn=False: the flash path attends over the wrong axis and needs Ampere GPUs.
         self.model = cast(
             nn.Module,
