@@ -28,6 +28,9 @@ from geo_eval_harness.geography import (
     write_record,
 )
 
+# CI runs these once (ubuntu job `geography`) instead of in every OS/Python cell.
+pytestmark = pytest.mark.geography
+
 VALID_STATUSES = {"extracted", "no_geo", "not_downloaded"}
 
 
