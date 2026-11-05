@@ -6,9 +6,10 @@ on:
   pull_request:
 
 jobs:
-  # Pull requests that only change results/models/*.csv cannot affect the test suite (no test
-  # reads those files; results-explorer.yaml parses them). Their test cells still run, so the
-  # required `test (<os>, <python>)` checks report success, but skip every step.
+  # Pull requests that only change results/models/*.csv leave the code untouched. Their test
+  # cells still run, so the required `test (<os>, <python>)` checks report success, but skip
+  # every step, except that the required ubuntu/3.13 cell runs the tests that read the committed
+  # CSVs (tests/test_setup_columns.py, tests/test_results_store.py).
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -60,37 +61,42 @@ jobs:
       OMP_NUM_THREADS: "1"
       KMP_DUPLICATE_LIB_OK: "TRUE"
       RUN_TESTS: ${{ needs.changes.outputs.results_only != 'true' }}
+      RUN_RESULTS_TESTS: ${{ needs.changes.outputs.results_only == 'true' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
+      SETUP: ${{ needs.changes.outputs.results_only != 'true' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13') }}
     steps:
       - name: Skip (results-only pull request)
         if: env.RUN_TESTS != 'true'
         shell: bash
-        run: echo "Only results/models/*.csv changed; test suite skipped." | tee -a "$GITHUB_STEP_SUMMARY"
+        run: echo "Only results/models/*.csv changed; full test suite skipped." | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v6
-        if: env.RUN_TESTS == 'true'
+        if: env.SETUP == 'true'
       - uses: actions/setup-python@v6
-        if: env.RUN_TESTS == 'true'
+        if: env.SETUP == 'true'
         with:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v8.0.0
-        if: env.RUN_TESTS == 'true'
+        if: env.SETUP == 'true'
         with:
           enable-cache: true
       - name: Enable Git long paths (Windows)
         if: env.RUN_TESTS == 'true' && runner.os == 'Windows'
         run: git config --global core.longpaths true
       - name: Cache .venv
-        if: env.RUN_TESTS == 'true'
+        if: env.SETUP == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: .venv
           key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}-${{ matrix.cache-tag }}
       - name: Install dependencies
-        if: env.RUN_TESTS == 'true'
+        if: env.SETUP == 'true'
         run: uv sync ${{ matrix.extras }} --frozen
       # Geography store checks are platform-independent; the `geography` job runs them once.
       - name: Run tests
         if: env.RUN_TESTS == 'true'
         run: uv run pytest -n auto --dist=loadfile -m "not slow and not accuracy_check and not geography"
+      - name: Run committed-results tests (results-only pull request)
+        if: env.RUN_RESULTS_TESTS == 'true'
+        run: uv run pytest --no-cov tests/test_setup_columns.py tests/test_results_store.py
       - name: Save coverage report
         if: always() && env.RUN_TESTS == 'true'
         uses: actions/upload-artifact@v4
