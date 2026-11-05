@@ -58,6 +58,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "full_finetune",
                 "early_stopping_patience",
                 "feature_standardize",
+                "amp",
                 "sweep_learning_rates",
                 "sweep_weight_decays",
             },
@@ -181,6 +182,14 @@ def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:
 
     assert _hash(upernet(early_stopping_patience=None)) == _hash(upernet())
     assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
+
+
+def test_amp_changes_the_hash_only_when_off() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_dtype": "float32", **segmentation})
+
+    assert _hash(upernet(amp="fp16")) == _hash(upernet())
+    assert _hash(upernet(amp="off")) != _hash(upernet())
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:
