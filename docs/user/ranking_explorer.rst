@@ -58,7 +58,9 @@ Segmentation views are built from the setup columns of each result row (see
   backbone LR ``1e-5`` everywhere; 20 epochs with a per-dataset LoRA backbone
   LR (``5e-4`` or ``1e-4``) on the original grid datasets (burn_scars, caffe,
   cloudsen12, fotw, kuro_siwo, flair2, openearthmap-sar, spacenet2,
-  spacenet7); 30 epochs and LoRA LR ``1e-4`` on every other dataset.
+  spacenet7); 30 epochs and LoRA LR ``5e-4`` on sen1floods11-s1,
+  sen1floods11-s2 and oscd-post; 30 epochs and LoRA LR ``1e-4`` on
+  every other dataset.
   **Show variants** adds a **Protocol** selector for the other epoch and
   learning-rate setups. Variants are ranked like any view but left out of the
   sensitivity heatmap.

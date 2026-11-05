@@ -75,10 +75,8 @@ TASK_ORDER = ["classification", "segmentation"]
 PROBE_ORDER = ["linear", "knn5"]
 
 # Canonical segmentation protocol per dataset: ``dataset -> (epochs, LoRA backbone LR)``.
-# The original grid datasets train 20 epochs with a per-dataset LoRA LR; every
-# other dataset (loveda, levir-cd-post, sen1floods11-*, bright-post-sar*,
-# oscd-post, ...) uses SEG_PROTOCOL_DEFAULT.  Full fine-tuning and the head LR
-# are the same everywhere.  Setups off this protocol are variants.
+# Unlisted datasets use SEG_PROTOCOL_DEFAULT. Full fine-tuning and the head LR
+# are the same everywhere. Setups off this protocol are variants.
 SEG_PROTOCOL: dict[str, tuple[int, float]] = {
     "burn_scars": (20, 5e-4),
     "caffe": (20, 5e-4),
@@ -89,6 +87,9 @@ SEG_PROTOCOL: dict[str, tuple[int, float]] = {
     "openearthmap-sar": (20, 1e-4),
     "spacenet2": (20, 1e-4),
     "spacenet7": (20, 1e-4),
+    "sen1floods11-s1": (30, 5e-4),
+    "sen1floods11-s2": (30, 5e-4),
+    "oscd-post": (30, 5e-4),
 }
 SEG_PROTOCOL_DEFAULT: tuple[int, float] = (30, 1e-4)
 SEG_HEAD_LR = 1e-3

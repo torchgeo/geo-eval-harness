@@ -473,13 +473,23 @@ def test_segmentation_protocol_table_is_per_dataset() -> None:
     assert rl.segmentation_protocol("burn_scars") == (20, 5e-4)
     assert rl.segmentation_protocol("flair2") == (20, 1e-4)
     assert rl.segmentation_protocol("loveda") == (30, 1e-4)
-    assert rl.segmentation_protocol("oscd-post") == (30, 1e-4)
     setup = {"adaptation": "full", "epochs": "30", "backbone_lr": "1e-05", "head_lr": "1e-3"}
     assert rl.segmentation_variant(setup, "loveda") == "canonical"
     assert rl.segmentation_variant(setup, "burn_scars") == "epochs=30"
     lora = {"adaptation": "lora", "epochs": "20", "backbone_lr": "0.0001", "head_lr": "0.001"}
     assert rl.segmentation_variant(lora, "caffe") == "backbone_lr=0.0001"
     assert rl.segmentation_variant(lora, "spacenet7") == "canonical"
+
+
+@pytest.mark.parametrize("dataset", ["sen1floods11-s1", "sen1floods11-s2", "oscd-post"])
+def test_segmentation_s1_s2_protocol(dataset: str) -> None:
+    assert rl.segmentation_protocol(dataset) == (30, 5e-4)
+    setup = {"adaptation": "lora", "epochs": "30", "backbone_lr": "0.0005", "head_lr": "0.001"}
+    assert rl.segmentation_variant(setup, dataset) == "canonical"
+    setup["backbone_lr"] = "0.0001"
+    assert rl.segmentation_variant(setup, dataset) == "backbone_lr=0.0001"
+    setup.update(adaptation="full", backbone_lr="1e-05")
+    assert rl.segmentation_variant(setup, dataset) == "canonical"
 
 
 def test_segmentation_pyramid_names_neck_and_anyup() -> None:
