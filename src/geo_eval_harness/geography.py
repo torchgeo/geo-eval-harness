@@ -77,8 +77,9 @@ NO_GEO: dict[str, str] = {
     ),
 }
 
-# Re-splits reuse coordinates from the dataset with the same imagery.
+# Variants reuse coordinates from the dataset with the same imagery.
 GEO_ALIAS: dict[str, str] = {
+    "bright-post-sar-rgb": "bright-post-sar",
     "eurosat-spatial": "m-eurosat",
     "eurosat": "m-eurosat",
     "sen1floods11-s2": "sen1floods11-s1",

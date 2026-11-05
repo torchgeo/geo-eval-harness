@@ -17,6 +17,9 @@ Changed
 Added
 ^^^^^
 
+* ``segmentation.amp`` (``fp16`` default, or ``off``) switches segmentation training and evaluation between CUDA float16 autocast and float32 for backbones whose activations overflow float16. ``fp16`` leaves hashes unchanged; ``off`` with cached frozen features requires ``cache_dtype: float32``. Epoch records gain ``nonfinite_batches``.
+* Classification dataset classes declare ``class_names`` in label-index order, so per-class results can be labelled without loading data.
+* ``bright-post-sar-rgb`` repeats BRIGHT's post-event SAR channel into identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths) for RGB model inputs. It shares ``bright-post-sar`` tiles, labels, splits, normalization statistics, and installation; the single-band dataset is unchanged.
 * Linear-probe protocol (UniverSat ``LP_eval.py``) for any frozen backbone, off by default with unchanged hashes. ``segmentation.sweep_learning_rates`` x ``sweep_weight_decays`` trains one ``patch_linear`` head per cell in a single vectorised pass, each with its own AdamW group and a cosine decay to zero, and evaluates only the head with the best validation epoch on test (the selected learning rate and weight decay are reported; method suffix ``-sweep<n>``). ``segmentation.feature_standardize`` z-scores each hooked feature channel with exact training-split statistics, from the feature cache or one extra backbone pass (method suffix ``-std``).
 * ``segmentation.weight_decay`` (AdamW, all trainable parameters) and ``segmentation.head_dropout`` (``Dropout2d`` before the UPerNet classifier) are configurable; both default to ``0`` and leave hashes unchanged.
 * CaFFe serves its grayscale SAR channel as identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths), so every model uses its standard RGB setup; earlier CaFFe results used one channel and are not comparable.
@@ -58,6 +61,7 @@ Added
 Fixed
 ^^^^^
 
+* A float16 overflow in the backbone no longer poisons segmentation heads. Training batches with non-finite backbone features are skipped before the head, so BatchNorm running statistics stay finite (previously one overflowing batch made every later evaluation predict a constant class); an epoch that skips more than 5% of its batches fails. Evaluation fails on non-finite features or logits instead of scoring a constant prediction.
 * Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 * UniverSat pins its pretrained weights to a fixed Hugging Face commit (``weights_revision``), as it already pinned the torch.hub code. Before, an update to ``g-astruc/UniverSat`` could change results silently. Set ``weights_revision: null`` to follow the default branch. Hashes and resume keys are unchanged.
 

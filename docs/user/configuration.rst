@@ -201,6 +201,7 @@ Segmentation
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
+     amp: fp16
      lora_rank: null
      lora_target_modules: null
      lora_alpha: 16.0
@@ -224,6 +225,17 @@ feature layers. See
 ``mean`` or ``max``, ``scheduler`` is ``cosine`` or ``none``, and the cache
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
+
+``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
+runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
+whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
+all of this in float32 at the cost of speed and memory. With cached frozen features it requires
+``cache_dtype: float32``. ``fp16`` leaves hashes unchanged. Whatever the precision, a training
+batch whose backbone features are not finite is skipped before the head runs, so head
+BatchNorm statistics stay finite, and counted as ``nonfinite_batches`` in the epoch record; an
+epoch that skips more than 5% of its batches fails. ``feature_standardize`` leaves such samples
+out of its statistics under the same limit. Non-finite features or logits during evaluation fail
+the run instead of scoring a constant prediction.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
 See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.

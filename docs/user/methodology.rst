@@ -454,6 +454,11 @@ Feature caching
      - ``float16``
      - Storage dtype for cached features.  ``float16`` halves RAM;
        autocast upcasts during the head forward pass.
+   * - ``amp``
+     - ``fp16``
+     - CUDA float16 autocast for the backbone and head.  ``off`` runs in
+       float32 for backbones that overflow float16 (requires
+       ``cache_dtype: float32`` with cached features).
 
 Common configuration
 --------------------

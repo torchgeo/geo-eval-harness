@@ -99,21 +99,23 @@ def test_levir_cd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.M
 
 
 @pytest.mark.usefixtures("small_bright_post_sar")
+@pytest.mark.parametrize("dataset_name", ["bright-post-sar", "bright-post-sar-rgb"])
 def test_bright_post_sar_public_segmentation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dataset_name: str
 ) -> None:
     write_bright_post_sar_files(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     output = tmp_path / "bright.csv"
     config = _segmentation_config(output, cached=True)
-    config.datasets = ["bright-post-sar"]
-    config.input.bands = ["sar"]
+    config.datasets = [dataset_name]
+    config.input.bands = "rgb"
     config.segmentation.epochs = 1
     path = tmp_path / "bright.yaml"
     path.write_text(yaml.safe_dump(config.model_dump_yaml()))
     main(["run", "--config", str(path)])
     (row,) = pd.read_csv(output).to_dict("records")
+    assert row["dataset"] == dataset_name
     assert (row["num_classes"], row["n_train"], row["n_test"]) == (4, 3, 2)
 
 
