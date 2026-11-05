@@ -117,6 +117,7 @@ datasets:
   sen1floods11-s1: {display: Sen1Floods11 · S1, task: segmentation}
   sen1floods11-s2: {display: Sen1Floods11 · S2, task: segmentation}
   bright-post-sar: {display: 'BRIGHT (post, SAR)', task: segmentation}
+  bright-post-sar-rgb: {display: 'BRIGHT (post, SAR→RGB)', task: segmentation}
   oscd-post: {display: OSCD (post), task: segmentation}
 
 # Canonical segmentation protocol. A setup with other epochs or learning rates
