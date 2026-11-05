@@ -17,6 +17,14 @@ Changed
 Added
 ^^^^^
 
+* AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
+  - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
+  - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
+  - The S1 VV/VH ratio is computed from raw values and z-scored with stored training-split ``ratio_stats``.
+  - Segmentation reads the output tokens through ``output_tap``.
+  - LoRA targets fusion blocks 0-5 and the cross-attention block.
+  - The presets refuse TreeSatAI and FLAIR (pretraining overlap) and sub-metre SAR.
+  See :doc:`models`.
 * ``segmentation.amp`` (``fp16`` default, or ``off``) switches segmentation training and evaluation between CUDA float16 autocast and float32 for backbones whose activations overflow float16. ``fp16`` leaves hashes unchanged; ``off`` with cached frozen features requires ``cache_dtype: float32``. Epoch records gain ``nonfinite_batches``.
 * Classification dataset classes declare ``class_names`` in label-index order, so per-class results can be labelled without loading data.
 * ``bright-post-sar-rgb`` repeats BRIGHT's post-event SAR channel into identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths) for RGB model inputs. It shares ``bright-post-sar`` tiles, labels, splits, normalization statistics, and installation; the single-band dataset is unchanged.
