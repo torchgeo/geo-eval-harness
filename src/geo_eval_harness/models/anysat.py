@@ -421,17 +421,17 @@ class AnySatBenchModel(BenchModel):
 
     Classification returns AnySat's fused class token (``pooling='cls'``, the authors' probing
     recipe) or the mean of its output patch tokens. For segmentation the output patch tokens of
-    the final cross-attention block pass through :attr:`output_tap`, an ``nn.Identity`` that
+    the final cross-attention block pass through ``output_tap``, an ``nn.Identity`` that
     receives ``[B, 768, h, w]``: AnySat calls that block through a custom method, so a forward hook
     on ``model.model.blocks.6`` itself never fires. The self-attention blocks
     ``model.model.blocks.0``-``5`` return ``[B, 1 + h*w, 768]`` (class token first) for a single
     modality; with several modalities they hold one token grid per modality, so hook only
-    :attr:`output_tap` then.
+    ``output_tap`` then.
 
     With ``dense_output`` the forward instead requests AnySat's dense output (the patch token
     concatenated with each sub-patch token, 1536 channels at sub-patch resolution) and passes it
-    through :attr:`dense_tap` as ``[B, 1536, S, S]``, as in the authors' segmentation probes;
-    :attr:`output_tap` then gets the patch tokens recovered from it, and classification
+    through ``dense_tap`` as ``[B, 1536, S, S]``, as in the authors' segmentation probes;
+    ``output_tap`` then gets the patch tokens recovered from it, and classification
     embeddings are their mean.
 
     Args:
@@ -459,7 +459,7 @@ class AnySatBenchModel(BenchModel):
         ratio_eps: Added to the second polarisation before dividing.
         doy: Day of year passed to the time-series projectors (one date per sample).
         pooling: ``cls`` (class token) or ``mean`` (mean of the output patch tokens).
-        dense_output: Compute AnySat's dense output and expose it through :attr:`dense_tap`.
+        dense_output: Compute AnySat's dense output and expose it through ``dense_tap``.
         dense_modality: Modality whose sub-patches form the dense output (default: the first).
         normalize: If True, L2-normalise the embeddings.
         gradient_checkpointing: Recompute fusion-block activations in backward.
