@@ -2,6 +2,7 @@
 
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy
+from .anysat import AnySatBenchModel
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
@@ -39,6 +40,7 @@ from .torchgeo_models import (
 from .universat import UniverSatBenchModel
 
 __all__: list[str] = [
+    "AnySatBenchModel",
     "BenchModel",
     "ConvBlockHead",
     "DPTHead",
