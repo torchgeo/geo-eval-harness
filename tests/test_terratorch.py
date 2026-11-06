@@ -320,6 +320,97 @@ def test_invalid_pool_mode_raises(mock_registry: dict[str, Any]) -> None:
         TerraTorchPrithviBench(bands=bands, normalization="identity", pool="bogus")
 
 
+def _sar(names: list[str], unit: str | None, sensor: str = "s1") -> list[BandSpec]:
+    return [
+        BandSpec(
+            sensor=sensor,
+            name=n,
+            source_name=n.upper(),
+            mean=-12.0,
+            std=5.0,
+            min=-50.0,
+            max=10.0,
+            unit=unit,
+        )
+        for n in names
+    ]
+
+
+@pytest.mark.parametrize("modality", ["S1GRD", "S1RTC"])
+def test_terramind_s1_modality_feeds_vv_vh(mock_registry: dict[str, Any], modality: str) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vh", "vv"], "db"), normalization="identity", modality=modality
+    )
+    _, build_kwargs = mock_registry["build_calls"][0]
+    assert build_kwargs["modalities"] == [modality]
+    assert "bands" not in build_kwargs
+    x = torch.arange(2.0).view(1, 2, 1, 1).expand(1, 2, 224, 224)
+    model.forward_patch_features(x)
+    payload = mock_registry["instances"][-1].last_forward_input[modality]
+    assert torch.equal(payload, x[:, [1, 0]])
+
+
+def test_terramind_s1_skips_non_sar_bands(mock_registry: dict[str, Any]) -> None:
+    dem = BandSpec(sensor="dem", name="dem", source_name="dem", mean=0.0, std=1.0, min=0.0, max=1.0)
+    bands = [*_sar(["vv", "vh"], "linear_power", sensor="sar"), dem]
+    model = TerraTorchTerraMindBench(bands=bands, normalization="identity", modality="S1GRD")
+    x = torch.arange(3.0).view(1, 3, 1, 1).expand(1, 3, 224, 224)
+    model.forward_patch_features(x)
+    payload = mock_registry["instances"][-1].last_forward_input["S1GRD"]
+    assert torch.equal(payload, x[:, [0, 1]])
+
+
+def test_terramind_s1_single_polarisation_uses_band_selection(
+    mock_registry: dict[str, Any],
+) -> None:
+    TerraTorchTerraMindBench(bands=_sar(["vv"], "db"), normalization="identity", modality="S1GRD")
+    _, build_kwargs = mock_registry["build_calls"][0]
+    assert build_kwargs["bands"] == {"S1GRD": ["VV"]}
+
+
+def test_terramind_s1_without_sar_bands_raises(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="none of the target bands"):
+        TerraTorchTerraMindBench(
+            bands=_bands(["red", "green", "blue"]), normalization="identity", modality="S1GRD"
+        )
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_db_zscores_with_pretraining_stats(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vv", "vh"], "db"), normalization="model_native", modality="S1GRD"
+    )
+    out = model.normalize_inputs(torch.full((1, 2, 4, 4), -10.0))
+    # TerraMind v1 S1GRD pretraining stats: VV (-12.599, 5.195), VH (-20.293, 5.890)
+    assert torch.allclose(out[:, 0], torch.full((1, 4, 4), (-10.0 + 12.599) / 5.195), atol=1e-4)
+    assert torch.allclose(out[:, 1], torch.full((1, 4, 4), (-10.0 + 20.293) / 5.890), atol=1e-4)
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_linear_power_converts_to_db(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vv", "vh"], "linear_power", sensor="sar"),
+        normalization="model_native",
+        modality="S1GRD",
+    )
+    out = model.normalize_inputs(torch.full((1, 2, 4, 4), 0.1))  # 0.1 linear power = -10 dB
+    assert torch.allclose(out[:, 0], torch.full((1, 4, 4), (-10.0 + 12.599) / 5.195), atol=1e-4)
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_undeclared_unit_raises(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="declare no unit"):
+        TerraTorchTerraMindBench(
+            bands=_sar(["vv", "vh"], None, sensor="sar"),
+            normalization="model_native",
+            modality="S1GRD",
+        )
+
+
 def test_full_finetune_undoes_only_the_wrapper_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Backbone(nn.Module):
         def __init__(self) -> None:
