@@ -552,6 +552,52 @@ def test_probe_dry_run_uses_backbone_num_channels():
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
 
 
+class _ChannelsLastBackbone(nn.Module):
+    """Emit an NHWC stage map whose grid is wider than its channels (Swin stage 0 at 512)."""
+
+    def __init__(self, feature_layout: str | None) -> None:
+        super().__init__()
+        from torchvision.ops.misc import Permute
+
+        self.feature_layout = feature_layout
+        self.stage = nn.Sequential(nn.Conv2d(3, 8, kernel_size=4, stride=4), Permute([0, 2, 3, 1]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.stage(x)
+
+
+def test_probe_reads_declared_nhwc_maps_whose_grid_exceeds_the_channels() -> None:
+    probe = make_probe(_ChannelsLastBackbone("nhwc"), ["stage"], head_type="linear")
+    assert probe.channels_list == [8]
+    assert probe.feature_hw_list == [(56, 56)]
+    nhwc = torch.randn(2, 56, 56, 8)
+    torch.testing.assert_close(probe._process_feature(nhwc), nhwc.permute(0, 3, 1, 2))
+    # Undeclared, the shape guess reads the 56-wide grid as channels.
+    assert make_probe(_ChannelsLastBackbone(None), ["stage"]).channels_list == [56]
+
+
+def test_timm_swin_declares_nhwc_stage_maps() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(
+        bands(3), model_name="swin_tiny_patch4_window7_224", pretrained=False
+    )
+    probe = make_probe(model, ["layers.3", "layers.0"], head_type="fpn")
+
+    assert model.feature_layout == "nhwc"
+    assert probe.channels_list == [768, 96]
+    assert probe.feature_hw_list == [(7, 7), (56, 56)]
+
+
+def test_timm_cnn_declares_no_feature_layout() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(bands(3), model_name="resnet18", pretrained=False)
+    assert model.feature_layout is None
+
+
 @pytest.mark.parametrize("cached", [False, True])
 @pytest.mark.parametrize(
     ("lr_scheduler", "expected_lrs"),
