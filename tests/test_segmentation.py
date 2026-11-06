@@ -1405,6 +1405,76 @@ def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) ->
     assert any(not torch.equal(p, neck_before[n]) for n, p in probe.head.neck.named_parameters())
 
 
+def test_vit_fine_neck_takes_the_finest_level_from_the_last_input() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8] * 4, input_norm="none", native_finest=True)
+    trunk = [torch.randn(2, 8, 14, 14) for _ in range(3)]
+    fine = torch.randn(2, 8, 56, 56)
+
+    levels = neck([*trunk, fine])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[-1], fine)
+    assert neck([*trunk, torch.randn(2, 8, 14, 14)])[-1].shape[-2:] == (56, 56)
+
+
+def test_vit_neck_builds_a_simple_pyramid_from_one_map() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8], input_norm="none")
+    feature = torch.randn(2, 8, 14, 14)
+
+    levels = neck([feature])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[1], feature)
+    with pytest.raises(ValueError, match="native_finest needs 4 inputs"):
+        ViTNeck([8], native_finest=True)
+
+
+@pytest.mark.parametrize("head_type", ["upernet", "unet"])
+def test_probe_vit_neck_trains_from_a_single_layer(head_type: str) -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=False)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type="upernet", neck="vit_fine"
+        )
+
+
+class FineOutputViT(FourBlockViT):
+    """Three trunk blocks on a 16-pixel grid plus a fine output block on a 4-pixel grid."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fine = nn.Conv2d(3, 8, kernel_size=4, stride=4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        trunk = super().forward(x)
+        return trunk.mean() + self.fine(x).flatten(2).transpose(1, 2)
+
+
+def test_probe_vit_fine_neck_accepts_a_finer_last_layer() -> None:
+    layers = ["blocks.3", "blocks.2", "blocks.1", "fine"]
+    probe = SegmentationProbe(
+        FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit_fine"
+    )
+    assert probe.feature_hw_list == [(14, 14)] * 3 + [(56, 56)]
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit"
+        )
+
+
 def test_probe_vit_neck_rejects_pyramid_layers_and_other_heads() -> None:
     with pytest.raises(ValueError, match="4 layers sharing one resolution"):
         SegmentationProbe(
