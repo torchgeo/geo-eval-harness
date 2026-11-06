@@ -19,7 +19,7 @@ from geo_eval_harness.config.catalog import model_config_path
 from geo_eval_harness.config.presets import ModelPreset
 from geo_eval_harness.config.schema import load_yaml
 from geo_eval_harness.datasets.base import BandSpec
-from geo_eval_harness.models import AnySatBenchModel, anysat
+from geo_eval_harness.models import AnySatBenchModel, _hub_helpers, anysat
 from geo_eval_harness.models.anysat import (
     ANYSAT_REF,
     ANYSAT_REPO,
@@ -416,8 +416,10 @@ def test_tiny_chunking_is_exact(monkeypatch: pytest.MonkeyPatch, *, trainable: b
 
     full, full_grads = run()
     calls: list[int] = []
-    real = anysat.checkpoint
-    monkeypatch.setattr(anysat, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k))
+    real = _hub_helpers.checkpoint
+    monkeypatch.setattr(
+        _hub_helpers, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k)
+    )
     monkeypatch.setattr(anysat, "PROJECTOR_PIXEL_BUDGET", 32 * 32)
     monkeypatch.setattr(anysat, "SPATIAL_TOKEN_BUDGET", 17 * 4)
     chunked, chunked_grads = run()
