@@ -1,0 +1,16 @@
+name: tgeo_copernicusfm_base
+target: geo_eval_harness.models.TorchGeoCopernicusFMBench
+supports_model_normalization: false
+kwargs:
+  factory: copernicusfm_base
+  weights_class: CopernicusFM_Base_Weights
+  weights_member: CopernicusFM_ViT
+  auto_resize: true
+  target_size: 224
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2

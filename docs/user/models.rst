@@ -220,6 +220,9 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # DOFA — band-agnostic (currently configured for Sentinel-2 RGB wavelengths)
    $ geo-eval-harness run --model torchgeo/dofa_base --dataset m-eurosat
 
+   $ # Copernicus-FM — wavelength/bandwidth hypernetwork (Sentinel-2, Sentinel-1 VV/VH)
+   $ geo-eval-harness run --model torchgeo/copernicusfm_base --dataset m-eurosat
+
    $ # Satlas Swin-V2 (NAIP / Sentinel-2 RGB)
    $ geo-eval-harness run --model torchgeo/swinv2b_naip_satlas_mi --dataset m-eurosat
    $ geo-eval-harness run --model torchgeo/swinv2b_s2rgb_satlas_mi --dataset m-eurosat

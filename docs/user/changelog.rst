@@ -20,6 +20,7 @@ Changed
 Added
 ^^^^^
 
+* ``torchgeo/copernicusfm_base`` wraps torchgeo's Copernicus-FM ViT-B/16 in spectral mode. Sentinel-2 bands take the authors' wavelength and bandwidth values by canonical name and Sentinel-1 VV/VH their radar placeholder; other sensors, SAR products, and VV/VH declared in linear power are rejected unless ``wavelengths_nm`` and ``bandwidths_nm`` are given. Location, time, and patch area are unknown to the model, and it supports ``--normalization dataset`` only.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
