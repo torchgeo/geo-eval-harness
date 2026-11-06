@@ -62,6 +62,9 @@ class TimmPatchBenchModel(BenchModel):
         auto_resize: If ``True``, bilinearly resize each batch to ``target_size``.
         target_size: Square target size; auto-inferred from
             ``backbone.default_cfg["input_size"]`` when not given.
+        img_size: Build the backbone for this square input size (passed to
+            ``timm.create_model``). Needed by fixed-size backbones such as Swin to
+            run at a size other than their pretrained one; ``None`` keeps timm's default.
         input_normalization: One of ``"bands_zscore"`` (default; per-channel
             z-score using :class:`BandSpec` statistics — correct for raw
             remote-sensing data of any channel count), ``"imagenet"``
@@ -92,6 +95,7 @@ class TimmPatchBenchModel(BenchModel):
         global_pool: str | None = "avg",
         auto_resize: bool = False,
         target_size: int | None = None,
+        img_size: int | None = None,
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -118,12 +122,14 @@ class TimmPatchBenchModel(BenchModel):
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
+        size_kwargs = {} if img_size is None else {"img_size": img_size}
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
             in_chans=self.num_channels,
             num_classes=0,
             global_pool=global_pool,
+            **size_kwargs,
         )
         if getattr(self.backbone, "output_fmt", None) == "NHWC":
             self.feature_layout = "nhwc"
@@ -273,6 +279,7 @@ class TimmModelSettings:
     normalize: bool = False
     auto_resize: bool = False
     target_size: int | None = None
+    img_size: int | None = None
     use_cls_token: bool = False
 
     def __post_init__(self) -> None:
@@ -282,11 +289,13 @@ class TimmModelSettings:
                 raise TypeError(f"{name} must be a boolean")
         if not self.model_name:
             raise ValueError("model_name must not be empty")
-        if self.target_size is not None:
-            if not isinstance(self.target_size, int):
-                raise TypeError("target_size must be an integer")
-            if self.target_size <= 0:
-                raise ValueError("target_size must be positive")
+        for name in ("target_size", "img_size"):
+            value = getattr(self, name)
+            if value is not None:
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise TypeError(f"{name} must be an integer")
+                if value <= 0:
+                    raise ValueError(f"{name} must be positive")
         if self.global_pool not in (None, "", "avg", "max", "avgmax", "catavgmax"):
             raise ValueError(f"unsupported global_pool: {self.global_pool!r}")
         if self.input_normalization not in _VALID_INPUT_NORMALIZATIONS:
