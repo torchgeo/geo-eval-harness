@@ -12,17 +12,23 @@ Model code loads via ``torch.hub`` and weights from the HuggingFace Hub
 
 import functools
 import logging
-from collections import defaultdict
 from collections.abc import Callable
 from typing import Any, ClassVar, Protocol, Self, cast
 
 import torch
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import S2_WAVELENGTHS_UM, canonical_band_name
+from ._hub_helpers import (
+    check_hub_namespace,
+    group_by_sensor,
+    hub_source,
+    install_checkpointing,
+    parameters_train,
+    run_in_chunks,
+)
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -183,7 +189,7 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     # Pixels (x timesteps) per sample, without the band axis (dim -3).
     pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
     chunk = max(1, min(UPE_PIXEL_BUDGET // max(per_sample, 1), UPE_PIXEL_CAP // max(pixels, 1)))
-    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
+    needs_grad = parameters_train(params())
     if needs_grad:
         chunk = min(chunk, max(1, UPE_GRAD_PIXEL_BUDGET // max(pixels, 1)))
     if mask_in is not None or dataset or batch <= chunk:
@@ -191,17 +197,13 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
             x, modalities, wavelengths, input_res, scale, subpatches, mask_in, dataset
         )
 
-    outs = []
-    for start in range(0, batch, chunk):
-        part = {
-            k: v[start : start + chunk] if isinstance(v, torch.Tensor) else v for k, v in x.items()
-        }
-        args = (part, modalities, wavelengths, input_res, scale, subpatches, None, dataset)
-        if needs_grad:
-            outs.append(checkpoint(upe_forward, *args, use_reentrant=False))
-        else:
-            outs.append(upe_forward(*args))
-    return _merge_upe_chunks(outs)
+    def chunk_args(start: int, stop: int) -> tuple[Any, ...]:
+        part = {k: v[start:stop] if isinstance(v, torch.Tensor) else v for k, v in x.items()}
+        return (part, modalities, wavelengths, input_res, scale, subpatches, None, dataset)
+
+    return run_in_chunks(
+        upe_forward, chunk_args, batch, chunk, checkpointed=needs_grad, merge=_merge_upe_chunks
+    )
 
 
 def _install_upe_chunking(encoder: object) -> None:
@@ -229,19 +231,7 @@ def _install_block_checkpointing(encoder: object) -> int:
     if not isinstance(blocks, torch.nn.ModuleList):
         raise TypeError("UniverSat gradient checkpointing needs model.model.blocks (a ModuleList).")
     for block in blocks:
-        forward = block.forward
-
-        def checkpointed(
-            *args: Any,
-            _forward: Callable[..., Any] = forward,
-            _block: torch.nn.Module = block,
-            **kwargs: Any,
-        ) -> Any:
-            if torch.is_grad_enabled() and any(p.requires_grad for p in _block.parameters()):
-                return checkpoint(_forward, *args, use_reentrant=False, **kwargs)
-            return _forward(*args, **kwargs)
-
-        object.__setattr__(block, "forward", checkpointed)
+        install_checkpointing(block)
     return len(blocks)
 
 
@@ -276,13 +266,8 @@ def _build_sensor_groups(
     ``wavelengths`` overrides need a single-sensor input. ``input_res`` applies to every
     sensor: all channels share the resized pixel grid, so they share one GSD.
     """
-    sensor_to_indices: dict[str, list[int]] = defaultdict(list)
-    order: list[str] = []
-    for i, b in enumerate(bands):
-        s = b.sensor.lower()
-        if s not in sensor_to_indices:
-            order.append(s)
-        sensor_to_indices[s].append(i)
+    sensor_to_indices = group_by_sensor(bands)
+    order = list(sensor_to_indices)
     single_sensor = len(order) == 1
     if wavelengths is not None and (not single_sensor or len(wavelengths) != len(bands)):
         raise ValueError(
@@ -473,21 +458,19 @@ class UniverSatBenchModel(BenchModel):
         self.output_grid = output_grid
         self.do_normalize = normalize
 
-        source = f"{repo}:{repo_ref}" if repo_ref else repo
+        check_hub_namespace("UniverSat")
+        source, hub_kwargs = hub_source(repo, repo_ref)
         # The hub entrypoint forwards ``revision`` to ``PyTorchModelHubMixin.from_pretrained``.
         revision = {"revision": weights_revision} if weights_revision else {}
         # Single-pass extraction does not amortize torch.compile's max-autotune warmup.
         # Varying dataset shapes can also exhaust its recompile limit.
-        # torch.hub's fork check only accepts a commit that is a branch or tag head,
-        # so the pinned commit fails once upstream main moves past it.
         self.model = cast(
             UniverSatEncoder,
             torch.hub.load(
                 source,
                 "from_pretrained",
-                trust_repo=True,
-                skip_validation=True,
                 compile=False,
+                **hub_kwargs,
                 **revision,
             ),
         ).eval()

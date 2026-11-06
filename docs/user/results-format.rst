@@ -82,7 +82,8 @@ Method values
 ``profile``        Optional throughput/latency/param-count measurement (requires
                    YAML ``profile: {enabled: true}``). -> ``results/profiles/``
 ``seg-<head>``     Segmentation probe with the configured head (``linear`` / ``conv_block`` /
-                   ``fpn`` / ``dpt`` / ``patch_linear``). -> ``results/models/``
+                   ``fpn`` / ``dpt`` / ``patch_linear`` / ``upernet`` / ``unet``); the rest of
+                   the setup is in the setup columns. -> ``results/models/``
 ================== ==================================================================================
 
 CSV schema
@@ -130,6 +131,60 @@ Column               Description
 
 Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`). Rows written before these columns existed leave them empty.
 
+.. _segmentation-setup-columns:
+
+Segmentation setup columns
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``method`` is ``seg-<head>`` for every segmentation setup. The rest of the training setup is
+recorded in the setup columns below, which follow ``pool`` in the CSV.
+``geo_eval_harness.results.segmentation_setup_columns`` maps a resolved
+``segmentation`` config to them. Every cell is text: whole numbers are written as integers
+(``20``, ``16``, ``0``), other numbers in Python's shortest round-trip form (``0.001``,
+``1e-05``). Off-values of settings that apply are written explicitly (``none``, ``0``); an empty
+cell means the column does not apply to the row. Classification rows leave all of them empty.
+
+============================ ==========================================================
+Column                       Value on a segmentation row
+============================ ==========================================================
+``adaptation``               ``frozen``, ``lora`` (``lora_rank`` set) or ``full``
+                             (``full_finetune``).
+``decoder``                  ``segmentation.head`` (``upernet``, ``unet``, ...).
+``neck``                     ``segmentation.neck`` (``none`` or ``vit``).
+``upsampler``                ``segmentation.upsampler`` (``none`` or ``anyup``).
+``epochs``                   ``segmentation.epochs``, the configured maximum.
+``head_lr``                  ``segmentation.learning_rate``.
+``backbone_lr``              ``segmentation.backbone_learning_rate``; empty when
+                             ``adaptation`` is ``frozen``.
+``weight_decay``             ``segmentation.weight_decay``.
+``head_dropout``             ``segmentation.head_dropout``.
+``lora_rank``                ``segmentation.lora_rank``; empty unless LoRA.
+``lora_alpha``               ``segmentation.lora_alpha``; empty unless LoRA.
+``lora_last_blocks``         ``segmentation.lora_last_blocks``; empty unless LoRA
+                             is restricted to the last blocks.
+``class_weights``            ``none`` (no class weighting).
+``selection_metric``         ``val_miou``: the best-validation-mIoU epoch is
+                             restored (:ref:`segmentation-model-selection`).
+``early_stopping_patience``  ``segmentation.early_stopping_patience``; empty when off.
+============================ ==========================================================
+
+These columns are derived from settings that ``config_hash`` already covers, so they do not
+change any hash and do not join the resume key. They do join the de-duplication key of
+``geo_eval_harness.results.load_results``. That key drops ``config_hash``, so without the
+setup columns, runs that differ only in epochs or learning rates would collapse to one row.
+The numeric setup columns compare by value (``1e-3`` equals ``0.001``).
+
+Segmentation rows written before these columns existed (``seg-linear``, ``seg-conv_block``,
+``seg-fpn`` and ``seg-dpt`` in ``results/models``) keep them empty: their epochs and learning
+rates are not recorded, so nothing is backfilled. The leaderboard treats a segmentation row
+with an empty ``adaptation`` as a legacy row. Earlier versions encoded parts of the setup in
+``method`` (``seg-upernet-vitneck-lora``, ``-anyup``, ``-full``, ``-last<k>``). Such rows in
+local CSVs are not rewritten; they still load, and resume reruns them once because ``method``
+changed.
+
+``scripts/migrations/migrate_setup_columns.py`` rewrites CSVs with the current header and
+empty cells for the new columns.
+
 .. _segmentation-epoch-metrics:
 
 Per-epoch segmentation metrics
@@ -139,22 +194,24 @@ Set ``output.epoch_metrics`` to a JSON Lines path to record segmentation trainin
 
 Each epoch appends one ``"event": "epoch"`` line as soon as it completes, so a failed run keeps the epochs it finished. A completed fit then appends one ``"event": "selected"`` line. Every line carries ``run_id`` (unique per fit), ``timestamp`` (UTC), and the result-row identity ``dataset``, ``name``, ``method``, ``bands``, ``partition``, ``image_size``, ``seed``, and ``config_hash``. Join curves to result rows on ``config_hash`` and ``method``; use ``run_id`` to separate repeated runs.
 
-==================== ============================================================
-Epoch field          Description
-==================== ============================================================
-``epoch``            Epoch number, starting from one.
-``train_loss``       Sample-weighted mean training loss over the epoch's steps.
-``val_loss``         Validation loss: the criterion's mean over the whole split.
-``val_miou``         Validation dataset-level macro mIoU.
-``head_lr``          Head learning rate used during the epoch.
-``backbone_lr``      Trainable backbone learning rate; ``null`` for a frozen backbone.
-``train_steps``      Optimizer steps taken.
-``skipped_batches``  Training batches smaller than the head minimum.
-``epoch_seconds``    Wall time for training and validation.
-``peak_gpu_mem_mb``  Peak allocated CUDA memory in MiB; ``null`` off CUDA.
-``train_miou``       Macro mIoU of training-mode predictions accumulated over the
-                     epoch's steps (no extra pass; weights change during the epoch).
-==================== ============================================================
+====================== ============================================================
+Epoch field            Description
+====================== ============================================================
+``epoch``              Epoch number, starting from one.
+``train_loss``         Sample-weighted mean training loss over the epoch's steps.
+``val_loss``           Validation loss: the criterion's mean over the whole split.
+``val_miou``           Validation dataset-level macro mIoU.
+``head_lr``            Head learning rate used during the epoch.
+``backbone_lr``        Trainable backbone learning rate; ``null`` for a frozen backbone.
+``train_steps``        Optimizer steps taken.
+``skipped_batches``    Training batches smaller than the head minimum.
+``nonfinite_batches``  Training batches skipped before the head because the backbone
+                       features were not finite (for example a float16 overflow).
+``epoch_seconds``      Wall time for training and validation.
+``peak_gpu_mem_mb``    Peak allocated CUDA memory in MiB; ``null`` off CUDA.
+``train_miou``         Macro mIoU of training-mode predictions accumulated over the
+                       epoch's steps (no extra pass; weights change during the epoch).
+====================== ============================================================
 
 The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
 

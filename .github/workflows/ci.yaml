@@ -6,8 +6,39 @@ on:
   pull_request:
 
 jobs:
+  # Pull requests that only change results/models/*.csv leave the code untouched. Their test
+  # cells still run, so the required `test (<os>, <python>)` checks report success, but skip
+  # every step, except that the required ubuntu/3.13 cell runs the tests that read the committed
+  # CSVs (tests/test_setup_columns.py, tests/test_results_store.py).
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      results_only: ${{ steps.filter.outputs.results_only }}
+    steps:
+      - name: Detect results-only pull requests
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          results_only=false
+          if [ "$EVENT_NAME" = pull_request ]; then
+            files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+              --jq '.[] | .filename, (.previous_filename // empty)')
+            if [ -n "$files" ] && ! grep -Evq '^results/models/[^/]+\.csv$' <<<"$files"; then
+              results_only=true
+            fi
+          fi
+          echo "results_only=$results_only" | tee -a "$GITHUB_OUTPUT"
+
   test:
     name: test (${{ matrix.os }}, ${{ matrix.python-version }})
+    needs: changes
     strategy:
       fail-fast: false
       matrix:
@@ -29,35 +60,82 @@ jobs:
     env:
       OMP_NUM_THREADS: "1"
       KMP_DUPLICATE_LIB_OK: "TRUE"
+      RUN_TESTS: ${{ needs.changes.outputs.results_only != 'true' }}
+      RUN_RESULTS_TESTS: ${{ needs.changes.outputs.results_only == 'true' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}
+      SETUP: ${{ needs.changes.outputs.results_only != 'true' || (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13') }}
     steps:
+      - name: Skip (results-only pull request)
+        if: env.RUN_TESTS != 'true'
+        shell: bash
+        run: echo "Only results/models/*.csv changed; full test suite skipped." | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/checkout@v6
+        if: env.SETUP == 'true'
       - uses: actions/setup-python@v6
+        if: env.SETUP == 'true'
         with:
           python-version: ${{ matrix.python-version }}
       - uses: astral-sh/setup-uv@v8.0.0
+        if: env.SETUP == 'true'
         with:
           enable-cache: true
       - name: Enable Git long paths (Windows)
-        if: runner.os == 'Windows'
+        if: env.RUN_TESTS == 'true' && runner.os == 'Windows'
         run: git config --global core.longpaths true
       - name: Cache .venv
+        if: env.SETUP == 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: .venv
           key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}-${{ matrix.cache-tag }}
       - name: Install dependencies
+        if: env.SETUP == 'true'
         run: uv sync ${{ matrix.extras }} --frozen
+      # Geography store checks are platform-independent; the `geography` job runs them once.
       - name: Run tests
-        run: uv run pytest -n auto --dist=loadfile
+        if: env.RUN_TESTS == 'true'
+        run: uv run pytest -n auto --dist=loadfile -m "not slow and not accuracy_check and not geography"
+      - name: Run committed-results tests (results-only pull request)
+        if: env.RUN_RESULTS_TESTS == 'true'
+        run: uv run pytest --no-cov tests/test_setup_columns.py tests/test_results_store.py
       - name: Save coverage report
-        if: always()
+        if: always() && env.RUN_TESTS == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ matrix.os }}-${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: error
       - name: Upload coverage to Codecov
-        if: runner.os == 'Linux'
+        if: env.RUN_TESTS == 'true' && runner.os == 'Linux'
+        uses: codecov/codecov-action@v7
+        with:
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  geography:
+    needs: changes
+    if: needs.changes.outputs.results_only != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v8.0.0
+        with:
+          enable-cache: true
+      - name: Cache .venv
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-dev
+      - name: Install dependencies
+        run: uv sync --extra dev --frozen
+      - name: Run geography tests
+        run: uv run pytest -m geography
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml

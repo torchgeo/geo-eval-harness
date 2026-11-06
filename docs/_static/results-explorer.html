@@ -316,10 +316,12 @@
           <select id="leaderboard-method">
             <option value="linear" selected>linear probe</option>
             <option value="knn5">KNN-5</option>
-            <option value="seg-linear">segmentation · linear</option>
-            <option value="seg-conv_block">segmentation · conv block</option>
-            <option value="seg-fpn">segmentation · FPN</option>
-            <option value="seg-dpt">segmentation · DPT</option>
+            <option value="seg-upernet/frozen">segmentation · UPerNet · frozen</option>
+            <option value="seg-upernet/lora">segmentation · UPerNet · LoRA</option>
+            <option value="seg-upernet/full">segmentation · UPerNet · full fine-tuning</option>
+            <option value="seg-unet/frozen">segmentation · U-Net · frozen</option>
+            <option value="seg-unet/lora">segmentation · U-Net · LoRA</option>
+            <option value="seg-unet/full">segmentation · U-Net · full fine-tuning</option>
           </select>
         </label>
         <label>Show top
@@ -387,10 +389,12 @@
           <select id="ranking-method">
             <option value="linear" selected>linear probe</option>
             <option value="knn5">KNN-5</option>
-            <option value="seg-linear">segmentation · linear</option>
-            <option value="seg-conv_block">segmentation · conv block</option>
-            <option value="seg-fpn">segmentation · FPN</option>
-            <option value="seg-dpt">segmentation · DPT</option>
+            <option value="seg-upernet/frozen">segmentation · UPerNet · frozen</option>
+            <option value="seg-upernet/lora">segmentation · UPerNet · LoRA</option>
+            <option value="seg-upernet/full">segmentation · UPerNet · full fine-tuning</option>
+            <option value="seg-unet/frozen">segmentation · U-Net · frozen</option>
+            <option value="seg-unet/lora">segmentation · U-Net · LoRA</option>
+            <option value="seg-unet/full">segmentation · U-Net · full fine-tuning</option>
           </select>
         </label>
         <label>Show top
@@ -758,11 +762,11 @@ function renderLeaderboard(data) {
   const datasets = uniqSorted(data.map(r => r.dataset));
   const perDataset = datasets
     .map(ds => {
-      let rows = data.filter(r => r.dataset === ds && r.method === method);
+      let rows = data.filter(r => r.dataset === ds && methodMatches(r, method));
       // Show one row per model and band setting when scores round to the same value.
       const seen = new Set();
       rows = rows.filter(r => {
-        const k = `${r.name}|${r.bands}|${r.metric_value.toFixed(4)}`;
+        const k = `${r.name}|${r.bands}${setupSuffix(r)}|${r.metric_value.toFixed(4)}`;
         if (seen.has(k)) return false;
         seen.add(k);
         return true;
@@ -770,7 +774,7 @@ function renderLeaderboard(data) {
       rows.sort((a, b) => b.metric_value - a.metric_value);
       if (topn > 0) rows = rows.slice(0, topn);
       // Keep bands in the label and normalization in the tooltip to fit two chart columns.
-      return { ds, rows: rows.map(r => ({ ...r, label: `${backboneName(r.name)} · ${_shortBands(r.bands)}` })) };
+      return { ds, rows: rows.map(r => ({ ...r, label: `${backboneName(r.name)} · ${_shortBands(r.bands)}${setupSuffix(r)}` })) };
     })
     .filter(d => d.rows.length);
 
@@ -934,6 +938,22 @@ function renderCompare(data) {
   _mount("chart-compare", chart);
 }
 
+// Segmentation options are "seg-<decoder>/<adaptation>": rows share method
+// seg-<decoder> and differ in the `adaptation` setup column.
+function methodMatches(r, value) {
+  const [method, adaptation] = String(value).split("/");
+  return r.method === method && (adaptation === undefined || r.adaptation === adaptation);
+}
+
+// Segmentation setup beyond decoder/adaptation (pyramid, epochs, backbone LR), so
+// different setups are never merged or shown under one label. Empty otherwise.
+function setupSuffix(r) {
+  if (!r.adaptation) return "";
+  const pyramid = r.upsampler && r.upsampler !== "none" ? r.upsampler : (r.neck && r.neck !== "none" ? `${r.neck} neck` : "native");
+  const parts = [pyramid, r.epochs ? `${r.epochs} ep` : null, r.backbone_lr ? `bb LR ${r.backbone_lr}` : null];
+  return " · " + parts.filter(Boolean).join(" · ");
+}
+
 function _metricLabel(method) {
   return String(method).startsWith("seg-") ? "mIoU" : "accuracy";
 }
@@ -942,17 +962,17 @@ function renderRanking(data) {
   const method = document.getElementById("ranking-method").value;
   const metricLabel = _metricLabel(method);
   const topn = parseInt(document.getElementById("ranking-topn").value, 10);
-  const sub = data.filter(r => r.method === method);
+  const sub = data.filter(r => methodMatches(r, method));
   const groups = new Map();
   sub.forEach(r => {
-    const key = `${r.name} · ${r.normalization} · ${r.bands}`;
+    const key = `${r.name} · ${r.normalization} · ${r.bands}${setupSuffix(r)}`;
     if (!groups.has(key)) groups.set(key, { vals: [], rows: [] });
     groups.get(key).vals.push(r.metric_value);
     groups.get(key).rows.push(r);
   });
   let entries = Array.from(groups.entries()).map(([key, g]) => ({
     key,
-    label: `${backboneName(g.rows[0].name)} · ${g.rows[0].normalization} · ${_shortBands(g.rows[0].bands)}`,
+    label: `${backboneName(g.rows[0].name)} · ${g.rows[0].normalization} · ${_shortBands(g.rows[0].bands)}${setupSuffix(g.rows[0])}`,
     mean: g.vals.reduce((s, v) => s + v, 0) / g.vals.length,
     n: g.vals.length,
     model: g.rows[0].model,

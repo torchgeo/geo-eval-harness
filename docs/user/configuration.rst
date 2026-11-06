@@ -201,6 +201,7 @@ Segmentation
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
+     amp: fp16
      lora_rank: null
      lora_target_modules: null
      lora_alpha: 16.0
@@ -214,7 +215,7 @@ Segmentation
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
 ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
-backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded with method ``seg-<head>-vitneck``. ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, and appends ``-anyup`` to the method; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded as ``neck: vit`` in the result row (see :ref:`segmentation-setup-columns`). ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, recorded as ``upsampler: anyup`` in the result row; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.
@@ -224,11 +225,22 @@ feature layers. See
 ``mean`` or ``max``, ``scheduler`` is ``cosine`` or ``none``, and the cache
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
+
+``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
+runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
+whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
+all of this in float32 at the cost of speed and memory. With cached frozen features it requires
+``cache_dtype: float32``. ``fp16`` leaves hashes unchanged. Whatever the precision, a training
+batch whose backbone features are not finite is skipped before the head runs, so head
+BatchNorm statistics stay finite, and counted as ``nonfinite_batches`` in the epoch record; an
+epoch that skips more than 5% of its batches fails. ``feature_standardize`` leaves such samples
+out of its statistics under the same limit. Non-finite features or logits during evaluation fail
+the run instead of scoring a constant prediction.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
 See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
-Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such runs are recorded as ``seg-<head>-lora-last<k>``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (method ``seg-<head>-full``), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
+Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such rows record ``lora_last_blocks``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (``adaptation: full`` in the result row), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with ``adaptation: lora`` (see :ref:`segmentation-setup-columns`).
 
 .. code-block:: yaml
 

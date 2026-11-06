@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from geo_eval_harness.datasets.base import BandSpec
-from geo_eval_harness.models import UniverSatBenchModel
+from geo_eval_harness.models import UniverSatBenchModel, _hub_helpers
 from geo_eval_harness.models.universat import (
     UNIVERSAT_REF,
     UNIVERSAT_REPO,
@@ -458,8 +458,10 @@ def test_block_checkpointing_is_exact_and_keeps_hooks(monkeypatch: pytest.Monkey
     seen: list[torch.Tensor] = []
     encoder.model.blocks[1].register_forward_hook(lambda _m, _i, out: seen.append(out))
     calls: list[int] = []
-    real = universat.checkpoint
-    monkeypatch.setattr(universat, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k))
+    real = _hub_helpers.checkpoint
+    monkeypatch.setattr(
+        _hub_helpers, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k)
+    )
     out = encoder.run(x)
     out.square().sum().backward()
 

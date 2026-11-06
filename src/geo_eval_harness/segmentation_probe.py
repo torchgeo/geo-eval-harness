@@ -29,6 +29,32 @@ from geo_eval_harness.models.segmentation_heads import (
 
 logger = logging.getLogger(__name__)
 
+#: Largest share of an epoch's training batches, or of the samples that fit the feature
+#: standardizer, that may be skipped for non-finite backbone features.
+MAX_NONFINITE_FRACTION = 0.05
+
+
+class NonFiniteFeaturesError(FloatingPointError):
+    """Backbone features contain ``inf`` or ``NaN``, for example after a float16 overflow.
+
+    Raised before the head runs, so the head's normalisation statistics stay untouched.
+    """
+
+
+def check_finite_features(features: list[torch.Tensor]) -> None:
+    """Raise :class:`NonFiniteFeaturesError` if any feature map has a non-finite value."""
+    if not all(bool(torch.isfinite(f).all()) for f in features):
+        raise NonFiniteFeaturesError(
+            "Backbone features are not finite (float16 overflow?). Set segmentation.amp: off "
+            "to run in float32."
+        )
+
+
+def _finite_samples(features: list[torch.Tensor]) -> torch.Tensor:
+    """Return a ``(N,)`` mask of the samples whose features are finite in every layer."""
+    return torch.stack([torch.isfinite(f).flatten(1).all(dim=1) for f in features]).all(dim=0)
+
+
 #: Heads built as ``Head(channels_list, num_classes, hidden_dim=...)``.
 _HIDDEN_DIM_HEADS: dict[str, type[nn.Module]] = {
     "conv_block": ConvBlockHead,
@@ -120,19 +146,22 @@ class GPUTensorCache:
         cls,
         cache: "CachedFeaturesDataset",
         device: torch.device | str,
+        *,
+        amp: bool = True,
     ) -> "GPUTensorCache":
         """Move cached features and masks to ``device``.
 
         Args:
             cache: CPU-resident cached features.
             device: Target device.
+            amp: Store float16 features on CUDA for mixed precision; ``False`` keeps float32.
 
         Returns:
             A :class:`GPUTensorCache` with all data on *device*.
         """
         target_device = torch.device(device)
         # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
-        dtype = torch.float16 if target_device.type == "cuda" else torch.float32
+        dtype = torch.float16 if amp and target_device.type == "cuda" else torch.float32
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
         masks = cache.masks.to(target_device, dtype=torch.long)
         return cls(layer_tensors, masks, target_device)
@@ -186,6 +215,7 @@ class SegmentationProbe(nn.Module):
             ``0`` (default) builds a single ``PatchLinearHead``.
         feature_standardize: Z-score each hooked feature channel with statistics fit on the
             training split (:meth:`fit_standardizer`) before the head. Frozen backbones only.
+        amp: Run a frozen backbone under CUDA float16 autocast. ``False`` keeps it in float32.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -204,8 +234,10 @@ class SegmentationProbe(nn.Module):
         head_dropout: float = 0.0,
         sweep_heads: int = 0,
         feature_standardize: bool = False,
+        amp: bool = True,
     ) -> None:
         super().__init__()
+        self.amp = amp
         if temporal_pool not in ("mean", "max"):
             raise ValueError(f"temporal_pool must be 'mean' or 'max', got {temporal_pool!r}")
         self.temporal_pool = temporal_pool
@@ -295,12 +327,21 @@ class SegmentationProbe(nn.Module):
 
         ``train`` is either the cached training features or the training loader; a loader costs
         one extra backbone pass. Both feed the same exact float64 moment accumulation.
+        Samples with non-finite features are left out, like non-finite training batches; more
+        than ``MAX_NONFINITE_FRACTION`` of them raises :class:`NonFiniteFeaturesError`.
         """
         standardizer = self._require_standardizer()
         sums: list[torch.Tensor] = []
         sq_sums: list[torch.Tensor] = []
         counts: list[int] = []
-        for features in self._standardizer_features(train, chunk_size):
+        samples = dropped = 0
+        for chunk in self._standardizer_features(train, chunk_size):
+            finite = _finite_samples(chunk)
+            samples += len(finite)
+            features = chunk
+            if not bool(finite.all()):
+                dropped += int((~finite).sum())
+                features = [layer[finite] for layer in chunk]
             if not sums:
                 sums = [
                     torch.zeros(f.shape[1], dtype=torch.float64, device=f.device) for f in features
@@ -312,6 +353,18 @@ class SegmentationProbe(nn.Module):
                 sums[index] += total
                 sq_sums[index] += sq_total
                 counts[index] += count
+        if dropped:
+            logger.warning(
+                "Feature standardization left out %d of %d samples with non-finite features.",
+                dropped,
+                samples,
+            )
+            if dropped > MAX_NONFINITE_FRACTION * samples:
+                raise NonFiniteFeaturesError(
+                    f"Feature standardization left out {dropped} of {samples} samples with "
+                    f"non-finite backbone features (limit {MAX_NONFINITE_FRACTION:.0%}). Set "
+                    "segmentation.amp: off to run in float32."
+                )
         if not sums:
             raise ValueError("Feature standardization needs a non-empty training split.")
         standardizer.set_moments(sums, sq_sums, counts)
@@ -343,17 +396,21 @@ class SegmentationProbe(nn.Module):
             batch, steps = x.shape[0], x.shape[1]
             x = x.reshape(batch * steps, *x.shape[2:])
         self._features.clear()
-        if self.freeze_backbone:
-            self.backbone.eval()
-            use_amp = x.device.type == "cuda"
-            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
-                _ = self.backbone(x)
-        else:
-            _ = self.backbone(x)
+        self._run_backbone(x)
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
             features = [self._pool_time(f, steps) for f in features]
         return features
+
+    def _run_backbone(self, x: torch.Tensor) -> None:
+        """Run the backbone to fill the hooks; a frozen one runs under CUDA autocast if ``amp``."""
+        if self.freeze_backbone:
+            self.backbone.eval()
+            use_amp = self.amp and x.device.type == "cuda"
+            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
+                _ = self.backbone(x)
+        else:
+            _ = self.backbone(x)
 
     def _upernet_decoder(self) -> nn.Module:
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
@@ -599,17 +656,12 @@ class SegmentationProbe(nn.Module):
             batch, steps = x.shape[0], x.shape[1]
             x = x.reshape(batch * steps, *x.shape[2:])
 
-        if self.freeze_backbone:
-            self.backbone.eval()
-            use_amp = x.device.type == "cuda"
-            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
-                _ = self.backbone(x)
-        else:
-            _ = self.backbone(x)
+        self._run_backbone(x)
 
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
             features = [self._pool_time(f, steps) for f in features]
+        check_finite_features(features)
         if self._anyup is not None:
             if steps:
                 raise ValueError("upsampler 'anyup' does not support time series inputs.")

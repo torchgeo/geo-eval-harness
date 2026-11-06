@@ -355,6 +355,49 @@ The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
 
+AnySat
+^^^^^^
+
+:class:`~geo_eval_harness.models.AnySatBenchModel` wraps AnySat v1 (Base, 126M
+parameters; `Astruc et al., CVPR 2025 <https://arxiv.org/abs/2412.14123>`_).  The model
+code loads through ``torch.hub`` from a pinned commit of
+`gastruc/AnySat <https://github.com/gastruc/AnySat>`_. The weights come from a pinned commit of
+`g-astruc/AnySat <https://huggingface.co/g-astruc/AnySat>`_ and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model anysat_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model anysat_base_seg --dataset sen1floods11-s2
+
+AnySat has one projector per modality, each built for a fixed band order and ground
+sampling distance (GSD). The wrapper adapts each input to its projector as follows:
+
+* It takes the modality from ``BandSpec.sensor`` (``s2``, ``s1``/``sar``, and very-high-resolution
+  ``aerial`` RGB to the 1 m ``spot`` projector) and reorders the bands by name.  Presets set
+  ``modality`` only where the sensor name does not apply: Landsat and HLS (``l7``), CaFFe and
+  the SpaceNet datasets.
+* It resamples every tile to the projector's GSD over the tile's true ground extent.
+  ``input_gsd`` is the GSD of the pixels the model receives: native GSD × native tile size /
+  ``image_size``.
+* It sets ``patch_size`` in metres.
+* It passes day of year 120 to the time-series projectors.
+
+Projector bands that are missing from the input are filled with the dataset mean only when
+``impute_missing`` is set, and the filled bands are logged.  The presets set it, for example
+for RGB runs on Sentinel-2 datasets.  The ``s1`` projector also needs the VV/VH ratio of the
+raw values.  The wrapper computes it and z-scores it with the training-split ``ratio_stats``
+that the preset stores per dataset.
+
+For segmentation, hook ``output_tap``: it receives AnySat's output tokens as
+``[B, 768, h, w]``.  A hook on the final cross-attention block itself never fires, because AnySat
+calls that block through a custom method.  The fusion blocks ``model.model.blocks.0``-``5`` give
+``[B, 1 + h*w, 768]`` for single-modality inputs.  ``dense_output: true`` exposes AnySat's
+1536-channel sub-patch output through ``dense_tap``.
+
+AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's.  The two
+models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
+pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
+
 Adding a new model
 ------------------
 

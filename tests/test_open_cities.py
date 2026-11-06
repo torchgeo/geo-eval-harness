@@ -23,6 +23,7 @@ from geo_eval_harness.hub import load_checksums
 CHIP = oc.CHIP_SIZE
 ORIGIN = (500_000.0, 9_250_000.0)  # UTM 37S, near Dar es Salaam
 GSD = 0.1
+SPAWN_WORKER_TIMEOUT_S = 300
 
 
 def _pixel_lonlat(col: float, row: float) -> list[float]:
@@ -120,7 +121,7 @@ def test_dataset_reads_native_chips_by_window(
     monkeypatch.setattr(oc, "load_index", lambda: index)
     bench = get_bench_dataset_class("open_cities")()
 
-    sample = bench.get_dataset("train")[0]
+    sample = bench.get_dataset("train", partition="full")[0]
     assert sample["image"].dtype == torch.float32
     assert sample["image"].shape == (3, CHIP, CHIP)
     assert sample["mask"].dtype == torch.int64
@@ -170,10 +171,16 @@ def test_spawn_worker_reads_dataset_after_parent_sample_access(
     oc.build_scene_mask(scene / "dar" / "abc123.tif", scene / "dar" / "abc123.geojson", index)
     monkeypatch.chdir(scene.parents[1])
     monkeypatch.setattr(oc, "load_index", lambda: index)
-    dataset = oc.OpenCities().get_dataset("train")
+    dataset = oc.OpenCities().get_dataset("train", partition="full")
     expected = dataset[0]
+    # A spawned worker re-imports torch and the harness; on loaded CI runners (macOS under
+    # xdist) that alone can exceed 30 s. The timeout only guards against a hung worker.
     loader = DataLoader(
-        dataset, batch_size=1, num_workers=1, multiprocessing_context="spawn", timeout=30
+        dataset,
+        batch_size=1,
+        num_workers=1,
+        multiprocessing_context="spawn",
+        timeout=SPAWN_WORKER_TIMEOUT_S,
     )
     batches = list(loader)
     assert len(batches) == 1
@@ -188,7 +195,7 @@ def test_dataset_reports_missing_scene_files(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(oc, "load_index", lambda: index)
     with pytest.raises(FileNotFoundError, match="download open_cities"):
-        get_bench_dataset_class("open_cities")().get_dataset("train")
+        get_bench_dataset_class("open_cities")().get_dataset("train", partition="full")
 
 
 def test_fetch_resumes_partial_downloads(tmp_path: Path) -> None:
@@ -265,9 +272,73 @@ class TestCommittedIndex:
         assert set(committed.city) == set(oc.CITY_NAME)
 
     def test_split_sizes_match_the_wrapper(self, committed: pd.DataFrame) -> None:
-        assert committed.split.value_counts().to_dict() == oc.OpenCities.split_sizes
+        assert committed.split.value_counts().to_dict() == oc.FULL_SPLIT_SIZES
+
+    def test_fixed_subset_matches_study_seed_zero(self, committed: pd.DataFrame) -> None:
+        train = committed[committed.split == "train"].reset_index(drop=True)
+        rows = oc.train_subset_rows(train)
+        expected = np.sort(np.random.default_rng(0).permutation(76818)[:10000])
+        np.testing.assert_array_equal(rows, expected)
+        assert len(rows) == oc.OpenCities.split_sizes["train"] == 10000
+        assert train.iloc[rows].chip_id.is_unique
+
+    def test_subset_rejects_changed_chip_identities(self, committed: pd.DataFrame) -> None:
+        train = committed[committed.split == "train"].reset_index(drop=True).copy()
+        rows = oc.train_subset_rows(train)
+        train.loc[rows[0], "chip_id"] = "wrong-chip"
+        with pytest.raises(ValueError, match="chip identities"):
+            oc.train_subset_rows(train)
 
     def test_checksums_cover_every_indexed_scene(self, committed: pd.DataFrame) -> None:
         scenes = {f"{c}/{s}" for c, s in zip(committed.city, committed.scene, strict=True)}
         listed = {path.rsplit(".", 1)[0] for path in load_checksums("open_cities.sha256")}
         assert scenes <= listed
+
+
+@pytest.mark.parametrize("split", ["train", "val", "test"])
+def test_partitions_select_exact_index_rows(split: str) -> None:
+    index = oc.load_index()
+    rows = index[index.split == split].reset_index(drop=True)
+    with mock.patch.object(oc, "_OpenCitiesSplit") as constructor:
+        bench = oc.OpenCities()
+        bench.get_dataset(split, partition="full")
+        pd.testing.assert_frame_equal(constructor.call_args.args[1], rows)
+        bench.get_dataset(split)
+        expected = rows
+        if split == "train":
+            expected = rows.iloc[oc.train_subset_rows(rows)].reset_index(drop=True)
+        pd.testing.assert_frame_equal(constructor.call_args.args[1], expected)
+        assert len(expected) == bench.split_sizes[split]
+
+
+@pytest.mark.parametrize("partition", ["unknown", "train-n10000-s0"])
+def test_invalid_partition_is_rejected(partition: str) -> None:
+    with pytest.raises(ValueError, match="Unknown Open Cities partition"):
+        oc.OpenCities().get_dataset("train", partition=partition)
+
+
+def test_manifest_checksum_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(oc, "TRAIN_SUBSET_SHA256", "0" * 64)
+    with pytest.raises(ValueError, match="checksum"):
+        oc.train_subset_rows(pd.DataFrame())
+
+
+@pytest.mark.parametrize("damage", ["duplicate", "negative", "out_of_bounds", "short"])
+def test_invalid_manifest_rows_are_rejected(damage: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    index = oc.load_index()
+    train = index[index.split == "train"].reset_index(drop=True)
+    rows = oc.train_subset_rows(train)
+    subset = pd.DataFrame({"row": rows, "chip_id": train.iloc[rows].chip_id.to_numpy()})
+    if damage == "duplicate":
+        subset.loc[1, "row"] = subset.loc[0, "row"]
+    elif damage == "negative":
+        subset.loc[0, "row"] = -1
+    elif damage == "out_of_bounds":
+        subset.loc[len(subset) - 1, "row"] = len(train)
+    else:
+        subset = subset.iloc[:-1]
+    raw = subset.to_csv(index=False).encode()
+    monkeypatch.setattr(oc.gzip, "decompress", lambda _: raw)
+    monkeypatch.setattr(oc, "TRAIN_SUBSET_SHA256", hashlib.sha256(raw).hexdigest())
+    with pytest.raises(ValueError, match="sorted, distinct train rows"):
+        oc.train_subset_rows(train)

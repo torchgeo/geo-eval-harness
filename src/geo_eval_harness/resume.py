@@ -50,8 +50,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
     ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` and the
-    probe sweep count only when set, and ``neck_norm`` only when a neck uses it, so hashes from
-    before these options are unchanged.
+    probe sweep count only when set, ``amp`` only when not ``fp16``, and ``neck_norm`` only when a
+    neck uses it, so hashes from before these options are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
@@ -98,6 +98,8 @@ def _unset_segmentation_fields(segmentation: SegmentationConfig) -> set[str]:
         segmentation_exclude.add("neck_norm")
     if segmentation.upsampler == "none":
         segmentation_exclude.add("upsampler")
+    if segmentation.amp == "fp16":
+        segmentation_exclude.add("amp")
     segmentation_exclude.update(
         name for name in _OPTIONAL_SEGMENTATION_FIELDS if not getattr(segmentation, name)
     )

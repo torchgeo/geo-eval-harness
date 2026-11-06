@@ -1298,7 +1298,7 @@ def test_solver_fit_cached_builds_missing_validation_gpu_cache(mock_backbone, du
         )
 
     assert isinstance(val_miou, float)
-    transfer.assert_called_once_with(val_cache, solver.device)
+    transfer.assert_called_once_with(val_cache, solver.device, amp=True)
 
 
 def test_probe_pools_time_series_features(mock_backbone, dummy_data):

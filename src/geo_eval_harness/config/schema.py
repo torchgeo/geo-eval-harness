@@ -270,6 +270,7 @@ class SegmentationConfig(StrictModel):
     ignore_index: StrictInt = 255
     cache_features: StrictBool = True
     cache_dtype: Literal["float16", "float32"] = "float16"
+    amp: Literal["fp16", "off"] = "fp16"
     lora_rank: StrictInt | None = Field(default=None, gt=0)
     lora_target_modules: StrictStr | None = None
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
@@ -305,6 +306,17 @@ class SegmentationConfig(StrictModel):
             )
         if len(set(self.sweep_grid)) != len(self.sweep_grid):
             raise ValueError("sweep learning rates and weight decays must not repeat")
+        return self
+
+    @model_validator(mode="after")
+    def validate_precision(self) -> "SegmentationConfig":
+        """Reject ``amp: off`` with a float16 feature cache, which would still overflow."""
+        frozen = self.lora_rank is None and not self.full_finetune
+        if self.amp == "off" and frozen and self.cache_features and self.cache_dtype == "float16":
+            raise ValueError(
+                "amp 'off' with cached frozen features requires cache_dtype 'float32'; a float16 "
+                "cache still overflows"
+            )
         return self
 
     @model_validator(mode="after")
@@ -344,24 +356,17 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, ``-<neck>neck`` (``-vitneck``, ``-vitfineneck``) and ``-lora``.
+        """Return ``seg-<head>``.
 
-        Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
-        blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck. Feature
-        standardization appends ``-std`` and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
+        Linear-probe settings have no setup columns yet: feature standardization appends ``-std``
+        and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
         """
-        neck = "" if self.neck == "none" else f"-{self.neck.replace('_', '')}neck"
-        if self.upsampler != "none":
-            neck += f"-{self.upsampler}"
-        lora = "" if self.lora_rank is None else "-lora"
-        if self.full_finetune:
-            lora = "-full"
-        if self.lora_last_blocks is not None:
-            lora += f"-last{self.lora_last_blocks}"
         probe = "-std" if self.feature_standardize else ""
         if self.sweep_grid:
             probe += f"-sweep{len(self.sweep_grid)}"
-        return f"seg-{self.head}{neck}{lora}{probe}"
+        return f"seg-{self.head}{probe}"
 
 
 class RuntimeConfig(StrictModel):
