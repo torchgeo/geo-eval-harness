@@ -116,6 +116,8 @@ class TimmPatchBenchModel(BenchModel):
         self.pretrained = pretrained
         self.normalize = normalize
         self.auto_resize = auto_resize
+        # Fixed-size backbones (e.g. Swin built with img_size) only accept this input size.
+        self.probe_input_size = img_size
         self.use_cls_token = use_cls_token
         self.input_normalization = input_normalization
 
