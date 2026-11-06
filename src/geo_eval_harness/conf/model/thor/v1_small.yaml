@@ -1,0 +1,35 @@
+name: thor_v1_small
+target: geo_eval_harness.models.ThorBenchModel
+# THOR's pretraining statistics are a reference only; its own fine-tuning configs z-score with
+# dataset statistics, so model normalization is not offered.
+supports_model_normalization: false
+# Tiles keep their native size (THOR has no fixed input size). input_gsd is the GSD of the pixels
+# the model receives; each band group is resampled to its pretraining GSD over the tile's extent.
+# patch_size (px) is shared by all groups: 4 for tiles up to 128 px, larger for bigger tiles so
+# the token count stays near THOR's pretraining budget (1,296). S2 B10 (cirrus) is not in THOR.
+kwargs:
+  variant: small
+  patch_size: 4
+  input_gsd: 10.0
+  merge: concat
+  ignore_bands: [cirrus]
+input:
+  image_size: null
+segmentation:
+  lora_target_modules: 'encoder\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: [taps.11, taps.8, taps.5, taps.2]
+dataset_overrides:
+  burn_scars:  # HLS 30 m, 512 px
+    kwargs: {input_gsd: 30.0, patch_size: 32}
+  forestnet:  # Landsat-8 pan-sharpened 15 m, 332 px
+    kwargs: {input_gsd: 15.0, patch_size: 16}
+  cloudsen12:  # S2 L1C 10 m, 512 px
+    kwargs: {patch_size: 16}
+  sen1floods11-s2:  # S2 10 m, 512 px
+    kwargs: {patch_size: 16}
+  sen1floods11-s1:  # S1 dB 10 m, 512 px
+    kwargs: {patch_size: 16}
+  fotw:  # S2 10 m, 256 px
+    kwargs: {patch_size: 8}
+  oscd-post:  # S2 10 m, 256 px
+    kwargs: {patch_size: 8}
