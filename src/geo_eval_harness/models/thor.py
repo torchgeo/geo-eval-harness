@@ -1,4 +1,4 @@
-"""THOR v1 wrapper for geo-eval-harness.
+"""THOR wrapper for geo-eval-harness.
 
 THOR (Forgaard et al., 2026; https://arxiv.org/abs/2601.16011) embeds every band with its own
 patch kernel at the band's native GSD, averages the bands of a group (e.g. the 10 m Sentinel-2
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ThorVariant:
-    """Architecture and pinned Hugging Face weights of one THOR v1 size."""
+    """Architecture and pinned Hugging Face weights of one THOR size."""
 
     embed_dim: int
     depth: int
@@ -148,7 +148,7 @@ def load_thor_weights(encoder: ThorEncoder, variant: str, weights_path: str | No
 
 
 class ThorBenchModel(BenchModel):
-    """BenchModel wrapper for THOR v1 (tiny, small, base, large).
+    """BenchModel wrapper for THOR (tiny, small, base, large).
 
     Classification embeddings average each group's final normed tokens, then concatenate the
     groups (``merge='concat'``, THOR's default for PANGAEA) or average them (``'mean'``). For

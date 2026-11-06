@@ -1,4 +1,4 @@
-name: thor_v1_base
+name: thor_base
 target: geo_eval_harness.models.ThorBenchModel
 # THOR's pretraining statistics are a reference only; its own fine-tuning configs z-score with
 # dataset statistics, so model normalization is not offered.
@@ -6,13 +6,14 @@ supports_model_normalization: false
 # Tiles keep their native size (THOR has no fixed input size). input_gsd is the GSD of the pixels
 # the model receives; each band group is resampled to its pretraining GSD over the tile's extent.
 # patch_size (px) is shared by all groups: 4 for tiles up to 128 px, larger for bigger tiles so
-# the token count stays near THOR's pretraining budget (1,296). S2 B10 (cirrus) is not in THOR.
+# the token count stays near THOR's pretraining budget (1,296). The 60 m S2 bands are dropped as in
+# the authors' Sentinel-2 fine-tuning config (FM4CS/thor_terratorch_ext); B10 is not in THOR.
 kwargs:
   variant: base
   patch_size: 4
   input_gsd: 10.0
   merge: concat
-  ignore_bands: [cirrus]
+  ignore_bands: [coastal, watervapor, cirrus]
 input:
   image_size: null
 segmentation:
