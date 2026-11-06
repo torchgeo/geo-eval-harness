@@ -29,6 +29,7 @@ from tests.support.models import bands
 
 VIT_TARGETS = r"blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
 SWIN_TARGETS = r"features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])"
+TIMM_SWIN_TARGETS = r"layers\.\d+\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
 
 
 def _assert_only_lora_trains(model: nn.Module, layers: list[str], images: torch.Tensor) -> None:
@@ -54,12 +55,22 @@ def _assert_only_lora_trains(model: nn.Module, layers: list[str], images: torch.
     assert base_with_grad == []
 
 
-@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin"])
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin", "timm_swinv2"])
 def test_apply_lora_trains_every_adapter_and_no_base_weight(model_kind: str) -> None:
     """Swin attention reads its weights functionally, so it needs the parametrization path."""
     if model_kind == "timm_vit":
         model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
         targets, layers, expected = VIT_TARGETS, ["blocks.11", "blocks.5"], 48
+    elif model_kind == "timm_swinv2":
+        # timm's Swin V2 attention reads qkv.weight through F.linear to add its q/v bias.
+        model = TimmPatchBenchModel(
+            bands(3), model_name="swinv2_tiny_window8_256", pretrained=False, auto_resize=True
+        )
+        # Untrained Swin V2 zero-initialises its residual post-norms, which blocks every gradient.
+        for module in model.modules():
+            if isinstance(module, nn.LayerNorm):
+                nn.init.ones_(module.weight)
+        targets, layers, expected = TIMM_SWIN_TARGETS, ["layers.3", "layers.1"], 48
     else:
         model = swin_v2_t()
         targets, layers, expected = SWIN_TARGETS, ["features.7", "features.5"], 48
@@ -154,6 +165,8 @@ _MULTISPECTRAL_INPUTS = {
     "terrafm/base_s2": ("m-eurosat", "all"),
     "terrafm/base_s2_l1c": ("m-eurosat", "all"),
     "torchgeo/deo_s2": ("cloudsen12", "all"),
+    "torchgeo/croma_base": ("cloudsen12", "all"),
+    "torchgeo/croma_large": ("cloudsen12", "all"),
     "universat_base_seg": ("burn_scars", "all"),
 }
 
