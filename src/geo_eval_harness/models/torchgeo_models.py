@@ -686,6 +686,10 @@ class TorchGeoDEOBench(BenchModel):
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
     channel order instead. It is frozen by default; segmentation supports LoRA
     adapters or full fine-tuning.
+
+    DEO was pretrained at 224. ``target_size`` may be any multiple of 32: the Swin stages have
+    no absolute positional embedding, and torchvision pads each stage map to a multiple of the
+    12-token window (as it already does at 224, whose 56/28/14/7 grids are not multiples of 12).
     """
 
     _deo_mean: torch.Tensor
@@ -707,8 +711,15 @@ class TorchGeoDEOBench(BenchModel):
     ) -> None:
         if mode not in {"rgb", "s2"}:
             raise ValueError("TorchGeoDEOBench mode must be 'rgb' or 's2'.")
-        if target_size != _DEO_TARGET_SIZE:
-            raise ValueError(f"TorchGeoDEOBench requires target_size={_DEO_TARGET_SIZE}.")
+        if (
+            isinstance(target_size, bool)
+            or not isinstance(target_size, int)
+            or target_size <= 0
+            or target_size % 32
+        ):
+            raise ValueError(
+                f"TorchGeoDEOBench target_size must be a positive multiple of 32, got {target_size!r}."
+            )
         strategy = NormalizationStrategy(normalization)
 
         # DEO does its own native conversion below. Avoid the generic model_native

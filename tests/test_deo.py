@@ -205,3 +205,61 @@ def test_stacked_sar_segmentation_step(unweighted: None) -> None:
     )
     loss.backward()
     assert torch.isfinite(loss)
+
+
+@pytest.mark.parametrize("target_size", [0, 200, 300, True])
+def test_target_size_must_be_a_positive_multiple_of_32(unweighted: None, target_size: int) -> None:
+    del unweighted
+    with pytest.raises(ValueError, match="multiple of 32"):
+        TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=target_size)
+
+
+def _native_size_step(net: TorchGeoDEOBench, size: int) -> None:
+    from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+
+    cfg = SegmentationConfig(head="upernet", layers=_LAYERS, batch_size=2, cache_features=False)
+    probe, solver = build_seg_probe_and_solver(net, 2, cfg, torch.device("cpu"))
+    assert probe.channels_list == [1024, 512, 256, 128]
+    assert probe.feature_hw_list == [(size // s, size // s) for s in (32, 16, 8, 4)]
+    solver._set_train_mode()
+    x, y = torch.rand(2, 3, size, size) * 255, torch.randint(0, 2, (2, size, size))
+    logits = solver.model(x)
+    assert logits.shape == (2, 2, size, size)
+    loss = solver.criterion(logits, y)
+    loss.backward()
+    assert torch.isfinite(loss)
+    head_grads = [p.grad for p in probe.head.parameters() if p.grad is not None]
+    assert head_grads
+    assert all(torch.isfinite(g).all() for g in head_grads)
+
+
+@pytest.mark.parametrize("size", [224, 256, 512])
+def test_probe_trains_at_native_sizes(unweighted: None, size: int) -> None:
+    del unweighted
+    torch.manual_seed(0)
+    _native_size_step(TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=size), size)
+
+
+def test_default_224_stage_maps_match_torchgeo_deo(unweighted: None) -> None:
+    del unweighted
+    torch.manual_seed(0)
+    net = TorchGeoDEOBench(_rgb_bands(), mode="rgb").eval()
+    x = torch.rand(1, 3, 224, 224) * 255
+    hooked: list[torch.Tensor] = []
+    for layer in _LAYERS[::-1]:
+        net.backbone.get_submodule(layer).register_forward_hook(
+            lambda _m, _i, out: hooked.append(out)
+        )
+    with torch.no_grad():
+        net(x)
+        expected = net.backbone.forward_features(net.normalize_inputs(x))
+    for got, ref in zip(hooked[:4], expected, strict=True):
+        torch.testing.assert_close(got, ref, rtol=0, atol=0)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("size", [256, 512])
+def test_pretrained_probe_trains_at_native_sizes(size: int) -> None:
+    torch.manual_seed(0)
+    _native_size_step(TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=size), size)
