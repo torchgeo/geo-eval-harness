@@ -25,6 +25,7 @@ and models, and interpreting the results.
    ranking_explorer
    methodology
    segmentation-layers
+   segmentation-compute
 
 .. toctree::
    :caption: Contributing

@@ -371,7 +371,7 @@ def test_packaged_flops_yaml_uses_the_typed_schema() -> None:
     resolved, preset = config.resolve()
     assert preset.kwargs["seed"] == 0
     assert resolved.input.image_size == 224
-    assert resolved.segmentation.heads == ["fpn", "dpt"]
+    assert resolved.segmentation.heads == []
 
 
 def test_real_rcf_synthetic_cpu_csv_and_resume(tmp_path: Path) -> None:
