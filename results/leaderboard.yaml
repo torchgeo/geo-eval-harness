@@ -1,0 +1,168 @@
+# Leaderboard policy for the ranking explorer (scripts/regen_leaderboard.py).
+#
+# Edit this file, not the script, to rename or merge a model, add or drop a
+# dataset, or change the canonical segmentation protocol. The script keeps only
+# the mechanics (load, harmonize, rank, render). The schema is validated on
+# load (unknown keys, wrong types and dangling references are errors), and
+# tests/test_leaderboard_spec.py checks that every dataset in results/models is
+# declared here. Write floats with a decimal point (1.0e-4, not 1e-4): YAML
+# reads 1e-4 as a string.
+
+# Model configs, keyed by the result-row ``name`` (without ``_cls``).
+#   display          name shown in the table (default: the config slug)
+#   baseline         marked as a baseline row (default: false)
+#   alias_of         merged into this model in every view (a band-specific
+#                    configuration, not a different model)
+#   native_alias_of  merged into this model in the segmentation Native band
+#                    class only (per-modality configurations of one model)
+#   rgb_sweep        rows recorded with ``bands=rgb``: ``drop`` them (an
+#                    off-modality sweep of a multispectral config) or keep
+#                    ``only`` them (a dedicated RGB config swept with all bands)
+# Undeclared configs are shown under their slug.
+models:
+  rcf: {display: Random conv. features, baseline: true}
+  imagestats: {display: Image statistics, baseline: true}
+  convnext_large: {display: ConvNeXt-L (ImageNet)}
+  convnext_large_dinov3: {display: ConvNeXt-L DINOv3}
+  olmoearth_v1_nano: {display: OlmoEarth v1 nano}
+  olmoearth_v1_tiny: {display: OlmoEarth v1 tiny}
+  olmoearth_v1_base: {display: OlmoEarth v1 base}
+  olmoearth_v1_large: {display: OlmoEarth v1 large}
+  olmoearth_v1_1_nano: {display: OlmoEarth v1.1 nano}
+  olmoearth_v1_1_tiny: {display: OlmoEarth v1.1 tiny}
+  olmoearth_v1_1_base: {display: OlmoEarth v1.1 base}
+  olmoearth_v1_2_nano: {display: OlmoEarth v1.2 nano}
+  olmoearth_v1_2_tiny: {display: OlmoEarth v1.2 tiny}
+  olmoearth_v1_2_small: {display: OlmoEarth v1.2 small}
+  olmoearth_v1_2_base: {display: OlmoEarth v1.2 base}
+  tgeo_croma_base: {display: CROMA base}
+  tgeo_croma_large: {display: CROMA large}
+  terrafm_base: {display: TerraFM base}
+  terrafm_base_s1: {native_alias_of: terrafm_base}
+  terrafm_base_s2: {native_alias_of: terrafm_base}
+  tgeo_deo_swin: {display: DEO Swin}
+  tgeo_deo_swin_rgb: {native_alias_of: tgeo_deo_swin}
+  tgeo_deo_swin_s2: {native_alias_of: tgeo_deo_swin}
+  tgeo_dofa_base: {display: DOFA base}
+  tgeo_dofa_large: {display: DOFA large}
+  tgeo_earthloc_s2_resnet50: {display: EarthLoc ResNet-50}
+  tgeo_panopticon: {display: Panopticon}
+  tgeo_resnet18_s2rgb_seco: {display: SeCo ResNet-18}
+  tgeo_resnet50_s2rgb_seco: {display: SeCo ResNet-50}
+  tgeo_resnet50_fmow_gassl: {display: GASSL ResNet-50}
+  tgeo_resnet50_s2all_moco: {display: MoCo ResNet-50 (MSI)}
+  tgeo_resnet50_s2rgb_moco: {display: MoCo ResNet-50 (RGB)}
+  tgeo_scalemae_large_fmow: {display: ScaleMAE large}
+  tgeo_swinv2b_s2rgb_satlas_mi: {display: SatlasNet Swin-v2-B (MI)}
+  tgeo_swinv2b_s2rgb_satlas_si: {display: SatlasNet Swin-v2-B (SI)}
+  tgeo_swinv2t_s2rgb_satlas_mi: {display: SatlasNet Swin-v2-T (MI)}
+  tgeo_swinv2t_s2rgb_satlas_si: {display: SatlasNet Swin-v2-T (SI)}
+  tt_clay_v1_5_base: {display: Clay v1.5 base}
+  tt_prithvi_eo_v1_100: {display: Prithvi-EO-v1 100M}
+  tt_prithvi_eo_v2_100_tl: {display: Prithvi-EO-v2 100M (TL)}
+  tt_prithvi_eo_v2_300: {display: Prithvi-EO-v2 300M}
+  tt_prithvi_eo_v2_300_tl: {display: Prithvi-EO-v2 300M (TL)}
+  tt_prithvi_eo_v2_600: {display: Prithvi-EO-v2 600M}
+  # The plain (S2L2A) TerraMind configs were also swept with bands=rgb, which
+  # forces the S2L2A pathway onto RGB input; only the _rgb config's row is
+  # authoritative for RGB, and only the plain config's row for Multispectral.
+  tt_terramind_v1_base: {display: TerraMind v1 base, rgb_sweep: drop}
+  tt_terramind_v1_base_rgb: {alias_of: tt_terramind_v1_base, rgb_sweep: only}
+  tt_terramind_v1_large: {display: TerraMind v1 large, rgb_sweep: drop}
+  tt_terramind_v1_large_rgb: {alias_of: tt_terramind_v1_large, rgb_sweep: only}
+  universat_base_seg: {display: UniverSat base}
+  vit_base_patch16_224: {display: ViT-B/16 (ImageNet)}
+  vit_large_patch16_dinov3: {display: DINOv3 ViT-L/16}
+  vit_large_patch16_dinov3sat: {display: DINOv3-SAT ViT-L/16}
+
+# Datasets, in display order (segmentation Native views list their columns in
+# this order).
+#   display   header label (default: the dataset id); the GeoBench version is a
+#             suffix because several datasets appear in V1 and V2 under
+#             near-identical ids
+#   task      classification or segmentation (checked against the result rows)
+#   rgb_only  the dataset ships RGB bands only: a bands=all run is still RGB
+#   dropped   left out of the leaderboard (the result CSVs are untouched)
+datasets:
+  m-eurosat: {display: EuroSAT · V1, task: classification}
+  m-so2sat: {display: So2Sat · V1, task: classification}
+  m-forestnet: {display: ForestNet · V1, task: classification}
+  m-bigearthnet: {display: BigEarthNet · V1, task: classification}
+  m-pv4ger: {display: PV4GER · V1, task: classification, dropped: true}
+  m-brick-kiln: {display: Brick Kiln · V1, task: classification, dropped: true}
+  benv2: {display: BigEarthNet · V2, task: classification}
+  treesatai: {display: TreeSatAI · V2, task: classification}
+  so2sat: {display: So2Sat · V2, task: classification}
+  forestnet: {display: ForestNet · V2, task: classification}
+  eurosat-spatial: {display: EuroSAT spatial, task: classification}
+  resisc45: {display: RESISC45, task: classification, rgb_only: true}
+  aid: {task: classification, rgb_only: true}
+  eurosat: {task: classification}
+  ucmerced: {task: classification, rgb_only: true}
+  burn_scars: {display: Burn Scars · V2, task: segmentation}
+  caffe: {display: CAFFE · V2, task: segmentation}
+  cloudsen12: {display: CloudSEN12 · V2, task: segmentation}
+  dynamic_earthnet: {display: Dynamic EarthNet · V2, task: segmentation}
+  flair2: {display: 'FLAIR #2 · V2', task: segmentation}
+  fotw: {display: Fields of the World · V2, task: segmentation}
+  kuro_siwo: {display: Kuro Siwo · V2, task: segmentation}
+  pastis: {display: PASTIS · V2, task: segmentation}
+  hotosm_buildings: {display: HOTOSM Buildings, task: segmentation, rgb_only: true}
+  open_cities: {display: Open Cities, task: segmentation, rgb_only: true}
+  openearthmap-sar: {display: OpenEarthMap-SAR, task: segmentation}
+  spacenet2: {display: SpaceNet 2, task: segmentation}
+  spacenet7: {display: SpaceNet 7, task: segmentation}
+  loveda: {display: LoveDA, task: segmentation}
+  levir-cd-post: {display: LEVIR-CD (post), task: segmentation}
+  sen1floods11-s1: {display: Sen1Floods11 · S1, task: segmentation}
+  sen1floods11-s2: {display: Sen1Floods11 · S2, task: segmentation}
+  bright-post-sar: {display: 'BRIGHT (post, SAR)', task: segmentation}
+  bright-post-sar-rgb: {display: 'BRIGHT (post, SAR→RGB)', task: segmentation}
+  oscd-post: {display: OSCD (post), task: segmentation}
+
+# Canonical segmentation protocol. A setup with other epochs or learning rates
+# is a variant: ranked, shown under "Show variants", and left out of the
+# sensitivity heatmap. Head LR and the full fine-tuning backbone LR are the
+# same everywhere; epochs and the LoRA backbone LR are per dataset.
+segmentation_protocol:
+  head_lr: 1.0e-3
+  full_backbone_lr: 1.0e-5
+  # Datasets added from 2026-11-02 (loveda, levir-cd-post, bright-post-sar*,
+  # ...) and any dataset not listed below.
+  default: {epochs: 30, lora_backbone_lr: 1.0e-4}
+  # The original grid datasets, then the Sentinel datasets added from 2026-11-02.
+  datasets:
+    burn_scars: {epochs: 20, lora_backbone_lr: 5.0e-4}
+    caffe: {epochs: 20, lora_backbone_lr: 5.0e-4}
+    cloudsen12: {epochs: 20, lora_backbone_lr: 5.0e-4}
+    fotw: {epochs: 20, lora_backbone_lr: 5.0e-4}
+    kuro_siwo: {epochs: 20, lora_backbone_lr: 5.0e-4}
+    flair2: {epochs: 20, lora_backbone_lr: 1.0e-4}
+    openearthmap-sar: {epochs: 20, lora_backbone_lr: 1.0e-4}
+    spacenet2: {epochs: 20, lora_backbone_lr: 1.0e-4}
+    spacenet7: {epochs: 20, lora_backbone_lr: 1.0e-4}
+    sen1floods11-s1: {epochs: 30, lora_backbone_lr: 5.0e-4}
+    sen1floods11-s2: {epochs: 30, lora_backbone_lr: 5.0e-4}
+    oscd-post: {epochs: 30, lora_backbone_lr: 5.0e-4}
+
+views:
+  # The view the page opens on (the first populated view if it is absent).
+  default: {task: classification, probe: linear, bandclass: RGB, aggregation: avg_rank}
+  # Selector order; values not listed follow alphabetically.
+  order:
+    task: [classification, segmentation]
+    probe: [linear, knn5]
+    bandclass: [RGB, Multispectral, Native]
+    adaptation: [frozen, lora, full]
+    decoder: [upernet, unet]
+    pyramid: [default, native, vit, anyup]
+  # Segmentation Native band class: every model is ranked on its own input
+  # bands per dataset, its native_alias_of configurations merged (the better
+  # cell counts where two cover a dataset). Coverage is partial: a model is
+  # ranked on the datasets it has, so only aggregations that work on a partial
+  # score matrix are offered. The Default pyramid is each model's own feature
+  # pyramid (these sources; AnyUp stays out).
+  native_bands:
+    coverage: partial
+    aggregations: [avg_rank, improvability]
+    default_pyramid_sources: [native, vit]

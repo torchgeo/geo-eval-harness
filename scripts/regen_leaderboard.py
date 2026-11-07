@@ -15,8 +15,19 @@ import logging
 import math
 import re
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
+import yaml
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveFloat,
+    PositiveInt,
+    ValidationError,
+    model_validator,
+)
 
 from geo_eval_harness.results import (
     NUMERIC_SETUP_COLS,
@@ -31,6 +42,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CSV_PATH = ROOT / "results" / "models"
 COMPUTE_PATH = ROOT / "results" / "compute_cost.csv"
 TEMPLATE_PATH = ROOT / "scripts" / "ranking_explorer.template.html"
+# Leaderboard policy: models, datasets, segmentation protocol, view defaults.
+SPEC_PATH = ROOT / "results" / "leaderboard.yaml"
 HTML_PATH = ROOT / "docs" / "_static" / "ranking_explorer.html"
 
 # Rows whose ``name`` contains any of these are single-dataset / experimental
@@ -42,24 +55,8 @@ ABLATION_TAGS = ("_lsat_", "_naip_", "_sar_")
 # collision with the plain reading for the Landsat dataset.
 LANDSAT_SUB_SUFFIX = "_landsat_as_s2"
 
-# Datasets excluded from the leaderboard only (all_results.csv is untouched).
-DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln"})
-
-# Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
-# RGB measurement and must never enter the Multispectral views.
-RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "open_cities", "resisc45", "ucmerced"})
-# An explicit band list made only of these names (``red,green,blue``) is RGB too.
+# An explicit band list made only of these names (``red,green,blue``) is RGB.
 RGB_BAND_NAMES = frozenset({"red", "green", "blue"})
-
-# The plain (S2L2A) TerraMind configs were additionally swept with
-# ``dataset.bands=rgb``, which forces their S2L2A-modality pathway onto
-# RGB-only input -- a real, off-modality measurement, not a duplicate of the
-# dedicated ``_rgb`` config. For the RGB cell, only the ``_rgb`` config's row
-# is authoritative; drop this off-modality artifact before alias resolution.
-TERRAMIND_OFF_MODALITY = frozenset({"tt_terramind_v1_base", "tt_terramind_v1_large"})
-# The mirror case: the RGB-modality ``_rgb`` configs swept with ``bands=all``. For the
-# Multispectral cell, only the plain config's row is authoritative.
-TERRAMIND_RGB_CONFIGS = frozenset({"tt_terramind_v1_base_rgb", "tt_terramind_v1_large_rgb"})
 
 # Raw metric name -> canonical name registered in the evaluma metric registry.
 METRIC_MAP = {"accuracy": "accuracy", "micro_mAP": "map", "mIoU": "miou"}
@@ -71,153 +68,196 @@ SMALL_N_MODELS = 8
 # value is a classification probe.
 SEGMENTATION_METHOD_PREFIX = "seg-"
 
-TASK_ORDER = ["classification", "segmentation"]
-PROBE_ORDER = ["linear", "knn5"]
-
-# Canonical segmentation protocol per dataset: ``dataset -> (epochs, LoRA backbone LR)``.
-# Unlisted datasets use SEG_PROTOCOL_DEFAULT. Full fine-tuning and the head LR
-# are the same everywhere. Setups off this protocol are variants.
-SEG_PROTOCOL: dict[str, tuple[int, float]] = {
-    "burn_scars": (20, 5e-4),
-    "caffe": (20, 5e-4),
-    "cloudsen12": (20, 5e-4),
-    "fotw": (20, 5e-4),
-    "kuro_siwo": (20, 5e-4),
-    "flair2": (20, 1e-4),
-    "openearthmap-sar": (20, 1e-4),
-    "spacenet2": (20, 1e-4),
-    "spacenet7": (20, 1e-4),
-    "sen1floods11-s1": (30, 5e-4),
-    "sen1floods11-s2": (30, 5e-4),
-    "oscd-post": (30, 5e-4),
-}
-SEG_PROTOCOL_DEFAULT: tuple[int, float] = (30, 1e-4)
-SEG_HEAD_LR = 1e-3
-SEG_FULL_BACKBONE_LR = 1e-5
-
 # A segmentation probe is ``<adaptation>/<decoder>/<pyramid>/<protocol>``; the
 # explorer exposes each part as its own selector.
 SEG_PROBE_SEP = "/"
 SEG_CANONICAL = "canonical"
-SEG_ADAPTATION_ORDER = ["frozen", "lora", "full"]
-SEG_DECODER_ORDER = ["upernet", "unet"]
-SEG_PYRAMID_ORDER = ["default", "native", "vit", "anyup"]
-BANDCLASS_ORDER = ["RGB", "Multispectral", "Native"]
 
-# Segmentation-only band class: every model is ranked on its own input bands per
-# dataset (RGB, multispectral or SAR), so models that mix modalities across
-# datasets still get one row.  Coverage is relaxed: a model is ranked on the
-# datasets it has (see :func:`rank_native_view`).
+# Segmentation-only band class (the template keys on this label): every model is
+# ranked on its own input bands per dataset.  Its coverage rule, aggregations and
+# default-pyramid sources are in the spec (``views.native_bands``).
 NATIVE_BANDCLASS = "Native"
-# The ``default`` pyramid is each model's own feature pyramid: the backbone's
-# native features for hierarchical backbones, the ViT neck for ViTs.  AnyUp is
-# an add-on and stays out.  It exists only in the Native band class.
+# The ``default`` pyramid is each model's own feature pyramid.  It exists only in
+# the Native band class.
 SEG_DEFAULT_PYRAMID = "default"
-SEG_DEFAULT_PYRAMID_SOURCES = frozenset({"native", "vit"})
+
+
+class _SpecModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+
+class ModelSpec(_SpecModel):
+    """One model config of ``results/leaderboard.yaml``."""
+
+    display: str | None = None
+    baseline: bool = False
+    alias_of: str | None = None
+    native_alias_of: str | None = None
+    rgb_sweep: Literal["drop", "only"] | None = None
+
+
+class DatasetSpec(_SpecModel):
+    """One dataset of ``results/leaderboard.yaml``."""
+
+    display: str | None = None
+    task: Literal["classification", "segmentation"]
+    rgb_only: bool = False
+    dropped: bool = False
+
+
+class ProtocolCell(_SpecModel):
+    """Canonical epochs and LoRA backbone LR of one segmentation dataset."""
+
+    epochs: PositiveInt
+    lora_backbone_lr: PositiveFloat
+
+
+class SegmentationProtocol(_SpecModel):
+    """The canonical segmentation protocol table."""
+
+    head_lr: PositiveFloat
+    full_backbone_lr: PositiveFloat
+    default: ProtocolCell
+    datasets: dict[str, ProtocolCell]
+
+
+class DefaultSlice(_SpecModel):
+    """The view the page opens on."""
+
+    task: str
+    probe: str
+    bandclass: str
+    aggregation: Literal["avg_rank", "elo", "improvability"]
+
+
+class SelectorOrder(_SpecModel):
+    """Preferred selector order; unlisted values follow alphabetically."""
+
+    task: list[str]
+    probe: list[str]
+    bandclass: list[str]
+    adaptation: list[str]
+    decoder: list[str]
+    pyramid: list[str]
+
+
+class NativeBands(_SpecModel):
+    """The segmentation Native band class and its coverage rule."""
+
+    coverage: Literal["partial"]
+    aggregations: list[Literal["avg_rank", "improvability"]] = Field(min_length=1)
+    default_pyramid_sources: list[str] = Field(min_length=1)
+
+
+class Views(_SpecModel):
+    """View defaults."""
+
+    default: DefaultSlice
+    order: SelectorOrder
+    native_bands: NativeBands
+
+
+class LeaderboardSpec(_SpecModel):
+    """The declarative leaderboard policy in ``results/leaderboard.yaml``."""
+
+    models: dict[str, ModelSpec]
+    datasets: dict[str, DatasetSpec]
+    segmentation_protocol: SegmentationProtocol
+    views: Views
+
+    @model_validator(mode="after")
+    def _check_references(self) -> "LeaderboardSpec":
+        self._check_model_aliases()
+        for dataset in self.segmentation_protocol.datasets:
+            spec = self.datasets.get(dataset)
+            if spec is None or spec.task != "segmentation":
+                raise ValueError(
+                    f"segmentation_protocol.datasets.{dataset}: not a declared segmentation dataset"
+                )
+        if NATIVE_BANDCLASS not in self.views.order.bandclass:
+            raise ValueError(f"views.order.bandclass must list {NATIVE_BANDCLASS!r}")
+        if SEG_DEFAULT_PYRAMID not in self.views.order.pyramid:
+            raise ValueError(f"views.order.pyramid must list {SEG_DEFAULT_PYRAMID!r}")
+        return self
+
+    def _check_model_aliases(self) -> None:
+        for slug, model in self.models.items():
+            if model.alias_of is not None and model.native_alias_of is not None:
+                raise ValueError(f"models.{slug}: set alias_of or native_alias_of, not both")
+            for field in ("alias_of", "native_alias_of"):
+                target = getattr(model, field)
+                if target is None:
+                    continue
+                if target not in self.models:
+                    raise ValueError(f"models.{slug}.{field}: {target!r} is not a declared model")
+                if target == slug or self.models[target].alias_of is not None:
+                    raise ValueError(f"models.{slug}.{field}: {target!r} is itself an alias")
+
+
+def load_spec(path: Path) -> LeaderboardSpec:
+    """Load and validate a leaderboard spec; unknown keys and bad references raise."""
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    try:
+        return LeaderboardSpec.model_validate(raw)
+    except ValidationError as error:  # allow-except: re-raised as ValueError naming the spec file
+        raise ValueError(f"Invalid leaderboard spec {path}:\n{error}") from error
+
+
+SPEC = load_spec(SPEC_PATH)
+
+TASK_ORDER = SPEC.views.order.task
+PROBE_ORDER = SPEC.views.order.probe
+
+# Datasets excluded from the leaderboard only (the result CSVs are untouched).
+DROPPED_DATASETS = frozenset(d for d, spec in SPEC.datasets.items() if spec.dropped)
+# Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
+# RGB measurement and must never enter the Multispectral views.
+RGB_ONLY_DATASETS = frozenset(d for d, spec in SPEC.datasets.items() if spec.rgb_only)
+
+# Configs whose ``bands=rgb`` rows are an off-modality artifact (dropped), and
+# configs of which only the ``bands=rgb`` rows count (see ``rgb_sweep``).
+RGB_SWEEP_DROP = frozenset(m for m, spec in SPEC.models.items() if spec.rgb_sweep == "drop")
+RGB_SWEEP_ONLY = frozenset(m for m, spec in SPEC.models.items() if spec.rgb_sweep == "only")
+
+# Canonical segmentation protocol per dataset: ``dataset -> (epochs, LoRA backbone LR)``;
+# datasets not listed use SEG_PROTOCOL_DEFAULT.  Setups off this protocol are variants.
+SEG_PROTOCOL: dict[str, tuple[int, float]] = {
+    dataset: (cell.epochs, cell.lora_backbone_lr)
+    for dataset, cell in SPEC.segmentation_protocol.datasets.items()
+}
+SEG_PROTOCOL_DEFAULT: tuple[int, float] = (
+    SPEC.segmentation_protocol.default.epochs,
+    SPEC.segmentation_protocol.default.lora_backbone_lr,
+)
+SEG_HEAD_LR = SPEC.segmentation_protocol.head_lr
+SEG_FULL_BACKBONE_LR = SPEC.segmentation_protocol.full_backbone_lr
+
+SEG_ADAPTATION_ORDER = SPEC.views.order.adaptation
+SEG_DECODER_ORDER = SPEC.views.order.decoder
+SEG_PYRAMID_ORDER = SPEC.views.order.pyramid
+BANDCLASS_ORDER = SPEC.views.order.bandclass
+
+SEG_DEFAULT_PYRAMID_SOURCES = frozenset(SPEC.views.native_bands.default_pyramid_sources)
 # Per-modality configurations of one model, merged in the Native band class only.
 # Where two of them cover the same dataset, the better-scoring cell is kept.
 NATIVE_MODEL_ALIASES = {
-    "tgeo_deo_swin_rgb": "tgeo_deo_swin",
-    "tgeo_deo_swin_s2": "tgeo_deo_swin",
-    "terrafm_base_s1": "terrafm_base",
-    "terrafm_base_s2": "terrafm_base",
+    m: spec.native_alias_of for m, spec in SPEC.models.items() if spec.native_alias_of
 }
-# Aggregations that need a complete score matrix are not offered on Native views.
-NATIVE_AGGREGATIONS = ("avg_rank", "improvability")
+# Aggregations offered on Native views (they need no complete score matrix).
+NATIVE_AGGREGATIONS = tuple(SPEC.views.native_bands.aggregations)
+NATIVE_COVERAGE = SPEC.views.native_bands.coverage
 
-# ``*_rgb`` is a band-specific TerraMind configuration, not a different model.
-# Apply aliases before any coverage or duplicate validation.
-MODEL_ALIASES = {
-    "tt_terramind_v1_base_rgb": "tt_terramind_v1_base",
-    "tt_terramind_v1_large_rgb": "tt_terramind_v1_large",
-}
+# Band-specific configurations of one model, merged in every view.  Apply
+# aliases before any coverage or duplicate validation.
+MODEL_ALIASES = {m: spec.alias_of for m, spec in SPEC.models.items() if spec.alias_of}
 
-# Base ``name`` slug -> (display name, is_baseline).  Family is deliberately
-# generator-only metadata: it is not part of the rendered data contract.
+# Config slug -> (display name, is_baseline).  Undeclared slugs show as themselves.
 MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
-    "rcf": ("Random conv. features", True),
-    "imagestats": ("Image statistics", True),
-    "convnext_large": ("ConvNeXt-L (ImageNet)", False),
-    "convnext_large_dinov3": ("ConvNeXt-L DINOv3", False),
-    "olmoearth_v1_nano": ("OlmoEarth v1 nano", False),
-    "olmoearth_v1_tiny": ("OlmoEarth v1 tiny", False),
-    "olmoearth_v1_base": ("OlmoEarth v1 base", False),
-    "olmoearth_v1_large": ("OlmoEarth v1 large", False),
-    "olmoearth_v1_1_nano": ("OlmoEarth v1.1 nano", False),
-    "olmoearth_v1_1_tiny": ("OlmoEarth v1.1 tiny", False),
-    "olmoearth_v1_1_base": ("OlmoEarth v1.1 base", False),
-    "olmoearth_v1_2_nano": ("OlmoEarth v1.2 nano", False),
-    "olmoearth_v1_2_tiny": ("OlmoEarth v1.2 tiny", False),
-    "olmoearth_v1_2_small": ("OlmoEarth v1.2 small", False),
-    "olmoearth_v1_2_base": ("OlmoEarth v1.2 base", False),
-    "tgeo_croma_base": ("CROMA base", False),
-    "tgeo_croma_large": ("CROMA large", False),
-    "terrafm_base": ("TerraFM base", False),
-    "tgeo_deo_swin": ("DEO Swin", False),
-    "tgeo_dofa_base": ("DOFA base", False),
-    "tgeo_dofa_large": ("DOFA large", False),
-    "tgeo_earthloc_s2_resnet50": ("EarthLoc ResNet-50", False),
-    "tgeo_panopticon": ("Panopticon", False),
-    "tgeo_resnet18_s2rgb_seco": ("SeCo ResNet-18", False),
-    "tgeo_resnet50_s2rgb_seco": ("SeCo ResNet-50", False),
-    "tgeo_resnet50_fmow_gassl": ("GASSL ResNet-50", False),
-    "tgeo_resnet50_s2all_moco": ("MoCo ResNet-50 (MSI)", False),
-    "tgeo_resnet50_s2rgb_moco": ("MoCo ResNet-50 (RGB)", False),
-    "tgeo_scalemae_large_fmow": ("ScaleMAE large", False),
-    "tgeo_swinv2b_s2rgb_satlas_mi": ("SatlasNet Swin-v2-B (MI)", False),
-    "tgeo_swinv2b_s2rgb_satlas_si": ("SatlasNet Swin-v2-B (SI)", False),
-    "tgeo_swinv2t_s2rgb_satlas_mi": ("SatlasNet Swin-v2-T (MI)", False),
-    "tgeo_swinv2t_s2rgb_satlas_si": ("SatlasNet Swin-v2-T (SI)", False),
-    "tt_clay_v1_5_base": ("Clay v1.5 base", False),
-    "tt_prithvi_eo_v1_100": ("Prithvi-EO-v1 100M", False),
-    "tt_prithvi_eo_v2_100_tl": ("Prithvi-EO-v2 100M (TL)", False),
-    "tt_prithvi_eo_v2_300": ("Prithvi-EO-v2 300M", False),
-    "tt_prithvi_eo_v2_300_tl": ("Prithvi-EO-v2 300M (TL)", False),
-    "tt_prithvi_eo_v2_600": ("Prithvi-EO-v2 600M", False),
-    "tt_terramind_v1_base": ("TerraMind v1 base", False),
-    "tt_terramind_v1_large": ("TerraMind v1 large", False),
-    "universat_base_seg": ("UniverSat base", False),
-    "vit_base_patch16_224": ("ViT-B/16 (ImageNet)", False),
-    "vit_large_patch16_dinov3": ("DINOv3 ViT-L/16", False),
-    "vit_large_patch16_dinov3sat": ("DINOv3-SAT ViT-L/16", False),
+    m: (spec.display or m, spec.baseline) for m, spec in SPEC.models.items()
 }
 
-# Dataset id -> header label shown in the table.  The GeoBench version is a
-# suffix because several datasets appear in both V1 and V2 under near-identical
-# names, and the raw ids alone do not say which is which.
-DATASET_DISPLAY = {
-    "m-eurosat": "EuroSAT · V1",
-    "m-so2sat": "So2Sat · V1",
-    "m-forestnet": "ForestNet · V1",
-    "m-bigearthnet": "BigEarthNet · V1",
-    "m-pv4ger": "PV4GER · V1",
-    "m-brick-kiln": "Brick Kiln · V1",
-    "benv2": "BigEarthNet · V2",
-    "treesatai": "TreeSatAI · V2",
-    "so2sat": "So2Sat · V2",
-    "forestnet": "ForestNet · V2",
-    "eurosat-spatial": "EuroSAT spatial",
-    "resisc45": "RESISC45",
-    "burn_scars": "Burn Scars · V2",
-    "caffe": "CAFFE · V2",
-    "cloudsen12": "CloudSEN12 · V2",
-    "dynamic_earthnet": "Dynamic EarthNet · V2",
-    "flair2": "FLAIR #2 · V2",
-    "fotw": "Fields of the World · V2",
-    "kuro_siwo": "Kuro Siwo · V2",
-    "pastis": "PASTIS · V2",
-    "hotosm_buildings": "HOTOSM Buildings",
-    "open_cities": "Open Cities",
-    "openearthmap-sar": "OpenEarthMap-SAR",
-    "spacenet2": "SpaceNet 2",
-    "spacenet7": "SpaceNet 7",
-    "loveda": "LoveDA",
-    "levir-cd-post": "LEVIR-CD (post)",
-    "sen1floods11-s1": "Sen1Floods11 · S1",
-    "sen1floods11-s2": "Sen1Floods11 · S2",
-    "bright-post-sar": "BRIGHT (post, SAR)",
-    "oscd-post": "OSCD (post)",
-}
+# Dataset id -> header label, in display order.
+DATASET_DISPLAY = {d: spec.display or d for d, spec in SPEC.datasets.items()}
 
 # Canonical metric name -> the label a reader needs to interpret the column.
 METRIC_LABEL = {"accuracy": "Top-1 accuracy", "map": "Micro mAP", "miou": "mIoU"}
@@ -398,8 +438,8 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     name = df["name"].astype(str)
 
     is_rgb_sweep = df["bands"].astype(str) == "rgb"
-    off_modality = (name.isin(TERRAMIND_OFF_MODALITY) & is_rgb_sweep) | (
-        name.isin(TERRAMIND_RGB_CONFIGS) & ~is_rgb_sweep
+    off_modality = (name.isin(RGB_SWEEP_DROP) & is_rgb_sweep) | (
+        name.isin(RGB_SWEEP_ONLY) & ~is_rgb_sweep
     )
     df = df[~off_modality].copy()
     name = df["name"].astype(str)
@@ -734,7 +774,7 @@ def _native_block(harmonized: pd.DataFrame, cells: pd.DataFrame) -> dict[str, ob
             "overall_meta": AGG_META[aggregation],
             "dataset_meta": dataset_meta(harmonized, datasets),
             "excluded": [],
-            "coverage": "partial",
+            "coverage": NATIVE_COVERAGE,
         }
         for aggregation in NATIVE_AGGREGATIONS
     }
@@ -977,15 +1017,12 @@ def sensitivity_matrix(views: list[dict[str, str]], benches: list[object]) -> di
 
 
 def _default_slice(rankings: dict[str, object]) -> dict[str, str]:
-    """Pick the conventional default, falling back to the first populated view."""
-    preferred = {
-        "task": "classification",
-        "probe": "linear",
-        "bandclass": "RGB",
-        "aggregation": "avg_rank",
-    }
+    """Pick the spec's default view, falling back to the first populated view."""
+    preferred = SPEC.views.default.model_dump()
     try:
-        rankings["classification"]["linear"]["RGB"]["avg_rank"]
+        rankings[preferred["task"]][preferred["probe"]][preferred["bandclass"]][
+            preferred["aggregation"]
+        ]
     except KeyError:  # allow-except: choose an available view when the preferred view is absent
         task = next(iter(rankings))
         probe = next(iter(rankings[task]))

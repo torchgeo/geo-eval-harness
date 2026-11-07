@@ -1,5 +1,7 @@
 paper/
 results/*
+# Leaderboard policy for scripts/regen_leaderboard.py.
+!results/leaderboard.yaml
 !results/contributed/
 results/contributed/*.csv
 # Track per-model results so model changes can include their benchmark data.
