@@ -3,10 +3,10 @@ repos:
     rev: v0.15.10
     hooks:
       - id: ruff
-        exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/legacy_run\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
+        exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
         args: ["--fix", "--show-fixes"]
       - id: ruff-format
-        exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/legacy_run\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
+        exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
 
   - repo: https://github.com/facebook/pyrefly-pre-commit
     rev: 1.2.0
@@ -42,6 +42,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: vulture
+        name: Check for dead code (vulture)
+        entry: uv run --no-sync python scripts/check_dead_code.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: explicit-except
         name: Require a reason for exception recovery
         language: pygrep
