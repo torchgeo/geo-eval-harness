@@ -71,6 +71,8 @@ class TimmPatchBenchModel(BenchModel):
             shape as ``"imagenet"`` but reads ``backbone.default_cfg``'s
             ``mean``/``std``; also requires ``len(bands) == 3``), or
             ``"none"`` (identity).
+        create_kwargs: Extra arguments for ``timm.create_model``, e.g.
+            ``{"dynamic_img_size": True}`` so a ViT accepts other input sizes.
     """
 
     _rgb_mean: torch.Tensor
@@ -95,6 +97,7 @@ class TimmPatchBenchModel(BenchModel):
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
+        create_kwargs: dict[str, Any] | None = None,
         **_kwargs: object,
     ) -> None:
         # Set pretraining stats before BenchModel builds its model_native normalizer.
@@ -124,6 +127,7 @@ class TimmPatchBenchModel(BenchModel):
             in_chans=self.num_channels,
             num_classes=0,
             global_pool=global_pool,
+            **(create_kwargs or {}),
         )
 
         # timm.models._manipulate.adapt_input_conv tiles [R, G, B] weights for extra channels.
@@ -272,9 +276,12 @@ class TimmModelSettings:
     auto_resize: bool = False
     target_size: int | None = None
     use_cls_token: bool = False
+    create_kwargs: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Validate settings before importing or constructing a backbone."""
+        if self.create_kwargs is not None and not isinstance(self.create_kwargs, dict):
+            raise TypeError("create_kwargs must be a mapping")
         for name in ("pretrained", "normalize", "auto_resize", "use_cls_token"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a boolean")

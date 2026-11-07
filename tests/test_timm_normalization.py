@@ -237,3 +237,20 @@ def test_unknown_timm_model_name_raises_clearly() -> None:
             model_name="this_model_definitely_does_not_exist_xyz",
             pretrained=False,
         )
+
+
+def test_create_kwargs_reach_timm_so_a_vit_accepts_other_sizes() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+
+    bands = _rgb_bands(mins=(0.0, 0.0, 0.0), maxs=(1.0, 1.0, 1.0))
+    model = TimmPatchBenchModel(
+        bands=bands,
+        model_name="vit_tiny_patch16_224",
+        pretrained=False,
+        input_normalization="none",
+        create_kwargs={"dynamic_img_size": True, "dynamic_img_pad": True},
+    )
+
+    with torch.no_grad():
+        for size in (112, 120):
+            assert model.forward_patch_features(torch.rand(1, 3, size, size)).shape == (1, 192)
