@@ -546,8 +546,12 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Infer NHWC when H == W and channels exceed the spatial dimensions; otherwise keep NCHW.
+        # Backbones that declare NHWC stage maps skip the shape guess, which fails once the grid
+        # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
+        # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
+            if getattr(self.backbone, "feature_layout", None) == "nhwc":
+                return feat.permute(0, 3, 1, 2).contiguous()
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()

@@ -39,6 +39,10 @@ class BenchModel(nn.Module, ABC):
     #: Skip the unused strategy normalizer and its ``expected_input_unit`` validation.
     handles_own_normalization: bool = False
 
+    #: ``"nhwc"`` when hooked 4D stage maps are channels-last (Swin); ``None`` lets the
+    #: segmentation probe infer the layout from the shape.
+    feature_layout: str | None = None
+
     def __init__(
         self,
         bands: list[BandSpec],
