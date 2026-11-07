@@ -484,7 +484,7 @@ def test_segmentation_protocol_table_is_per_dataset() -> None:
     assert rl.segmentation_variant(lora, "spacenet7") == "canonical"
 
 
-@pytest.mark.parametrize("dataset", ["sen1floods11-s1", "sen1floods11-s2", "oscd-post"])
+@pytest.mark.parametrize("dataset", ["sen1floods11-s1", "sen1floods11-s2"])
 def test_segmentation_s1_s2_protocol(dataset: str) -> None:
     assert rl.segmentation_protocol(dataset) == (30, 5e-4)
     setup = {"adaptation": "lora", "epochs": "30", "backbone_lr": "0.0005", "head_lr": "0.001"}
@@ -493,6 +493,20 @@ def test_segmentation_s1_s2_protocol(dataset: str) -> None:
     assert rl.segmentation_variant(setup, dataset) == "backbone_lr=0.0001"
     setup.update(adaptation="full", backbone_lr="1e-05")
     assert rl.segmentation_variant(setup, dataset) == "canonical"
+
+
+def test_oscd_is_excluded_from_all_segmentation_protocols() -> None:
+    raw = pd.DataFrame(
+        [
+            _seg_row("seg_a", "burn_scars", 0.5),
+            _seg_row("seg_a", "oscd-post", 0.99, epochs="30"),
+            _seg_row("seg_a", "oscd-post", 0.99, epochs="50"),
+        ]
+    )
+    assert "oscd-post" not in rl.SEG_PROTOCOL
+    out = rl.harmonize(raw)
+    assert set(out["dataset"]) == {"burn_scars"}
+    assert set(out["probe"]) == {FROZEN}
 
 
 def test_segmentation_pyramid_names_neck_and_anyup() -> None:

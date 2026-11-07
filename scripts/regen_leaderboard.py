@@ -43,7 +43,7 @@ ABLATION_TAGS = ("_lsat_", "_naip_", "_sar_")
 LANDSAT_SUB_SUFFIX = "_landsat_as_s2"
 
 # Datasets excluded from the leaderboard only (all_results.csv is untouched).
-DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln"})
+DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln", "oscd-post"})
 
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
@@ -89,7 +89,6 @@ SEG_PROTOCOL: dict[str, tuple[int, float]] = {
     "spacenet7": (20, 1e-4),
     "sen1floods11-s1": (30, 5e-4),
     "sen1floods11-s2": (30, 5e-4),
-    "oscd-post": (30, 5e-4),
 }
 SEG_PROTOCOL_DEFAULT: tuple[int, float] = (30, 1e-4)
 SEG_HEAD_LR = 1e-3
