@@ -150,6 +150,7 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "olmoearth_v1_2_tiny": ("OlmoEarth v1.2 tiny", False),
     "olmoearth_v1_2_small": ("OlmoEarth v1.2 small", False),
     "olmoearth_v1_2_base": ("OlmoEarth v1.2 base", False),
+    "olmoearth_v1_3_base": ("OlmoEarth v1.3 base", False),
     "tgeo_croma_base": ("CROMA base", False),
     "tgeo_croma_large": ("CROMA large", False),
     "terrafm_base": ("TerraFM base", False),

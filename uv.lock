@@ -1114,7 +1114,7 @@ requires-dist = [
     { name = "mdformat", marker = "extra == 'dev'", specifier = ">=0.7.22" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=2" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "olmoearth-pretrain-minimal", marker = "extra == 'olmoearth'", specifier = ">=0.0.6" },
+    { name = "olmoearth-pretrain-minimal", marker = "extra == 'olmoearth'", specifier = ">=0.1.5" },
     { name = "pandas", specifier = ">=2" },
     { name = "peft", marker = "extra == 'lora'", specifier = ">=0.21" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3" },
@@ -2285,7 +2285,7 @@ wheels = [
 
 [[package]]
 name = "olmoearth-pretrain-minimal"
-version = "0.0.6"
+version = "0.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
@@ -2294,9 +2294,9 @@ dependencies = [
     { name = "torch" },
     { name = "universal-pathlib" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3b/d1/0480b162b6c4bc7d1ce2f305dfc661b095acdef486e873a6f334ce442c5f/olmoearth_pretrain_minimal-0.0.6.tar.gz", hash = "sha256:1eaaffd270749e2d614da4af405776d4e46d4c4e5760c7cf3b61104b8b00c43e", size = 76511, upload-time = "2026-06-25T16:33:01.008Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/28/fcb0c1925e98afca40b183911adb9c747357dadcd5febb8747c5dfbe81b7/olmoearth_pretrain_minimal-0.1.5.tar.gz", hash = "sha256:45bc2f8f7f9df7599cb55abc9f4f31aa9227e252165015427bd2bdc814549258", size = 116647, upload-time = "2026-10-21T22:59:16.307Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/40/a591f2f77fb580e18c58be070614b9e1f5a008f6f78297274a9b4e169fa4/olmoearth_pretrain_minimal-0.0.6-py3-none-any.whl", hash = "sha256:57ff6566162eb152e6c4ef1ce1e1ca2dbff2a0a81f2a93d70416aef7cd2f5b2c", size = 78282, upload-time = "2026-06-25T16:32:59.803Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/3c/9377c4f4051f1c0fb5c2e3d5655013002a40cf1ed092631e27d2750e0cbf/olmoearth_pretrain_minimal-0.1.5-py3-none-any.whl", hash = "sha256:62664d578a97527eb6a26f9ded928bb9b292e2b701a118c46f3bed9a323781d4", size = 107521, upload-time = "2026-10-21T22:59:14.865Z" },
 ]
 
 [[package]]

@@ -106,7 +106,7 @@ optional-dependencies.lora = [
   "peft>=0.21", # LoRA segmentation fine-tuning.
 ]
 optional-dependencies.olmoearth = [
-  "olmoearth-pretrain-minimal>=0.0.6", # OlmoEarth v1.2 weights require this version.
+  "olmoearth-pretrain-minimal>=0.1.5", # OlmoEarth v1.3 weights require this version.
 ]
 urls.Documentation = "https://torchgeo.org/geo-eval-harness/"
 urls.Homepage = "https://github.com/torchgeo/geo-eval-harness"
