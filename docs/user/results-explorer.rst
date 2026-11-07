@@ -22,12 +22,20 @@ archived JSON snapshots with
 It covers classification (``knn5`` / ``linear``), segmentation (``seg-<head>``
 rows with their setup columns, reported as mIoU; see
 :ref:`segmentation-setup-columns`), intrinsic dimension, and the cost/throughput
-measurements.  New snapshots leave out segmentation rows without setup columns
-(the legacy ``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt``
-grids); archived snapshots keep them.  The segmentation method menus are
+measurements.  Segmentation rows without setup columns (the legacy
+``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt`` grids) are left
+out of every snapshot, archived ones included.  The segmentation method menus are
 ``seg-<head>`` split by ``adaptation`` (frozen, LoRA, full fine-tuning).  ``compute_cost.csv`` is a
 wide table that the script melts into the long ``method="profile"`` rows the
 page expects.
+
+The page inlines its data as one compact payload: each distinct row is stored
+once across all snapshots, every column is dictionary-encoded, and the page
+expands it in the browser.  New dated snapshots in
+``docs/_static/_results_snapshots`` use the same packed form; older snapshots
+stay as plain lists of rows.  The script refuses to write a page or snapshot
+over 50 MB, half of GitHub's 100 MB file limit, so a results PR that would
+outgrow it fails its own ``Results explorer`` check.
 
 The page is regenerated automatically: whenever a results CSV lands on
 ``main``, the ``Results explorer`` GitHub Actions workflow reruns the script
