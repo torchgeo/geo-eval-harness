@@ -51,6 +51,7 @@ torchgeo encoders
 .. autoclass:: TorchGeoSwinBench
 .. autoclass:: TorchGeoScaleMAEBench
 .. autoclass:: TorchGeoDOFABench
+.. autoclass:: TorchGeoCopernicusFMBench
 .. autoclass:: TorchGeoEarthLocBench
 
 OlmoEarth

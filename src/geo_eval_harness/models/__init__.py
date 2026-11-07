@@ -27,6 +27,7 @@ from .terratorch_models import (
     TerraTorchTerraMindBench,
 )
 from .timm import TimmModelSettings, TimmPatchBenchModel
+from .torchgeo_copernicusfm import TorchGeoCopernicusFMBench
 from .torchgeo_models import (
     TorchGeoCromaBench,
     TorchGeoDEOBench,
@@ -62,6 +63,7 @@ __all__: list[str] = [
     "TerraTorchTerraMindBench",
     "TimmModelSettings",
     "TimmPatchBenchModel",
+    "TorchGeoCopernicusFMBench",
     "TorchGeoCromaBench",
     "TorchGeoDEOBench",
     "TorchGeoDOFABench",
