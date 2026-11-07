@@ -63,6 +63,11 @@ AnySat
 
 .. autoclass:: AnySatBenchModel
 
+THOR
+^^^^
+
+.. autoclass:: ThorBenchModel
+
 SAM 3
 ^^^^^
 
