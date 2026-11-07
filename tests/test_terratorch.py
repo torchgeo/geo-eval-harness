@@ -12,6 +12,7 @@ from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
+    _sar_to_db,
 )
 
 terratorch_available = find_spec("terratorch") is not None
@@ -373,6 +374,18 @@ def test_terramind_s1_without_sar_bands_raises(mock_registry: dict[str, Any]) ->
         TerraTorchTerraMindBench(
             bands=_bands(["red", "green", "blue"]), normalization="identity", modality="S1GRD"
         )
+
+
+def test_terramind_sar_to_db_converts_only_selected_linear_channels() -> None:
+    dem = BandSpec(sensor="dem", name="dem", source_name="dem", mean=0.0, std=1.0, min=0.0, max=1.0)
+    bands = [dem, *_sar(["vh"], "db"), *_sar(["vv"], "linear_power")]
+    images = torch.tensor([7.0, -20.0, 0.1]).view(1, 3, 1, 1)
+    original = images.clone()
+
+    actual = _sar_to_db(bands, [2, 1])(images)
+
+    torch.testing.assert_close(actual, torch.tensor([7.0, -20.0, -10.0]).view_as(images))
+    torch.testing.assert_close(images, original)
 
 
 @requires_terratorch

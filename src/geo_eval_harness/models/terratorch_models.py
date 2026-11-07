@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import BandMappingPolicy, map_to_model_bands, select_src_bands
-from ._input_units import InputUnit, convert_unit, detect_input_unit
+from ._input_units import InputUnit, convert_unit, detect_input_unit, linear_power_to_db
 from ._normalization import NormalizationStrategy
 from ._pooling import VALID_MODES, pool_tokens
 from .interface import BenchModel
@@ -308,7 +308,7 @@ def _sar_to_db(bands: list[BandSpec], indices: list[int]) -> Callable[[torch.Ten
 
     def _f(x: torch.Tensor) -> torch.Tensor:
         x = x.clone()
-        x[:, log_channels] = 10.0 * torch.log10(x[:, log_channels].clamp(min=1e-6))
+        x[:, log_channels] = linear_power_to_db(x[:, log_channels])
         return x
 
     return _f
