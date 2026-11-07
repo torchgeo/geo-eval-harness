@@ -20,6 +20,7 @@ from .segmentation_heads import (
     UPerNetHead,
     ViTNeck,
 )
+from .skysense import SkySenseBench
 from .terrafm import TerraFMBench
 from .terratorch_models import (
     TerraTorchClayBench,
@@ -56,6 +57,7 @@ __all__: list[str] = [
     "RCFBench",
     "RCFModelSettings",
     "SAM3Encoder",
+    "SkySenseBench",
     "TerraFMBench",
     "TerraTorchClayBench",
     "TerraTorchPrithviBench",
