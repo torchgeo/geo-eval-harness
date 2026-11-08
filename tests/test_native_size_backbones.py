@@ -46,10 +46,16 @@ def _random_pos_embed_factory(monkeypatch: pytest.MonkeyPatch) -> dict[str, torc
     return built
 
 
-def _probe_step(
-    net: BenchModel, layers: list[str], size: int, grid: int, *, lora: bool = False
+def _probe_step(  # noqa: PLR0913 - test helper options
+    net: BenchModel,
+    layers: list[str],
+    size: int,
+    grid: int,
+    *,
+    lora: bool = False,
+    train: bool = True,
 ) -> None:
-    """Dry-run the probe, then train one step on ``size`` inputs through the backbone."""
+    """Dry-run the probe, then (if ``train``) train one step on ``size`` inputs."""
     extra: dict = (
         {"lora_rank": 4, "lora_target_modules": _LORA, "backbone_learning_rate": 1e-4}
         if lora
@@ -60,6 +66,8 @@ def _probe_step(
     )
     probe, solver = build_seg_probe_and_solver(net, 2, cfg, torch.device("cpu"))
     assert probe.feature_hw_list == [(grid, grid)] * len(layers)
+    if not train:
+        return
     solver._set_train_mode()
     x, y = torch.rand(2, 3, size, size) * 255, torch.randint(0, 2, (2, size, size))
     logits = solver.model(x)
@@ -113,7 +121,10 @@ def test_dofa_probe_trains_at_native_sizes(unweighted: None, size: int) -> None:
     torch.manual_seed(0)
     kwargs = {} if size == 224 else {"img_size": size, "target_size": size}
     net = TorchGeoDOFABench(_rgb_bands(), **kwargs)
-    _probe_step(net, ["blocks.11", "blocks.8", "blocks.5", "blocks.2"], size, size // 16)
+    # 512-px training steps run in the slow pretrained tests; here the probe dry run suffices.
+    _probe_step(
+        net, ["blocks.11", "blocks.8", "blocks.5", "blocks.2"], size, size // 16, train=size < 512
+    )
 
 
 def test_dofa_lora_trains_through_the_resampled_grid(unweighted: None) -> None:
@@ -192,7 +203,7 @@ def test_panopticon_probe_trains_on_native_inputs(unweighted: None, native: int,
     kwargs = {} if size == 224 else {"img_size": size, "target_size": size}
     net = TorchGeoPanopticonBench(_rgb_bands(), **kwargs)
     layers = ["model.blocks.11", "model.blocks.8", "model.blocks.5", "model.blocks.2"]
-    _probe_step(net, layers, native, size // 14)
+    _probe_step(net, layers, native, size // 14, train=native < 512)
 
 
 @pytest.mark.parametrize(
@@ -238,7 +249,9 @@ def test_vit_img_size_builds_the_matching_grid(img_size: int | None, grid: int) 
     net = _vit(img_size)
     assert net.backbone.pos_embed.shape == (1, 1 + grid * grid, 768)
     assert net.probe_input_size == img_size
-    _probe_step(net, ["blocks.11", "blocks.8", "blocks.5", "blocks.2"], grid * 16, grid)
+    _probe_step(
+        net, ["blocks.11", "blocks.8", "blocks.5", "blocks.2"], grid * 16, grid, train=grid < 32
+    )
 
 
 def test_timm_img_size_is_the_default_resize_target() -> None:

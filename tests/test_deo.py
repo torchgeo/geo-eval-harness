@@ -214,7 +214,7 @@ def test_target_size_must_be_a_positive_multiple_of_32(unweighted: None, target_
         TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=target_size)
 
 
-def _native_size_step(net: TorchGeoDEOBench, size: int) -> None:
+def _native_size_step(net: TorchGeoDEOBench, size: int, *, train: bool = True) -> None:
     from geo_eval_harness.config.schema import SegmentationConfig
     from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 
@@ -222,6 +222,8 @@ def _native_size_step(net: TorchGeoDEOBench, size: int) -> None:
     probe, solver = build_seg_probe_and_solver(net, 2, cfg, torch.device("cpu"))
     assert probe.channels_list == [1024, 512, 256, 128]
     assert probe.feature_hw_list == [(size // s, size // s) for s in (32, 16, 8, 4)]
+    if not train:
+        return
     solver._set_train_mode()
     x, y = torch.rand(2, 3, size, size) * 255, torch.randint(0, 2, (2, size, size))
     logits = solver.model(x)
@@ -238,7 +240,9 @@ def _native_size_step(net: TorchGeoDEOBench, size: int) -> None:
 def test_probe_trains_at_native_sizes(unweighted: None, size: int) -> None:
     del unweighted
     torch.manual_seed(0)
-    _native_size_step(TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=size), size)
+    # The 512-px training step runs in the slow pretrained test; here the probe dry run suffices.
+    net = TorchGeoDEOBench(_rgb_bands(), mode="rgb", target_size=size)
+    _native_size_step(net, size, train=size < 512)
 
 
 def test_default_224_stage_maps_match_torchgeo_deo(unweighted: None) -> None:
