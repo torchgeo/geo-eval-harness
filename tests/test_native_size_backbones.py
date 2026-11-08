@@ -241,6 +241,31 @@ def test_vit_img_size_builds_the_matching_grid(img_size: int | None, grid: int) 
     _probe_step(net, ["blocks.11", "blocks.8", "blocks.5", "blocks.2"], grid * 16, grid)
 
 
+def test_timm_img_size_is_the_default_resize_target() -> None:
+    """timm keeps 224 in default_cfg after an img_size override, so resize to img_size instead."""
+    net = TimmPatchBenchModel(
+        _rgb_bands(),
+        model_name="swin_tiny_patch4_window7_224",
+        pretrained=False,
+        auto_resize=True,
+        img_size=256,
+    )
+    assert net.target_size == 256
+    assert net(torch.rand(1, 3, 200, 200)).shape[0] == 1
+
+
+def test_timm_img_size_rejects_another_resize_target() -> None:
+    with pytest.raises(ValueError, match="needs target_size=256"):
+        TimmPatchBenchModel(
+            _rgb_bands(),
+            model_name="swin_tiny_patch4_window7_224",
+            pretrained=False,
+            auto_resize=True,
+            img_size=256,
+            target_size=224,
+        )
+
+
 # --- Pretrained weights (CPU) -----------------------------------------------------------------
 
 _BUILDERS: dict[str, tuple[Callable[[int], BenchModel], list[str], int]] = {
