@@ -124,7 +124,7 @@ class TimmPatchBenchModel(BenchModel):
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
-        size_kwargs = {} if img_size is None else {"img_size": img_size}
+        size_kwargs: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
