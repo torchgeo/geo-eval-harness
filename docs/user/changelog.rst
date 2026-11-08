@@ -20,6 +20,7 @@ Changed
 Added
 ^^^^^
 
+* RAMEN (ViT-B) for classification and segmentation (``ramen_base``). The encoder is reimplemented from a pinned upstream commit, and the weights are pinned and checked against their sha256. Sentinel-2 bands are mapped by name, other optical bands by wavelength, and Sentinel-1 dB bands by polarisation and orbit; ``input_gsd`` is set per dataset, ``target_gsd`` sets the token grid, and segmentation reads ``taps.<i>``. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.

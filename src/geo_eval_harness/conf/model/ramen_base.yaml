@@ -1,0 +1,56 @@
+name: ramen_base
+target: geo_eval_harness.models.RamenBenchModel
+# RAMEN pretrains and evaluates on per-dataset z-scored inputs and publishes no statistics.
+supports_model_normalization: false
+# Tiles keep their native size. input_gsd is the GSD of the pixels the model receives and has no
+# default: datasets without an override below need model.kwargs.input_gsd. target_gsd sets the
+# token grid, int(side * input_gsd / target_gsd) per side; 40 m is the authors' PANGAEA default for
+# 10 m inputs, and larger tiles use a coarser target to stay near a 32 x 32 grid, as the authors do
+# for HLS Burn Scars (30 m, 512 px -> 480 m).
+kwargs:
+  input_gsd: null
+  target_gsd: 40.0
+input:
+  image_size: null
+segmentation:
+  lora_target_modules: 'encoder\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: [taps.11, taps.7, taps.5, taps.3]
+dataset_overrides:
+  eurosat:  # S2 10 m, 64 px
+    kwargs: {input_gsd: 10.0}
+  eurosat-spatial:
+    kwargs: {input_gsd: 10.0}
+  m-eurosat:
+    kwargs: {input_gsd: 10.0}
+  m-brick-kiln:  # S2 10 m, 64 px
+    kwargs: {input_gsd: 10.0}
+  m-bigearthnet:  # S2 10 m, 120 px
+    kwargs: {input_gsd: 10.0}
+  benv2:  # S2 + S1 dB 10 m, 120 px
+    kwargs: {input_gsd: 10.0}
+  so2sat:  # S2 10 m, 32 px; 20 m is the finest target GSD in MMEarth pretraining
+    kwargs: {input_gsd: 10.0, target_gsd: 20.0}
+  m-so2sat:
+    kwargs: {input_gsd: 10.0, target_gsd: 20.0}
+  pastis:  # S2 10 m, 128 px
+    kwargs: {input_gsd: 10.0}
+  fotw:  # S2 10 m, 256 px
+    kwargs: {input_gsd: 10.0, target_gsd: 80.0}
+  oscd-post:  # S2 10 m, 256 px
+    kwargs: {input_gsd: 10.0, target_gsd: 80.0}
+  cloudsen12:  # S2 L1C 10 m, 512 px
+    kwargs: {input_gsd: 10.0, target_gsd: 160.0}
+  sen1floods11-s2:  # S2 10 m, 512 px
+    kwargs: {input_gsd: 10.0, target_gsd: 160.0}
+  sen1floods11-s1:  # S1 dB 10 m, 512 px
+    kwargs: {input_gsd: 10.0, target_gsd: 160.0}
+  burn_scars:  # HLS 30 m, 512 px; the authors' PANGAEA setting
+    kwargs: {input_gsd: 30.0, target_gsd: 480.0}
+  forestnet:  # Landsat-8 pan-sharpened 15 m, 332 px
+    kwargs: {input_gsd: 15.0, target_gsd: 160.0}
+  m-forestnet:
+    kwargs: {input_gsd: 15.0, target_gsd: 160.0}
+  ucmerced:  # RGB 0.3048 m, 256 px; 3 m is the finest target GSD in pretraining
+    kwargs: {input_gsd: 0.3048, target_gsd: 3.0}
+  loveda:  # RGB 0.3 m, 1024 px
+    kwargs: {input_gsd: 0.3, target_gsd: 10.0}

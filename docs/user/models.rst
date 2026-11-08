@@ -398,6 +398,24 @@ AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's. 
 models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
 pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
 
+RAMEN
+^^^^^
+
+:class:`~geo_eval_harness.models.RamenBenchModel` wraps RAMEN (ViT-B; `Houdré et al., CVPR 2026 <https://arxiv.org/abs/2512.05025>`_), a resolution-adjustable encoder pretrained by masked autoencoding on FLAIR-HUB, WorldStrat and MMEarth. The preset is ``ramen_base``. The encoder is reimplemented from `nicolashoudre/RAMEN <https://github.com/nicolashoudre/RAMEN>`_ at a pinned commit, because upstream ships it inside a PANGAEA fork rather than as a library. The weights come from a pinned commit of `nicolashoudre/RAMEN <https://huggingface.co/nicolashoudre/RAMEN>`_ on Hugging Face and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model ramen_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model ramen_base --dataset sen1floods11-s1 --bands all
+
+RAMEN has no patch embedding. It projects every pixel to a token from its channels' wavelengths or polarisations, resamples that feature map from the input GSD to a target GSD, and attends over one token per pixel of the resampled grid for each modality. The wrapper adapts each input as follows:
+
+* It groups channels by sensor into modalities. Sentinel-2 bands take the wavelengths of RAMEN's pretraining config by canonical name, and other optical bands their declared ``wavelength_um``. Sentinel-1 VV, VH, HV and HH in dB use the radar projector's ascending vectors (``s1``, ``sar``, ``s1_asc``) or descending ones (``s1_desc``). SAR in linear power or without a declared unit, derived SAR bands, elevation, and optical bands without a wavelength raise an error.
+* Tiles keep their native size (``input.image_size: null``). ``input_gsd``, the GSD of the pixels the model receives, has no default; the preset sets it for Sentinel-2/-1, HLS, Landsat, UC Merced and LoveDA datasets, and other datasets need ``model.kwargs.input_gsd``. FLAIR-HUB, which overlaps FLAIR #2, is part of RAMEN's pretraining data.
+* ``target_gsd`` sets the token grid to ``int(side * input_gsd / target_gsd)`` per side. It is 40 m by default, the authors' PANGAEA setting for 10 m inputs; the preset raises it for larger tiles to stay near 32 x 32 tokens, as the authors do for HLS Burn Scars (480 m). ``max_tokens`` (4,096) rejects larger grids.
+
+Classification embeddings average each modality's final tokens and concatenate the modalities, so their width is 768 per modality. For segmentation, hook ``taps.<i>``: it receives block ``i``'s tokens as ``[B, M * 768, h, w]``, the layout of upstream's ``output_layers`` (3, 5, 7 and 11 in the authors' PANGAEA config). Model normalization is not offered, since RAMEN standardizes inputs with per-dataset statistics in pretraining and evaluation.
+
 Adding a new model
 ------------------
 

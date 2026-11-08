@@ -7,6 +7,7 @@ from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
 from .olmoearth import OlmoEarthBenchModel
+from .ramen import RamenBenchModel
 from .rcf import RCFBench, RCFModelSettings
 from .sam3 import SAM3Encoder
 from .segmentation_heads import (
@@ -55,6 +56,7 @@ __all__: list[str] = [
     "PatchLinearHead",
     "RCFBench",
     "RCFModelSettings",
+    "RamenBenchModel",
     "SAM3Encoder",
     "TerraFMBench",
     "TerraTorchClayBench",

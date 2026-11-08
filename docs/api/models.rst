@@ -63,6 +63,11 @@ AnySat
 
 .. autoclass:: AnySatBenchModel
 
+RAMEN
+^^^^^
+
+.. autoclass:: RamenBenchModel
+
 SAM 3
 ^^^^^
 
