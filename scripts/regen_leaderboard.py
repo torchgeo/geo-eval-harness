@@ -91,7 +91,20 @@ SEG_PROTOCOL: dict[str, tuple[int, float]] = {
     "sen1floods11-s2": (30, 5e-4),
 }
 SEG_PROTOCOL_DEFAULT: tuple[int, float] = (30, 1e-4)
+# Canonical segmentation input size (the recorded ``image_size``) per dataset.
+# Unlisted datasets use SEG_IMAGE_SIZE_DEFAULT. Rows at another size, or with no
+# recorded size, are an ``image_size=<n>`` variant. The native-size datasets are
+# listed so that switching one to native is a one-line change (e.g. 512).
+SEG_IMAGE_SIZE: dict[str, int] = {
+    "fotw": 224,
+    "loveda": 224,
+    "spacenet2": 224,
+    "spacenet7": 224,
+}
+SEG_IMAGE_SIZE_DEFAULT = 224
 SEG_HEAD_LR = 1e-3
+# Columns that identify a segmentation setup: its seeds share all of them.
+SEG_SETUP_COLS = (*SETUP_COLS, "image_size")
 SEG_FULL_BACKBONE_LR = 1e-5
 
 # A segmentation probe is ``<adaptation>/<decoder>/<pyramid>/<protocol>``; the
@@ -283,11 +296,27 @@ def segmentation_protocol(dataset: str) -> tuple[int, float]:
     return SEG_PROTOCOL.get(dataset, SEG_PROTOCOL_DEFAULT)
 
 
+def segmentation_image_size(dataset: str) -> int:
+    """Return the canonical segmentation input size (``image_size``) of a dataset."""
+    return SEG_IMAGE_SIZE.get(dataset, SEG_IMAGE_SIZE_DEFAULT)
+
+
+def _image_size_text(value: object) -> str:
+    """Return an ``image_size`` cell as integer text; empty and NaN cells become ``""``."""
+    text = _setup_text(value, "image_size")
+    try:
+        number = float(text)
+    except ValueError:  # allow-except: empty or malformed cells compare as their own text
+        return text
+    return str(int(number)) if number.is_integer() else text
+
+
 def segmentation_variant(setup: dict[str, str], dataset: str) -> str:
     """Name how a segmentation setup departs from the dataset's canonical protocol.
 
     Returns :data:`SEG_CANONICAL`, or ``key=value`` parts joined by ``,`` for the
-    epochs, backbone LR and head LR that differ (for example ``epochs=50``).
+    epochs, backbone LR, head LR and input size that differ (for example
+    ``epochs=50`` or ``image_size=512``). An unrecorded size is ``image_size=unset``.
     """
     epochs, lora_lr = segmentation_protocol(dataset)
     backbone_lr = {"frozen": None, "lora": lora_lr, "full": SEG_FULL_BACKBONE_LR}.get(
@@ -303,6 +332,8 @@ def segmentation_variant(setup: dict[str, str], dataset: str) -> str:
         parts.append(f"backbone_lr={setup['backbone_lr'] or 'unset'}")
     if not _same_number(setup["head_lr"], SEG_HEAD_LR):
         parts.append(f"head_lr={setup['head_lr'] or 'unset'}")
+    if not _same_number(setup["image_size"], segmentation_image_size(dataset)):
+        parts.append(f"image_size={setup['image_size'] or 'unset'}")
     return ",".join(parts) or SEG_CANONICAL
 
 
@@ -356,7 +387,8 @@ def _probe_sort_key(probe: str) -> tuple[object, ...]:
 def _aggregate_seeds(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     """Average the seeds of each segmentation setup into one cell (mean, sd, n).
 
-    Seeds share every setup column, band list and source config.  Two different
+    Seeds share every setup column, input size, band list and source config, so
+    224 px and native-size seeds of one setup never share a cell.  Two different
     setups with the same band list that land in the same leaderboard cell are an
     error: the view axes do not distinguish them, so averaging them would mix
     experiments.  Two band lists of one band class (``vv,vh`` and ``vv``) stay
@@ -367,7 +399,7 @@ def _aggregate_seeds(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     other = df[~seg].assign(score_sd=float("nan"), n_seeds=1)
     if not seg.any():
         return other
-    group = [*keys, "source_model", "bands", *SETUP_COLS]
+    group = [*keys, "source_model", "bands", *SEG_SETUP_COLS]
     stats = (
         df[seg]
         .groupby(group, dropna=False, sort=False)["score"]
@@ -379,7 +411,7 @@ def _aggregate_seeds(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
         offenders = stats.loc[clash, [*group, "n_seeds"]].sort_values([*keys, "source_model"])
         raise ValueError(
             "Different segmentation setups share one leaderboard cell; the view axes "
-            "(adaptation, decoder, pyramid, protocol) do not separate them.\n"
+            "(adaptation, decoder, pyramid, protocol incl. image size) do not separate them.\n"
             f"{offenders.to_string(index=False)}"
         )
     return pd.concat([other, stats], ignore_index=True)
@@ -430,6 +462,8 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     for column in SETUP_COLS:
         values = df[column] if column in df else pd.Series(pd.NA, index=df.index)
         df[column] = [_setup_text(value, column) for value in values]
+    sizes = df["image_size"] if "image_size" in df else pd.Series(pd.NA, index=df.index)
+    df["image_size"] = [_image_size_text(value) for value in sizes]
     # Rows without setup columns predate them (legacy seg-linear/fpn/dpt/conv_block
     # grids); they are retired from display.
     df = df[~(is_segmentation & (df["adaptation"] == ""))].copy()
@@ -438,7 +472,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
         df.loc[is_segmentation, "probe"] = [
             segmentation_probe(setup, dataset)
             for setup, dataset in zip(
-                df.loc[is_segmentation, list(SETUP_COLS)].to_dict("records"),
+                df.loc[is_segmentation, list(SEG_SETUP_COLS)].to_dict("records"),
                 df.loc[is_segmentation, "dataset"],
                 strict=True,
             )
@@ -470,7 +504,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     has_landsat = df.groupby(keys)["is_landsat_sub"].transform("any")
     df = df[~(has_landsat & ~df["is_landsat_sub"])]
     df = df.assign(bands=df["bands"].astype(str))
-    df = _aggregate_seeds(df[[*keys, "source_model", "bands", *SETUP_COLS, "score"]], keys)
+    df = _aggregate_seeds(df[[*keys, "source_model", "bands", *SEG_SETUP_COLS, "score"]], keys)
     return df[[*keys, "source_model", "score", "score_sd", "n_seeds"]].reset_index(drop=True)
 
 

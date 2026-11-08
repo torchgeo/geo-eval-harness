@@ -78,12 +78,18 @@ Segmentation views are built from the setup columns of each result row (see
   spacenet7); 30 epochs and LoRA LR ``5e-4`` on sen1floods11-s1,
   sen1floods11-s2; 30 epochs and LoRA LR ``1e-4`` on
   every other dataset.
-  **Show variants** adds a **Protocol** selector for the other epoch and
-  learning-rate setups. Variants are ranked like any view but left out of the
-  sensitivity heatmap.
+  The canonical input size is 224 px on every dataset for now
+  (``SEG_IMAGE_SIZE`` in the same file, keyed by dataset). Rows trained and
+  evaluated at another ``image_size`` (for example native 256 px on fotw or
+  512 px on spacenet2, spacenet7 and loveda), or with no recorded size, are
+  ``image_size=<n>`` variants.
+  **Show variants** adds a **Protocol** selector for the other epoch,
+  learning-rate and input-size setups. Variants are ranked like any view but
+  left out of the sensitivity heatmap.
 * Each cell is the mean over seeds, with the standard deviation and the
-  number of seeds underneath. Seeds must share every setup column; two
-  different setups in one cell stop the generator with an error.
+  number of seeds underneath. Seeds must share every setup column and the
+  input size; two different setups in one cell stop the generator with an
+  error.
 * Segmentation rows without setup columns (the legacy ``seg-linear`` /
   ``seg-fpn`` / ``seg-dpt`` / ``seg-conv_block`` grids) are not shown.
 * OSCD post-only segmentation (``oscd-post``) is excluded from the published
