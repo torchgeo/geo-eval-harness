@@ -252,8 +252,8 @@ _OOM_SETUPS = [
     ("prithvi_600", "lora", "neck"),
     ("prithvi_600", "lora", "neck-unet"),
 ]
-#: Patch grid at 512 px of the shallowest hooked layer.
-_GRID_512 = {"swinv2_base": 128, "swinv2_large": 128, "prithvi_600": 32, "olmoearth_v1_2_base": 64}
+#: Patch grid at 512 px of the shallowest hooked layer (Prithvi-600 is ViT-H/14: 512 // 14 = 36).
+_GRID_512 = {"swinv2_base": 128, "swinv2_large": 128, "prithvi_600": 36, "olmoearth_v1_2_base": 64}
 
 
 @pytest.mark.slow
