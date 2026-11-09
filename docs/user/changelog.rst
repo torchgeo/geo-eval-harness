@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* ConvNeXt DINOv3 Tiny, Small, and Base presets (``timm/convnext_{tiny,small,base}_dinov3``, timm ``*.dinov3_lvd1689m``) with the same segmentation layers and LoRA targets as ``timm/convnext_large_dinov3``. ``timm/convnext_small`` gains the ConvNeXt LoRA targets; frozen and full fine-tuning hashes are unchanged.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
