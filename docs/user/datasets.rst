@@ -64,6 +64,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``oscd-post``
      - ``data/oscd-post/``
      - torchgeo's ``OSCD`` downloader
+   * - ``planteur``
+     - ``data/planteur/``
+     - Hugging Face ``allenai/planteur-benchmark``, pinned commit, monthly mosaics stacked into per-split arrays
 
 Downloading
 -----------
@@ -90,6 +93,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download sen1floods11-s1                          # Sen1Floods11 (S1 + S2)
    $ geo-eval-harness download bright-post-sar                          # BRIGHT post-event SAR
    $ geo-eval-harness download oscd-post                                # torchgeo OSCD (post image)
+   $ geo-eval-harness download planteur                                 # PLANTEUR crop types
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -243,26 +247,9 @@ CLI name             #cls   bands notes                                        C
 Other
 -----
 
-======================= ============================================================================
-CLI name                Class
-======================= ============================================================================
-``eurosat``             :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
-``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
-``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
-``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
-
-``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
-``openearthmap-sar``    :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
-``loveda``              :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
-``levir-cd-post``       :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
-``sen1floods11-s1``     :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
-``sen1floods11-s2``     :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
-``bright-post-sar``     :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
-``bright-post-sar-rgb`` :class:`~geo_eval_harness.datasets.BRIGHTPostSARRGB`  (building damage segmentation, repeated SAR)
-``oscd-post``           :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
-======================= ============================================================================
-
+``planteur``            :class:`~geo_eval_harness.datasets.PLANTEUR`  (crop-type segmentation, S2 + S1, 12 months)
+``planteur_loio_*``     ``PLANTEURLOIOGuadeloupe`` … ``PLANTEURLOIOMayotte``  (leave-one-island-out folds)
+======================= =====================================================================
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
 published 60/20/20 split.  It is the most-divergent benchmark in the GFM
 literature — the same Scale-MAE checkpoint is reported at 33.0 and 89.6
@@ -435,7 +422,10 @@ HOTOSM buildings — segmentation
    ``default`` partition is the version reported on the leaderboard. HOTOSM results on the
    full train split are not comparable with leaderboard rows.
 
-======================== ============ ===============================================================
+======================== ============ ========================================================
+PLANTEUR — segmentation
+-----------------------
+
 ``--partition``          train tiles  use
 ======================== ============ ===============================================================
 ``default``              5,000        benchmark and leaderboard version
@@ -490,6 +480,10 @@ The classes, in model output order, are background, building, road, water, barre
 The download fetches the MD5-verified ``Train.zip`` (4.0 GB) and ``Val.zip`` (2.4 GB) from `Zenodo record 5706578 <https://zenodo.org/records/5706578>`__ through torchgeo and needs about 13 GB of disk. The unlabelled ``Test.zip`` is not downloaded. The :download:`example config </examples/loveda-run.yaml>` is a no-weight-download smoke configuration, not an accuracy baseline.
 
 Sources and attribution: the `LoveDA repository <https://github.com/Junjue-Wang/LoveDA>`__ and `paper <https://arxiv.org/abs/2110.08733>`__. The repository states CC BY-NC-SA 4.0 (no commercial use), while the Zenodo record is labelled CC BY 4.0; follow the more restrictive terms.
+=======
+``planteur`` is crop-type segmentation in France's overseas territories (Guadeloupe, Martinique, Guyane, Réunion, Mayotte and Saint-Martin), the tropical counterpart to PASTIS. It has 2,750 patches of 128x128 px at 10 m with twelve 2019 monthly mosaics of Sentinel-2 L2A (12 bands) and Sentinel-1 RTC (``vv``, ``vh``), whose linear backscatter the download converts to dB as in PASTIS (no-data zeros become -100 dB), labelled from the French Land Parcel Identification System (RPG 2019) into 8 classes: Background, Meadow, Fruits/vegetables/flowers, Orchard, Sugarcane, Banana, Pineapple and Tropical tuber. Crops outside that taxonomy are void (255) and ignored. It uses the official spatial-block, territory-stratified 1,896 / 411 / 443 split. ``geo-eval-harness download planteur`` fetches the pinned monthly mosaics and labels (17 GB), stacks them into memory-mapped per-split arrays, verifies them against the bundled checksums, and deletes the per-patch files. As with ``pastis``, ``--time-steps`` selects evenly spaced months (``(T, C, H, W)``); without it each sample is the first month (``(C, H, W)``). Data: ODC-BY, https://huggingface.co/datasets/allenai/planteur-benchmark.
+
+The five leave-one-island-out folds, ``planteur_loio_guadeloupe``, ``planteur_loio_martinique``, ``planteur_loio_guyane``, ``planteur_loio_reunion`` and ``planteur_loio_mayotte``, read the same downloaded arrays. Each fold tests on every patch of its held-out territory (735, 550, 506, 813 and 140 patches) and trains and validates on the other territories, following the release's ``splits/loio.json``. The LOIO train and val splits share 0.1° blocks, so val scores are optimistic, while test never shares a block with them. Saint-Martin stays in train for every fold. Band statistics come from the default train split, which includes every island, so they are not held out for a fold.
 
 Selecting datasets
 ------------------
