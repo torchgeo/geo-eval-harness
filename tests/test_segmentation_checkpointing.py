@@ -341,3 +341,36 @@ def test_pretrained_probe_at_512_with_checkpointing(model_key: str, mode: str, a
             "bottom_right": change[..., half:, half:].mean(),
         }
         assert max(quadrants, key=quadrants.__getitem__) == "top_right", quadrants
+
+
+def test_keyword_block_calls_reach_checkpoint_positionally(monkeypatch: pytest.MonkeyPatch) -> None:
+    """torch saves only the RNG state of devices of positional tensors (CUDA dropout replay)."""
+    from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.attention import Block
+
+    import geo_eval_harness.segmentation_checkpointing as ckpt
+
+    seen: list[tuple] = []
+    real = ckpt.checkpoint
+
+    def spy(fn, *args, **kwargs):
+        seen.append(args)
+        return real(fn, *args, **kwargs)
+
+    monkeypatch.setattr(ckpt, "checkpoint", spy)
+    blocks = nn.ModuleList([Block(dim=16, num_heads=2, drop_path=0.5)])
+    twin = copy.deepcopy(blocks)
+    ckpt.checkpoint_blocks(blocks)
+    x = torch.randn(2, 5, 16, requires_grad=True)
+    torch.manual_seed(3)
+    out = blocks[0](x=x, attn_mask=None)
+    torch.manual_seed(3)
+    expected = twin[0](x=x, attn_mask=None)
+
+    assert seen
+    assert seen[0][0] is x
+    torch.testing.assert_close(out, expected)
+    out.sum().backward()
+    grad = x.grad.clone()
+    x.grad = None
+    expected.sum().backward()
+    torch.testing.assert_close(grad, x.grad)

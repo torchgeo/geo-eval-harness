@@ -10,6 +10,7 @@ raises instead of silently training without checkpointing.
 """
 
 import functools
+import inspect
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -30,12 +31,19 @@ def _checkpointed(forward: Callable[..., Any]) -> Callable[..., Any]:
     module (the probe's feature hooks) fire once on the checkpointed output and not again when the
     backward pass recomputes the original ``forward``.
     """
+    signature = inspect.signature(forward)
 
     @functools.wraps(forward)
     def run(*args: Any, **kwargs: Any) -> Any:
         if not torch.is_grad_enabled():
             return forward(*args, **kwargs)
-        return checkpoint(forward, *args, use_reentrant=False, preserve_rng_state=True, **kwargs)
+        # torch saves the RNG state only of devices of positional tensors; OlmoEarth calls its
+        # blocks with keywords only, so pass them positionally to keep CUDA dropout replayable.
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        return checkpoint(
+            forward, *bound.args, use_reentrant=False, preserve_rng_state=True, **bound.kwargs
+        )
 
     return run
 
