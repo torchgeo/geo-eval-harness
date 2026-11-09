@@ -416,6 +416,7 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
     """
 
     weights_input_unit = "uint8_div255"
+    feature_layout = "nhwc"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -691,6 +692,7 @@ class TorchGeoDEOBench(BenchModel):
     _deo_std: torch.Tensor
 
     expected_input_unit = InputUnit.REFLECTANCE_0_1
+    feature_layout = "nhwc"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,

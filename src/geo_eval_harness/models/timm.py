@@ -125,6 +125,8 @@ class TimmPatchBenchModel(BenchModel):
             num_classes=0,
             global_pool=global_pool,
         )
+        if getattr(self.backbone, "output_fmt", None) == "NHWC":
+            self.feature_layout = "nhwc"
 
         # timm.models._manipulate.adapt_input_conv tiles [R, G, B] weights for extra channels.
         # Put physical RGB first to match the weights; native S2 order is blue/green/red.
