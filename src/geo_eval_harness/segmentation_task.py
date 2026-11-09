@@ -20,6 +20,7 @@ from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
 from .config.schema import SegmentationConfig
+from .segmentation_checkpointing import enable_gradient_checkpointing
 from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
     MAX_NONFINITE_FRACTION,
@@ -1008,6 +1009,11 @@ def build_seg_probe_and_solver(
                 f"full_finetune: {type(model).__name__} has no trainable backbone parameter; "
                 "its wrapper freezes the backbone and does not define enable_full_finetune()."
             )
+    if config.gradient_checkpointing:
+        if config.lora_rank is None and not config.full_finetune:
+            logger.info("gradient_checkpointing has no effect on a frozen backbone; skipped.")
+        else:
+            enable_gradient_checkpointing(model)
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,
