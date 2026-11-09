@@ -137,11 +137,14 @@ NATIVE_MODEL_ALIASES = {
 # Aggregations that need a complete score matrix are not offered on Native views.
 NATIVE_AGGREGATIONS = ("avg_rank", "improvability")
 
-# ``*_rgb`` is a band-specific TerraMind configuration, not a different model.
+# ``*_rgb`` and ``*_s1`` are band-specific TerraMind configurations (the same
+# checkpoint fed its RGB or Sentinel-1 GRD modality), not different models.
 # Apply aliases before any coverage or duplicate validation.
 MODEL_ALIASES = {
     "tt_terramind_v1_base_rgb": "tt_terramind_v1_base",
     "tt_terramind_v1_large_rgb": "tt_terramind_v1_large",
+    "tt_terramind_v1_base_s1": "tt_terramind_v1_base",
+    "tt_terramind_v1_large_s1": "tt_terramind_v1_large",
 }
 
 # Base ``name`` slug -> (display name, is_baseline).  Family is deliberately

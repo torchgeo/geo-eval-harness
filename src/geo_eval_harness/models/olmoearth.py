@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._input_units import InputUnit, _detect_band_group_unit, to_s2_dn
+from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -537,7 +537,7 @@ class OlmoEarthBenchModel(BenchModel):
                 if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
                     g_images = g_images * self.landsat_scale_factor
             if group["sar_to_db"]:
-                g_images = 10.0 * torch.log10(g_images.clamp(min=1e-6))
+                g_images = linear_power_to_db(g_images)
 
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)
