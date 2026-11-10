@@ -51,7 +51,7 @@ The presets default to ``--normalization model``, SMARTIES' pretraining preproce
 
 Sentinel-2 uses the L2A statistics (BigEarthNet) unless ``s2_level: l1c`` selects the L1C statistics (fMoW-Sentinel). The presets select L1C for EuroSAT, BrickKiln, So2Sat, Sen1Floods11, and OSCD.
 
-Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, and ForestNet (V2), and SAR bands need a declared ``BandSpec.unit``.
+Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
 
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

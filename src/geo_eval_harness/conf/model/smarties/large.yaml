@@ -21,7 +21,10 @@ dataset_overrides:
   so2sat: {kwargs: {s2_level: l1c}}
   sen1floods11-s2: {kwargs: {s2_level: l1c}}
   oscd-post: {kwargs: {s2_level: l1c}}
-  # No SMARTIES pretraining statistics: Planet DN, WorldView 11-bit, and 8-bit data labelled s2.
+  # No SMARTIES pretraining statistics: Planet DN, WorldView 11-bit, 8-bit Landsat and 8-bit data labelled s2
+  # (NIR/SWIR), and SAR without a declared unit.
   dynamic_earthnet: {input: {normalization: dataset}}
   spacenet2: {input: {normalization: dataset}}
   forestnet: {input: {normalization: dataset}}
+  m-forestnet: {input: {normalization: dataset}}
+  openearthmap-sar: {input: {normalization: dataset}}

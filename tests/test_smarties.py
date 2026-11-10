@@ -236,12 +236,51 @@ def test_presets_build_and_select_l1c_statistics(preset_name: str) -> None:
         assert model(torch.rand(1, len(bands), 64, 64) * 3000).shape == (1, TINY[0])
 
 
-@pytest.mark.parametrize("dataset", sorted(set(list_datasets()) - _NO_SMARTIES_BANDS))
-def test_preset_defaults_support_every_dataset_rgb_selection(dataset: str) -> None:
-    """The preset's per-dataset normalization and S2 level must accept the default bands."""
+_SAR_SENSORS = {"s1", "sar", "s1_asc", "s1_desc"}
+
+
+def _single_sensor_selections() -> list[tuple[str, list[str]]]:
+    """Each dataset's bands of one sensor family that SMARTIES has projections for."""
+    cases = [("openearthmap-sar", ["vv", "vh"])]
+    for dataset in list_datasets():
+        groups: dict[str, list[str]] = {}
+        for band in _bands(dataset):
+            family = "sar" if band.sensor in _SAR_SENSORS else band.sensor
+            groups.setdefault(family, []).append(band.name)
+        for names in groups.values():
+            try:
+                resolve_projection_plan(_bands(dataset, names))
+            except BandCompatibilityError:
+                continue
+            cases.append((dataset, names))
+    return cases
+
+
+#: Band sets SMARTIES can project but without pretraining statistics for ``model`` normalization
+#: (aerial NIR, SAR without a declared unit). Their datasets keep ``model`` for the main bands.
+_DATASET_NORMALIZATION_ONLY = {
+    ("flair2", "red,green,blue,nir"),
+    ("treesatai", "red,green,blue,nir"),
+    ("so2sat", "vv,vh"),
+}
+
+
+@pytest.mark.parametrize(("dataset", "selection"), _single_sensor_selections())
+def test_preset_defaults_support_every_single_sensor_band_set(
+    dataset: str, selection: list[str]
+) -> None:
+    """Every band set SMARTIES can project builds under the preset's per-dataset settings.
+
+    The known exceptions must fail clearly under ``model`` and build under ``dataset``.
+    """
     effective, preset = _resolve("smarties/base", dataset)
-    bands = _bands(dataset, effective.input.bands)
-    build_model(preset, bands=bands, normalization=NORMALIZATIONS[effective.input.normalization])
+    bands = _bands(dataset, selection)
+    normalization = NORMALIZATIONS[effective.input.normalization]
+    if (dataset, ",".join(selection)) in _DATASET_NORMALIZATION_ONLY:
+        with pytest.raises(UnsupportedNormalizationError, match="--normalization dataset"):
+            build_model(preset, bands=bands, normalization=normalization)
+        normalization = NORMALIZATIONS["dataset"]
+    build_model(preset, bands=bands, normalization=normalization)
 
 
 @pytest.mark.parametrize("dataset", sorted(_NO_SMARTIES_BANDS))
