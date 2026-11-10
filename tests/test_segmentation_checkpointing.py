@@ -2,6 +2,7 @@
 
 import copy
 from collections.abc import Callable
+from importlib.util import find_spec
 
 import pytest
 import torch
@@ -18,6 +19,11 @@ from tests.support.models import bands
 
 #: Checkpointing replays the same kernels on CPU; allow only floating-point reordering.
 RTOL, ATOL = 1e-5, 1e-6
+
+requires_terratorch = pytest.mark.skipif(
+    find_spec("terratorch") is None, reason="terratorch not installed"
+)
+PRITHVI = pytest.param("terratorch_prithvi", marks=requires_terratorch)
 
 
 def _rgb() -> list:
@@ -114,7 +120,7 @@ def _modes(targets: str, layers: list[str]) -> dict[str, dict[str, object]]:
 @pytest.mark.parametrize("mode", ["lora", "full"])
 @pytest.mark.parametrize(
     "family",
-    ["timm_swinv2", "terratorch_prithvi", pytest.param("olmoearth", marks=pytest.mark.slow)],
+    ["timm_swinv2", PRITHVI, pytest.param("olmoearth", marks=pytest.mark.slow)],
 )
 def test_checkpointing_leaves_loss_features_and_gradients_unchanged(
     family: str, mode: str, monkeypatch: pytest.MonkeyPatch
@@ -152,7 +158,7 @@ def test_checkpointing_leaves_loss_features_and_gradients_unchanged(
     assert calls == calls_ckpt == dict.fromkeys(layers, 1)
 
 
-@pytest.mark.parametrize("family", ["timm_swinv2", "terratorch_prithvi"])
+@pytest.mark.parametrize("family", ["timm_swinv2", PRITHVI])
 def test_checkpointing_wraps_blocks_once(family: str, monkeypatch: pytest.MonkeyPatch) -> None:
     model, *_ = FAMILIES[family](monkeypatch)
     first = enable_gradient_checkpointing(model)
@@ -210,7 +216,7 @@ def _saved_activation_bytes(model: nn.Module, config: SegmentationConfig, size: 
     return saved
 
 
-@pytest.mark.parametrize("family", ["timm_swinv2", "terratorch_prithvi"])
+@pytest.mark.parametrize("family", ["timm_swinv2", PRITHVI])
 def test_checkpointing_saves_fewer_activations(
     family: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -257,7 +263,13 @@ _GRID_512 = {"swinv2_base": 128, "swinv2_large": 128, "prithvi_600": 36, "olmoea
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize(("model_key", "mode", "arm"), _OOM_SETUPS)
+@pytest.mark.parametrize(
+    ("model_key", "mode", "arm"),
+    [
+        pytest.param(*setup, marks=requires_terratorch) if setup[0] == "prithvi_600" else setup
+        for setup in _OOM_SETUPS
+    ],
+)
 def test_pretrained_probe_at_512_with_checkpointing(model_key: str, mode: str, arm: str) -> None:
     """Harness probe at 512, pretrained weights: forward, backward, layout and channel values."""
     name, kwargs = _PRETRAINED_512[model_key]

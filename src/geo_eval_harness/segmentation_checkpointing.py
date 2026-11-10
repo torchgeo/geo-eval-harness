@@ -13,6 +13,7 @@ import functools
 import inspect
 import logging
 from collections.abc import Callable
+from importlib.util import find_spec
 from typing import Any
 
 import torch
@@ -48,7 +49,7 @@ def _checkpointed(forward: Callable[..., Any]) -> Callable[..., Any]:
     return run
 
 
-def checkpoint_blocks(blocks: nn.ModuleList) -> int:
+def checkpoint_blocks(blocks: nn.Module) -> int:
     """Checkpoint every module of ``blocks`` in place; return how many were wrapped."""
     if not isinstance(blocks, nn.ModuleList) or len(blocks) == 0:
         raise ValueError(
@@ -75,18 +76,18 @@ def _timm_swinv2(root: nn.Module) -> str | None:
             "unset it so timm uses torch.utils.checkpoint with use_reentrant=False."
         )
     root.set_grad_checkpointing(True)
-    n_blocks = sum(len(stage.blocks) for stage in root.layers)
-    return f"timm SwinV2 set_grad_checkpointing ({n_blocks} blocks in {len(root.layers)} stages)"
+    return "timm SwinV2 set_grad_checkpointing"
 
 
 def _terratorch_prithvi(root: nn.Module) -> str | None:
-    try:
-        from terratorch.models.backbones.prithvi_mae import PrithviViT
-    except ImportError:
+    if find_spec("terratorch") is None:
         return None
+    from terratorch.models.backbones.prithvi_mae import PrithviViT
+
     if not isinstance(root, PrithviViT):
         return None
-    return f"TerraTorch PrithviViT blocks ({checkpoint_blocks(root.blocks)} blocks)"
+    blocks = root.get_submodule("blocks")
+    return f"TerraTorch PrithviViT blocks ({checkpoint_blocks(blocks)} blocks)"
 
 
 def _olmoearth(model: nn.Module) -> str | None:
@@ -94,7 +95,7 @@ def _olmoearth(model: nn.Module) -> str | None:
 
     if not isinstance(model, OlmoEarthBenchModel):
         return None
-    blocks = model.encoder_model.encoder.blocks
+    blocks = model.get_submodule("encoder_model.encoder.blocks")
     return f"OlmoEarth encoder blocks ({checkpoint_blocks(blocks)} blocks)"
 
 
@@ -109,13 +110,12 @@ def enable_gradient_checkpointing(model: nn.Module) -> str:
         ValueError: If the backbone family is not supported.
     """
     root = getattr(model, "backbone", model)
-    for enable in (_olmoearth, _terratorch_prithvi, _timm_swinv2):
-        mechanism = enable(model if enable is _olmoearth else root)
-        if mechanism is not None:
-            logger.info("Gradient checkpointing: %s", mechanism)
-            return mechanism
-    raise ValueError(
-        f"segmentation.gradient_checkpointing is not supported for {type(model).__name__} "
-        f"(backbone {type(root).__name__}). Supported: timm SwinV2, TerraTorch Prithvi-EO, "
-        "OlmoEarth."
-    )
+    mechanism = _olmoearth(model) or _terratorch_prithvi(root) or _timm_swinv2(root)
+    if mechanism is None:
+        raise ValueError(
+            f"segmentation.gradient_checkpointing is not supported for {type(model).__name__} "
+            f"(backbone {type(root).__name__}). Supported: timm SwinV2, TerraTorch Prithvi-EO, "
+            "OlmoEarth."
+        )
+    logger.info("Gradient checkpointing: %s", mechanism)
+    return mechanism
