@@ -13,9 +13,8 @@ Weights come from ``gsumbul/SMARTIES-v1-ViT-{B,L}`` on Hugging Face at pinned re
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 import numpy as np
 import torch
@@ -342,6 +341,13 @@ class _SpectrumRangeProjection(nn.Module):
         self.proj = nn.Linear(patch_size * patch_size, embed_dim)
 
 
+class _LayerNorm(nn.LayerNorm):
+    """LayerNorm with the ``eps=1e-6`` of SMARTIES' ViT blocks."""
+
+    def __init__(self, dim: int, **kwargs: Any) -> None:
+        super().__init__(dim, eps=1e-6, **kwargs)
+
+
 class _SpectrumAwareProjection(nn.Module):
     """Container for the 17 learned spectrum-aware projections."""
 
@@ -350,6 +356,10 @@ class _SpectrumAwareProjection(nn.Module):
         self.spectrum_embeds = nn.ModuleList(
             _SpectrumRangeProjection(patch_size, embed_dim) for _ in range(SMARTIES_NUM_PROJECTIONS)
         )
+
+    def layers(self, indices: list[int]) -> list[nn.Linear]:
+        """Return the projection layer of each projection index, in order."""
+        return [cast(_SpectrumRangeProjection, self.spectrum_embeds[i]).proj for i in indices]
 
 
 class SmartiesBench(BenchModel):
@@ -364,7 +374,8 @@ class SmartiesBench(BenchModel):
         bands: Ordered :class:`BandSpec` list describing the dataset channels.
         variant: ``"base"`` (ViT-B/16, 768-d) or ``"large"`` (ViT-L/16, 1024-d).
         pretrained: Download and strictly load the pinned released weights.
-        pool: Token pooling mode passed to :func:`pool_tokens`. Upstream probes use ``"cls"``.
+        pool: Token pooling mode, ``"cls"``, ``"mean"``, or ``"both"``. Upstream probes use
+            ``"cls"``.
         s2_level: Sentinel-2 processing level whose pretraining statistics ``model``
             normalization uses (``"l2a"`` or ``"l1c"``).
         **kwargs: Forwarded to :class:`BenchModel` (e.g. ``normalization``).
@@ -408,12 +419,11 @@ class SmartiesBench(BenchModel):
         self.spectrum_projection = _SpectrumAwareProjection(SMARTIES_PATCH_SIZE, width)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, width))
         self.pos_embed = nn.Parameter(_sincos_pos_embed(width, grid), requires_grad=False)
-        norm_layer = partial(nn.LayerNorm, eps=1e-6)
         self.blocks = nn.ModuleList(
-            Block(width, heads, mlp_ratio=4.0, qkv_bias=True, norm_layer=norm_layer)
+            Block(width, heads, mlp_ratio=4.0, qkv_bias=True, norm_layer=_LayerNorm)
             for _ in range(depth)
         )
-        self.norm = norm_layer(width)
+        self.norm = _LayerNorm(width)
         nn.init.normal_(self.cls_token, std=0.02)
         if pretrained:
             self.load_checkpoint(self._download_checkpoint(variant))
@@ -461,7 +471,7 @@ class SmartiesBench(BenchModel):
         p = SMARTIES_PATCH_SIZE
         patches = images.reshape(batch, channels, height // p, p, width // p, p)
         patches = patches.permute(0, 2, 4, 1, 3, 5).reshape(batch, -1, channels, p * p)
-        layers = [self.spectrum_projection.spectrum_embeds[i].proj for i in self.plan.projections]
+        layers = self.spectrum_projection.layers(self.plan.projections)
         weight = torch.stack([layer.weight for layer in layers])
         bias = torch.stack([layer.bias for layer in layers]).mean(dim=0)
         tokens = torch.einsum("bnck,cdk->bnd", patches, weight) / channels + bias
