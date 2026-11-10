@@ -63,6 +63,11 @@ AnySat
 
 .. autoclass:: AnySatBenchModel
 
+EoS-FM
+^^^^^^
+
+.. autoclass:: EoSFMBenchModel
+
 SAM 3
 ^^^^^
 

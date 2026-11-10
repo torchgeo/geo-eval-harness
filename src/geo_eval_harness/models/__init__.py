@@ -3,6 +3,7 @@
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy
 from .anysat import AnySatBenchModel
+from .eosfm import EoSFMBenchModel
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
@@ -44,6 +45,7 @@ __all__: list[str] = [
     "BenchModel",
     "ConvBlockHead",
     "DPTHead",
+    "EoSFMBenchModel",
     "FPNHead",
     "HandcraftedBench",
     "ImageStatsBench",

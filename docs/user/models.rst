@@ -398,6 +398,41 @@ AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's. 
 models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
 pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
 
+EoS-FM
+^^^^^^
+
+:class:`~geo_eval_harness.models.EoSFMBenchModel` wraps EoS-FM (`Adorni et al., 2025
+<https://arxiv.org/abs/2511.21523>`_), an ensemble of 21 ConvNeXtV2-Atto specialists (71M
+parameters), each trained with supervision on one remote-sensing dataset.  Eighteen take three
+channels (RGB, or a VV,VH,VH composite for the SAR specialists), two take the 13 Sentinel-2 L1C
+bands and one takes BigEarthNet's Sentinel-1 and Sentinel-2 bands.  The weights come from a
+pinned commit of `pierreadorni/eos-fm <https://huggingface.co/pierreadorni/eos-fm>`_ and are
+checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model eosfm --dataset m-eurosat --bands all
+
+The embedding concatenates the average-pooled last stage (320 channels) of every specialist
+input, in checkpoint order: 6720 features for RGB input.  Upstream picks each specialist's input
+from the channel count with fixed indices, which misorders bands for several GeoBench band
+orders.  The wrapper instead matches bands by name, so each specialist gets the bands it was
+trained on in its training order:
+
+* The 3-channel specialists get R,G,B.  For the full 13-band Sentinel-2 set they also get
+  NIR,R,G, and for SAR-only input VV,VH,VH, as upstream.
+* A multispectral specialist gets its own bands when all of them are present.  For RGB-only
+  input it gets R,G,B repeated up to its channel count, as upstream.  Otherwise it is skipped.
+
+All specialists share one input normalization (``bandspec_zscore``), as upstream feeds one
+tensor to all of them.  Upstream's per-specialist feature BatchNorm is not in the checkpoint
+and is an identity in eval mode, so the wrapper omits it.
+
+The EuroSAT and BigEarthNet specialists were trained on the labels of EuroSAT and BigEarthNet
+v2, so results on ``eurosat``, ``eurosat-spatial``, ``m-eurosat``, ``benv2`` and
+``m-bigearthnet`` are not out-of-distribution.  The code is licensed CC BY-NC-SA 4.0 and the
+weights CC BY-SA 4.0, as stated on GitHub and Hugging Face respectively.
+
 Adding a new model
 ------------------
 
