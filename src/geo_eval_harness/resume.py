@@ -49,14 +49,17 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
     LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
-    ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` and the
-    probe sweep count only when set, ``amp`` only when not ``fp16``, and ``neck_norm`` only when a
-    neck uses it, so hashes from before these options are unchanged.
+    ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` (segmentation
+    and classification) and the probe sweep count only when set, ``amp`` only when not ``fp16``,
+    and ``neck_norm`` only when a neck uses it, so hashes from before these options are unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
     segmentation = config.segmentation
     segmentation_exclude = _unset_segmentation_fields(segmentation)
+    classification_exclude = {"methods"}
+    if not config.classification.feature_standardize:
+        classification_exclude.add("feature_standardize")
     payload = {
         "schema_version": config.schema_version,
         "model": {
@@ -65,7 +68,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
             "kwargs": model_cfg.kwargs,
         },
         "input": config.input.model_dump(mode="json"),
-        "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
+        "classification": config.classification.model_dump(
+            mode="json", exclude=classification_exclude
+        ),
         "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
@@ -251,8 +256,8 @@ def plan_dataset_run(
             skip_profile=True,
         )
 
-    knn_key = (ds_name, f"knn{cfg.classification.knn_k}", *model_key)
-    linear_key = (ds_name, "linear", *model_key)
+    knn_key = (ds_name, cfg.classification.knn_method, *model_key)
+    linear_key = (ds_name, cfg.classification.linear_method, *model_key)
     id_key = (ds_name, "intrinsic_dim", *model_key)
     profile_key = (ds_name, "profile", *model_key)
 

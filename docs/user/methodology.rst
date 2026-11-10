@@ -129,6 +129,8 @@ Key details
   CPU or GPU.
 * Feature vectors are cast to ``float32`` and labels to ``int64`` before
   indexing.
+* Embeddings are used as-is unless ``classification.feature_standardize``
+  is set (method name ``knn5-std``).
 
 Linear probe (logistic regression)
 ----------------------------------
@@ -166,7 +168,9 @@ implementation matching scikit-learn's objective scaling:
 * **Solver (final):** same, but ``max_iter=4000`` for tighter convergence.
 * **Alternative solver:** mini-batch Adam is available; L-BFGS is the
   default.
-* **No feature standardisation** — embeddings are used as-is.
+* **No feature standardisation by default** — embeddings are used as-is.
+  ``classification.feature_standardize: true`` z-scores each dimension with
+  training-split statistics first (method name ``linear-std``).
 * **TF32** is enabled on CUDA for faster matmul when available.
 
 Hyperparameters
@@ -188,6 +192,9 @@ Hyperparameters
    * - ``classification.bootstrap_samples``
      - ``200``
      - bootstrap resamples for the confidence interval
+   * - ``classification.feature_standardize``
+     - ``false``
+     - z-score embeddings with train-split statistics before KNN and the linear probe
 
 Segmentation probes
 -------------------
