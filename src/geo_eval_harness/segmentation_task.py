@@ -19,7 +19,7 @@ from torchmetrics.classification import (
 from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
-from .config.schema import SegmentationConfig
+from .config.schema import Adaptation, SegmentationConfig
 from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
     MAX_NONFINITE_FRACTION,
@@ -989,7 +989,9 @@ def build_seg_probe_and_solver(
             "Segmentation evaluation requires segmentation.layers to name "
             "spatial backbone layers. Refusing to probe the global backbone output."
         )
-    if config.lora_rank is not None:
+    adaptation = config.adaptation
+    if adaptation is Adaptation.LORA:
+        assert config.lora_rank is not None
         assert config.lora_target_modules is not None
         apply_lora(
             model,
@@ -998,7 +1000,7 @@ def build_seg_probe_and_solver(
             config.lora_alpha,
             last_blocks=config.lora_last_blocks,
         )
-    if config.full_finetune:
+    if adaptation is Adaptation.FULL:
         # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
         enable = getattr(model, "enable_full_finetune", None)
         if callable(enable):
@@ -1017,7 +1019,7 @@ def build_seg_probe_and_solver(
         neck_norm=config.neck_norm,
         upsampler=config.upsampler,
         head_dropout=config.head_dropout,
-        freeze_backbone=config.lora_rank is None and not config.full_finetune,
+        freeze_backbone=adaptation is Adaptation.FROZEN,
         temporal_pool=config.temporal_pool,
         sweep_heads=len(config.sweep_grid),
         feature_standardize=config.feature_standardize,
@@ -1050,5 +1052,5 @@ def build_seg_probe_and_solver(
         early_stopping_patience=config.early_stopping_patience,
         amp=config.amp == "fp16",
     )
-    solver.backbone_eval_mode = config.full_finetune
+    solver.backbone_eval_mode = adaptation is Adaptation.FULL
     return probe, solver

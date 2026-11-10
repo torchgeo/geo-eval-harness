@@ -638,12 +638,12 @@ def evaluate_segmentation(
 
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
-    use_cache = seg_cfg.cache_features
+    use_cache = seg_cfg.uses_feature_cache
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
     collect_confusions = cfg.classification.bootstrap_samples > 0
-    if use_cache and probe.freeze_backbone:
+    if use_cache:
         logger.info("Caching backbone features for train and val splits...")
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
@@ -677,11 +677,7 @@ def evaluate_segmentation(
             test_loader,
             collect_confusions=collect_confusions,
         )
-    actual_batch_size = (
-        probe_batch_size
-        if use_cache and probe.freeze_backbone
-        else int(train_loader.batch_size or 1)
-    )
+    actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
 
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result

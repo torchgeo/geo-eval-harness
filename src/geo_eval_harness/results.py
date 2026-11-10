@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.config.schema import Adaptation, SegmentationConfig
 from geo_eval_harness.resume import KEY_COLS, _canonical_key_cell
 
 logger = logging.getLogger(__name__)
@@ -111,21 +111,16 @@ def segmentation_setup_columns(seg: SegmentationConfig) -> dict[str, str | None]
     Off-values of applicable settings are explicit (``none``, ``0``). Cells that do not apply
     stay empty: ``backbone_lr`` on frozen rows and the LoRA columns unless LoRA is on.
     """
-    if seg.full_finetune:
-        adaptation = "full"
-    elif seg.lora_rank is not None:
-        adaptation = "lora"
-    else:
-        adaptation = "frozen"
-    lora = adaptation == "lora"
+    adaptation = seg.adaptation
+    lora = adaptation is Adaptation.LORA
     columns = {
-        "adaptation": adaptation,
+        "adaptation": adaptation.value,
         "decoder": seg.head,
         "neck": seg.neck,
         "upsampler": seg.upsampler,
         "epochs": seg.epochs,
         "head_lr": seg.learning_rate,
-        "backbone_lr": None if adaptation == "frozen" else seg.backbone_learning_rate,
+        "backbone_lr": None if adaptation is Adaptation.FROZEN else seg.backbone_learning_rate,
         "weight_decay": seg.weight_decay,
         "head_dropout": seg.head_dropout,
         "lora_rank": seg.lora_rank if lora else None,
