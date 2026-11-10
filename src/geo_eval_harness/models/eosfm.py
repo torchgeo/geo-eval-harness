@@ -21,9 +21,11 @@ complex and Lee-filtered channels) are upper-cased and, having no wavelength, re
 only through the fallback, as they would upstream.  Elevation bands are not passed to the
 specialists.
 
-The embedding concatenates the globally average-pooled last stage of every specialist.  Upstream's
-optional feature BatchNorm, projection and fusion are not in the checkpoint and are omitted, as in
-upstream's raw frozen-feature setting.
+Each of the four stages (strides 4, 8, 16, 32) is concatenated across specialists, in checkpoint
+order, and passed through ``taps[i]`` (an ``nn.Identity``) for the segmentation probe; upstream
+feeds the same per-level concatenation to its UperNet.  The embedding is the global average pool
+of ``taps[3]``.  Upstream's optional feature BatchNorm, projection and fusion are not in the
+checkpoint and are omitted, as in upstream's raw frozen-feature setting.
 """
 
 import hashlib
@@ -250,7 +252,9 @@ class EoSFMBenchModel(BenchModel):
     """BenchModel wrapper for the EoS-FM ensemble (22 ConvNeXtV2-Atto specialists, 75M parameters).
 
     The embedding concatenates the average-pooled last stage (320 channels) of every specialist,
-    in checkpoint order; see the module docstring for which specialist gets which bands.
+    in checkpoint order; see the module docstring for which specialist gets which bands.  For
+    segmentation, ``taps.0`` to ``taps.3`` output the per-level concatenations (strides 4 to 32,
+    ``level_channels`` channels).
 
     Args:
         bands: Ordered ``BandSpec`` list describing the input channels.
@@ -284,7 +288,7 @@ class EoSFMBenchModel(BenchModel):
 
         used = sorted({view.encoder for view in self.views})
         self.encoders = nn.ModuleDict()
-        out_channels: dict[int, int] = {}
+        out_channels: dict[int, list[int]] = {}
         for i in used:
             spec, state_dict = loaded[i]
             encoder = cast(
@@ -295,16 +299,28 @@ class EoSFMBenchModel(BenchModel):
             )
             encoder.load_state_dict(state_dict)
             self.encoders[str(i)] = encoder.eval()
-            out_channels[i] = encoder.feature_info.channels()[-1]
-        self.feature_dim = sum(out_channels[view.encoder] for view in self.views)
+            out_channels[i] = encoder.feature_info.channels()
+        levels = {len(channels) for channels in out_channels.values()}
+        if len(levels) != 1:
+            raise ValueError(f"EoS-FM specialists have different numbers of stages: {levels}.")
+        self.level_channels = [
+            sum(out_channels[view.encoder][level] for view in self.views)
+            for level in range(levels.pop())
+        ]
+        self.taps = nn.ModuleList(nn.Identity() for _ in self.level_channels)
+        self.feature_dim = self.level_channels[-1]
         logger.info("EoS-FM: %d specialists, %d features", len(self.views), self.feature_dim)
         for view in self.views:
             spec = self.specialists[view.encoder]
             logger.debug("EoS-FM %s %s <- %s", spec.name, spec.bands, view.channels)
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
-        features = []
-        for view in self.views:
-            stages = self.encoders[str(view.encoder)](adapt_input(images, view.channels))
-            features.append(stages[-1].mean(dim=(2, 3)))
-        return torch.cat(features, dim=1)
+        stages = [
+            self.encoders[str(view.encoder)](adapt_input(images, view.channels))
+            for view in self.views
+        ]
+        pyramid = [
+            tap(torch.cat([view_stages[level] for view_stages in stages], dim=1))
+            for level, tap in enumerate(self.taps)
+        ]
+        return pyramid[-1].mean(dim=(2, 3))

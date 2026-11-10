@@ -444,10 +444,23 @@ projection and fusion are not in the checkpoint, so the wrapper returns raw feat
 first release (``c161e886``) had 21 specialists, two of which produced features of up to 1e4;
 this release does not.
 
+For segmentation, the preset hooks ``taps.3`` to ``taps.0``.  Each tap concatenates one
+ConvNeXtV2-Atto stage (strides 32, 16, 8 and 4; 320, 160, 80 and 40 channels) of all 22
+specialists: 7040, 3520, 1760 and 880 channels.  This is the feature pyramid that upstream's
+UperNet decodes, without its optional fusion convolution; the harness UPerNet projects each level
+with its own learned 1x1 convolution.  The specialists have no ``nn.Linear`` layers, so there is
+no LoRA preset, and segmentation runs frozen or with ``full_finetune``.  The preset sets
+``cache_features: false``, because the 22 specialists take about 10 MB of cached features per
+224 px sample.
+
 The EuroSAT and BigEarthNet specialists were trained on the labels of EuroSAT and BigEarthNet
 v2, so results on ``eurosat``, ``eurosat-spatial``, ``m-eurosat``, ``benv2`` and
-``m-bigearthnet`` are not out-of-distribution.  The Kenya crop-type specialist is trained on a
-dataset that is not in the benchmark.  The code is licensed CC BY-NC-SA 4.0 and the
+``m-bigearthnet`` are not out-of-distribution.  For segmentation, the LoveDA and CaFFe
+specialists were trained on ``loveda`` and ``caffe``, and the LEVIR-CD+ specialist on an
+extended version of ``levir-cd-post``.  Two specialists share a task with benchmark datasets:
+cloud segmentation on Sentinel-2 (``cloudsen12``) and ETCI 2021 Sentinel-1 flood mapping
+(``sen1floods11-s1``, ``kuro_siwo``).  The Kenya crop-type specialist is trained on a dataset
+that is not in the benchmark.  The code is licensed CC BY-NC-SA 4.0 and the
 weights CC BY-SA 4.0, as stated on GitHub and Hugging Face respectively.
 
 Adding a new model

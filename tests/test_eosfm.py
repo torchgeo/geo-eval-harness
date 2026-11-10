@@ -13,7 +13,8 @@ import torch
 
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.config.catalog import model_config_path
-from geo_eval_harness.config.presets import ModelPreset
+from geo_eval_harness.config.presets import ModelPreset, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.config.schema import load_yaml
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
@@ -28,6 +29,7 @@ from geo_eval_harness.models.eosfm import (
     plan_views,
     upstream_band_name,
 )
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 # Specialists of the released ensemble, in checkpoint order, with their stored training bands.
 _RELEASED = [
@@ -156,6 +158,81 @@ def test_forward_concatenates_pooled_last_stage_per_specialist(ensemble: Path) -
         ]
     assert out.shape == (2, model.feature_dim) == (2, 3 * 64)
     torch.testing.assert_close(out, torch.cat(expected, dim=1))
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [_RGB, _bands(("sar", "vv"), ("sar", "vh")), _bands(("sar", "sar"))],
+    ids=["rgb", "vv-vh", "sar"],
+)
+def test_taps_concatenate_each_stage_across_specialists(
+    ensemble: Path, bands: list[BandSpec]
+) -> None:
+    model = _model(ensemble, bands)
+    taps: dict[int, torch.Tensor] = {}
+    for level, tap in enumerate(model.taps):
+        tap.register_forward_hook(lambda _m, _i, out, level=level: taps.__setitem__(level, out))
+    x = torch.randn(2, len(bands), 64, 64)
+    with torch.no_grad():
+        model(x)
+        stages = [model.encoders[str(v.encoder)](adapt_input(x, v.channels)) for v in model.views]
+    stage_channels = model.encoders["0"].feature_info.channels()
+    assert model.level_channels == [3 * c for c in stage_channels]
+    for level, size in enumerate([16, 8, 4, 2]):
+        assert taps[level].shape == (2, model.level_channels[level], size, size)
+        assert torch.equal(taps[level], torch.cat([s[level] for s in stages], dim=1))
+
+
+def test_preset_hooks_the_taps_without_lora_or_cache() -> None:
+    config = RunConfig.model_validate({"model": {"name": "eosfm"}, "datasets": ["burn_scars"]})
+    segmentation = resolve_run_config(config, "burn_scars")[0].segmentation
+    assert segmentation.layers == ["taps.3", "taps.2", "taps.1", "taps.0"]
+    assert segmentation.cache_features is False
+    assert segmentation.amp == "fp16"
+    assert segmentation.lora_target_modules is None
+
+
+@pytest.mark.parametrize("adaptation", ["frozen", "full"])
+def test_segmentation_probe_on_the_taps(ensemble: Path, adaptation: str) -> None:
+    freeze_backbone = adaptation == "frozen"
+    model = _model(ensemble, _RGB)
+    layers = ["taps.3", "taps.2", "taps.1", "taps.0"]
+    probe = SegmentationProbe(
+        model, layers, 3, head_type="upernet", hidden_dim=16, freeze_backbone=freeze_backbone
+    )
+    assert probe.channels_list == model.level_channels[::-1]
+    logits = probe(torch.randn(2, 3, 64, 64))
+    assert logits.shape == (2, 3, 64, 64)
+    logits.sum().backward()
+    grads = [p.grad for p in model.encoders.parameters()]
+    if freeze_backbone:
+        assert all(g is None for g in grads)
+    else:
+        assert all(g is not None and g.abs().sum() > 0 for g in grads)
+
+
+@pytest.mark.parametrize(
+    ("dataset", "selection"),
+    [
+        ("bright-post-sar", "all"),
+        ("burn_scars", "all"),
+        ("caffe", "rgb"),
+        ("cloudsen12", "all"),
+        ("flair2", "all"),
+        ("fotw", "all"),
+        ("kuro_siwo", "all"),
+        ("openearthmap-sar", "all"),
+        ("sen1floods11-s1", "all"),
+        ("sen1floods11-s2", "all"),
+        ("spacenet2", "all"),
+    ],
+)
+def test_segmentation_datasets_route(dataset: str, selection: str) -> None:
+    bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
+    views = plan_views(bands, _RELEASED)
+    assert len(views) == len(_RELEASED)
+    used = {i for v in views for i in re.findall(r"\d+", str(v.channels))}
+    assert not any(bands[int(i)].sensor in ("dem", "elevation") for i in used)
 
 
 def test_model_native_is_rejected(ensemble: Path) -> None:
