@@ -23,6 +23,17 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def test_size_sweep_flags_and_yaml(tmp_path: Path) -> None:
+    path = tmp_path / "sweep.yaml"
+    path.write_text("model: {name: rcf}\ninput: {image_sizes: [32, 64]}\n")
+    config = _flops.load_config(
+        parser().parse_args(["--config", str(path), "--image-sizes", "128", "256"])
+    )
+    assert config.input.image_sizes == [128, 256]
+    with pytest.raises(SystemExit):
+        parser().parse_args(["--model", "rcf", "--image-size", "32", "--image-sizes", "64"])
+
+
 def test_explicit_flags_override_yaml_without_overriding_omitted_values(tmp_path: Path) -> None:
     path = tmp_path / "flops.yaml"
     path.write_text(

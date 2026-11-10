@@ -122,6 +122,17 @@ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
   --seg-heads --output results/my_compute_cost.csv
 ```
 
+For encoder compute versus square tile size, use `--image-sizes`. This measures
+GFLOPs/image and GFLOPs/megapixel without timing or task heads:
+
+```bash
+geo-eval-harness flops --model timm/resnet18 --device cpu --band-configs rgb \
+  --image-sizes 128 256 512 1024
+```
+
+The sweep writes `results/compute_scaling.csv` and verifies the actual encoder input.
+Fixed resizing and unsupported resolution paths produce explicit status rows.
+
 `run`, `flops`, `coord`, and `profile` share `--output-dir` for a common output root and `--output` for an exact file path that takes precedence. Image runs retain their `models/`, `profiles/`, and `intrinsic_dim/` subdirectories. Standalone profiling writes `profile.json` beneath an explicit output root.
 
 Both accept `--config` and `--dry-run`. See

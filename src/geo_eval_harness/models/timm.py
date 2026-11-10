@@ -7,8 +7,11 @@ from typing import Any
 import timm
 import torch
 import torch.nn.functional as F
+from timm.models.resnet import ResNet
+from timm.models.vision_transformer import VisionTransformer
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.errors import UnsupportedInputSizeError
 
 from ._normalization import InputUnit, NormalizationStrategy
 from .interface import BenchModel
@@ -220,6 +223,27 @@ class TimmPatchBenchModel(BenchModel):
         if self._channel_perm is None:
             return images
         return images[:, self._channel_perm, :, :]
+
+    def flops_input_module(self, image_size: int) -> torch.nn.Module:
+        """Expose supported timm stems without enabling dynamic resolution."""
+        if isinstance(self.backbone, ResNet):
+            return self.backbone.conv1
+        if isinstance(self.backbone, VisionTransformer):
+            if self.auto_resize and self.target_size != image_size:
+                raise UnsupportedInputSizeError(
+                    f"Internal resizing targets {self.target_size}, requested {image_size}"
+                )
+            patch = self.backbone.patch_embed
+            if patch.strict_img_size and patch.img_size != (image_size, image_size):
+                raise UnsupportedInputSizeError(
+                    f"Encoder requires {patch.img_size}, requested {image_size}x{image_size}"
+                )
+            if any(image_size % stride for stride in patch.patch_size):
+                raise UnsupportedInputSizeError(
+                    f"Input size {image_size} is not divisible by patch size {patch.patch_size}"
+                )
+            return patch.proj
+        return super().flops_input_module(image_size)
 
     def _forward_patch_features(
         self,

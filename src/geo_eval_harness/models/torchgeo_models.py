@@ -402,6 +402,10 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
         self.backbone.fc = nn.Identity()
         self._prepare_input_conv("conv1", weights_member)
 
+    def flops_input_module(self, image_size: int) -> nn.Module:  # noqa: ARG002
+        """Expose the ResNet stem after wrapper preprocessing."""
+        return self.backbone.conv1
+
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)

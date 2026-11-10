@@ -27,6 +27,7 @@ _FLAG_OVERRIDES = (
     FlagOverride("band_source", ("input", "band_source")),
     FlagOverride("band_configs", ("input", "band_configs")),
     FlagOverride("image_size", ("input", "image_size")),
+    FlagOverride("image_sizes", ("input", "image_sizes")),
     FlagOverride("normalization", ("input", "normalization")),
     FlagOverride("probe_head", ("classification", "head")),
     FlagOverride("probe_num_classes", ("classification", "num_classes")),

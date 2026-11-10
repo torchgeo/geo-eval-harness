@@ -1,8 +1,8 @@
 """Strict settings for synthetic backbone and probe compute measurements."""
 
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, StrictBool, StrictInt, StrictStr, field_validator
+from pydantic import Field, StrictBool, StrictInt, StrictStr, field_validator, model_validator
 
 from ..datasets import list_datasets
 from .presets import ModelPreset, load_model_preset, merge_settings
@@ -47,7 +47,18 @@ class FlopsInputConfig(StrictModel):
     band_source: StrictStr = "cloudsen12"
     band_configs: list[BandConfig] = Field(default_factory=_band_configs, min_length=1)
     image_size: StrictInt = Field(default=224, gt=0)
+    image_sizes: list[Annotated[StrictInt, Field(gt=0)]] | None = Field(default=None, min_length=1)
     normalization: Literal["dataset", "model", "minmax", "minmax_zscore", "none"] = "dataset"
+
+    @model_validator(mode="after")
+    def validate_sizes(self) -> Self:
+        """Keep single-size profiling distinct from encoder-only scaling."""
+        if self.image_sizes is not None:
+            if "image_size" in self.model_fields_set:
+                raise ValueError("image_size and image_sizes are mutually exclusive")
+            if len(set(self.image_sizes)) != len(self.image_sizes):
+                raise ValueError("image_sizes must not contain duplicates")
+        return self
 
     @field_validator("band_source")
     @classmethod
@@ -135,6 +146,8 @@ class FlopsConfig(StrictModel):
         inputs = preset.input.model_dump(exclude_unset=True)
         # Native-size presets have no synthetic dataset dimensions; retain the 224 default.
         if inputs.get("image_size") is None:
+            inputs.pop("image_size", None)
+        if self.input.image_sizes is not None:
             inputs.pop("image_size", None)
         defaults = {
             "input": {

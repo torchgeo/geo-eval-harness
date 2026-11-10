@@ -9,6 +9,8 @@ input:
   band_source: cloudsen12
   band_configs: [rgb]
   image_size: 32
+  # For an encoder-only sweep, select e.g. model.name: timm/resnet18 and replace
+  # image_size with image_sizes: [128, 256, 512, 1024].
 classification:
   head: linear
   num_classes: 10

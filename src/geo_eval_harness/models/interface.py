@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.errors import UnsupportedInputSizeError
 
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy, build_normalizer
@@ -65,6 +66,17 @@ class BenchModel(nn.Module, ABC):
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Apply the configured normalisation strategy."""
         return self._normalizer(images)
+
+    def flops_input_module(self, image_size: int) -> nn.Module:
+        """Return the first spatial projection, after any resizing or padding.
+
+        Adapters opt in to resolution sweeps by exposing this boundary and rejecting
+        incompatible sizes with ``UnsupportedInputSizeError``.
+        """
+        raise UnsupportedInputSizeError(
+            f"{type(self).__name__} does not expose a verified encoder input boundary "
+            f"for size {image_size}"
+        )
 
     @property
     def effective_normalization(self) -> str:

@@ -275,6 +275,7 @@ def test_torchgeo_resnet_removes_classifier(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     model = TorchGeoResNetBench(bands=_rgb_bands(), normalization="identity")
+    assert model.flops_input_module(64) is model.backbone.conv1
     out = model.forward_patch_features(
         torch.rand(2, 3, 64, 64, generator=torch.Generator().manual_seed(0))
     )
