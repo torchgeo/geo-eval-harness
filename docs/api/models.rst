@@ -63,6 +63,11 @@ AnySat
 
 .. autoclass:: AnySatBenchModel
 
+SMARTIES
+^^^^^^^^
+
+.. autoclass:: SmartiesBench
+
 SAM 3
 ^^^^^
 

@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* SMARTIES (``smarties/base``, ``smarties/large``): a spectrum-aware multi-sensor ViT with pinned Hugging Face weights, SMARTIES' pretraining percentile normalization as ``--normalization model``, and segmentation and LoRA support. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
