@@ -236,6 +236,21 @@ class ClassificationConfig(StrictModel):
     linear: LinearConfig = Field(default_factory=LinearConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     bootstrap_samples: StrictInt = Field(default=200, gt=0)
+    feature_standardize: StrictBool = False
+
+    @property
+    def knn_method(self) -> str:
+        """Return ``knn<k>``, with ``-std`` when features are standardized."""
+        return f"knn{self.knn_k}{self._method_suffix}"
+
+    @property
+    def linear_method(self) -> str:
+        """Return ``linear``, with ``-std`` when features are standardized."""
+        return f"linear{self._method_suffix}"
+
+    @property
+    def _method_suffix(self) -> str:
+        return "-std" if self.feature_standardize else ""
 
     @model_validator(mode="after")
     def validate_calibration(self) -> "ClassificationConfig":

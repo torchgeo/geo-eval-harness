@@ -62,7 +62,12 @@ from geo_eval_harness.resume import (
     plan_dataset_run,
     resume_config_hash,
 )
-from geo_eval_harness.utils import FeatureSplit, FeatureSplits, extract_features
+from geo_eval_harness.utils import (
+    FeatureSplit,
+    FeatureSplits,
+    extract_features,
+    standardize_features,
+)
 
 if TYPE_CHECKING:
     import geo_eval_harness.segmentation_task
@@ -817,6 +822,8 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
     splits = FeatureSplits(
         FeatureSplit(x_train, y_train), FeatureSplit(x_val, y_val), FeatureSplit(x_test, y_test)
     )
+    if cfg.classification.feature_standardize:
+        splits = standardize_features(splits)
     common_meta = {
         **common_meta,
         "feature_dim": feature_dim,
@@ -833,7 +840,7 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         )
         row = EvaluationResult(
             **common_meta,
-            method=f"knn{knn_k}",
+            method=cfg.classification.knn_method,
             metric_name=metric_name,
             metric_value=knn_score,
             ci_lower=knn_lo,
@@ -864,7 +871,7 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         else:
             row = EvaluationResult(
                 **common_meta,
-                method="linear",
+                method=cfg.classification.linear_method,
                 metric_name=metric_name,
                 metric_value=lin_score,
                 ci_lower=lin_lo,

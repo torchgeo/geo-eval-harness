@@ -41,7 +41,9 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
             "kwargs": preset.kwargs,
         },
         "input": config.input.model_dump(mode="json"),
-        "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
+        "classification": config.classification.model_dump(
+            mode="json", exclude={"methods", "feature_standardize"}
+        ),
         "segmentation": config.segmentation.model_dump(
             mode="json",
             exclude={
@@ -114,6 +116,7 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"classification": {"linear": {"refit_train_val": False}}},
         {"classification": {"calibration": {"n_bins_linear": 10}}},
         {"classification": {"bootstrap_samples": 100}},
+        {"classification": {"feature_standardize": True}},
         {"segmentation": {"head": "linear"}},
         {"segmentation": {"learning_rate": 0.01}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
