@@ -21,10 +21,11 @@ feature BatchNorm is not in the checkpoint, so in eval mode it is an identity an
 import hashlib
 import logging
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import timm
 import torch
+from timm.models import FeatureListNet
 from torch import nn
 
 from geo_eval_harness.bands import BandCompatibilityError
@@ -187,16 +188,19 @@ class EoSFMBenchModel(BenchModel):
 
         used = sorted({view.encoder for view in self.views})
         self.encoders = nn.ModuleDict()
+        out_channels: dict[int, int] = {}
         for i in used:
             spec, state_dict = loaded[i]
-            encoder = timm.create_model(
-                spec.arch, in_chans=spec.in_chans, features_only=True, pretrained=False
+            encoder = cast(
+                FeatureListNet,
+                timm.create_model(
+                    spec.arch, in_chans=spec.in_chans, features_only=True, pretrained=False
+                ),
             )
             encoder.load_state_dict(state_dict)
             self.encoders[str(i)] = encoder.eval()
-        self.feature_dim = sum(
-            self.encoders[str(view.encoder)].feature_info.channels()[-1] for view in self.views
-        )
+            out_channels[i] = encoder.feature_info.channels()[-1]
+        self.feature_dim = sum(out_channels[view.encoder] for view in self.views)
         logger.info(
             "EoS-FM: %d views of %d/%d specialists, %d features: %s",
             len(self.views),
