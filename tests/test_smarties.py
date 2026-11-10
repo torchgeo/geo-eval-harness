@@ -250,7 +250,7 @@ def _single_sensor_selections() -> list[tuple[str, list[str]]]:
         for names in groups.values():
             try:
                 resolve_projection_plan(_bands(dataset, names))
-            except BandCompatibilityError:
+            except BandCompatibilityError:  # allow-except: groups without a projection are skipped.
                 continue
             cases.append((dataset, names))
     return cases
