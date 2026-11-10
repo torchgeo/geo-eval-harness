@@ -16,6 +16,10 @@ specialist gets the bands it was trained on in its training order:
 
 The embedding concatenates the globally average-pooled last stage of every view.  Upstream's
 feature BatchNorm is not in the checkpoint, so in eval mode it is an identity and is omitted.
+
+The ``cloud_cover`` and ``landcoverai`` specialists emit near-constant features with values up to
+about 14,000 and 2,400 for any input, so float32 distance computations on the raw embedding lose
+the differences between samples; use float64 or subtract the training mean first.
 """
 
 import hashlib

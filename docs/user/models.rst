@@ -428,6 +428,8 @@ All specialists share one input normalization (``bandspec_zscore``), as upstream
 tensor to all of them.  Upstream's per-specialist feature BatchNorm is not in the checkpoint
 and is an identity in eval mode, so the wrapper omits it.
 
+The ``cloud_cover`` and ``landcoverai`` specialists in the released checkpoint emit a last stage that is very large and almost the same for every input.  At 224 px the pooled vector of a ``cloud_cover`` view has norm about 84,000 (values up to 14,000) and varies across samples by about 0.05 per feature, a ``landcoverai`` view has norm about 12,600, and every other view stays below 300.  Upstream's own encoder gives the same magnitudes for an all-zeros input, so this comes from the weights and not from the input normalization.  The squared norm of the embedding is about 1e10, where float32 values are 512 to 1024 apart, so a float32 squared-L2 distance such as FAISS ``IndexFlatL2`` rounds the differences between samples to zero.  Compare or probe these embeddings in float64, or subtract the training mean first.
+
 The EuroSAT and BigEarthNet specialists were trained on the labels of EuroSAT and BigEarthNet
 v2, so results on ``eurosat``, ``eurosat-spatial``, ``m-eurosat``, ``benv2`` and
 ``m-bigearthnet`` are not out-of-distribution.  The code is licensed CC BY-NC-SA 4.0 and the
