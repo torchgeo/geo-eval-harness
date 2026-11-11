@@ -355,6 +355,9 @@ def test_pretrained_probe_at_512_with_checkpointing(model_key: str, mode: str, a
         assert max(quadrants, key=quadrants.__getitem__) == "top_right", quadrants
 
 
+@pytest.mark.skipif(
+    find_spec("olmoearth_pretrain_minimal") is None, reason="olmoearth not installed"
+)
 def test_keyword_block_calls_reach_checkpoint_positionally(monkeypatch: pytest.MonkeyPatch) -> None:
     """torch saves only the RNG state of devices of positional tensors (CUDA dropout replay)."""
     from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.attention import Block
