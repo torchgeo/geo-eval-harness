@@ -404,28 +404,37 @@ EoS-FM
 :class:`~geo_eval_harness.models.EoSFMBenchModel` wraps EoS-FM (`Adorni et al., 2025
 <https://arxiv.org/abs/2511.21523>`_), an ensemble of 21 ConvNeXtV2-Atto specialists (71M
 parameters), each trained with supervision on one remote-sensing dataset.  Eighteen take three
-channels (RGB, or a VV,VH,VH composite for the SAR specialists), two take the 13 Sentinel-2 L1C
-bands and one takes BigEarthNet's Sentinel-1 and Sentinel-2 bands.  The weights come from a
+channels (R,G,B; N,R,G for ``cloud_cover``, ``potsdam`` and ``opencanopy``; a VV,VH,VH or
+single-band composite for the SAR specialists), two take the 13 Sentinel-2 L1C bands and one
+takes BigEarthNet's Sentinel-1 and Sentinel-2 bands.  The weights come from a
 pinned commit of `pierreadorni/eos-fm <https://huggingface.co/pierreadorni/eos-fm>`_ and are
-checked against their sha256.
+checked against their sha256.  The paper lists 22 specialists; the released file lacks the
+Kenya crop-type one, which the author added late and may not have uploaded.
 
 .. code-block:: console
 
    $ geo-eval-harness run --model eosfm --dataset m-eurosat --bands all
 
-The embedding concatenates the average-pooled last stage (320 channels) of every specialist
-input, in checkpoint order: 6720 features for RGB input.  Upstream picks each specialist's input
-from the channel count with fixed indices, which misorders bands for several GeoBench band
-orders.  The wrapper instead matches bands by name, so each specialist gets the bands it was
-trained on in its training order:
+The embedding concatenates the average-pooled last stage (320 channels) of every specialist,
+in checkpoint order: 6720 features for any input.  The released upstream code picks each
+specialist's input from the channel count with fixed indices; its author confirmed that this
+is an outdated version of the band adaptation described in Section 3.2 of the paper.  The
+wrapper follows Section 3.2 and maps each specialist's training bands, in its training order,
+onto the input:
 
-* The 3-channel specialists get R,G,B.  For the full 13-band Sentinel-2 set they also get
-  NIR,R,G, and for SAR-only input VV,VH,VH, as upstream.
-* A multispectral specialist gets its own bands when all of them are present.  For RGB-only
-  input it gets R,G,B repeated up to its channel count, as upstream.  Otherwise it is skipped.
+1. the band with the same name;
+2. otherwise the band of the same modality with the nearest centre wavelength (for SAR, the
+   nearest polarisation): a 13-band specialist without B10 gets B11, and an IRRG specialist on
+   RGB input gets R,R,G;
+3. otherwise the other modality: R,G,B for the SAR bands, and the VV,VH,VH composite (or VV,VH
+   repeated) for the optical bands.
 
-All specialists share one input normalization (``bandspec_zscore``), as upstream feeds one
-tensor to all of them.  Upstream's per-specialist feature BatchNorm is not in the checkpoint
+The Section 3.2 adapter is not released, so step 3 and the polarisation order are the
+wrapper's reading of the paper.
+
+All specialists share one input normalization (``bandspec_zscore``): each dataset is
+standardized with its own band statistics, which is what the author recommends for downstream
+use.  Upstream's per-specialist feature BatchNorm is not in the checkpoint
 and is an identity in eval mode, so the wrapper omits it.
 
 The ``cloud_cover`` and ``landcoverai`` specialists in the released checkpoint emit a last stage that is very large and almost the same for every input.  At 224 px the pooled vector of a ``cloud_cover`` view has norm about 84,000 (values up to 14,000) and varies across samples by about 0.05 per feature, a ``landcoverai`` view has norm about 12,600, and every other view stays below 300.  Upstream's own encoder gives the same magnitudes for an all-zeros input, so this comes from the weights and not from the input normalization.  The squared norm of the embedding is about 1e10, where float32 values are 512 to 1024 apart, so a float32 squared-L2 distance such as FAISS ``IndexFlatL2`` rounds the differences between samples to zero.  Compare or probe these embeddings in float64, or subtract the training mean first.

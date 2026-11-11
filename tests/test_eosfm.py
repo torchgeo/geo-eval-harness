@@ -108,10 +108,11 @@ def test_unknown_multispectral_specialist_is_rejected(ensemble: Path, tmp_path: 
 
 def test_forward_concatenates_pooled_last_stage_per_view(ensemble: Path) -> None:
     model = _model(ensemble, _RGB)
+    # Missing optical bands take the nearest wavelength; BigEarthNet's VH,VV take R,G (rule iv).
     assert [v.channels for v in model.views] == [
         (0, 1, 2),
-        (0, 1, 2) * 4 + (0,),
-        (0, 1, 2) * 4 + (0, 1),
+        (2, 2, 1, 0) + (0,) * 9,
+        (0, 1, 2, 2, 1) + (0,) * 9,
     ]
     x = torch.randn(2, 3, 64, 64)
     with torch.no_grad():
@@ -124,10 +125,10 @@ def test_forward_concatenates_pooled_last_stage_per_view(ensemble: Path) -> None
     torch.testing.assert_close(out, torch.cat(expected, dim=1))
 
 
-def test_unused_specialists_are_not_built(ensemble: Path) -> None:
+def test_every_specialist_gets_one_view(ensemble: Path) -> None:
     model = _model(ensemble, _bands(*[("s2", n) for n in _S2_BEN]))
-    assert list(model.encoders) == ["0"]
-    assert model.feature_dim == 64
+    assert [v.encoder for v in model.views] == [0, 1, 2]
+    assert model.feature_dim == 3 * 64
 
 
 def test_model_native_is_rejected(ensemble: Path) -> None:
@@ -137,34 +138,38 @@ def test_model_native_is_rejected(ensemble: Path) -> None:
         )
 
 
+# forestnet has B8A but no B08; B8A is the nearest band to the NIR the IRRG specialists saw.
+_CANONICAL = {"b08": "nir", "b8a": "nir", "b04": "red", "b03": "green", "b02": "blue"}
+
+
 @pytest.mark.parametrize(
-    ("dataset", "selection", "n_views"),
+    ("dataset", "selection", "first_irrg_band"),
     [
-        ("aid", "rgb", 21),
-        ("benv2", "rgb", 21),
-        ("benv2", "all", 19),
-        ("eurosat", "all", 38),
-        ("eurosat-spatial", "all", 38),
-        ("forestnet", "all", 18),
-        ("m-bigearthnet", "all", 18),
-        ("m-brick-kiln", "all", 38),
-        ("m-eurosat", "all", 38),
-        ("m-forestnet", "all", 18),
-        ("m-pv4ger", "all", 21),
-        ("m-so2sat", "all", 18),
-        ("resisc45", "rgb", 21),
-        ("so2sat", "all", 18),
-        ("treesatai", "all", 19),
-        ("ucmerced", "rgb", 21),
+        ("aid", "rgb", "red"),
+        ("benv2", "rgb", "red"),
+        ("benv2", "all", "nir"),
+        ("eurosat", "all", "nir"),
+        ("eurosat-spatial", "all", "nir"),
+        ("forestnet", "all", "nir"),
+        ("m-bigearthnet", "all", "nir"),
+        ("m-brick-kiln", "all", "nir"),
+        ("m-eurosat", "all", "nir"),
+        ("m-forestnet", "all", "nir"),
+        ("m-pv4ger", "all", "red"),
+        ("m-so2sat", "all", "nir"),
+        ("resisc45", "rgb", "red"),
+        ("so2sat", "all", "nir"),
+        ("treesatai", "all", "nir"),
+        ("ucmerced", "rgb", "red"),
     ],
 )
-def test_classification_datasets_route(dataset: str, selection: str, n_views: int) -> None:
-    bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
-    routes = _routes(bands)
-    assert len(routes) == n_views
-    canonical = {"b04": "red", "b03": "green", "b02": "blue"}
-    first_rgb = next(names for name, names in routes if name == "cloud_cover")
-    assert [canonical.get(n, n) for n in first_rgb] == ["red", "green", "blue"]
+def test_classification_datasets_route(dataset: str, selection: str, first_irrg_band: str) -> None:
+    routes = dict(_routes(get_bench_dataset_class(dataset).resolve_band_specs(selection)))
+    assert len(routes) == len(_RELEASED)
+    assert [_CANONICAL.get(n, n) for n in routes["imagenet"]] == ["red", "green", "blue"]
+    irrg = [first_irrg_band, "red", "green"]
+    for name in ("cloud_cover", "potsdam", "opencanopy"):
+        assert [_CANONICAL.get(n, n) for n in routes[name]] == irrg
 
 
 def test_s2_l1c_feeds_both_13_band_specialists_their_own_order() -> None:
@@ -173,7 +178,12 @@ def test_s2_l1c_feeds_both_13_band_specialists_their_own_order() -> None:
     tail = ["nir", "water_vapour", "swir_cirrus", "swir_1", "swir_2", "red_edge_4"]
     assert routes["eurosat-s2"][7:] == tail
     assert routes["sen12ms-s2"][7:] == ["nir", "red_edge_4", *tail[1:-1]]
-    assert ("cloud_cover", ["nir", "red", "green"]) in _routes(bands)
+
+
+def test_missing_s2_band_takes_the_nearest_wavelength() -> None:
+    routes = dict(_routes(_bands(*[("s2", n) for n in _S2_BEN])))
+    # B10 (1.375 um) is closer to B11 (1.610 um) than to B09 (0.945 um).
+    assert routes["eurosat-s2"] == [*_S2_BEN[:8], "b09", "b11", "b11", "b12", "b8a"]
 
 
 @pytest.mark.parametrize("dataset", ["benv2", "treesatai"])
@@ -185,23 +195,43 @@ def test_bigearthnet_specialist_gets_sentinel_bands_in_its_order(dataset: str) -
     names = [b.name for b in picked]
     assert names[:2] == ["vh", "vv"]
     assert names[9:] in (["b08", "b8a", "b09", "b11", "b12"], ["nir", "b8a", "b09", "b11", "b12"])
+    assert dict(_routes(bands))["bigearthnet-S1"] == ["vh", "vv", "vv"]
 
 
-def test_rgb_only_input_is_reordered_and_tiled() -> None:
-    routes = _routes(_bands(*[("aerial", n) for n in ["blue", "green", "red"]]))
-    assert routes[0] == ("eurosat-s2", ["red", "green", "blue"] * 4 + ["red"])
-    assert all(names == ["red", "green", "blue"] for name, names in routes if name == "imagenet")
+def test_rgb_only_input_fills_by_wavelength_and_feeds_sar_specialists_rgb() -> None:
+    routes = dict(_routes(_bands(*[("aerial", n) for n in ["blue", "green", "red"]])))
+    assert routes["eurosat-s2"] == ["blue", "blue", "green", *["red"] * 10]
+    assert routes["cloud_cover"] == ["red", "red", "green"]
+    assert routes["imagenet"] == routes["sen12ms-s1"] == ["red", "green", "blue"]
 
 
-def test_sar_only_input_feeds_the_rgb_specialists_vv_vh_vh() -> None:
-    routes = _routes(_bands(("s1", "vv"), ("s1", "vh")))
-    assert len(routes) == 18
-    assert all(names == ["vv", "vh", "vh"] for _, names in routes)
+@pytest.mark.parametrize(
+    ("bands", "composite", "bigearthnet_s1", "tile"),
+    [
+        (_bands(("s1", "vv"), ("s1", "vh")), ["vv", "vh", "vh"], ["vh", "vv", "vv"], ["vv", "vh"]),
+        (
+            _bands(
+                ("sar", "sar"),
+            ),
+            ["sar"] * 3,
+            ["sar"] * 3,
+            ["sar"],
+        ),
+    ],
+)
+def test_sar_only_input(
+    bands: list[BandSpec], composite: list[str], bigearthnet_s1: list[str], tile: list[str]
+) -> None:
+    routes = dict(_routes(bands))
+    assert routes["imagenet"] == routes["sen12ms-s1"] == composite
+    assert routes["bigearthnet-S1"] == bigearthnet_s1
+    assert routes["caffe"] == [composite[0]] * 3
+    assert routes["eurosat-s2"] == [tile[i % len(tile)] for i in range(13)]
 
 
 def test_unusable_bands_raise() -> None:
     with pytest.raises(BandCompatibilityError, match="EoS-FM needs"):
-        plan_views(_bands(("s2", "nir"), ("s2", "swir1")), _RELEASED)
+        plan_views(_bands(("aux", "dem")), _RELEASED)
 
 
 @pytest.mark.slow

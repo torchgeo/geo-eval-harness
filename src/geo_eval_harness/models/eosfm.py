@@ -2,17 +2,20 @@
 
 EoS-FM (Adorni et al., 2025; https://github.com/pierreadorni/EoS-FM) is an ensemble of
 specialist ConvNeXtV2-Atto encoders, each trained with supervision on one remote-sensing task
-and band set.  Upstream (``eosfm/encoder.py`` at 551d176) feeds the input to every specialist,
-adapting it to the specialist's channel count with fixed index rules keyed by channel count
-only, and concatenates the specialists' feature maps.
+and band set, and concatenates the specialists' feature maps.  The released upstream code
+(``eosfm/encoder.py`` at 551d176) adapts the input with fixed index rules keyed by channel count
+only; its author describes that as an outdated version of the band adaptation in Section 3.2 of
+the paper (torchgeo/geo-eval-harness#625).
 
-This wrapper uses the same specialists, views and order, but routes bands by name so each
-specialist gets the bands it was trained on in its training order:
-
-* 3-channel specialists get R,G,B; also N,R,G for the full 13-band Sentinel-2 L1C set; and
-  VV,VH,VH for SAR-only inputs.
-* Multispectral specialists get their own band order when all of their bands are present, and
-  R,G,B repeat-tiled to their channel count for RGB-only inputs.
+This wrapper follows Section 3.2: each specialist gets one view, built from the bands it was
+trained on (``SPECIALIST_BANDS``, from the upstream datamodules) in its training order.  Each band
+is taken (i) by name, else (ii-iii) as the band of the same modality with the nearest centre
+wavelength (for SAR, the nearest polarisation), else (iv) from the other modality: R,G,B for SAR
+bands, and for optical bands the VV,VH,VH composite (3 channels) or VV,VH repeat-tiled, as
+upstream's RGB/SAR rules do.  For example ``cloud_cover``, ``potsdam`` and ``opencanopy`` get
+N,R,G and ``bigearthnet-S1`` VH,VV,VV; a 13-band specialist without B10 gets B11 in its place.
+The Section 3.2 adapter is not released, so rule (iv) and the polarisation order are this
+wrapper's reading.
 
 The embedding concatenates the globally average-pooled last stage of every view.  Upstream's
 feature BatchNorm is not in the checkpoint, so in eval mode it is an identity and is omitted.
@@ -35,7 +38,7 @@ from torch import nn
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._band_mapping import canonical_band_name, resolve_src_indices
+from ._band_mapping import S2_WAVELENGTHS_UM, canonical_band_name, resolve_src_indices
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -48,7 +51,10 @@ EOSFM_WEIGHTS_SHA256 = "f8b2c067db0e063a8d5693c24c3ea763e85e902b3348fb59daf7f765
 
 _RGB = ("red", "green", "blue")
 _NIR_RED_GREEN = ("nir", "red", "green")
-_SAR = ("vv", "vh", "vh")
+_VV_VH_VH = ("vv", "vh", "vh")
+_CO_POL = ("vv", "hh")
+_CROSS_POL = ("vh", "hv")
+_SAR_NAMES = frozenset({*_CO_POL, *_CROSS_POL, "sar"})
 # Band orders from the upstream datamodules: torchgeo EuroSAT (B8A last), SEN12MS, and
 # BigEarthNet v2 (S1 files sorted VH, VV; S2 sorted by torchgeo's sort_sentinel2_bands).
 _S2_EUROSAT = (
@@ -64,11 +70,19 @@ _S1_S2_BIGEARTHNET = (
     "nir_narrow", "watervapor", "swir1", "swir2",
 )  # fmt: skip
 
-#: Training band order of each multispectral specialist, by its ``encoder_name``.
+#: Training band order of each specialist not trained on R,G,B, by its ``encoder_name``.
+#: ``sar`` is CaFFe's single SAR intensity band, repeated to three channels upstream.
 SPECIALIST_BANDS: dict[str, tuple[str, ...]] = {
     "eurosat-s2": _S2_EUROSAT,
     "sen12ms-s2": _S2_SEN12MS,
     "bigearthnet": _S1_S2_BIGEARTHNET,
+    "cloud_cover": _NIR_RED_GREEN,  # Sentinel-2 B08, B04, B03
+    "potsdam": _NIR_RED_GREEN,  # IRRG
+    "opencanopy": _NIR_RED_GREEN,  # IRRG
+    "sen12ms-s1": _VV_VH_VH,
+    "etci2021": _VV_VH_VH,
+    "bigearthnet-S1": ("vh", "vv", "vv"),
+    "caffe": ("sar", "sar", "sar"),
 }
 
 
@@ -110,47 +124,74 @@ def load_specialists(
         if not backbone.startswith("timm_"):
             raise ValueError(f"EoS-FM specialist backbone {backbone!r} is not a timm model.")
         name = config["encoder_name"]
-        if in_chans != 3 and len(SPECIALIST_BANDS.get(name, ())) != in_chans:
+        if len(specialist_bands(name)) != in_chans:
             raise ValueError(f"No band order for {in_chans}-channel EoS-FM specialist {name!r}.")
         specialists.append((Specialist(name, backbone.removeprefix("timm_"), in_chans), state_dict))
     return specialists
 
 
-def _tile(names: tuple[str, ...], n: int) -> tuple[str, ...]:
-    return tuple(names[i % len(names)] for i in range(n))
+def specialist_bands(name: str) -> tuple[str, ...]:
+    """Return the canonical bands a specialist was trained on, in its training order."""
+    return SPECIALIST_BANDS.get(name, _RGB)
+
+
+def _optical_um(band: BandSpec) -> float | None:
+    name = canonical_band_name(band.name)
+    if name in _SAR_NAMES:
+        return None
+    return band.wavelength_um if band.wavelength_um is not None else S2_WAVELENGTHS_UM.get(name)
+
+
+def _same_modality(slot: str, index: dict[str, int], optical_um: dict[int, float]) -> int | None:
+    if slot in _SAR_NAMES:
+        same, other = (_CROSS_POL, _CO_POL) if slot in _CROSS_POL else (_CO_POL, _CROSS_POL)
+        return next((index[p] for p in (*same, "sar", *other) if p in index), None)
+    target = S2_WAVELENGTHS_UM[slot]
+    nearest = min(
+        ((abs(optical_um[i] - target), i) for i in index.values() if i in optical_um),
+        default=None,
+    )
+    return nearest[1] if nearest else None
+
+
+def _cross_modal(
+    slots: tuple[str, ...], position: int, index: dict[str, int], optical_um: dict[int, float]
+) -> int | None:
+    if slots[position] in _SAR_NAMES:
+        sources = [index[n] for n in _RGB if n in index] or sorted(optical_um)
+        return sources[position % len(sources)] if sources else None
+    # SAR for optical bands: the VV,VH,VH composite of the 3-channel SAR specialists, or VV,VH
+    # repeat-tiled for the multispectral ones.
+    pattern = _VV_VH_VH if len(slots) == len(_VV_VH_VH) else _VV_VH_VH[:2]
+    return _same_modality(pattern[position % len(pattern)], index, optical_um)
 
 
 def plan_views(bands: list[BandSpec], specialists: list[Specialist]) -> list[View]:
-    """Choose each specialist's input views from the band names, in upstream order."""
-    # RGB follows the dataset's first-listed sensor, as its own ``rgb`` selection does; the
-    # multispectral specialists take Sentinel bands even when aerial RGB(N) is listed first.
+    """Map each specialist's training bands onto the input bands: one view per specialist."""
+    # 3-channel specialists follow the dataset's first-listed sensor, as its own ``rgb``
+    # selection does; multispectral ones take Sentinel bands even when aerial RGB is listed first.
     index = resolve_src_indices(bands)
     sentinel_index = resolve_src_indices(bands, preferred_sensors=("s2", "s1"))
-    available = set(index)
-    has_rgb = set(_RGB) <= available
-    rgb_only = has_rgb and len(bands) == len(_RGB)
+    optical_um = {i: um for i, band in enumerate(bands) if (um := _optical_um(band)) is not None}
 
     views = []
     for i, spec in enumerate(specialists):
-        names, src = [], index
-        if spec.in_chans == len(_RGB):
-            if has_rgb:
-                names.append(_RGB)
-                if set(_S2_SEN12MS) <= available:
-                    names.append(_NIR_RED_GREEN)
-            elif {"vv", "vh"} <= available:
-                names.append(_SAR)
-        elif set(SPECIALIST_BANDS[spec.name]) <= available:
-            names, src = [SPECIALIST_BANDS[spec.name]], sentinel_index
-        elif rgb_only:
-            names.append(_tile(_RGB, spec.in_chans))
-        views += [View(i, tuple(src[n] for n in view)) for view in names]
-
-    if not views:
-        raise BandCompatibilityError(
-            "EoS-FM needs red, green and blue, VV and VH, or a specialist's full band set; got "
-            f"{sorted(canonical_band_name(b.name) for b in bands)}."
-        )
+        src = index if spec.in_chans == len(_RGB) else sentinel_index
+        slots = specialist_bands(spec.name)
+        channels = []
+        for position, slot in enumerate(slots):
+            channel = src.get(slot)
+            if channel is None:
+                channel = _same_modality(slot, src, optical_um)
+            if channel is None:
+                channel = _cross_modal(slots, position, src, optical_um)
+            if channel is None:
+                raise BandCompatibilityError(
+                    "EoS-FM needs at least one SAR band or optical band with a known wavelength; "
+                    f"got {sorted(canonical_band_name(b.name) for b in bands)}."
+                )
+            channels.append(channel)
+        views.append(View(i, tuple(channels)))
     return views
 
 
