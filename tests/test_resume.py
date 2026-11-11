@@ -217,6 +217,27 @@ def test_config_hash_reflects_dataset_resolved_preset_overrides() -> None:
     assert _hash(config, "m-eurosat") != _hash(config, "forestnet")
 
 
+@pytest.mark.parametrize(
+    ("model", "dataset", "image_size", "expected"),
+    [
+        ("timm/vit/vit_base_patch16_224", "loveda", 224, "753ad78a92964b15"),
+        ("timm/vit/vit_base_patch16_224", "fotw", 256, "45b542d6fc9e1fad"),
+        ("torchgeo/dofa_base", "loveda", 224, "a1576b55b8148680"),
+        ("torchgeo/dofa_large", "loveda", 512, "220816abc0f0e8b3"),
+        ("torchgeo/panopticon", "loveda", 224, "2563a8cdf53c8b93"),
+        ("torchgeo/panopticon", "fotw", 256, "37b64ab9d70e8352"),
+        ("torchgeo/deo_rgb", "loveda", 224, "124beafa38c51b41"),
+        ("torchgeo/deo_s2", "loveda", 512, "cbbe48ef58163741"),
+    ],
+)
+def test_native_size_options_leave_existing_preset_hashes_unchanged(
+    model: str, dataset: str, image_size: int, expected: str
+) -> None:
+    """Native-size kwargs are opt-in, so presets that do not set them keep their stored hashes."""
+    config = _cfg(model={"name": model}, datasets=[dataset], input={"image_size": image_size})
+    assert _hash(config, dataset) == expected
+
+
 @pytest.mark.parametrize("dataset", ["m-eurosat", "burn_scars"])
 def test_package_rename_preserves_result_resume(tmp_path: Path, dataset: str) -> None:
     config, preset = resolve_run_config(_cfg(datasets=[dataset], output={"resume": True}), dataset)
