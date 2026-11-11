@@ -401,47 +401,53 @@ pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no p
 EoS-FM
 ^^^^^^
 
-:class:`~geo_eval_harness.models.EoSFMBenchModel` wraps EoS-FM (`Adorni et al., 2025
-<https://arxiv.org/abs/2511.21523>`_), an ensemble of 21 ConvNeXtV2-Atto specialists (71M
-parameters), each trained with supervision on one remote-sensing dataset.  Eighteen take three
-channels (R,G,B; N,R,G for ``cloud_cover``, ``potsdam`` and ``opencanopy``; a VV,VH,VH or
-single-band composite for the SAR specialists), two take the 13 Sentinel-2 L1C bands and one
-takes BigEarthNet's Sentinel-1 and Sentinel-2 bands.  The weights come from a
-pinned commit of `pierreadorni/eos-fm <https://huggingface.co/pierreadorni/eos-fm>`_ and are
-checked against their sha256.  The paper lists 22 specialists; the released file lacks the
-Kenya crop-type one, which the author added late and may not have uploaded.
+:class:`~geo_eval_harness.models.EoSFMBenchModel` wraps EoS-FM (`Adorni et al., ECCV 2026
+<https://arxiv.org/abs/2511.21523>`_), an ensemble of 22 ConvNeXtV2-Atto specialists (75M
+parameters), each trained with supervision on one remote-sensing dataset.  Each checkpoint entry
+stores the names of the bands its specialist was trained on: R,G,B or Sentinel-2 B4,B3,B2 for
+most, NIR,R,G for three, VV,VH composites with expressions such as ``VV-VH`` for the SAR
+specialists, 13 Sentinel-2 bands for three (one with a cloud band, ``CLD``) and Sentinel-1 plus
+Sentinel-2 for one.  The weights come from a pinned commit of `pierreadorni/eos-fm
+<https://huggingface.co/pierreadorni/eos-fm>`_ and are checked against their sha256.
 
 .. code-block:: console
 
    $ geo-eval-harness run --model eosfm --dataset m-eurosat --bands all
 
-The embedding concatenates the average-pooled last stage (320 channels) of every specialist,
-in checkpoint order: 6720 features for any input.  The released upstream code picks each
-specialist's input from the channel count with fixed indices; its author confirmed that this
-is an outdated version of the band adaptation described in Section 3.2 of the paper.  The
-wrapper follows Section 3.2 and maps each specialist's training bands, in its training order,
-onto the input:
+The embedding concatenates the average-pooled last stage (320 channels) of every specialist, in
+checkpoint order: 7040 features for any input.  Each specialist gets one input built from its
+training bands, in its training order, with the band adaptation of upstream's encoder
+(``SmartBandAdapter``, pierreadorni/EoS-FM@d61a5ef).  Each training band takes the first input
+band that
 
-1. the band with the same name;
-2. otherwise the band of the same modality with the nearest centre wavelength (for SAR, the
-   nearest polarisation): a 13-band specialist without B10 gets B11, and an IRRG specialist on
-   RGB input gets R,R,G;
-3. otherwise the other modality: R,G,B for the SAR bands, and the VV,VH,VH composite (or VV,VH
-   repeated) for the optical bands.
+1. has the same name; otherwise
+2. has the same centre wavelength (Sentinel-2 B4 for R); otherwise
+3. is the optical band with the nearest centre wavelength (B11 for a missing B10, R for NIR on
+   RGB input); otherwise
+4. is the next band of a fallback pool: SAR bands for a SAR band, optical bands for an optical
+   one, all bands if that pool is empty.  The pool position advances with every fallback of the
+   same specialist, so SAR specialists on RGB input get R,G and R-G.
 
-The Section 3.2 adapter is not released, so step 3 and the polarisation order are the
-wrapper's reading of the paper.
+As upstream, optical bands come before SAR bands.  The wrapper translates band names into
+upstream's vocabulary: Sentinel-2 bands into B1 to B12 and B8A, other red, green, blue, NIR and
+SWIR bands into R, G, B, NIR, SWIR1 and SWIR2, and VV, VH, HH and HV unchanged.  Other bands keep
+their name and have no wavelength, so specialists reach them only through the fallback; for
+example, So2Sat's complex and Lee-filtered SAR channels are not used by the SAR specialists.
+Elevation bands (``kuro_siwo`` and ``flair2`` ``all``) are not passed to the specialists.  On the
+released weights the per-level features equal upstream ``EosFM`` (raw features, no fusion)
+exactly for every benchmark band set checked.
 
 All specialists share one input normalization (``bandspec_zscore``): each dataset is
-standardized with its own band statistics, which is what the author recommends for downstream
-use.  Upstream's per-specialist feature BatchNorm is not in the checkpoint
-and is an identity in eval mode, so the wrapper omits it.
-
-The ``cloud_cover`` and ``landcoverai`` specialists in the released checkpoint emit a last stage that is very large and almost the same for every input.  At 224 px the pooled vector of a ``cloud_cover`` view has norm about 84,000 (values up to 14,000) and varies across samples by about 0.05 per feature, a ``landcoverai`` view has norm about 12,600, and every other view stays below 300.  Upstream's own encoder gives the same magnitudes for an all-zeros input, so this comes from the weights and not from the input normalization.  The squared norm of the embedding is about 1e10, where float32 values are 512 to 1024 apart, so a float32 squared-L2 distance such as FAISS ``IndexFlatL2`` rounds the differences between samples to zero.  Compare or probe these embeddings in float64, or subtract the training mean first.
+standardized with its own band statistics, as the authors recommend; the training statistics
+stored in the checkpoint are not applied, as upstream.  Upstream's optional feature BatchNorm,
+projection and fusion are not in the checkpoint, so the wrapper returns raw features.  The
+first release (``c161e886``) had 21 specialists, two of which produced features of up to 1e4;
+this release does not.
 
 The EuroSAT and BigEarthNet specialists were trained on the labels of EuroSAT and BigEarthNet
 v2, so results on ``eurosat``, ``eurosat-spatial``, ``m-eurosat``, ``benv2`` and
-``m-bigearthnet`` are not out-of-distribution.  The code is licensed CC BY-NC-SA 4.0 and the
+``m-bigearthnet`` are not out-of-distribution.  The Kenya crop-type specialist is trained on a
+dataset that is not in the benchmark.  The code is licensed CC BY-NC-SA 4.0 and the
 weights CC BY-SA 4.0, as stated on GitHub and Hugging Face respectively.
 
 Adding a new model
