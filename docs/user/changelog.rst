@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* Date-aware backbones can receive each sample's acquisition day of year (``doy``) through ``BenchModel.forward_batch``. PASTIS snapshots (``time_steps`` unset or 1) carry the date of the Sentinel-2 frame the loader selects, and feature extraction, the segmentation probe and solver, and the host, GPU, and disk sample caches pass it through. Other models ignore it; their results and ``config_hash`` values are unchanged. PASTIS sample caches are rebuilt once.
 * ConvNeXt DINOv3 Tiny, Small, and Base presets (``timm/convnext_{tiny,small,base}_dinov3``, timm ``*.dinov3_lvd1689m``) with the same segmentation layers and LoRA targets as ``timm/convnext_large_dinov3``. ``timm/convnext_small`` gains the ConvNeXt LoRA targets; frozen and full fine-tuning hashes are unchanged.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.

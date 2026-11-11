@@ -8,6 +8,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from geo_eval_harness.models.interface import forward_model_batch
+
 
 @dataclass
 class FeatureSplit[T]:
@@ -62,7 +64,7 @@ def extract_features(
             images = transforms(images)
 
         with torch.inference_mode():
-            features = model(images)
+            features = forward_model_batch(model, images, doy=batch.get("doy"))
             features = pooled_features(features)
 
         x_all.append(features)
