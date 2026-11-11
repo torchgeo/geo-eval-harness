@@ -1,6 +1,6 @@
 # Segmentation backbone layer reference
 
-This page records how the values for `eval.segmentation.layers` (see
+This page records how the values for `segmentation.layers` (see
 [Configuration](configuration.rst)) were determined for each model
 family, and serves as a reference when adding new models. It complements
 the [`SegmentationProbe`](../api/models.rst) and the segmentation-head
@@ -45,7 +45,13 @@ print(shapes)
 
 ## Layer Names by Family
 
-All spatial sizes are for a 224×224 input image.
+### Tessera V2 students
+
+All four students expose `spatial_features`, the full-resolution NCHW pixel embedding map after the final MLP reducer, non-affine LayerNorm, and optional Matryoshka prefix selection. Its channel count is `embedding_dim` (128 by default), independent of student width. Use `layers: ["spatial_features"]`, `head: linear`, and no ViT neck. Temporal Transformer blocks are not spatial feature layers. Shape discovery uses an 8-by-8 input; actual images retain their configured grid size.
+
+This is a single-snapshot protocol. PASTIS dates follow the actual selected S2 frame, and undated samples use the explicit fallback DOY. See [Models](models.rst) for input normalization, dataset exclusions, LoRA targets, and memory considerations.
+
+For the following spatial backbones, sizes are given for a 224×224 input image.
 
 ### ResNet (resnet18, resnet34, resnet50, resnet101)
 

@@ -14,6 +14,38 @@ Available presets
 Every preset under :file:`src/geo_eval_harness/conf/model/` becomes a
 ``--model`` selector. A preset's ``target`` is an importable class; constructor
 options live in ``kwargs``, separate from input and evaluation defaults.
+A preset may declare ``supported_datasets`` to reject unverified model/dataset combinations during resolution, before samples or weights are loaded. This metadata is not passed to the constructor.
+
+Tessera V2
+^^^^^^^^^^
+
+``tessera_v2/nano``, ``tessera_v2/small``, ``tessera_v2/medium``, and ``tessera_v2/large`` select the released pixel students (approximately 1.07M, 7.11M, 21.03M, and 43.83M parameters). Medium is the upstream balanced default. The wrapper downloads immutable Hugging Face revisions, verifies packaged SHA-256 digests, constructs the architecture from checkpoint metadata, and loads the ``model`` state dictionary strictly. Architecture code is MIT-licensed; weights are CC0-1.0. The teacher and V1 checkpoints are not supported.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --config docs/examples/tessera-v2-classification.yaml
+   $ geo-eval-harness run --config docs/examples/tessera-v2-segmentation.yaml
+   $ geo-eval-harness run --config docs/examples/tessera-v2-lora.yaml
+
+**Input contract.** The wrapper requires an explicit S2-only channel selection and maps it to ``B04 B02 B03 B08 B8A B05 B06 B07 B11 B12``, retaining the distinction between B08 and B8A. Mixed sensors are rejected rather than silently dropped. It converts reflectance to DN with a factor of 10000 and applies the released per-band mean and standard deviation exactly once. The authoritative constants are ``S2_MEAN`` and ``S2_STD`` in ``geo_eval_harness.models.tessera`` and the `pinned upstream student source <https://github.com/ucam-eo/tessera/blob/e368539f7c4711e5f16fdd09801573830e34baf9/tessera_infer_v2/student/model.py>`_. Other normalization strategies are rejected. Missing S2 bands are filled with their pretraining means, yielding zero after standardization; spectral-neighbor substitution is disabled. Neither dataset z-scores nor an arbitrary uint8-to-reflectance conversion reproduces this input scale.
+
+The named presets enforce a verified L2A dataset allowlist: ``benv2``, ``m-bigearthnet``, ``pastis``, ``treesatai``, and ``fotw``. They select only S2 channels from mixed-sensor datasets. ``fotw`` uses four-band seasonal composites and therefore mean-fills unavailable bands; its original imagery is `Level-2A bottom-of-atmosphere data <https://arxiv.org/html/2409.16252#S2>`_. Seasonal composites, snapshot timing, cloud content, and spatial resolution still differ from Tessera's annual training distribution. Direct constructor users are responsible for establishing the same L2A provenance.
+
+The allowlist excludes ``m-eurosat``, ``m-brick-kiln``, and ``dynamic_earthnet`` until their band identities/radiometry are resolved in separate dataset work. It also excludes ``burn_scars``, whose upstream HLS imagery includes Landsat and is outside this S2-only protocol. Known L1C products (``eurosat``, ``eurosat-spatial``, ``oscd-post``, and ``sen1floods11-s2``) are not converted to L2A or accepted as implicit approximations. ``so2sat``, ``m-so2sat``, and ``cloudsen12`` remain excluded pending product verification, as does ``forestnet`` with its unverified 8-bit radiometry and conflicting sensor labels. Other sensors and SAR-only inputs are unsupported.
+
+**Snapshot dates.** Tessera normally consumes dated annual time series. This wrapper instead repeats one snapshot to the released eight-observation bucket, retaining the original missing-S1 token and both pretrained branches. PASTIS uses the date of the first S2 frame actually selected by its loader. Other inputs use the configurable ``model.kwargs.fallback_doy`` (183 by default), unless aligned per-sample ``doy`` metadata is supplied. Real calendar ordinals, including 366, are accepted. DOY 183 is a reproducibility convention with no claim of seasonal neutrality: the released model has no unknown-date token. For undated datasets, report validation-only sensitivity at DOY 1, 92, 183, and 274 while keeping samples fixed; do not select a date from test metrics. Multi-date inputs are rejected rather than silently pooled.
+
+Because the canonical samples do not expose a verified input cloud-clear mask, this protocol does not filter clouds. Segmentation ``mask`` values are ground truth and never enter preprocessing.
+
+**Feature endpoint.** Classification averages the final pixel embeddings spatially. Segmentation hooks the complete NCHW ``spatial_features`` map after the MLP reducer and final non-affine LayerNorm, before spatial pooling. ``embedding_dim`` defaults to 128; 16, 32, and 64 select direct prefixes of that final output without a second normalization. These prefixes share the same checkpoint. Snapshot inference and mean-filled bands are harness adaptations, so these results do not reproduce the published annual-embedding benchmark.
+
+**Segmentation and LoRA.** The presets use a single full-resolution map and the existing ``linear`` head, with no ViT neck. LoRA is opt-in and adapts ``s2_backbone.transformer_encoder.layers.<i>.linear1/linear2`` through weight parametrizations so torch's fused Transformer kernels consume the updates. The base encoder, missing S1 branch, and attention-pooling weights stay frozen. Rank, alpha, last-block selection, and backbone learning rate use the existing segmentation fields. This is a snapshot-specific harness protocol rather than an upstream fine-tuning recipe; task-specific LoRA does not guarantee that all other Matryoshka prefixes retain their pretrained properties.
+
+The model processes independent pixels, so ``batch_pixels`` (default 1024) bounds each encoder call. Gradient-bearing chunks use activation checkpointing, but chunking does not bound the full dense output map. Configured resizing is rejected: keep ``input.image_size: null`` to retain native grids. For uncached segmentation, the loader batch size is ``runtime.batch_size`` (CLI ``--batch-size``), not ``segmentation.batch_size``. Both segmentation examples explicitly set the actual loader batch to 2; choose a measured batch size for each grid rather than relying on the CLI default of 64.
+
+Feature caching defaults to false because a full-resolution cache requires roughly ``N * D * H * W * bytes_per_value`` bytes per split. Enable caching only after checking that estimate. Fleet jobs must use the verified dataset allowlist, native grids, S2-only bands, the linear head, no neck, and an explicit loader batch size; generic all-dataset, resized, UPerNet, and full-fine-tuning sweep recipes are not this protocol. These models expose no verified spatial-projection boundary for FLOPs resolution sweeps; use the existing real-batch ``profile`` command to measure execution.
+
+For PyTorch builds that dispatch eager attention through Triton, the fleet image also needs a working C compiler, assembler, development headers, and CUDA driver linker configuration. Check these prerequisites with an AMP pilot for every student rather than assuming that a working FP32 run establishes mixed-precision readiness.
 
 TerraFM
 ^^^^^^^
