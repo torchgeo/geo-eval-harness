@@ -61,7 +61,8 @@ class TimmPatchBenchModel(BenchModel):
             averaging spatial tokens.
         auto_resize: If ``True``, bilinearly resize each batch to ``target_size``.
         target_size: Square target size; defaults to ``img_size`` when that is set, else
-            auto-inferred from ``backbone.default_cfg["input_size"]``.
+            auto-inferred from ``backbone.default_cfg["input_size"]``. Flexible backbones may
+            use an explicit resize target different from ``img_size``.
         img_size: Build the backbone for this square input size (passed to
             ``timm.create_model``). Needed by fixed-size backbones such as Swin to
             run at a size other than their pretrained one; ``None`` keeps timm's default.
@@ -144,6 +145,8 @@ class TimmPatchBenchModel(BenchModel):
 
         default_cfg = getattr(self.backbone, "default_cfg", {}) or {}
         cfg_input_size = default_cfg.get("input_size", None)
+        patch_embed = getattr(self.backbone, "patch_embed", None)
+        strict_img_size = getattr(patch_embed, "strict_img_size", False)
         inferred_size: int | None = None
         if img_size is not None:
             # timm keeps the pretrained size in default_cfg when img_size is overridden.
@@ -151,7 +154,12 @@ class TimmPatchBenchModel(BenchModel):
         elif isinstance(cfg_input_size, (list, tuple)) and len(cfg_input_size) == 3:
             inferred_size = int(cfg_input_size[1])
         self.target_size = int(target_size) if target_size is not None else inferred_size
-        if img_size is not None and auto_resize and self.target_size != img_size:
+        if (
+            img_size is not None
+            and strict_img_size
+            and auto_resize
+            and self.target_size != img_size
+        ):
             raise ValueError(
                 f"{model_name} img_size={img_size} needs target_size={img_size} "
                 f"(or auto_resize: false), got target_size={self.target_size}."

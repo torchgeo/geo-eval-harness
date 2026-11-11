@@ -254,11 +254,15 @@ def test_vit_img_size_builds_the_matching_grid(img_size: int | None, grid: int) 
     )
 
 
-def test_timm_img_size_is_the_default_resize_target() -> None:
+@pytest.mark.parametrize(
+    "model_name",
+    ["swin_tiny_patch4_window7_224", "maxvit_tiny_tf_224", "twins_pcpvt_small"],
+)
+def test_timm_img_size_is_the_default_resize_target(model_name: str) -> None:
     """timm keeps 224 in default_cfg after an img_size override, so resize to img_size instead."""
     net = TimmPatchBenchModel(
         _rgb_bands(),
-        model_name="swin_tiny_patch4_window7_224",
+        model_name=model_name,
         pretrained=False,
         auto_resize=True,
         img_size=256,
@@ -277,6 +281,22 @@ def test_timm_img_size_rejects_another_resize_target() -> None:
             img_size=256,
             target_size=224,
         )
+
+
+def test_timm_flexible_backbone_preserves_explicit_resize_target() -> None:
+    net = TimmPatchBenchModel(
+        _rgb_bands(),
+        model_name="twins_pcpvt_small",
+        pretrained=False,
+        auto_resize=True,
+        img_size=256,
+        target_size=224,
+    ).eval()
+    assert net.target_size == 224
+    with torch.no_grad():
+        features = net(torch.rand(1, 3, 200, 200))
+    assert features.shape == (1, 512)
+    assert torch.isfinite(features).all()
 
 
 # --- Pretrained weights (CPU) -----------------------------------------------------------------
