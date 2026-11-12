@@ -78,6 +78,7 @@ Fixed
 * A float16 overflow in the backbone no longer poisons segmentation heads. Training batches with non-finite backbone features are skipped before the head, so BatchNorm running statistics stay finite (previously one overflowing batch made every later evaluation predict a constant class); an epoch that skips more than 5% of its batches fails. Evaluation fails on non-finite features or logits instead of scoring a constant prediction.
 * Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 * UniverSat pins its pretrained weights to a fixed Hugging Face commit (``weights_revision``), as it already pinned the torch.hub code. Before, an update to ``g-astruc/UniverSat`` could change results silently. Set ``weights_revision: null`` to follow the default branch. Hashes and resume keys are unchanged.
+* ``benv2`` names its Sentinel-1 bands by the stored channel order, VH then VV. geobench_v2 labels them VV, VH, so ``vv`` selected the cross-polarized channel and polarization-aware models received swapped inputs. The channel order of ``bands: all`` is unchanged.
 
 0.5.0 (2026-08-10)
 ------------------
