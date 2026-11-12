@@ -43,7 +43,14 @@ def test_packaged_preset_is_typed_without_loading_weights(name: str) -> None:
 def test_packaged_preset_omits_schema_defaults(name: str) -> None:
     raw = load_yaml(model_config_path(name))
     preset = ModelPreset.model_validate(raw)
-    assert raw == preset.model_dump(mode="json", exclude_defaults=True)
+    expected = preset.model_dump(mode="json", exclude_defaults=True)
+    if preset.dataset_overrides:
+        # An override may restore a schema default the preset changed (Satlas normalization).
+        expected["dataset_overrides"] = {
+            dataset: override.model_dump(mode="json", exclude_unset=True)
+            for dataset, override in preset.dataset_overrides.items()
+        }
+    assert raw == expected
 
 
 def test_rcf_seed_is_explicit_and_overridable() -> None:
