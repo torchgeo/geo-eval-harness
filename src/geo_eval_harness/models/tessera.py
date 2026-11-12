@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 SOURCE_REVISION = "e368539f7c4711e5f16fdd09801573830e34baf9"
 S2_BANDS = ("B04", "B02", "B03", "B08", "B8A", "B05", "B06", "B07", "B11", "B12")
+# Average-pooled copies of the pixel map, coarse-to-fine, at the strides pyramid backbones give.
+PYRAMID_STRIDES = (32, 16, 8, 4)
+PYRAMID_LAYERS = tuple(f"pyramid.s{stride}" for stride in PYRAMID_STRIDES)
 S2_MEAN = (
     1633.0042,
     1341.1090,
@@ -169,6 +172,9 @@ class TesseraBenchModel(BenchModel):
         self.fallback_doy = fallback_doy
         self.backbone = load_student(variant, checkpoint_path)
         self.spatial_features = nn.Identity()
+        self.pyramid = nn.ModuleDict(
+            {f"s{stride}": nn.AvgPool2d(stride, ceil_mode=True) for stride in PYRAMID_STRIDES}
+        )
         self._reported_missing = False
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
@@ -244,7 +250,11 @@ class TesseraBenchModel(BenchModel):
             chunks.append(encoded[:, : self.embedding_dim])
         dense = torch.cat(chunks).reshape(batch, height, width, self.embedding_dim)
         del chunks, encoded
-        return self.spatial_features(dense.permute(0, 3, 1, 2).contiguous())
+        features = self.spatial_features(dense.permute(0, 3, 1, 2).contiguous())
+        # Pooled levels exist only for forward hooks (UPerNet's pyramid); they are not returned.
+        for level in self.pyramid.values():
+            level(features)
+        return features
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         return self._dense_features(images).mean(dim=(-2, -1))

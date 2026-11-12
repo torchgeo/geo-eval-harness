@@ -123,6 +123,28 @@ def test_whole_rectangular_map_hook_chunk_bound_and_prefix(tiny: None) -> None:
         assert probe(raw).shape == (1, 2, 16, 20)
 
 
+def test_upernet_pyramid_pools_the_pixel_map(tiny: None) -> None:
+    model = tessera.TesseraBenchModel(specs()).eval()
+    raw = images(2, 40, 36)
+    maps, levels = [], {}
+    model.spatial_features.register_forward_hook(lambda m, args, output: maps.append(output))
+    for name, level in model.pyramid.items():
+        level.register_forward_hook(
+            lambda m, args, output, name=name: levels.update({name: output})
+        )
+    with torch.no_grad():
+        model(raw)
+    sizes = {name: tuple(level.shape[-2:]) for name, level in levels.items()}
+    assert sizes == {"s32": (2, 2), "s16": (3, 3), "s8": (5, 5), "s4": (10, 9)}
+    dense = maps[0]
+    torch.testing.assert_close(levels["s4"][..., 0, 0], dense[..., :4, :4].mean(dim=(-2, -1)))
+    torch.testing.assert_close(levels["s32"][..., 1, 1], dense[..., 32:, 32:].mean(dim=(-2, -1)))
+    probe = SegmentationProbe(model, list(tessera.PYRAMID_LAYERS), 3, head_type="upernet").eval()
+    assert probe.channels_list == [128] * 4
+    with torch.no_grad():
+        assert probe(raw).shape == (2, 3, 40, 36)
+
+
 def test_dates_reach_classification_and_cached_segmentation(tiny: None) -> None:
     model = tessera.TesseraBenchModel(specs()).eval()
     raw = images()
