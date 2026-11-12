@@ -211,6 +211,17 @@ class TesseraBenchModel(BenchModel):
             raise ValueError("Tessera snapshot DOY must be an integer in 1..366.")
         return dates
 
+    def _encode_snapshot(self, s2: torch.Tensor) -> torch.Tensor:
+        """Encode one observation per pixel as the released eight-copy bucket would.
+
+        Eight identical tokens with one date attend uniformly to each other and pool to that
+        token, so a single token gives the same output. The missing-S1 token is the same for
+        every pixel, so the S1 branch runs once and is broadcast.
+        """
+        student = self.backbone
+        s1 = student.s1_backbone(s2.new_zeros((1, 1, 3))).expand(len(s2), -1)
+        return student.dim_reducer(torch.cat([student.s2_backbone(s2), s1], dim=-1))
+
     def _dense_features(
         self, images: torch.Tensor, doy: torch.Tensor | None = None
     ) -> torch.Tensor:
@@ -224,12 +235,11 @@ class TesseraBenchModel(BenchModel):
         for start in range(0, len(pixels), self.batch_pixels):
             values = pixels[start : start + self.batch_pixels]
             days = dates[start : start + self.batch_pixels, None]
-            s2 = torch.cat([values, days], dim=1)[:, None, :].expand(-1, 8, -1).contiguous()
-            s1 = values.new_zeros((len(values), 1, 3))
+            s2 = torch.cat([values, days], dim=1)[:, None, :]
             encoded = (
-                checkpoint(self.backbone, s2, s1, use_reentrant=False)
+                checkpoint(self._encode_snapshot, s2, use_reentrant=False)
                 if use_checkpoint
-                else self.backbone(s2, s1)
+                else self._encode_snapshot(s2)
             )
             chunks.append(encoded[:, : self.embedding_dim])
         dense = torch.cat(chunks).reshape(batch, height, width, self.embedding_dim)

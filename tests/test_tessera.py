@@ -104,7 +104,7 @@ def test_whole_rectangular_map_hook_chunk_bound_and_prefix(tiny: None) -> None:
     raw = images(1, 16, 20)
     maps, sizes = [], []
     model.spatial_features.register_forward_hook(lambda m, args, output: maps.append(output))
-    model.backbone.register_forward_pre_hook(lambda m, args: sizes.append(len(args[0])))
+    model.backbone.s2_backbone.register_forward_pre_hook(lambda m, args: sizes.append(len(args[0])))
     with torch.no_grad():
         pooled = model(raw)
     assert len(maps) == 1
@@ -190,6 +190,35 @@ def test_transformer_lora_gradients_overfit_and_merge(tiny: None) -> None:
             torch.testing.assert_close(model(raw), unmerged)
 
 
+def test_single_token_matches_released_bucket_and_lora_gradients(tiny: None) -> None:
+    torch.manual_seed(3)
+    model = tessera.TesseraBenchModel(specs(), batch_pixels=4)
+    apply_lora(model, TARGETS, rank=2, alpha=4.0)
+    for name, param in model.named_parameters():
+        if "lora_B" in name:
+            nn.init.normal_(param)
+    model.double()
+    set_lora_train_mode(model)
+    normalized = model.normalize_inputs(images(2, 3, 2)).double()
+    days = torch.tensor([45, 300])
+    pixels = torch.cat(
+        [
+            normalized.permute(0, 2, 3, 1).reshape(-1, 10),
+            days.repeat_interleave(6)[:, None].to(normalized),
+        ],
+        1,
+    )
+    bucket = pixels[:, None].expand(-1, 8, -1).contiguous()
+    released = model.backbone(bucket, pixels.new_zeros((len(pixels), 1, 3)))
+    actual = model._dense_features(normalized, days).permute(0, 2, 3, 1).reshape(-1, 128)
+    torch.testing.assert_close(actual, released)
+    adapters = [p for n, p in model.named_parameters() if "lora_" in n]
+    expected = torch.autograd.grad(released.square().sum(), adapters)
+    observed = torch.autograd.grad(actual.square().sum(), adapters)
+    for got, want in zip(observed, expected, strict=True):
+        torch.testing.assert_close(got, want)
+
+
 def test_solver_preserves_dates_during_lora_training_and_validation(tiny: None) -> None:
     model = tessera.TesseraBenchModel(specs())
     config = SegmentationConfig(
@@ -201,7 +230,7 @@ def test_solver_preserves_dates_during_lora_training_and_validation(tiny: None) 
     )
     _, solver = build_seg_probe_and_solver(model, 2, config, torch.device("cpu"))
     observed = set()
-    model.backbone.register_forward_pre_hook(
+    model.backbone.s2_backbone.register_forward_pre_hook(
         lambda module, args: observed.update(args[0][:, 0, -1].tolist())
     )
     raw = images()
