@@ -400,3 +400,9 @@ class TestPASTISSampleConstruction:
     def test_time_steps_rejected_when_not_multi_temporal(self):
         with pytest.raises(ValueError, match="not multi-temporal"):
             BurnScars().get_dataset("train", time_steps=2)
+
+
+def test_benv2_s1_names_follow_stored_channel_order() -> None:
+    s1 = [band for band in get_bench_dataset_class("benv2").bands if band.sensor == "s1"]
+    assert [(band.name, band.source_name) for band in s1] == [("vh", "VV"), ("vv", "VH")]
+    assert s1[1].mean > s1[0].mean
