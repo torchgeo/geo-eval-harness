@@ -4,7 +4,7 @@ supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw, eurosat, sen
 kwargs:
   variant: medium
   embedding_dim: 128
-  batch_pixels: 1024
+  batch_pixels: 32768
   fallback_doy: 183
   protocol: s2-snapshot-v1
   weights_revision: 8c80b926f67cb0b44c2cd41d0226e61741503b9a

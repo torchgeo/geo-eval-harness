@@ -120,7 +120,7 @@ class TesseraBenchModel(BenchModel):
         *,
         variant: Literal["nano", "small", "medium", "large"] = "medium",
         embedding_dim: Literal[16, 32, 64, 128] = 128,
-        batch_pixels: int = 1024,
+        batch_pixels: int = 32768,
         fallback_doy: int = 183,
         normalization: str = "model_native",
         checkpoint_path: str | Path | None = None,
