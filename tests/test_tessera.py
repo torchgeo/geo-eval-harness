@@ -22,6 +22,7 @@ from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.models import tessera
+from geo_eval_harness.models._band_mapping import canonical_band_name
 from geo_eval_harness.models._tessera import PixelStudent
 from geo_eval_harness.resume import resume_config_hash
 from geo_eval_harness.segmentation_lora import apply_lora, merged_lora, set_lora_train_mode
@@ -254,6 +255,8 @@ def test_presets_native_inputs_and_resume_identity(variant: str) -> None:
         "pastis",
         "treesatai",
         "fotw",
+        "eurosat",
+        "sen1floods11-s2",
     }
     assert "supported_datasets" not in preset.kwargs
     config = RunConfig(model=ModelConfig(name=name), datasets=["pastis"])
@@ -343,10 +346,8 @@ def test_real_checkpoint_and_official_inference_parity(official_reference, varia
         "m-brick-kiln",
         "dynamic_earthnet",
         "burn_scars",
-        "eurosat",
         "eurosat-spatial",
         "oscd-post",
-        "sen1floods11-s2",
         "so2sat",
         "cloudsen12",
     ],
@@ -355,6 +356,27 @@ def test_presets_reject_unverified_or_out_of_scope_products(dataset: str) -> Non
     config = RunConfig(model=ModelConfig(name="tessera_v2/medium"), datasets=[dataset])
     with pytest.raises(BandCompatibilityError, match="verified datasets"):
         resolve_run_config(config, dataset)
+
+
+@pytest.mark.parametrize("dataset", ["eurosat", "sen1floods11-s2"])
+def test_l1c_approximation_presets_map_every_band(tiny: None, dataset: str) -> None:
+    config = RunConfig(model=ModelConfig(name="tessera_v2/nano"), datasets=[dataset])
+    effective, preset = resolve_run_config(config, dataset)
+    assert effective.input.image_size is None
+    bands = get_bench_dataset_class(dataset).resolve_band_specs(effective.input.bands)
+    model = build_model(preset, bands=bands, normalization="model_native")
+    targets = [canonical_band_name(name) for name in tessera.S2_BANDS]
+    one_std_above = torch.tensor(tessera.S2_MEAN) + torch.tensor(tessera.S2_STD)
+    raw = torch.tensor(
+        [
+            one_std_above[targets.index(canonical_band_name(b.name))]
+            if canonical_band_name(b.name) in targets
+            else 0.0
+            for b in bands
+        ]
+    )
+    normalized = model.normalize_inputs(raw.reshape(1, -1, 1, 1))
+    torch.testing.assert_close(normalized.flatten(), torch.ones(10))
 
 
 @pytest.mark.parametrize("kwargs", [{}, {"image_size": None}])

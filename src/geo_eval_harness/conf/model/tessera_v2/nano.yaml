@@ -1,6 +1,6 @@
 name: tessera_v2/nano
 target: geo_eval_harness.models.TesseraBenchModel
-supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw]
+supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw, eurosat, sen1floods11-s2]
 kwargs:
   variant: nano
   embedding_dim: 128
