@@ -27,6 +27,7 @@ from .terratorch_models import (
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
 )
+from .thor import ThorBenchModel
 from .timm import TimmModelSettings, TimmPatchBenchModel
 from .torchgeo_models import (
     TorchGeoCromaBench,
@@ -62,6 +63,7 @@ __all__: list[str] = [
     "TerraTorchClayBench",
     "TerraTorchPrithviBench",
     "TerraTorchTerraMindBench",
+    "ThorBenchModel",
     "TimmModelSettings",
     "TimmPatchBenchModel",
     "TorchGeoCromaBench",

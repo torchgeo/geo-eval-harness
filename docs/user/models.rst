@@ -398,6 +398,24 @@ AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's. 
 models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
 pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
 
+THOR
+^^^^
+
+:class:`~geo_eval_harness.models.ThorBenchModel` wraps THOR (`Forgaard et al., 2026 <https://arxiv.org/abs/2601.16011>`_), a FlexiViT pretrained on Sentinel-1, -2 and -3. The presets ``thor/tiny``, ``thor/small``, ``thor/base`` and ``thor/large`` select the four released sizes. The encoder is reimplemented from `FM4CS/THOR <https://github.com/FM4CS/THOR>`_ at a pinned commit, because the upstream package pins an older ``timm`` and patches ``timm``'s attention globally. The weights come from pinned commits of the ``FM4CS/THOR-1.0-*`` Hugging Face repos and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model thor/base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model thor/base --dataset sen1floods11-s2 --bands all
+
+THOR embeds each band with its own patch kernel at the band's native GSD and averages the bands of a group (10 m, 20 m and 60 m Sentinel-2, Sentinel-1 VV/VH, Sentinel-1 HH/HV) into one token grid. The wrapper adapts each input as follows:
+
+* It maps ``s2`` bands and ``s1``/``sar`` VV, VH, HH and HV in dB by canonical name. Other sensors, linear-power SAR, and bands THOR was not pretrained on raise an error. Presets drop the 60 m Sentinel-2 bands B01, B09 and B10 (``ignore_bands: [coastal, watervapor, cirrus]``), as the authors' Sentinel-2 fine-tuning config in `FM4CS/thor_terratorch_ext <https://github.com/FM4CS/thor_terratorch_ext>`_ does; B10 is not in THOR at all.
+* Tiles keep their native size (``input.image_size: null``). ``input_gsd`` is the GSD of the pixels the model receives, 10 m by default. Each group is resampled to its pretraining GSD over the tile's ground extent, rounded so that every group holds a whole number of patches.
+* One ``patch_size`` in pixels applies to all groups. The presets use 4 px for tiles up to 128 px and larger patches for 256 px and 512 px tiles. ``max_tokens`` rejects settings that would exceed 4,096 tokens.
+
+Classification embeddings average each group's final tokens and concatenate the groups (``merge: concat``, THOR's default in its PANGAEA experiments), so their width grows with the number of band groups. For segmentation, hook ``taps.<i>``: it receives block ``i``'s tokens as ``[B, C, h, w]``, with each group upsampled to the finest grid and merged the same way. THOR's pretraining statistics are not offered as model normalization, because its own fine-tuning configs z-score with dataset statistics.
+
 EoS-FM
 ^^^^^^
 

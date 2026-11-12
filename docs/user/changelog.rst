@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* THOR (tiny, small, base, large) for classification and segmentation (``thor/tiny``, ``thor/small``, ``thor/base``, ``thor/large``). The encoder is reimplemented from a pinned upstream commit, and the weights are pinned and checked against their sha256. Sentinel-2 and Sentinel-1 dB bands are mapped by name, each band group is resampled to its pretraining GSD over the tile's ground extent, and segmentation reads merged group grids through ``taps.<i>``. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
@@ -40,6 +41,7 @@ Added
 * ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
+* ``segmentation.gradient_checkpointing`` recomputes backbone block activations in the backward pass during LoRA and full fine-tuning (timm SwinV2, TerraTorch Prithvi-EO, OlmoEarth), so large backbones fit at 512 px with an unchanged batch size; unset leaves hashes unchanged.
 * ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks; unset leaves hashes unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
