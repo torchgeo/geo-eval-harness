@@ -287,6 +287,7 @@ class SegmentationConfig(StrictModel):
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
     feature_standardize: StrictBool = False
+    gradient_checkpointing: StrictBool = False
     sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
     sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
         default_factory=lambda: [0.0]

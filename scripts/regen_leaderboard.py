@@ -154,6 +154,9 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "imagestats": ("Image statistics", True),
     "convnext_large": ("ConvNeXt-L (ImageNet)", False),
     "convnext_large_dinov3": ("ConvNeXt-L DINOv3", False),
+    "convnext_tiny_dinov3": ("ConvNeXt-T DINOv3", False),
+    "convnext_small_dinov3": ("ConvNeXt-S DINOv3", False),
+    "convnext_base_dinov3": ("ConvNeXt-B DINOv3", False),
     "olmoearth_v1_nano": ("OlmoEarth v1 nano", False),
     "olmoearth_v1_tiny": ("OlmoEarth v1 tiny", False),
     "olmoearth_v1_base": ("OlmoEarth v1 base", False),
@@ -232,6 +235,12 @@ DATASET_DISPLAY = {
     "sen1floods11-s2": "Sen1Floods11 · S2",
     "bright-post-sar": "BRIGHT (post, SAR)",
     "oscd-post": "OSCD (post)",
+    "planteur": "PLANTEUR",
+    "planteur_loio_guadeloupe": "PLANTEUR LOIO Guadeloupe",
+    "planteur_loio_martinique": "PLANTEUR LOIO Martinique",
+    "planteur_loio_guyane": "PLANTEUR LOIO Guyane",
+    "planteur_loio_reunion": "PLANTEUR LOIO Réunion",
+    "planteur_loio_mayotte": "PLANTEUR LOIO Mayotte",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.

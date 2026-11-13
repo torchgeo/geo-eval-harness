@@ -97,4 +97,6 @@ torchgeo wrappers
 
 .. autoclass:: OSCDPost
 
+.. autoclass:: PLANTEUR
+
 .. autoclass:: UCMerced
