@@ -108,7 +108,7 @@ Config: `layers: ["blocks.6", "blocks.5", "blocks.3", "blocks.1"]`
 
 **Note:** `blocks.4`, `blocks.5`, and `blocks.6` all operate at 7×7 (EfficientNet uses multiple MBConv stages at the same stride). We include `blocks.5` to get 4 layers, though it shares spatial size with `blocks.6`. If 3 distinct pyramid levels are preferred, use `["blocks.6", "blocks.3", "blocks.1"]`.
 
-### ConvNeXt (convnext_tiny, small, base, large, large_dinov3)
+### ConvNeXt (convnext_tiny, small, base, large; tiny/small/base/large_dinov3)
 
 | Layer | Spatial size | Channels (tiny) |
 |---|---|---|

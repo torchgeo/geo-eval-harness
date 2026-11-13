@@ -7,6 +7,7 @@ before applying the pretrained weights' ``Normalize`` stages. Other
 normalization strategies use the shared ``BenchModel`` implementation.
 """
 
+import math
 from collections.abc import Iterable
 from typing import Any, cast
 
@@ -114,6 +115,32 @@ def _auto_resize(images: torch.Tensor, target_size: int) -> torch.Tensor:
             align_corners=False,
         )
     return images
+
+
+def _validate_fixed_img_size(
+    name: str, img_size: int, patch_size: int, *, auto_resize: bool, target_size: int | None
+) -> None:
+    """Reject an ``img_size`` that the patch grid or the configured resize cannot honour."""
+    if isinstance(img_size, bool) or not isinstance(img_size, int) or img_size <= 0:
+        raise ValueError(f"{name} img_size must be a positive integer, got {img_size!r}.")
+    if img_size % patch_size:
+        lower = img_size // patch_size * patch_size
+        raise ValueError(
+            f"{name} img_size must be a multiple of the patch size {patch_size}, got {img_size}; "
+            f"the nearest valid sizes are {lower} and {lower + patch_size}."
+        )
+    if auto_resize and target_size != img_size:
+        raise ValueError(
+            f"{name} img_size={img_size} needs target_size={img_size} (or auto_resize: false), "
+            f"got target_size={target_size}."
+        )
+
+
+def _require_input_size(name: str, images: torch.Tensor, img_size: int) -> None:
+    if tuple(images.shape[-2:]) != (img_size, img_size):
+        raise ValueError(
+            f"{name} was built for {img_size}x{img_size} inputs, got {tuple(images.shape[-2:])}."
+        )
 
 
 _DEO_TARGET_SIZE = 224
@@ -416,6 +443,7 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
     """
 
     weights_input_unit = "uint8_div255"
+    feature_layout = "nhwc"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -560,6 +588,11 @@ class TorchGeoDOFABench(_TorchGeoBackboneBench):
 
     DOFA requires a list of wavelengths (one per input channel in µm).
     ``forward_features(x, wavelengths)`` returns ``(B, D)``.
+
+    DOFA's positional embedding is fixed at the pretrained 224 grid (14x14 patches). Setting
+    ``img_size`` (a multiple of 16) resamples it bicubically to the ``img_size // 16`` grid,
+    keeping the class token, with timm's ``resample_abs_pos_embed``; the model then accepts
+    only ``img_size`` inputs, so ``target_size`` must match it when ``auto_resize`` is on.
     """
 
     # DOFA's pretrained transform is empty in current torchgeo releases.
@@ -575,6 +608,7 @@ class TorchGeoDOFABench(_TorchGeoBackboneBench):
         wavelengths: list[float] | None = None,
         auto_resize: bool = True,
         target_size: int | None = 224,
+        img_size: int | None = None,
         **_kwargs: Any,
     ) -> None:
         super().__init__(
@@ -587,10 +621,36 @@ class TorchGeoDOFABench(_TorchGeoBackboneBench):
             **_kwargs,
         )
         self.wavelengths = _resolve_dofa_wavelengths(bands, wavelengths)
+        self.img_size = img_size
+        self.probe_input_size = img_size
+        if img_size is not None:
+            self._resample_pos_embed(img_size)
+
+    def _resample_pos_embed(self, img_size: int) -> None:
+        from timm.layers import resample_abs_pos_embed
+
+        patch_size = int(self.backbone.patch_size)
+        _validate_fixed_img_size(
+            "DOFA",
+            img_size,
+            patch_size,
+            auto_resize=self.auto_resize,
+            target_size=self.target_size,
+        )
+        pos_embed = self.backbone.pos_embed
+        old_grid = math.isqrt(pos_embed.shape[1] - 1)
+        new_grid = img_size // patch_size
+        resampled = resample_abs_pos_embed(
+            pos_embed.detach(), [new_grid, new_grid], [old_grid, old_grid], num_prefix_tokens=1
+        )
+        self.backbone.pos_embed = nn.Parameter(resampled, requires_grad=pos_embed.requires_grad)
+        self.backbone.num_patches = new_grid * new_grid
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
+        if self.img_size is not None:
+            _require_input_size("DOFA", images, self.img_size)
         return self.backbone.forward_features(images, wavelengths=self.wavelengths)
 
 
@@ -685,12 +745,17 @@ class TorchGeoDEOBench(BenchModel):
     source. Other strategies (e.g. ``bandspec_zscore``) run on DEO's canonical
     channel order instead. It is frozen by default; segmentation supports LoRA
     adapters or full fine-tuning.
+
+    DEO was pretrained at 224. ``target_size`` may be any multiple of 32: the Swin stages have
+    no absolute positional embedding, and torchvision pads each stage map to a multiple of the
+    12-token window (as it already does at 224, whose 56/28/14/7 grids are not multiples of 12).
     """
 
     _deo_mean: torch.Tensor
     _deo_std: torch.Tensor
 
     expected_input_unit = InputUnit.REFLECTANCE_0_1
+    feature_layout = "nhwc"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -705,8 +770,15 @@ class TorchGeoDEOBench(BenchModel):
     ) -> None:
         if mode not in {"rgb", "s2"}:
             raise ValueError("TorchGeoDEOBench mode must be 'rgb' or 's2'.")
-        if target_size != _DEO_TARGET_SIZE:
-            raise ValueError(f"TorchGeoDEOBench requires target_size={_DEO_TARGET_SIZE}.")
+        if (
+            isinstance(target_size, bool)
+            or not isinstance(target_size, int)
+            or target_size <= 0
+            or target_size % 32
+        ):
+            raise ValueError(
+                f"TorchGeoDEOBench target_size must be a positive multiple of 32, got {target_size!r}."
+            )
         strategy = NormalizationStrategy(normalization)
 
         # DEO does its own native conversion below. Avoid the generic model_native
@@ -888,6 +960,7 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
 # Negative SAR polarization codes ignore orbit direction, which BandSpec does not provide.
 # github.com/Panopticon-FM/panopticon/blob/main/dinov2/configs/data/satellites/sentinel1.yaml.
 _PANOPTICON_SAR_MU: dict[str, float] = {"vv": -1.0, "vh": -2.0, "hh": -3.0, "hv": -4.0}
+_PANOPTICON_PATCH_SIZE = 14
 
 
 def _resolve_panopticon_chn_ids(bands: list[BandSpec]) -> list[float]:
@@ -922,7 +995,14 @@ def _resolve_panopticon_chn_ids(bands: list[BandSpec]) -> list[float]:
 
 
 class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
-    """Panopticon ViT-B/14 — per-channel wavelength tokens (nm) from BandSpec."""
+    """Panopticon ViT-B/14 — per-channel wavelength tokens (nm) from BandSpec.
+
+    The checkpoint's positional embedding covers a 37x37 grid (518 px); torchgeo resamples it
+    bicubically to ``img_size // 14`` at load (224 by default). ``img_size`` must be a multiple
+    of 14 because the stride-14 patch embedding would otherwise drop the trailing pixels. For
+    256 or 512 inputs, set ``img_size`` and ``target_size`` to the nearest valid size (252 or
+    518); the image is then bilinearly resized to that size, so the patch grid still covers it.
+    """
 
     _chn_ids: torch.Tensor
 
@@ -938,8 +1018,21 @@ class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
         weights_member: str = "VIT_BASE14",
         auto_resize: bool = True,
         target_size: int | None = 224,
+        img_size: int | None = None,
         **_kwargs: Any,
     ) -> None:
+        if img_size is not None:
+            _validate_fixed_img_size(
+                "Panopticon",
+                img_size,
+                _PANOPTICON_PATCH_SIZE,
+                auto_resize=auto_resize,
+                target_size=target_size,
+            )
+            _kwargs["factory_kwargs"] = {
+                **(_kwargs.get("factory_kwargs") or {}),
+                "img_size": img_size,
+            }
         super().__init__(
             bands=bands,
             factory=factory,
@@ -949,11 +1042,15 @@ class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
             target_size=target_size,
             **_kwargs,
         )
+        self.img_size = img_size
+        self.probe_input_size = img_size
         chn_ids = _resolve_panopticon_chn_ids(bands)
         self.register_buffer("_chn_ids", torch.tensor(chn_ids, dtype=torch.float32))
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
+        if self.img_size is not None:
+            _require_input_size("Panopticon", images, self.img_size)
         chn_ids = self._chn_ids.unsqueeze(0).expand(images.shape[0], -1)
         return self.backbone({"imgs": images, "chn_ids": chn_ids})

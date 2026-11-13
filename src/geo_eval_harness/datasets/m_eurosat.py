@@ -31,8 +31,7 @@ class MEurosat(_V1Dataset):
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 2000, "val": 1000, "test": 1000}
 
-    # GeoBench's HDF5 keys "08A" through "12" hold B09, B10, B11, B12, and B8A (the EuroSAT
-    # GeoTIFF band order), as their pixel statistics show against the raw EuroSAT statistics.
+    # The HDF5 keys 08A through 12 store B09, B10, B11, B12 and B8A in EuroSAT GeoTIFF order.
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
         BandSpec("s2", "coastal_aerosol", "01 - Coastal aerosol", mean=1359.95, std=251.332, min=858, max=6805, wavelength_um=0.443),

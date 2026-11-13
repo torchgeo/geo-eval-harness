@@ -58,6 +58,7 @@ jobs:
     permissions:
       contents: read
     env:
+      UV_PYTHON: ${{ matrix.python-version }}
       OMP_NUM_THREADS: "1"
       KMP_DUPLICATE_LIB_OK: "TRUE"
       RUN_TESTS: ${{ needs.changes.outputs.results_only != 'true' }}
@@ -86,14 +87,21 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}-${{ matrix.cache-tag }}
+          key: venv-matrix-v2-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}-${{ matrix.cache-tag }}
       - name: Install dependencies
         if: env.SETUP == 'true'
         run: uv sync ${{ matrix.extras }} --frozen
+      - name: Verify Python version
+        if: env.SETUP == 'true'
+        run: >-
+          uv run python -c "import os, sys;
+          expected = os.environ['UV_PYTHON']; actual = '.'.join(map(str, sys.version_info[:2]));
+          print(sys.version);
+          sys.exit(0 if actual == expected else f'Expected Python {expected}, got {actual}')"
       # Geography store checks are platform-independent; the `geography` job runs them once.
       - name: Run tests
         if: env.RUN_TESTS == 'true'
-        run: uv run pytest -n auto --dist=loadfile -m "not slow and not accuracy_check and not geography"
+        run: uv run pytest -n auto --dist=loadfile --durations=10 -m "not slow and not accuracy_check and not geography"
       - name: Run committed-results tests (results-only pull request)
         if: env.RUN_RESULTS_TESTS == 'true'
         run: uv run pytest --no-cov tests/test_setup_columns.py tests/test_results_store.py
