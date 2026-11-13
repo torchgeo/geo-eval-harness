@@ -88,17 +88,6 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             super().__init__()
             self.encoder = _FlexiEncoder()
 
-        def collapse_and_combine_hwtc(
-            self, x: dict[str, torch.Tensor]
-        ) -> tuple[torch.Tensor, None]:
-            order = sorted(key for key in x if key in self.supported_modality_names)
-            return torch.cat([x[key].flatten(1, -2) for key in order], dim=1), None
-
-    class _Encoder(torch.nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.encoder = _FlexiEncoder()
-
     def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
         state["loads"].append((model_id, load_weights))
         return _Encoder()
