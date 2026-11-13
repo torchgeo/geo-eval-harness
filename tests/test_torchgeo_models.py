@@ -872,10 +872,10 @@ def test_satlas_ms_presets_use_satlas_band_order(
     assert model.weights.meta["bands"] == (
         "B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "B12"
     )  # fmt: skip
-    # m-eurosat order: coastal, blue, green, red, red_edge_1-3, nir, red_edge_4, ..., swir_1-2.
+    # m-eurosat order: coastal, blue, green, red, red_edge_1-3, nir, B09, B10, swir_1-2, red_edge_4.
     images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
     selected = model.normalize_inputs(images).flatten().tolist()
-    assert selected == [3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 11.0, 12.0]
+    assert selected == [3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 10.0, 11.0]
 
 
 @pytest.mark.parametrize("name", _SATLAS_MS_PRESETS)
@@ -884,7 +884,7 @@ def test_satlas_ms_native_scales_tci_and_non_tci_bands(
 ) -> None:
     """R/G/B use L1C TCI (saturating at DN 3558); other bands are DN / 8160 clipped to 1."""
     model = _satlas_ms_model(monkeypatch, name, MEurosat().bands, "model_native")
-    dn = [0.0, 1779.0, 3558.0, 10000.0, 4080.0, 8160.0, 0.0, 2040.0, 0.0, 0.0, 0.0, 20000.0, -5.0]
+    dn = [0.0, 1779.0, 3558.0, 10000.0, 4080.0, 8160.0, 0.0, 2040.0, 0.0, 0.0, 20000.0, -5.0, 0.0]
     images = torch.tensor(dn).view(1, 13, 1, 1)
     # red, green, blue, rededge1, rededge2, rededge3, nir, swir1, swir2
     expected = [1.0, 1.0, 0.5, 0.5, 1.0, 0.0, 0.25, 1.0, 0.0]

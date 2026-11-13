@@ -166,8 +166,8 @@ class PLANTEUR(BenchDataset, Dataset):
         BandSpec("s2", "b12", "B12", mean=1606.93, std=1266.72, min=0, max=15257, wavelength_um=2.19),
         BandSpec("s2", "b01", "B01", mean=1765.41, std=2687.13, min=1, max=21078, wavelength_um=0.443),
         BandSpec("s2", "b09", "B09", mean=4655.6, std=3305.04, min=1, max=17183, wavelength_um=0.945),
-        BandSpec("s1", "vv", "VV", mean=-8.0434, std=3.5684, min=-100, max=35.975),
-        BandSpec("s1", "vh", "VH", mean=-14.0961, std=3.441, min=-100, max=27.7915),
+        BandSpec("s1", "vv", "VV", mean=-8.0434, std=3.5684, min=-100, max=35.975, unit="db"),
+        BandSpec("s1", "vh", "VH", mean=-14.0961, std=3.441, min=-100, max=27.7915, unit="db"),
     ]
     # fmt: on
 
