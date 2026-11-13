@@ -235,6 +235,12 @@ DATASET_DISPLAY = {
     "sen1floods11-s2": "Sen1Floods11 · S2",
     "bright-post-sar": "BRIGHT (post, SAR)",
     "oscd-post": "OSCD (post)",
+    "planteur": "PLANTEUR",
+    "planteur_loio_guadeloupe": "PLANTEUR LOIO Guadeloupe",
+    "planteur_loio_martinique": "PLANTEUR LOIO Martinique",
+    "planteur_loio_guyane": "PLANTEUR LOIO Guyane",
+    "planteur_loio_reunion": "PLANTEUR LOIO Réunion",
+    "planteur_loio_mayotte": "PLANTEUR LOIO Mayotte",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.
