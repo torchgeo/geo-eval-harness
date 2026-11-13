@@ -10,7 +10,7 @@ import pandas as pd
 
 from geo_eval_harness.config.presets import ModelPreset
 from geo_eval_harness.config.run import FeatureProfileConfig, RunConfig
-from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.config.schema import Adaptation, SegmentationConfig
 from geo_eval_harness.intrinsic_dim import FEATURE_SPECTRUM_METRICS
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,12 @@ _LORA_FIELDS = {
     "lora_alpha",
     "lora_last_blocks",
     "backbone_learning_rate",
+}
+
+_UNHASHED_ADAPTATION_FIELDS = {
+    Adaptation.FROZEN: _LORA_FIELDS | {"full_finetune"},
+    Adaptation.LORA: {"full_finetune"},
+    Adaptation.FULL: _LORA_FIELDS - {"backbone_learning_rate"},
 }
 
 
@@ -89,11 +95,7 @@ _OPTIONAL_SEGMENTATION_FIELDS = (
 
 def _unset_segmentation_fields(segmentation: SegmentationConfig) -> set[str]:
     """Return segmentation fields left out of the resume hash because they are unset."""
-    segmentation_exclude = set(_LORA_FIELDS) if segmentation.lora_rank is None else set()
-    if segmentation.full_finetune:
-        segmentation_exclude.discard("backbone_learning_rate")
-    else:
-        segmentation_exclude.add("full_finetune")
+    segmentation_exclude = set(_UNHASHED_ADAPTATION_FIELDS[segmentation.adaptation])
     if segmentation.neck == "none":
         segmentation_exclude.add("neck")
     if segmentation.neck == "none" or segmentation.neck_norm == "none":

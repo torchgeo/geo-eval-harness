@@ -5,6 +5,7 @@
 
 import pathlib
 import re
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 import yaml
@@ -251,6 +252,14 @@ class ClassificationConfig(StrictModel):
 NECK_HEADS = frozenset({"fpn", "upernet", "unet"})
 
 
+class Adaptation(StrEnum):
+    """How a segmentation run trains the backbone."""
+
+    FROZEN = "frozen"
+    LORA = "lora"
+    FULL = "full"
+
+
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
@@ -289,10 +298,24 @@ class SegmentationConfig(StrictModel):
         """Return the (learning rate, weight decay) cells of the probe sweep, or ``[]``."""
         return [(lr, wd) for lr in self.sweep_learning_rates for wd in self.sweep_weight_decays]
 
+    @property
+    def adaptation(self) -> Adaptation:
+        """Return whether the backbone is frozen, LoRA-adapted, or fully fine-tuned."""
+        if self.full_finetune:
+            return Adaptation.FULL
+        if self.lora_rank is not None:
+            return Adaptation.LORA
+        return Adaptation.FROZEN
+
+    @property
+    def uses_feature_cache(self) -> bool:
+        """Return whether the head trains on cached features, which needs a frozen backbone."""
+        return self.cache_features and self.adaptation is Adaptation.FROZEN
+
     @model_validator(mode="after")
     def validate_probe_protocol(self) -> "SegmentationConfig":
         """Restrict the linear-probe sweep and feature standardization to frozen probes."""
-        frozen = self.lora_rank is None and not self.full_finetune
+        frozen = self.adaptation is Adaptation.FROZEN
         if self.feature_standardize and (not frozen or self.upsampler != "none"):
             raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
         if not self.sweep_learning_rates:
@@ -312,8 +335,7 @@ class SegmentationConfig(StrictModel):
     @model_validator(mode="after")
     def validate_precision(self) -> "SegmentationConfig":
         """Reject ``amp: off`` with a float16 feature cache, which would still overflow."""
-        frozen = self.lora_rank is None and not self.full_finetune
-        if self.amp == "off" and frozen and self.cache_features and self.cache_dtype == "float16":
+        if self.amp == "off" and self.uses_feature_cache and self.cache_dtype == "float16":
             raise ValueError(
                 "amp 'off' with cached frozen features requires cache_dtype 'float32'; a float16 "
                 "cache still overflows"
