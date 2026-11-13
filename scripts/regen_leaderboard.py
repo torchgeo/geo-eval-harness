@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from geo_eval_harness.compute_cost import classification_compute_reference
 from geo_eval_harness.results import (
     NUMERIC_SETUP_COLS,
     SETUP_COLS,
@@ -891,15 +892,15 @@ def _enrich_rows(
 def extract_compute_cost(raw: pd.DataFrame) -> dict[tuple[str, str], float]:
     """Extract strict canonical ``(model, band_config) -> backbone GFLOPs`` joins.
 
-    Blank measurement rows are normal in the current data and ignored.  Two
-    distinct non-empty values for a model/band pair are ambiguous and fail
-    loudly instead of choosing one by file order.
+    Reference rows are 224-pixel classification measurements from one recorded hardware
+    cohort. Blank values are ignored; distinct values with equal measurement times fail.
     """
     required = {"name", "band_config", "gflops_backbone"}
     missing = required - set(raw.columns)
     if missing:
         raise ValueError(f"compute_cost.csv is missing required columns: {sorted(missing)}")
 
+    raw = classification_compute_reference(raw)
     values: dict[tuple[str, str], set[float]] = {}
     for row in raw[["name", "band_config", "gflops_backbone"]].itertuples(index=False):
         name, band_config, value = row
@@ -915,7 +916,7 @@ def extract_compute_cost(raw: pd.DataFrame) -> dict[tuple[str, str], float]:
             raise ValueError(
                 f"Non-finite gflops_backbone for model={name!r}, band_config={band_config!r}: {value!r}"
             )
-        key = (canonical_slug(str(name)), str(band_config))
+        key = (canonical_slug(str(name)), "s2" if band_config == "all" else str(band_config))
         values.setdefault(key, set()).add(gflops)
 
     conflicts = {key: sorted(measured) for key, measured in values.items() if len(measured) > 1}
