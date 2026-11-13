@@ -7,6 +7,7 @@ from typing import Any
 import timm
 import torch
 import torch.nn.functional as F
+from timm.models import is_model_in_modules
 
 from geo_eval_harness.datasets.base import BandSpec
 
@@ -47,6 +48,19 @@ def _rgb_first_permutation(bands: list[BandSpec]) -> list[int] | None:
     return rgb_idx + rest
 
 
+def _model_size_kwargs(
+    model_name: str, img_size: int | None, *, dynamic_img_size: bool
+) -> dict[str, Any]:
+    """Translate the wrapper's image-grid policy to the registered timm backend."""
+    options: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
+    if dynamic_img_size:
+        if is_model_in_modules(model_name, {"swin_transformer", "swin_transformer_v2"}):
+            options["strict_img_size"] = False
+        else:
+            options["dynamic_img_size"] = True
+    return options
+
+
 class TimmPatchBenchModel(BenchModel):
     """BenchModel wrapper for any timm backbone.
 
@@ -66,6 +80,8 @@ class TimmPatchBenchModel(BenchModel):
         img_size: Build the backbone for this square input size (passed to
             ``timm.create_model``). Needed by fixed-size backbones such as Swin to
             run at a size other than their pretrained one; ``None`` keeps timm's default.
+        dynamic_img_size: Use the backend's dynamic transformer grid handling. Swin pads
+            attention windows; other supported transformers interpolate position embeddings.
         input_normalization: One of ``"bands_zscore"`` (default; per-channel
             z-score using :class:`BandSpec` statistics — correct for raw
             remote-sensing data of any channel count), ``"imagenet"``
@@ -97,6 +113,7 @@ class TimmPatchBenchModel(BenchModel):
         auto_resize: bool = False,
         target_size: int | None = None,
         img_size: int | None = None,
+        dynamic_img_size: bool = False,
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -125,7 +142,7 @@ class TimmPatchBenchModel(BenchModel):
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
-        size_kwargs: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
+        size_kwargs = _model_size_kwargs(model_name, img_size, dynamic_img_size=dynamic_img_size)
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
@@ -298,11 +315,12 @@ class TimmModelSettings:
     auto_resize: bool = False
     target_size: int | None = None
     img_size: int | None = None
+    dynamic_img_size: bool = False
     use_cls_token: bool = False
 
     def __post_init__(self) -> None:
         """Validate settings before importing or constructing a backbone."""
-        for name in ("pretrained", "normalize", "auto_resize", "use_cls_token"):
+        for name in ("pretrained", "normalize", "auto_resize", "dynamic_img_size", "use_cls_token"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a boolean")
         if not self.model_name:
