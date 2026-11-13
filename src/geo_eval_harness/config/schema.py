@@ -248,7 +248,7 @@ class ClassificationConfig(StrictModel):
 
 
 #: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
-NECK_HEADS = frozenset({"fpn", "upernet", "unet"})
+NECK_HEADS = frozenset({"linear", "fpn", "upernet", "unet"})
 
 
 class SegmentationConfig(StrictModel):

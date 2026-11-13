@@ -467,21 +467,25 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-``--band-source`` selects the dataset metadata. ``--band-configs rgb s2``
-selects input stacks: ``s2`` means **all bands from the source**, which is
-twelve Sentinel-2 bands for the default CloudSen12 source.
+``--band-source`` selects the dataset metadata. ``--band-configs rgb all`` selects RGB or all source bands. ``s2`` also selects all source bands, including twelve Sentinel-2 bands for the default CloudSen12 source. Use ``all`` for SAR or other sensor inputs so the CSV labels the selection correctly.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and
 ``--probe-num-classes`` sets the classification output width.
 
-Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``,
-and ``patch_linear``; supplying the flag without values disables
-segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
+Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; supplying the flag without values disables segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
 ``--seg-num-classes``, ``--seg-layers``, and ``--temporal-pool`` configure
 segmentation accounting. YAML may include a ``segmentation.probe`` block
 with the image segmentation fields. Omitted probe layers inherit model
 and dataset defaults; explicit ``[]`` clears them.
+
+``segmentation.neck_policy: auto`` (``--seg-neck-policy auto``) inspects the configured feature maps to choose the ViT pyramid neck for one or four equal-resolution transformer maps, or the ``vit_fine`` neck for three equal-resolution maps followed by a finer map. Native feature pyramids retain their spatial scales. An explicit non-default ``probe.neck`` is preserved. The linear segmentation head also accepts the ViT neck.
+
+Segmentation rows count the complete backbone, neck, and decoder forward pass and time that same inference path in float32. ``gflops_head`` includes the neck; ``gflops_total`` includes the backbone, neck, and head. Rows record the actual hooked ``feature_shapes``, ``layers``, ``neck``, GPU name, precision, and timing batch size. ``n_tokens`` is omitted when the model defines patch size in metres instead of pixels. FLOP totals cover registered PyTorch operators, so unregistered operations can make them lower bounds.
+
+Resume identifies the resolved model, settings, hardware, and image size with ``config_hash``. Changing resolution, probe settings, timing, or GPU starts a distinct measurement.
+
+``python experiments/run_compute_cost_sweep.py --image-sizes 224 256 512 --heads linear upernet unet --device cuda:0 --output results/compute_sweep`` runs the current image-model catalog sequentially on one GPU. It uses batch size 1, five warmup passes, twenty timed passes, four output classes, and automatic neck selection. Wrapper resize settings and fixed encoder image grids, including Clay's positional grid, follow the requested image dimensions; the encoder's learned patch stride stays unchanged. Swin models use timm's dynamic window padding (``model.kwargs.dynamic_img_size: true``) to support grids that do not divide their pretrained attention windows. Panopticon uses the nearest multiple of its 14-pixel patch stride (224, 252, and 518 for the default sweep); CSV rows label those actual image sizes. EarthLoc is measured once at its native 320-pixel input because its learned spatial aggregation fixes that grid. TerraFM keeps the pretrained position tensor and uses its forward-time interpolation at the requested image size; wrapper resizing is disabled. Unsupported image grids remain missing cells with their errors in the logs. AnySat and UniverSat use their native sensor GSD, so increasing image size increases ground extent instead of inheriting dataset overrides that assume a fixed-tile resize. ``manifest.json`` lists the requested cells and benchmark names without matching configurations. ``coverage.json`` records measured and missing cells for every attempted model/band/size job. Models without declared spatial taps receive classification measurements only. A failed decoder does not prevent attempts for the other decoders.
 
 ``--timing-batch-size``, ``--n-warmup``, and ``--n-measure`` control timing;
 FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_cost.csv``, ``--output`` selects an exact CSV path, and ``--no-resume`` disables the default per-cell resume behavior.
