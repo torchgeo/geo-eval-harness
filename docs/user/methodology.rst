@@ -281,6 +281,10 @@ ViT neck
 **Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
 Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
 
+``neck: vit_fine`` (setup column ``neck`` = ``vit_fine``) is for backbones that also produce a finer output map than their trunk, such as UniverSat's block-14 output tokens. The first three layers are trunk blocks on one grid and fill the 1/2, 1, and 2 levels as above; the last layer replaces the two transposed convs as the finest level, bilinearly resized to 4× the trunk grid unless it is already there (UniverSat's ``output_scale: 4``).
+
+With ``neck: vit`` and a single layer the neck builds all four levels from that one map, the ViTDet simple feature pyramid (e.g. ``layers: [model.model.blocks.14]`` for UniverSat's output tokens alone).
+
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
 
@@ -373,7 +377,7 @@ Training knobs
      - Backbone layer names to hook.  For FPN / DPT, deepest layer first.
    * - ``neck``
      - ``none``
-     - ``vit`` adds the ViT neck before an ``fpn`` or ``upernet`` head (four same-resolution layers).
+     - ``vit`` adds the ViT neck before an ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.

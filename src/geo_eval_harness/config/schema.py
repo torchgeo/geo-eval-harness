@@ -255,7 +255,7 @@ class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
-    neck: Literal["none", "vit"] = "none"
+    neck: Literal["none", "vit", "vit_fine"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
     upsampler: Literal["none", "anyup"] = "none"
     weight_decay: StrictFloat = Field(default=0.0, ge=0)
@@ -278,6 +278,7 @@ class SegmentationConfig(StrictModel):
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
     feature_standardize: StrictBool = False
+    gradient_checkpointing: StrictBool = False
     sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
     sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
         default_factory=lambda: [0.0]
@@ -342,8 +343,10 @@ class SegmentationConfig(StrictModel):
     @model_validator(mode="after")
     def validate_neck(self) -> "SegmentationConfig":
         """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
-        if self.neck == "vit" and self.head not in NECK_HEADS:
-            raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        if self.neck != "none" and self.head not in NECK_HEADS:
+            raise ValueError(
+                f"neck {self.neck!r} requires head in {sorted(NECK_HEADS)}, got {self.head!r}"
+            )
         if self.head_dropout and self.head != "upernet":
             raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
         if self.upsampler == "anyup" and self.head != "upernet":

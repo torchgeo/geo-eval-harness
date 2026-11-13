@@ -70,6 +70,7 @@ Tests
    $ uv run pytest -m integration                   # toy-data workflows only
    $ uv run pytest -m slow                          # optional downloaded-data/weight tests
    $ uv run pytest -m accuracy_check                # optional model accuracy baselines
+   $ uv run pytest -m geography                     # committed dataset-geography store checks
    $ uv run pytest tests/test_intrinsic_dim.py -v   # one file
    $ uv run pytest -k "m-eurosat" -v                # by keyword
    $ uv run pytest --no-cov                         # disable coverage for speed
@@ -79,6 +80,10 @@ All test cases live under :file:`tests/`. Shared inputs and subprocess helpers b
 The default suite needs no downloaded datasets or pretrained weights and can run on CPU; GPU-specific tests skip when CUDA is unavailable. The :file:`tests/integration/` suite creates small on-disk datasets with separate training, validation, and test samples. It exercises CLI parsing, data loading, feature extraction, fitting, output files, and resume behavior together. External download transport is replaced with local fixture data, and a temporary random-weight preset lets the public CLI exercise segmentation offline; numerical algorithms and result writers run normally. Integration tests must assert meaningful outputs, not just a zero exit status.
 
 ``pytest-cov`` measures both lines and branches across :mod:`geo_eval_harness`, including Python subprocesses. Every normal run displays missing coverage and writes :file:`coverage.xml`; CI saves that report as an artifact and uploads it to Codecov. Generate a navigable local report with ``uv run pytest --cov-report=html`` and open :file:`htmlcov/index.html`. Optional model packages remain in the coverage denominator even when they are not installed, so compare results using the same dependency extras.
+
+CI tests Python 3.12, 3.13, and 3.14 on Linux, macOS, and Windows. It sets ``UV_PYTHON`` to the matrix version for installation and execution and verifies the active interpreter before running tests, so the local :file:`.python-version` pin does not override the matrix.
+
+The default suite includes the ``geography`` tests; CI deselects them from the OS/Python matrix and runs them once in its ``geography`` job. A pull request that changes only :file:`results/models/*.csv` skips the matrix test steps (the required ``test`` checks still report success); the ``test (ubuntu-latest, 3.13)`` cell runs :file:`tests/test_setup_columns.py` and :file:`tests/test_results_store.py` against the committed CSVs instead, and pre-commit and the results-explorer workflow still run.
 
 Only the explicitly selected ``slow`` and ``accuracy_check`` suites need real data or cached weights. Missing datasets skip individually; present but malformed data must fail. They use the canonical subdirectories documented in :doc:`datasets`.
 

@@ -6,6 +6,7 @@ kwargs:
   global_pool: avg
   auto_resize: true
 segmentation:
+  lora_target_modules: 'layers\.\d+\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers:
     - layers.3
     - layers.2

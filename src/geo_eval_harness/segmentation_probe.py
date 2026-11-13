@@ -2,7 +2,7 @@
 
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import torch
@@ -199,9 +199,10 @@ class SegmentationProbe(nn.Module):
             ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``, ``"unet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
             ``dpt``, ``upernet``, and ``unet`` heads (default 256).
-        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a
+        neck: ``"none"`` (default), ``"vit"`` or ``"vit_fine"``. ``"vit"`` puts a
             :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn``, ``upernet``, or ``unet``
-            head; it needs exactly four layers at one resolution.
+            head; it needs exactly four layers at one resolution. ``"vit_fine"`` takes the finest
+            level from the last layer at its own resolution, so only the first three must share one.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
         head_dropout: Channel dropout (``nn.Dropout2d``, as mmsegmentation's UPerHead) before the
@@ -263,8 +264,12 @@ class SegmentationProbe(nn.Module):
         if head_type == "linear":
             self.head = LinearHead(self.channels_list, num_classes)
         elif head_type in _HIDDEN_DIM_HEADS:
+            # A single-layer ViT neck builds four pyramid levels from that one map.
+            single_map = neck == "vit" and len(self.channels_list) == 1
             self.head = _HIDDEN_DIM_HEADS[head_type](
-                self.channels_list, num_classes, hidden_dim=hdim
+                self.channels_list * 4 if single_map else self.channels_list,
+                num_classes,
+                hidden_dim=hdim,
             )
         elif head_type == "patch_linear":
             self.head = (
@@ -446,19 +451,25 @@ class SegmentationProbe(nn.Module):
                     f"{self.feature_hw_list[0]}. Use neck 'vit' for ViT blocks."
                 )
             return
-        if neck != "vit":
-            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit")
+        if neck not in ("vit", "vit_fine"):
+            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit, vit_fine")
         if head_type not in NECK_HEADS:
             raise ValueError(
-                f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
+                f"neck {neck!r} requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
             )
-        if len(self.layer_names) != 4 or len(set(self.feature_hw_list)) != 1:
+        trunk_hw = self.feature_hw_list[:3] if neck == "vit_fine" else self.feature_hw_list
+        single = neck == "vit" and len(self.layer_names) == 1
+        if not single and (len(self.layer_names) != 4 or len(set(trunk_hw)) != 1):
             raise ValueError(
-                "neck 'vit' needs exactly 4 layers sharing one resolution (ViT blocks); got "
+                f"neck {neck!r} needs exactly 4 layers sharing one resolution (ViT blocks; with "
+                f"'vit_fine' only the first three must; 'vit' also takes a single layer); got "
                 f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
                 "backbones already provide multi-scale features."
             )
-        self.head = NeckedHead(ViTNeck(self.channels_list, input_norm=neck_norm), self.head)
+        self.head = NeckedHead(
+            ViTNeck(self.channels_list, input_norm=neck_norm, native_finest=neck == "vit_fine"),
+            self.head,
+        )
 
     def register_hooks(self) -> None:
         """Register feature hooks and reject missing or duplicate layer names."""
@@ -509,8 +520,10 @@ class SegmentationProbe(nn.Module):
     def _dry_run_channels(self) -> list[int]:
         device = self._backbone_device()
         in_channels = int(getattr(self.backbone, "num_channels", 3))
-        dummy = torch.randn(1, in_channels, 224, 224, device=device)
-        self.dry_run_input_hw = (224, 224)
+        # Backbones built for one fixed input size declare it; everything else accepts 224.
+        side = int(getattr(self.backbone, "probe_input_size", None) or 224)
+        dummy = torch.randn(1, in_channels, side, side, device=device)
+        self.dry_run_input_hw = (side, side)
         if not self.layer_names:
             self.layer_names = ["backbone_output"]
             self.hooks.append(self.backbone.register_forward_hook(self._hook_fn("backbone_output")))
@@ -535,15 +548,27 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Infer NHWC when H == W and channels exceed the spatial dimensions; otherwise keep NCHW.
+        # Backbones that declare NHWC stage maps skip the shape guess, which fails once the grid
+        # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
+        # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
+            if getattr(self.backbone, "feature_layout", None) == "nhwc":
+                return feat.permute(0, 3, 1, 2).contiguous()
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()
         return feat
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
-        """Reshape token features into a spatial grid, accounting for prefix tokens."""
+        """Reshape token features into a spatial grid, accounting for prefix tokens.
+
+        A backbone that declares ``tokens_to_grid`` maps its own token layout instead.
+        """
+        to_grid: Callable[[torch.Tensor], torch.Tensor] | None = getattr(
+            self.backbone, "tokens_to_grid", None
+        )
+        if to_grid is not None:
+            return to_grid(feat)
         bsz, d1, d2 = feat.shape
         n_prefix = _resolve_num_prefix_tokens(self.backbone)
 
