@@ -19,7 +19,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from geo_eval_harness.results import load_results
+from geo_eval_harness.results import SETUP_COLS, format_setup_value, load_results
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +32,12 @@ INTRINSIC_DIM_RESULTS_DIR = ROOT / "results" / "intrinsic_dim"
 COMPUTE_COST_CSV = ROOT / "results" / "compute_cost.csv"
 HTML_PATH = ROOT / "docs" / "_static" / "results-explorer.html"
 SNAPSHOT_DIR = ROOT / "docs" / "_static" / "_results_snapshots"
-SEG_METHODS = ("seg-linear", "seg-conv_block", "seg-fpn", "seg-dpt")
+# Segmentation rows are ``seg-<decoder>`` with their setup in the SETUP_COLS
+# columns.  Rows without ``adaptation`` predate those columns (the legacy
+# seg-linear/conv_block/fpn/dpt grids) and are left out of new snapshots.
+SEG_METHOD_PREFIX = "seg-"
 ACCURACY_METHODS = ("knn5", "linear")
-ALLOWED_METHODS = (*ACCURACY_METHODS, *SEG_METHODS, "profile", "intrinsic_dim")
+ALLOWED_METHODS = (*ACCURACY_METHODS, "profile", "intrinsic_dim")
 
 # compute_cost.csv is wide -- one row per measured config, one column per
 # quantity.  The explorer wants the long ``method="profile"`` rows that
@@ -96,6 +99,9 @@ COLUMNS = [
     "task",
     "head_type",
     "n_channels",
+    *SETUP_COLS,
+    "best_val_epoch",
+    "best_val_miou",
     "snapshot",
 ]
 NUMERIC = {
@@ -120,6 +126,8 @@ NUMERIC = {
     "recall",
     "f1",
     "n_channels",
+    "best_val_epoch",
+    "best_val_miou",
 }
 BOOL = {"merge_val"}
 
@@ -164,10 +172,17 @@ def _iter_result_rows():
     yield from _iter_compute_cost_rows()
 
 
+def is_segmentation_row(row: dict) -> bool:
+    """Return whether a row is a segmentation measurement with setup columns."""
+    return str(row.get("method") or "").startswith(SEG_METHOD_PREFIX) and bool(
+        row.get("adaptation")
+    )
+
+
 def _load_csv_rows(label: str) -> list[dict]:
     rows = []
     for r in _iter_result_rows():
-        if r["method"] not in ALLOWED_METHODS:
+        if r["method"] not in ALLOWED_METHODS and not is_segmentation_row(r):
             continue
         if r.get("metric_value") is None or r["metric_value"] == "":
             continue
@@ -180,6 +195,9 @@ def _load_csv_rows(label: str) -> list[dict]:
                 row[k] = None
             elif k in NUMERIC:
                 row[k] = float(v)
+            elif k in SETUP_COLS:
+                # Setup cells are tokens in their CSV spelling (``20``, ``0.0005``).
+                row[k] = format_setup_value(v)
             elif k in BOOL:
                 row[k] = str(v).lower() in ("true", "1")
             else:
@@ -269,7 +287,7 @@ def main() -> None:
     snapshot_meta = [{"label": label, "rows": len(snapshots[label])} for label in ordered_labels]
 
     accuracy_rows = [r for r in latest_rows if r["method"] in ACCURACY_METHODS]
-    seg_rows = [r for r in latest_rows if r["method"] in SEG_METHODS]
+    seg_rows = [r for r in latest_rows if is_segmentation_row(r)]
     n_models = len({r["name"] for r in accuracy_rows if r["name"]}) or len(
         {r["name"] for r in latest_rows if r["name"]}
     )
@@ -278,6 +296,7 @@ def main() -> None:
     n_datasets = len({r["dataset"] for r in accuracy_rows if r["dataset"]})
     n_seg_datasets = len({r["dataset"] for r in seg_rows if r["dataset"]})
     n_seg_models = len({r["name"] for r in seg_rows if r["name"]})
+    n_seg_decoders = len({r["method"] for r in seg_rows})
     best = max(accuracy_rows or latest_rows, key=lambda r: r["metric_value"] or 0)
 
     text = _replace_snapshot_data(
@@ -286,8 +305,9 @@ def main() -> None:
 
     seg_sentence = (
         f" A further {len(seg_rows):,} segmentation measurements cover "
-        f"{n_seg_models} backbones on {n_seg_datasets} datasets (mIoU, four "
-        f"decoder heads)."
+        f"{n_seg_models} backbones on {n_seg_datasets} datasets (mIoU, "
+        f"{n_seg_decoders} decoder head{'s' if n_seg_decoders != 1 else ''}; frozen, "
+        f"LoRA and fully fine-tuned backbones)."
         if seg_rows
         else ""
     )

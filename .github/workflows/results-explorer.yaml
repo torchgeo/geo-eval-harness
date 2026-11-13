@@ -72,11 +72,11 @@ jobs:
       - name: Regenerate results explorer
         run: uv run --frozen --extra dev python scripts/regen_results_explorer.py
 
-      # The ELO bootstrap CIs dominate the runtime (about 3 s per resample).
-      # A PR run is only a smoke test that is never committed, so it skips
-      # them; main keeps the script's default so the refresh matches a manual run.
+      # Bootstrap intervals are only needed for the published leaderboard.
       - name: Regenerate leaderboard
         env:
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
           BOOTSTRAP: ${{ github.event_name == 'pull_request' && '0' || '1000' }}
         run: uv run --frozen --extra dev python scripts/regen_leaderboard.py --bootstrap "$BOOTSTRAP"
 
@@ -115,15 +115,7 @@ jobs:
           commit-message: "chore(docs): refresh results explorer and leaderboard from results/*.csv"
           title: "chore(docs): refresh results explorer and leaderboard"
           body: |
-            Regenerated `docs/_static/results-explorer.html` and
-            `docs/_static/ranking_explorer.html` from the results CSVs on
-            `main` via `scripts/regen_results_explorer.py` and
-            `scripts/regen_leaderboard.py`.
-
-            Opened automatically because a results CSV changed. The diff is the
-            re-inlined data plus the masthead, both derived from the CSVs — the
-            pages ship with no hand-written numbers, so this needs a read of the
-            summary line rather than of the 40 MB payload.
+            Updated the results explorer and leaderboard from the benchmark CSVs on main.
 
             Triggered by ${{ github.sha }}.
           labels: automation

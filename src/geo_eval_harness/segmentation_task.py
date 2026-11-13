@@ -20,11 +20,15 @@ from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
 from .config.schema import SegmentationConfig
+from .segmentation_checkpointing import enable_gradient_checkpointing
 from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
+    MAX_NONFINITE_FRACTION,
     CachedFeaturesDataset,
     GPUTensorCache,
+    NonFiniteFeaturesError,
     SegmentationProbe,
+    check_finite_features,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,8 @@ class EpochRecord:
             backbone.
         train_steps: Optimizer steps taken.
         skipped_batches: Training batches skipped as smaller than the head minimum.
+        nonfinite_batches: Training batches skipped because the backbone features were not
+            finite (for example a float16 overflow); the head never saw them.
         epoch_seconds: Wall time for training and validation.
         peak_gpu_mem_mb: Peak allocated CUDA memory in MiB, or ``None`` off CUDA.
         train_miou: Macro mIoU of the training-mode predictions accumulated over the epoch's
@@ -62,6 +68,7 @@ class EpochRecord:
     backbone_lr: float | None
     train_steps: int
     skipped_batches: int
+    nonfinite_batches: int
     epoch_seconds: float
     peak_gpu_mem_mb: float | None
     train_miou: float
@@ -91,6 +98,7 @@ class _EpochTracker:
         self.lrs = [float(group["lr"]) for group in optimizer.param_groups]
         self.steps = 0
         self.skipped = 0
+        self.nonfinite = 0
         self.samples = 0
         self.loss_sum = torch.zeros((), device=device)
         self.num_classes = num_classes
@@ -133,6 +141,8 @@ class SegmentationSolver:
         ignore_index: int = 255,
         backbone_lr: float | None = None,
         early_stopping_patience: int | None = None,
+        *,
+        amp: bool = True,
     ) -> None:
         """Configure the optimizer, loss, and segmentation metrics.
 
@@ -150,6 +160,8 @@ class SegmentationSolver:
             early_stopping_patience: Stop training once validation mIoU has not improved for
                 this many epochs. The LR schedule still spans ``epochs``, so a stopped run equals
                 the first epochs of the full run. ``None`` trains all epochs.
+            amp: Train and evaluate under CUDA float16 autocast with gradient scaling.
+                ``False`` runs in float32.
         """
         self.model = model.to(device)
         self.backbone_eval_mode = False
@@ -217,7 +229,8 @@ class SegmentationSolver:
             self.metric_boundary_iou,
         ]
 
-        self.use_amp = device.startswith("cuda") and torch.cuda.is_available()
+        self.amp = amp
+        self.use_amp = amp and device.startswith("cuda") and torch.cuda.is_available()
         self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
         self.device_type = torch.device(device).type
 
@@ -246,6 +259,45 @@ class SegmentationSolver:
                 f"{type(self.model.head).__name__} minimum of {min_size}. Increase "
                 "segmentation.batch_size (cached features) or runtime.batch_size."
             )
+
+    def _check_nonfinite(self, tracker: "_EpochTracker") -> None:
+        """Report non-finite batches and fail if they exceed ``MAX_NONFINITE_FRACTION``."""
+        if not tracker.nonfinite:
+            return
+        total = tracker.steps + tracker.skipped + tracker.nonfinite
+        logger.warning(
+            "Epoch %d skipped %d of %d training batches with non-finite backbone features.",
+            tracker.epoch,
+            tracker.nonfinite,
+            total,
+        )
+        if tracker.nonfinite > MAX_NONFINITE_FRACTION * total:
+            raise NonFiniteFeaturesError(
+                f"Segmentation epoch {tracker.epoch} skipped {tracker.nonfinite} of {total} "
+                f"training batches with non-finite backbone features (limit "
+                f"{MAX_NONFINITE_FRACTION:.0%}). Set segmentation.amp: off to run in float32."
+            )
+
+    def _train_step(
+        self, images: torch.Tensor, masks: torch.Tensor, tracker: "_EpochTracker"
+    ) -> None:
+        """Take one optimizer step, or count and skip a batch whose backbone features overflowed.
+
+        The probe raises before its head runs, so head normalisation statistics stay finite.
+        """
+        self.optimizer.zero_grad()
+        with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
+            try:
+                logits = self.model(images)
+            except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
+                tracker.nonfinite += 1
+                return
+            loss: torch.Tensor = self.criterion(logits, masks)
+
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        tracker.add_step(loss, len(images), self._tracked_logits(logits), masks)
 
     def _require_training_step(self, epoch: int, steps: int) -> None:
         """Fail instead of evaluating a head that an epoch could not train."""
@@ -334,6 +386,7 @@ class SegmentationSolver:
             backbone_lr=backbone_lr,
             train_steps=tracker.steps,
             skipped_batches=tracker.skipped,
+            nonfinite_batches=tracker.nonfinite,
             epoch_seconds=time.perf_counter() - tracker.started,
             peak_gpu_mem_mb=peak_mem,
             train_miou=tracker.train_miou(),
@@ -439,16 +492,9 @@ class SegmentationSolver:
                     tracker.skipped += 1
                     continue
 
-                self.optimizer.zero_grad()
-                with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                    logits = self.model(images)
-                    loss: torch.Tensor = self.criterion(logits, masks)
+                self._train_step(images, masks, tracker)
 
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                tracker.add_step(loss, len(images), self._tracked_logits(logits), masks)
-
+            self._check_nonfinite(tracker)
             self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:
                 scheduler.step()
@@ -521,10 +567,10 @@ class SegmentationSolver:
         gpu_train = (
             train_cache
             if isinstance(train_cache, GPUTensorCache)
-            else GPUTensorCache.from_cached(train_cache, self.device)
+            else GPUTensorCache.from_cached(train_cache, self.device, amp=self.amp)
         )
         gpu_val = (
-            GPUTensorCache.from_cached(val_cache, self.device)
+            GPUTensorCache.from_cached(val_cache, self.device, amp=self.amp)
             if isinstance(val_cache, CachedFeaturesDataset)
             else val_cache
         )
@@ -550,6 +596,11 @@ class SegmentationSolver:
                     skip_logged = True
                     tracker.skipped += 1
                     continue
+                try:
+                    check_finite_features(features)
+                except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
+                    tracker.nonfinite += 1
+                    continue
                 self.optimizer.zero_grad()
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                     logits = self.model.head(features, *input_hw)
@@ -560,6 +611,7 @@ class SegmentationSolver:
                 self.scaler.update()
                 tracker.add_step(loss, len(masks), self._tracked_logits(logits), masks)
 
+            self._check_nonfinite(tracker)
             self._require_training_step(epoch + 1, tracker.steps)
             if scheduler is not None:
                 scheduler.step()
@@ -594,7 +646,7 @@ class SegmentationSolver:
         Returns:
             Metrics, optionally followed by per-image confusion matrices.
         """
-        gpu_cache = GPUTensorCache.from_cached(cache, self.device)
+        gpu_cache = GPUTensorCache.from_cached(cache, self.device, amp=self.amp)
         return self._evaluate(
             gpu_cache,
             batch_size,
@@ -639,10 +691,26 @@ class SegmentationSolver:
     def _evaluation_batches(
         self, data: DataLoader | GPUTensorCache, batch_size: int
     ) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
-        """Yield logits and masks in input order using the appropriate forward path."""
+        """Yield logits and masks in input order using the appropriate forward path.
+
+        Non-finite features or logits raise instead of scoring a constant prediction.
+        """
+        for logits, masks in self._raw_evaluation_batches(data, batch_size):
+            if not bool(torch.isfinite(logits).all()):
+                raise FloatingPointError(
+                    "Segmentation evaluation logits are not finite (float16 overflow or "
+                    "corrupted normalisation statistics?). Set segmentation.amp: off to run in "
+                    "float32."
+                )
+            yield logits, masks
+
+    def _raw_evaluation_batches(
+        self, data: DataLoader | GPUTensorCache, batch_size: int
+    ) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         if isinstance(data, GPUTensorCache):
             input_hw = (data.masks.shape[-2], data.masks.shape[-1])
             for features, masks in data.ordered_batches(batch_size):
+                check_finite_features(features)
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                     logits = self.model.head(features, *input_hw)
                 yield logits, masks
@@ -755,6 +823,8 @@ class SweepSegmentationSolver(SegmentationSolver):
         lr_scheduler: str = "cosine",
         ignore_index: int = 255,
         early_stopping_patience: int | None = None,
+        *,
+        amp: bool = True,
     ) -> None:
         """Configure one AdamW parameter group per sweep head."""
         head = model.sweep_head
@@ -774,6 +844,7 @@ class SweepSegmentationSolver(SegmentationSolver):
             lr_scheduler=lr_scheduler,
             ignore_index=ignore_index,
             early_stopping_patience=early_stopping_patience,
+            amp=amp,
         )
         self.sweep_head = head
         groups = [
@@ -938,6 +1009,11 @@ def build_seg_probe_and_solver(
                 f"full_finetune: {type(model).__name__} has no trainable backbone parameter; "
                 "its wrapper freezes the backbone and does not define enable_full_finetune()."
             )
+    if config.gradient_checkpointing:
+        if config.lora_rank is None and not config.full_finetune:
+            logger.info("gradient_checkpointing has no effect on a frozen backbone; skipped.")
+        else:
+            enable_gradient_checkpointing(model)
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,
@@ -951,6 +1027,7 @@ def build_seg_probe_and_solver(
         temporal_pool=config.temporal_pool,
         sweep_heads=len(config.sweep_grid),
         feature_standardize=config.feature_standardize,
+        amp=config.amp == "fp16",
     )
     if config.sweep_grid:
         sweep_solver = SweepSegmentationSolver(
@@ -962,6 +1039,7 @@ def build_seg_probe_and_solver(
             lr_scheduler=config.scheduler,
             ignore_index=config.ignore_index,
             early_stopping_patience=config.early_stopping_patience,
+            amp=config.amp == "fp16",
         )
         return probe, sweep_solver
     criterion = nn.CrossEntropyLoss(ignore_index=config.ignore_index)
@@ -976,6 +1054,7 @@ def build_seg_probe_and_solver(
         backbone_lr=config.backbone_learning_rate,
         weight_decay=config.weight_decay,
         early_stopping_patience=config.early_stopping_patience,
+        amp=config.amp == "fp16",
     )
     solver.backbone_eval_mode = config.full_finetune
     return probe, solver

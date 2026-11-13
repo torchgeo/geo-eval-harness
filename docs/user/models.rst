@@ -355,6 +355,67 @@ The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
 
+AnySat
+^^^^^^
+
+:class:`~geo_eval_harness.models.AnySatBenchModel` wraps AnySat v1 (Base, 126M
+parameters; `Astruc et al., CVPR 2025 <https://arxiv.org/abs/2412.14123>`_).  The model
+code loads through ``torch.hub`` from a pinned commit of
+`gastruc/AnySat <https://github.com/gastruc/AnySat>`_. The weights come from a pinned commit of
+`g-astruc/AnySat <https://huggingface.co/g-astruc/AnySat>`_ and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model anysat_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model anysat_base_seg --dataset sen1floods11-s2
+
+AnySat has one projector per modality, each built for a fixed band order and ground
+sampling distance (GSD). The wrapper adapts each input to its projector as follows:
+
+* It takes the modality from ``BandSpec.sensor`` (``s2``, ``s1``/``sar``, and very-high-resolution
+  ``aerial`` RGB to the 1 m ``spot`` projector) and reorders the bands by name.  Presets set
+  ``modality`` only where the sensor name does not apply: Landsat and HLS (``l7``), CaFFe and
+  the SpaceNet datasets.
+* It resamples every tile to the projector's GSD over the tile's true ground extent.
+  ``input_gsd`` is the GSD of the pixels the model receives: native GSD × native tile size /
+  ``image_size``.
+* It sets ``patch_size`` in metres.
+* It passes day of year 120 to the time-series projectors.
+
+Projector bands that are missing from the input are filled with the dataset mean only when
+``impute_missing`` is set, and the filled bands are logged.  The presets set it, for example
+for RGB runs on Sentinel-2 datasets.  The ``s1`` projector also needs the VV/VH ratio of the
+raw values.  The wrapper computes it and z-scores it with the training-split ``ratio_stats``
+that the preset stores per dataset.
+
+For segmentation, hook ``output_tap``: it receives AnySat's output tokens as
+``[B, 768, h, w]``.  A hook on the final cross-attention block itself never fires, because AnySat
+calls that block through a custom method.  The fusion blocks ``model.model.blocks.0``-``5`` give
+``[B, 1 + h*w, 768]`` for single-modality inputs.  ``dense_output: true`` exposes AnySat's
+1536-channel sub-patch output through ``dense_tap``.
+
+AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's.  The two
+models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
+pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
+
+THOR
+^^^^
+
+:class:`~geo_eval_harness.models.ThorBenchModel` wraps THOR (`Forgaard et al., 2026 <https://arxiv.org/abs/2601.16011>`_), a FlexiViT pretrained on Sentinel-1, -2 and -3. The presets ``thor/tiny``, ``thor/small``, ``thor/base`` and ``thor/large`` select the four released sizes. The encoder is reimplemented from `FM4CS/THOR <https://github.com/FM4CS/THOR>`_ at a pinned commit, because the upstream package pins an older ``timm`` and patches ``timm``'s attention globally. The weights come from pinned commits of the ``FM4CS/THOR-1.0-*`` Hugging Face repos and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model thor/base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model thor/base --dataset sen1floods11-s2 --bands all
+
+THOR embeds each band with its own patch kernel at the band's native GSD and averages the bands of a group (10 m, 20 m and 60 m Sentinel-2, Sentinel-1 VV/VH, Sentinel-1 HH/HV) into one token grid. The wrapper adapts each input as follows:
+
+* It maps ``s2`` bands and ``s1``/``sar`` VV, VH, HH and HV in dB by canonical name. Other sensors, linear-power SAR, and bands THOR was not pretrained on raise an error. Presets drop the 60 m Sentinel-2 bands B01, B09 and B10 (``ignore_bands: [coastal, watervapor, cirrus]``), as the authors' Sentinel-2 fine-tuning config in `FM4CS/thor_terratorch_ext <https://github.com/FM4CS/thor_terratorch_ext>`_ does; B10 is not in THOR at all.
+* Tiles keep their native size (``input.image_size: null``). ``input_gsd`` is the GSD of the pixels the model receives, 10 m by default. Each group is resampled to its pretraining GSD over the tile's ground extent, rounded so that every group holds a whole number of patches.
+* One ``patch_size`` in pixels applies to all groups. The presets use 4 px for tiles up to 128 px and larger patches for 256 px and 512 px tiles. ``max_tokens`` rejects settings that would exceed 4,096 tokens.
+
+Classification embeddings average each group's final tokens and concatenate the groups (``merge: concat``, THOR's default in its PANGAEA experiments), so their width grows with the number of band groups. For segmentation, hook ``taps.<i>``: it receives block ``i``'s tokens as ``[B, C, h, w]``, with each group upsampled to the finest grid and merged the same way. THOR's pretraining statistics are not offered as model normalization, because its own fine-tuning configs z-score with dataset statistics.
+
 Adding a new model
 ------------------
 

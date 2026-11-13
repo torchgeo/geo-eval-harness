@@ -58,12 +58,15 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``sen1floods11-s1``, ``sen1floods11-s2``
      - ``data/sen1floods11/``
      - Public GCS bucket ``sen1floods11`` (v1.1) over HTTPS, checksum-verified per file
-   * - ``bright-post-sar``
+   * - ``bright-post-sar``, ``bright-post-sar-rgb``
      - ``data/bright-post-sar/``
      - Hugging Face ``Kullervo/BRIGHT``, pinned commit, two SHA-256-verified ZIPs
    * - ``oscd-post``
      - ``data/oscd-post/``
      - torchgeo's ``OSCD`` downloader
+   * - ``planteur``
+     - ``data/planteur/``
+     - Hugging Face ``allenai/planteur-benchmark``, pinned commit, monthly mosaics stacked into per-split arrays
 
 Downloading
 -----------
@@ -90,6 +93,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain
    $ geo-eval-harness download sen1floods11-s1                          # Sen1Floods11 (S1 + S2)
    $ geo-eval-harness download bright-post-sar                          # BRIGHT post-event SAR
    $ geo-eval-harness download oscd-post                                # torchgeo OSCD (post image)
+   $ geo-eval-harness download planteur                                 # PLANTEUR crop types
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
 Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
@@ -243,24 +247,27 @@ CLI name             #cls   bands notes                                        C
 Other
 -----
 
-==================== ============================================================================
-CLI name             Class
-==================== ============================================================================
-``eurosat``          :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
-``eurosat-spatial``  :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
-``resisc45``         :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
-``aid``              :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+======================= ============================================================================
+CLI name                Class
+======================= ============================================================================
+``eurosat``             :class:`~geo_eval_harness.datasets.EuroSAT`  (torchgeo wrapper, random split)
+``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
+``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
+``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 
-``ucmerced``         :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
-``hotosm_buildings`` :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
-``openearthmap-sar`` :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
-``loveda``           :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
-``levir-cd-post``    :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
-``sen1floods11-s1``  :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
-``sen1floods11-s2``  :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
-``bright-post-sar``  :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
-``oscd-post``        :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
-==================== ============================================================================
+``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
+``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
+``openearthmap-sar``    :class:`~geo_eval_harness.datasets.OpenEarthMapSAR`  (land-cover segmentation, SAR)
+``loveda``              :class:`~geo_eval_harness.datasets.LoveDA`  (land-cover segmentation, RGB)
+``levir-cd-post``       :class:`~geo_eval_harness.datasets.LEVIRCDPost`  (post-image change proxy, RGB)
+``sen1floods11-s1``     :class:`~geo_eval_harness.datasets.Sen1Floods11S1`  (flood-water segmentation, S1 VV/VH dB)
+``sen1floods11-s2``     :class:`~geo_eval_harness.datasets.Sen1Floods11S2`  (flood-water segmentation, S2 L1C)
+``bright-post-sar``     :class:`~geo_eval_harness.datasets.BRIGHTPostSAR`  (building damage segmentation, SAR)
+``bright-post-sar-rgb`` :class:`~geo_eval_harness.datasets.BRIGHTPostSARRGB`  (building damage segmentation, repeated SAR)
+``oscd-post``           :class:`~geo_eval_harness.datasets.OSCDPost`  (urban change from the post image, S2 L1C)
+``planteur``            :class:`~geo_eval_harness.datasets.PLANTEUR`  (crop-type segmentation, S2 + S1, 12 months)
+``planteur_loio_*``     ``PLANTEURLOIOGuadeloupe`` … ``PLANTEURLOIOMayotte``  (leave-one-island-out folds)
+======================= ============================================================================
 
 ``resisc45`` is 31,500 RGB scenes at 256x256 across 45 classes, on torchgeo's
 published 60/20/20 split.  It is the most-divergent benchmark in the GFM
@@ -375,6 +382,8 @@ Classes are 0 background, 1 intact, 2 damaged, and 3 destroyed, kept as native l
 
 Images are single-band ``uint8`` amplitude (display-scaled, not calibrated backscatter) at **1024 x 1024** pixels, exposed as one ``sar`` band in raw float32 ``0..255`` units; the default ``rgb`` selector resolves to ``sar``. The polarisation is not recorded in the files, so the band has no ``vv``/``hh`` alias and no ``unit``. Zero is the swath fill value (12.5% of training pixels). It is kept as input, and its labels are kept, because labelled buildings overlap it. Dataset normalization uses statistics over all 2,918 native-resolution training images, zeros included. The runner owns resizing; tiles are not cropped.
 
+``bright-post-sar-rgb`` serves the same SAR tile as three identical ``red``/``green``/``blue`` channels, using sensor ``aerial``, no wavelengths, and the SAR statistics for each channel (mean 56.8231, std 45.8553). Both the default ``rgb`` selector and ``all`` select all three; explicit band names select fewer copies. This pseudo-RGB representation lets models use their RGB input paths; it is not optical imagery. Tiles, masks, split memberships, geography, and the installation below are identical to ``bright-post-sar``. Download once with ``geo-eval-harness download bright-post-sar``, then select ``--dataset bright-post-sar-rgb`` for evaluation. The two dataset ids distinguish result rows and run hashes; the single-band dataset is unchanged.
+
 .. code-block:: text
 
    data/bright-post-sar/
@@ -458,6 +467,8 @@ CLI name             #cls   bands notes                                        C
 
 The chips and their train/val/test assignment are fixed in the packaged ``open_cities_index.csv.gz``, which ``scripts/generate_open_cities_index.py`` generated once. Within each city, 500 m geographic blocks are assigned to the splits so that chip count and building pixels both come close to 70/10/20, which gives 76,818 train, 11,236 validation, and 22,408 test chips. A chip is kept when at least half of it is valid imagery, and chips that duplicate an overlapping scene are dropped. Zanzibar is mostly rural bush, so its blocks with less than 1% building cover are dropped as well. ``scripts/plot_open_cities_splits.py`` draws the split map of each city and writes the block polygons as GeoJSON for inspection in a GIS.
 
+The default training partition is a fixed 10,000-chip subset: the sorted first 10,000 entries of ``numpy.random.default_rng(0).permutation(76818)``. This is exactly the ``train-n10000-s0`` subset of the training-budget study, independent of the training seed. The packaged ``open_cities_train_10k.csv.gz`` pins the train rows and chip IDs with a SHA-256 checksum; loading also checks chip identities against the full index. ``scripts/generate_open_cities_subset.py`` reproduces the manifest. ``--partition full`` restores all 76,818 training chips; validation and test remain complete for both partitions. Earlier results with ``partition=default`` used the full split: use a fresh output file rather than resuming those rows as 10k runs.
+
 ``geo-eval-harness download open_cities`` fetches the 31 scenes and their label GeoJSONs (about 34 GB) from source.coop and verifies them against packaged SHA-256 checksums. The imagery is kept byte-identical. The download then rasterises one mask GeoTIFF per scene on the same pixel grid, with 0 for background, 1 for building, and 255 where the image is transparent or black, which the loss and metrics ignore. Normalization statistics exclude these nodata pixels.
 
 A label audit against Google and Microsoft building footprints found the tier-1 labels well aligned with the imagery, while the Dar es Salaam scenes miss about 5% of buildings. In addition, Monrovia scenes ``207cc7`` and ``401175`` are stored in UTM zone 36N instead of 29N, so their ground pixels are not square. Labels are ODbL 1.0; the imagery is CC BY 4.0 or ODbL depending on the scene.
@@ -485,6 +496,13 @@ The classes, in model output order, are background, building, road, water, barre
 The download fetches the MD5-verified ``Train.zip`` (4.0 GB) and ``Val.zip`` (2.4 GB) from `Zenodo record 5706578 <https://zenodo.org/records/5706578>`__ through torchgeo and needs about 13 GB of disk. The unlabelled ``Test.zip`` is not downloaded. The :download:`example config </examples/loveda-run.yaml>` is a no-weight-download smoke configuration, not an accuracy baseline.
 
 Sources and attribution: the `LoveDA repository <https://github.com/Junjue-Wang/LoveDA>`__ and `paper <https://arxiv.org/abs/2110.08733>`__. The repository states CC BY-NC-SA 4.0 (no commercial use), while the Zenodo record is labelled CC BY 4.0; follow the more restrictive terms.
+
+PLANTEUR — segmentation
+-----------------------
+
+``planteur`` is crop-type segmentation in France's overseas territories (Guadeloupe, Martinique, Guyane, Réunion, Mayotte and Saint-Martin), the tropical counterpart to PASTIS. It has 2,750 patches of 128x128 px at 10 m with twelve 2019 monthly mosaics of Sentinel-2 L2A (12 bands) and Sentinel-1 RTC (``vv``, ``vh``), whose linear backscatter the download converts to dB as in PASTIS (no-data zeros become -100 dB), labelled from the French Land Parcel Identification System (RPG 2019) into 8 classes: Background, Meadow, Fruits/vegetables/flowers, Orchard, Sugarcane, Banana, Pineapple and Tropical tuber. Crops outside that taxonomy are void (255) and ignored. It uses the official spatial-block, territory-stratified 1,896 / 411 / 443 split. ``geo-eval-harness download planteur`` fetches the pinned monthly mosaics and labels (17 GB), stacks them into memory-mapped per-split arrays, verifies them against the bundled checksums, and deletes the per-patch files. As with ``pastis``, ``--time-steps`` selects evenly spaced months (``(T, C, H, W)``); without it each sample is the first month (``(C, H, W)``). Data: ODC-BY, https://huggingface.co/datasets/allenai/planteur-benchmark.
+
+The five leave-one-island-out folds, ``planteur_loio_guadeloupe``, ``planteur_loio_martinique``, ``planteur_loio_guyane``, ``planteur_loio_reunion`` and ``planteur_loio_mayotte``, read the same downloaded arrays. Each fold tests on every patch of its held-out territory (735, 550, 506, 813 and 140 patches) and trains and validates on the other territories, following the release's ``splits/loio.json``. The LOIO train and val splits share 0.1° blocks, so val scores are optimistic, while test never shares a block with them. Saint-Martin stays in train for every fold. Band statistics come from the default train split, which includes every island, so they are not held out for a fold.
 
 Selecting datasets
 ------------------

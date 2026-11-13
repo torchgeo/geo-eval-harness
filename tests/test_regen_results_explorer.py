@@ -72,10 +72,24 @@ def explorer_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             },
             {
                 "dataset": "caffe",
-                "method": "seg-fpn",
+                "method": "seg-upernet",
                 "metric_name": "mIoU",
                 "metric_value": 0.5,
                 "name": "tgeo_model",
+                "bands": "gray",
+                "adaptation": "lora",
+                "decoder": "upernet",
+                "neck": "vit",
+                "epochs": 20,
+                "backbone_lr": "0.0005",
+                "best_val_epoch": 7,
+            },
+            {
+                "dataset": "caffe",
+                "method": "seg-fpn",
+                "metric_name": "mIoU",
+                "metric_value": 0.4,
+                "name": "legacy-seg-grid",
                 "bands": "gray",
             },
             {
@@ -124,7 +138,12 @@ def test_default_paths_use_the_repository_root() -> None:
 def test_csv_loading_includes_segmentation_and_compute_cost(explorer_root: Path) -> None:
     rows = explorer._load_csv_rows("example")
     assert len(rows) == 4
-    assert {row["method"] for row in rows} == {"linear", "seg-fpn", "profile"}
+    assert {row["method"] for row in rows} == {"linear", "seg-upernet", "profile"}
+    seg = next(row for row in rows if row["method"] == "seg-upernet")
+    assert (seg["adaptation"], seg["neck"], seg["backbone_lr"]) == ("lora", "vit", "0.0005")
+    assert seg["epochs"] == "20"
+    assert seg["best_val_epoch"] == 7.0
+    assert all(set(row) == set(explorer.COLUMNS) for row in rows)
     assert rows[0]["merge_val"] is False
     costs = [row for row in rows if row["method"] == "profile"]
     assert {row["metric_value"] for row in costs} == {0.0, 50.0}

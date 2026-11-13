@@ -15,6 +15,20 @@ class Forestnet(_V2Dataset):
     name = "forestnet"
     task = "classification"
     num_classes = 12
+    class_names: ClassVar[tuple[str, ...]] = (
+        "Oil palm plantation",
+        "Timber plantation",
+        "Other large-scale plantations",
+        "Grassland/shrubland",
+        "Small-scale agriculture",
+        "Small-scale mixed plantation",
+        "Small-scale oil palm plantation",
+        "Mining",
+        "Fish pond",
+        "Logging road",
+        "Secondary forest",
+        "Other",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["b04", "b03", "b02"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 6464, "val": 989, "test": 993}

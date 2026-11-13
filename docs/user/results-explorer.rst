@@ -19,9 +19,13 @@ benchmark results. The committed page is regenerated from
 archived JSON snapshots with
 :file:`scripts/regen_results_explorer.py`.
 
-It covers classification (``knn5`` / ``linear``), segmentation (``seg-linear``,
-``seg-conv_block``, ``seg-fpn``, ``seg-dpt``, reported as mIoU), intrinsic
-dimension, and the cost/throughput measurements.  ``compute_cost.csv`` is a
+It covers classification (``knn5`` / ``linear``), segmentation (``seg-<head>``
+rows with their setup columns, reported as mIoU; see
+:ref:`segmentation-setup-columns`), intrinsic dimension, and the cost/throughput
+measurements.  New snapshots leave out segmentation rows without setup columns
+(the legacy ``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt``
+grids); archived snapshots keep them.  The segmentation method menus are
+``seg-<head>`` split by ``adaptation`` (frozen, LoRA, full fine-tuning).  ``compute_cost.csv`` is a
 wide table that the script melts into the long ``method="profile"`` rows the
 page expects.
 
