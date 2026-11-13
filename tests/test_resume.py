@@ -60,6 +60,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "full_finetune",
                 "early_stopping_patience",
                 "feature_standardize",
+                "gradient_checkpointing",
                 "amp",
                 "sweep_learning_rates",
                 "sweep_weight_decays",
@@ -218,6 +219,87 @@ def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
 def test_config_hash_reflects_dataset_resolved_preset_overrides() -> None:
     config = _cfg(model={"name": "torchgeo/scalemae_large_fmow"})
     assert _hash(config, "m-eurosat") != _hash(config, "forestnet")
+
+
+@pytest.mark.parametrize(
+    ("model", "dataset", "image_size", "expected"),
+    [
+        ("timm/vit/vit_base_patch16_224", "loveda", 224, "753ad78a92964b15"),
+        ("timm/vit/vit_base_patch16_224", "fotw", 256, "45b542d6fc9e1fad"),
+        ("torchgeo/dofa_base", "loveda", 224, "a1576b55b8148680"),
+        ("torchgeo/dofa_large", "loveda", 512, "220816abc0f0e8b3"),
+        ("torchgeo/panopticon", "loveda", 224, "2563a8cdf53c8b93"),
+        ("torchgeo/panopticon", "fotw", 256, "37b64ab9d70e8352"),
+        ("torchgeo/deo_rgb", "loveda", 224, "124beafa38c51b41"),
+        ("torchgeo/deo_s2", "loveda", 512, "cbbe48ef58163741"),
+    ],
+)
+def test_native_size_options_leave_existing_preset_hashes_unchanged(
+    model: str, dataset: str, image_size: int, expected: str
+) -> None:
+    """Native-size kwargs are opt-in, so presets that do not set them keep their stored hashes."""
+    config = _cfg(model={"name": model}, datasets=[dataset], input={"image_size": image_size})
+    assert _hash(config, dataset) == expected
+
+
+_SWINV2_L_512 = {"auto_resize": False, "img_size": 512}
+
+
+@pytest.mark.parametrize(
+    ("model", "kwargs", "dataset", "segmentation", "expected"),
+    [
+        (
+            "timm/vit/swinv2_large_window12to16_192to256",
+            _SWINV2_L_512,
+            "loveda",
+            {"head": "upernet", "full_finetune": True, "backbone_learning_rate": 1e-5},
+            "8842077faf8a8079",
+        ),
+        (
+            "timm/vit/swinv2_large_window12to16_192to256",
+            _SWINV2_L_512,
+            "spacenet7",
+            {"head": "unet", "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "d4aa776b7ff0f62f",
+        ),
+        (
+            "terratorch/prithvi_eo_v2_600",
+            {"target_size": None},
+            "spacenet2",
+            {
+                "head": "upernet",
+                "neck": "vit",
+                "full_finetune": True,
+                "backbone_learning_rate": 1e-5,
+            },
+            "63c623cf02734139",
+        ),
+        (
+            "olmoearth_v1_2_base",
+            {},
+            "loveda",
+            {"head": "unet", "neck": "vit", "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "6cd6066b942d5154",
+        ),
+    ],
+)
+def test_gradient_checkpointing_is_hashed_only_when_set(
+    model: str, kwargs: dict, dataset: str, segmentation: dict, expected: str
+) -> None:
+    """Unset (or false) keeps the hashes pinned at 9a96493; set, it is a new configuration."""
+
+    def config(**extra: object) -> RunConfig:
+        seg = {"cache_features": False, "epochs": 30, **segmentation, **extra}
+        return _cfg(
+            model={"name": model, "kwargs": kwargs},
+            datasets=[dataset],
+            input={"image_size": 512},
+            segmentation=seg,
+        )
+
+    assert _hash(config(), dataset) == expected
+    assert _hash(config(gradient_checkpointing=False), dataset) == expected
+    assert _hash(config(gradient_checkpointing=True), dataset) != expected
 
 
 @pytest.mark.parametrize("dataset", ["m-eurosat", "burn_scars"])

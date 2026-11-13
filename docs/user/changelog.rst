@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* THOR (tiny, small, base, large) for classification and segmentation (``thor/tiny``, ``thor/small``, ``thor/base``, ``thor/large``). The encoder is reimplemented from a pinned upstream commit, and the weights are pinned and checked against their sha256. Sentinel-2 and Sentinel-1 dB bands are mapped by name, each band group is resampled to its pretraining GSD over the tile's ground extent, and segmentation reads merged group grids through ``taps.<i>``. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
@@ -41,6 +42,7 @@ Added
 * ``segmentation.upsampler: anyup`` adds frozen pretrained AnyUp (pinned ``wimmerth/anyup``, checkpoint sha256-verified) before the UPerNet classifier, guided by the input's RGB bands; ``none`` leaves hashes unchanged.
 * ``segmentation.full_finetune`` trains the whole backbone at ``backbone_learning_rate`` as a reference regime.
 * ``runtime.sample_cache`` (``disk``, ``host``, ``gpu``) serves segmentation batches from an exact cache of preprocessed samples; results and hashes are unchanged.
+* ``segmentation.gradient_checkpointing`` recomputes backbone block activations in the backward pass during LoRA and full fine-tuning (timm SwinV2, TerraTorch Prithvi-EO, OlmoEarth), so large backbones fit at 512 px with an unchanged batch size; unset leaves hashes unchanged.
 * ``segmentation.lora_last_blocks`` restricts LoRA adapters to the deepest ``k`` backbone blocks; unset leaves hashes unchanged.
 * UniverSat supports segmentation and LoRA through the ``universat_base_seg`` preset: ``patch_px`` sets the patch size in input pixels (16 gives a 14×14 token grid at 224 px), and UPerNet reads self-attention blocks 3/6/9/12 with the register tokens removed.
 * Open Cities AI Challenge building segmentation (``open_cities``): tier-1 drone scenes of
@@ -70,6 +72,8 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* PLANTEUR crop-type segmentation (``planteur``) from Hugging Face ``allenai/planteur-benchmark``: 2,750 Sentinel-2 + Sentinel-1 monthly time series over France's overseas territories, 8 classes, on the official 1,896 / 411 / 443 split. ``geo-eval-harness download planteur`` stacks the pinned release into memory-mapped per-split arrays.
+* PLANTEUR leave-one-island-out folds (``planteur_loio_guadeloupe``, ``planteur_loio_martinique``, ``planteur_loio_guyane``, ``planteur_loio_reunion``, ``planteur_loio_mayotte``) from the release's ``splits/loio.json``, reading the same downloaded arrays.
 
 Fixed
 ^^^^^
@@ -77,6 +81,7 @@ Fixed
 * A float16 overflow in the backbone no longer poisons segmentation heads. Training batches with non-finite backbone features are skipped before the head, so BatchNorm running statistics stay finite (previously one overflowing batch made every later evaluation predict a constant class); an epoch that skips more than 5% of its batches fails. Evaluation fails on non-finite features or logits instead of scoring a constant prediction.
 * Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 * UniverSat pins its pretrained weights to a fixed Hugging Face commit (``weights_revision``), as it already pinned the torch.hub code. Before, an update to ``g-astruc/UniverSat`` could change results silently. Set ``weights_revision: null`` to follow the default branch. Hashes and resume keys are unchanged.
+* ``benv2`` names its Sentinel-1 bands by the stored channel order, VH then VV. geobench_v2 labels them VV, VH, so ``vv`` selected the cross-polarized channel and polarization-aware models received swapped inputs. The channel order of ``bands: all`` is unchanged.
 
 0.5.0 (2026-08-10)
 ------------------

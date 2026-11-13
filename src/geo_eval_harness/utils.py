@@ -27,10 +27,7 @@ class FeatureSplits[T]:
 
 
 def standardize_features(splits: FeatureSplits[np.ndarray]) -> FeatureSplits[np.ndarray]:
-    """Z-score each feature dimension with training-split statistics.
-
-    Every split is scaled as ``(x - mean) / sqrt(var + 1e-6)``, the segmentation probe's formula.
-    """
+    """Z-score each feature dimension using the training mean and variance."""
     train = splits.train.features
     mean = train.mean(axis=0, dtype=np.float64).astype(train.dtype)
     scale = np.sqrt(train.var(axis=0, dtype=np.float64) + 1e-6).astype(train.dtype)

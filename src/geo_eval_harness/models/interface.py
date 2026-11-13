@@ -43,6 +43,10 @@ class BenchModel(nn.Module, ABC):
     #: segmentation probe infer the layout from the shape.
     feature_layout: str | None = None
 
+    #: Square input size of a backbone built for one fixed size; the segmentation probe's
+    #: channel dry run uses it instead of 224.
+    probe_input_size: int | None = None
+
     def __init__(
         self,
         bands: list[BandSpec],
