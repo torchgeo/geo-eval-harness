@@ -262,7 +262,10 @@ class SegmentationProbe(nn.Module):
 
         self.head: nn.Module
         if head_type == "linear":
-            self.head = LinearHead(self.channels_list, num_classes)
+            single_map = neck == "vit" and len(self.channels_list) == 1
+            self.head = LinearHead(
+                self.channels_list * 4 if single_map else self.channels_list, num_classes
+            )
         elif head_type in _HIDDEN_DIM_HEADS:
             # A single-layer ViT neck builds four pyramid levels from that one map.
             single_map = neck == "vit" and len(self.channels_list) == 1
