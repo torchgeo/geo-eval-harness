@@ -160,6 +160,8 @@ def test_apply_lora_names_the_extra_when_peft_is_missing(
 
 _MULTISPECTRAL_INPUTS = {
     "terratorch/terramind_v1_base": ("burn_scars", "all"),
+    "terratorch/terramind_v1_base_s1": ("sen1floods11-s1", "all"),
+    "terratorch/terramind_v1_large_s1": ("kuro_siwo", "all"),
     "torchgeo/swinv2b_s2ms_satlas_si": ("m-eurosat", "all"),
     "terrafm/base_s1": ("kuro_siwo", "all"),
     "terrafm/base_s2": ("m-eurosat", "all"),

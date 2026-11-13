@@ -14,6 +14,7 @@ from tests.support.data import require_dataset_data
 # Open Cities counts come from the committed open_cities_index.csv.gz.
 # LoveDA uses the checked-in carve of official Train and the official Val release as test.
 # OSCD post counts 256-pixel tiles of its fixed city splits.
+# PLANTEUR uses the official splits/443.json and splits/loio.json patch lists.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},
@@ -45,6 +46,12 @@ EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "open_cities": {"train": 76818, "val": 11236, "test": 22408},
     "loveda": {"train": 2269, "val": 253, "test": 1669},
     "oscd-post": {"train": 119, "val": 31, "test": 69},
+    "planteur": {"train": 1896, "val": 411, "test": 443},
+    "planteur_loio_guadeloupe": {"train": 1750, "val": 265, "test": 735},
+    "planteur_loio_martinique": {"train": 1950, "val": 250, "test": 550},
+    "planteur_loio_guyane": {"train": 1960, "val": 284, "test": 506},
+    "planteur_loio_reunion": {"train": 1720, "val": 217, "test": 813},
+    "planteur_loio_mayotte": {"train": 2296, "val": 314, "test": 140},
 }
 
 
