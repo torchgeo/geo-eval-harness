@@ -193,7 +193,7 @@ _CLAY_PRETRAIN_STD_BY_BAND: dict[str, float] = dict(
 
 
 class TerraTorchClayBench(_TerraTorchBench):
-    """Clay v1.5 — S2 bands @ 256, conditioned on per-band ``waves`` (µm) and ``gsd``.
+    """Clay v1 Base — S2 bands @ 256, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
     Input mapping and ``waves`` use available :data:`CLAY_BANDS` in pretrained order.
     RGB inputs use three channels and wavelengths; full S2 inputs use all six.
