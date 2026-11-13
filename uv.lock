@@ -1056,6 +1056,7 @@ all = [
     { name = "torchid", marker = "python_full_version >= '3.13'" },
     { name = "ty" },
     { name = "types-pyyaml" },
+    { name = "vulture" },
 ]
 coordbench = [
     { name = "rshf" },
@@ -1073,6 +1074,7 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
     { name = "types-pyyaml" },
+    { name = "vulture" },
 ]
 docs = [
     { name = "linkify-it-py" },
@@ -1146,6 +1148,7 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.14" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.21" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.16" },
 ]
 provides-extras = ["all", "coordbench", "dev", "docs", "id", "lora", "olmoearth"]
 
@@ -4335,6 +4338,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/70/aa/bff50daee0488e16d611258a9b6c5a1d0c9e128f8ca424e9f4e1c0444ef2/virtualenv-21.14.13.tar.gz", hash = "sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905", size = 5570301, upload-time = "2026-10-22T20:10:16.952Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/a9/c10d8a44a29fb94a18b43fdf11f38caca53ae7c9406f11a72b1cb8f624f1/virtualenv-21.14.13-py3-none-any.whl", hash = "sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788", size = 5557094, upload-time = "2026-10-22T20:10:15.096Z" },
+]
+
+[[package]]
+name = "vulture"
+version = "2.16"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/3e/4d08c5903b2c0c70cad583c170cc4a663fc6a61e2ad00b711fcda61358cd/vulture-2.16.tar.gz", hash = "sha256:f8d9f6e2af03011664a3c6c240c9765b3f392917d3135fddca6d6a68d359f717", size = 52680, upload-time = "2026-03-25T14:41:27.141Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/be/f935130312330614811dae2ea9df3f395f6d63889eb6c2e68c14507152ee/vulture-2.16-py3-none-any.whl", hash = "sha256:6e0f1c312cef1c87856957e5c2ca9608834a7c794c2180477f30bf0e4cc58eee", size = 26993, upload-time = "2026-03-25T14:41:26.21Z" },
 ]
 
 [[package]]

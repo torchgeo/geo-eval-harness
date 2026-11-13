@@ -70,8 +70,8 @@ from geo_eval_harness.utils import (
 )
 
 if TYPE_CHECKING:
-    import geo_eval_harness.segmentation_task
     from geo_eval_harness.epoch_metrics import EpochMetricsWriter
+    from geo_eval_harness.segmentation_task import EpochRecord, SegMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class LoaderSplits:
 class SegmentationOutcome(NamedTuple):
     """Test metrics and training summary from :func:`evaluate_segmentation`."""
 
-    metrics: "geo_eval_harness.segmentation_task.SegMetrics"
+    metrics: "SegMetrics"
     feature_dim: int
     lr: float | None
     batch_size: int | None
@@ -615,7 +615,7 @@ def evaluate_segmentation(
     cfg: RunConfig,
     num_classes: int,
     *,
-    on_epoch: "Callable[[geo_eval_harness.segmentation_task.EpochRecord], None] | None" = None,
+    on_epoch: "Callable[[EpochRecord], None] | None" = None,
 ) -> SegmentationOutcome:
     """Train a segmentation head, optionally with LoRA backbone adapters, and evaluate test mIoU.
 
