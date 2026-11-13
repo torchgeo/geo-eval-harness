@@ -275,10 +275,21 @@ optional ``olmoearth`` extra:
    $ geo-eval-harness run --model olmoearth_v1_2_small --dataset m-eurosat
    $ geo-eval-harness run --model olmoearth_v1_2_base --dataset m-eurosat
 
+   $ # OlmoEarth v1.3 (Base)
+   $ geo-eval-harness run --model olmoearth_v1_3_base --dataset m-eurosat
+
 OlmoEarth v1.1 uses a **linear patch embedding** (vs. convolutional in v1),
 a single bandset per modality, and updated masking/loss functions, yielding a
 ≈ 3× reduction in MACs with comparable accuracy.  OlmoEarth v1.2 adds **RoPE
 3D position encoding** and a new **Small** size (384-d) between Tiny and Base.
+OlmoEarth v1.3 (Base only) adds an **AttentionPooler** after the ViT: it reads
+the patch tokens into a 768-d location-token grid, with a detached linear
+student projecting it to the 128-d vectors behind AI2's published embeddings.
+The ``embedding`` kwarg selects which output is mean-pooled:
+``location_tokens`` (default for v1.3, as in AI2's evals), ``patch_tokens``
+(the v1.x readout) or ``student``.  v1.3 also sets channels missing from the
+input to 0 after normalization (``missing_bands: zero``), the value band
+dropout used during pretraining, instead of copying a spectral neighbour.
 The ``version`` parameter selects the weight family:
 
 .. list-table::
@@ -333,6 +344,18 @@ The ``version`` parameter selects the weight family:
      - v1.2
      - Base
      -
+   * - ``olmoearth_v1_3_base``
+     - v1.3
+     - Base
+     - AttentionPooler; pools location tokens
+   * - ``olmoearth_v1_3_base_patch_tokens``
+     - v1.3
+     - Base
+     - pools ViT patch tokens (v1.x readout)
+   * - ``olmoearth_v1_3_base_student128``
+     - v1.3
+     - Base
+     - pools the 128-d student
 
 .. note::
 
