@@ -9,6 +9,7 @@ classification:
     c_log10_stop: 5.0
     c_count: 60
 segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers:
     - blocks.31
     - blocks.23

@@ -6,6 +6,7 @@ kwargs:
   target_size: 256
   modality: sentinel-2-l2a
 segmentation:
+  lora_target_modules: 'clay_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[13])'
   layers:
     - clay_encoder.transformer.layers.11.1
     - clay_encoder.transformer.layers.8.1

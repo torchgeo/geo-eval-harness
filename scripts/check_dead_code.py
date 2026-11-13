@@ -1,17 +1,4 @@
-"""Run vulture for dead-code detection, gating only on findings outside ``tests/``.
-
-Pytest fixtures, ``unittest.mock`` attributes, and stdlib-signature overrides
-(e.g. ``BaseHTTPRequestHandler.log_message``) make test files structurally
-noisy for vulture, even though scanning them also resolves many real
-references in ``src/`` (dataset/model registry classes, dataclass fields)
-that would otherwise look unused. Tests stay in vulture's scanned paths for
-that cross-reference signal, but findings located under ``tests/`` are
-dropped before this gate decides pass or fail.
-
-Usage::
-
-    python scripts/check_dead_code.py
-"""
+"""Scan tests for references and report dead code outside the test suite."""
 
 import subprocess
 import sys
@@ -36,7 +23,9 @@ def main() -> int:
         sys.stdout.write(result.stdout)
         return result.returncode
 
-    gated_lines = [line for line in result.stdout.splitlines() if not line.startswith("tests/")]
+    gated_lines = [
+        line for line in result.stdout.splitlines() if not line.startswith(("tests/", "tests\\"))
+    ]
     for line in gated_lines:
         print(line)
     return 1 if gated_lines else 0

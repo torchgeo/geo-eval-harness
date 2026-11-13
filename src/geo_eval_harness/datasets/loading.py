@@ -53,6 +53,21 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "aid": ("aid", "AID", "classification"),
     # other segmentation
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
+    "openearthmap-sar": ("openearthmap_sar", "OpenEarthMapSAR", "segmentation"),
+    "open_cities": ("open_cities", "OpenCities", "segmentation"),
+    "loveda": ("loveda", "LoveDA", "segmentation"),
+    "levir-cd-post": ("levir_cd_post", "LEVIRCDPost", "segmentation"),
+    "sen1floods11-s1": ("sen1floods11", "Sen1Floods11S1", "segmentation"),
+    "sen1floods11-s2": ("sen1floods11", "Sen1Floods11S2", "segmentation"),
+    "bright-post-sar": ("bright_post_sar", "BRIGHTPostSAR", "segmentation"),
+    "oscd-post": ("oscd_post", "OSCDPost", "segmentation"),
+    "bright-post-sar-rgb": ("bright_post_sar", "BRIGHTPostSARRGB", "segmentation"),
+    "planteur": ("planteur", "PLANTEUR", "segmentation"),
+    "planteur_loio_guadeloupe": ("planteur", "PLANTEURLOIOGuadeloupe", "segmentation"),
+    "planteur_loio_martinique": ("planteur", "PLANTEURLOIOMartinique", "segmentation"),
+    "planteur_loio_guyane": ("planteur", "PLANTEURLOIOGuyane", "segmentation"),
+    "planteur_loio_reunion": ("planteur", "PLANTEURLOIOReunion", "segmentation"),
+    "planteur_loio_mayotte": ("planteur", "PLANTEURLOIOMayotte", "segmentation"),
 }
 
 
@@ -97,15 +112,38 @@ def get_dataset_task(name: str) -> Literal["classification", "segmentation"]:
 
 def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
+    if name == "bright-post-sar-rgb":
+        name = "bright-post-sar"
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
-    if name in {"eurosat", "eurosat-spatial", "resisc45", "ucmerced", "aid", "hotosm_buildings"}:
+    if name.startswith("planteur"):
+        return "geo-eval-harness download planteur"
+    if name in {
+        "eurosat",
+        "eurosat-spatial",
+        "resisc45",
+        "ucmerced",
+        "aid",
+        "hotosm_buildings",
+        "openearthmap-sar",
+        "open_cities",
+        "loveda",
+        "levir-cd-post",
+        "sen1floods11-s1",
+        "sen1floods11-s2",
+        "bright-post-sar",
+        "oscd-post",
+    }:
         return f"geo-eval-harness download {name.removesuffix('-spatial')}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"
 
 
 class _ResizeTransform:
-    """Sample-level transform that resizes ``image`` (and ``mask``)."""
+    """Sample-level transform that resizes ``image`` (and ``mask``).
+
+    Masks use ``nearest-exact``, which samples each output pixel at its centre, the same
+    position that ``bilinear`` and ``bicubic`` (``align_corners=False``) use for the image.
+    """
 
     valid_modes = ("area", "bicubic", "bilinear", "nearest")
 
@@ -152,7 +190,7 @@ class _ResizeTransform:
                 mask = F.interpolate(
                     resize_mask,
                     size=(image_size, image_size),
-                    mode="nearest",
+                    mode="nearest-exact",
                 )
                 for _ in range(squeeze_dims):
                     mask = mask.squeeze(0)
@@ -200,14 +238,14 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         batch_size: Batch size for the returned dataloaders.
         return_val: If ``True``, also return a validation dataloader.
         num_workers: Number of dataloader worker processes.
-        image_size: If set, resize images (and masks, with nearest) to this
+        image_size: If set, resize images (and masks, with ``nearest-exact``) to this
             square size at sample time.
         interpolation: Resize interpolation for images (``"area"``, ``"bicubic"``,
             ``"bilinear"``, ``"nearest"``).
         bands: ``"rgb"`` (use the dataset's ``rgb_bands``), ``"all"`` /
             ``None`` (load all bands), or an explicit iterable of band names.
         time_steps: Number of acquisition dates per sample.  Only accepted by
-            multi-temporal wrappers (PASTIS); ``None`` keeps each dataset's
+            multi-temporal wrappers (PASTIS, PLANTEUR); ``None`` keeps each dataset's
             own default.
 
     Returns:

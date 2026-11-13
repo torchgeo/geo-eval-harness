@@ -30,6 +30,8 @@ class BandSpec:
         max: Train-split maximum pixel value.
         wavelength_um: Approximate centre wavelength in micrometres.
             ``None`` for non-optical bands (SAR, DEM, elevation).
+        unit: Physical unit where a model's pretrained normalizer depends on
+            it; for SAR ``"linear_power"`` or ``"db"``. ``None`` if undeclared.
     """
 
     sensor: str
@@ -40,3 +42,7 @@ class BandSpec:
     min: float
     max: float
     wavelength_um: float | None = None
+    #: Physical unit when it matters to a model's pretrained normalizer, e.g. SAR
+    #: ``"linear_power"`` (backscatter σ⁰ as a power ratio) or ``"db"`` (10·log10 σ⁰).
+    #: ``None`` means not declared.
+    unit: str | None = None

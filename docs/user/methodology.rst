@@ -275,10 +275,20 @@ UPerNet probe
 **Method name:** ``seg-upernet`` (YAML ``segmentation: {head: upernet}``).
 A UPerNet decoder (:class:`~geo_eval_harness.models.UPerNetHead`) wrapping the ``transformers`` reference implementation: a pyramid pooling module on the coarsest layer feeds an FPN over the other layers, and all levels are fused before a 1×1 classifier. Layers are coarse-to-fine and may share one resolution (ViT blocks) or form a pyramid. Its pool-scale-1 branch applies BatchNorm to a 1×1 map, so a final training batch of one sample is skipped. A training batch size below two is rejected before training, and a run fails if any epoch has no usable training batch (for example, a one-sample training split) rather than reporting an untrained head.
 
+ViT neck
+^^^^^^^^
+
+**Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
+Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
+
+``neck: vit_fine`` (setup column ``neck`` = ``vit_fine``) is for backbones that also produce a finer output map than their trunk, such as UniverSat's block-14 output tokens. The first three layers are trunk blocks on one grid and fill the 1/2, 1, and 2 levels as above; the last layer replaces the two transposed convs as the finest level, bilinearly resized to 4× the trunk grid unless it is already there (UniverSat's ``output_scale: 4``).
+
+With ``neck: vit`` and a single layer the neck builds all four levels from that one map, the ViTDet simple feature pyramid (e.g. ``layers: [model.model.blocks.14]`` for UniverSat's output tokens alone).
+
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
 
-**Method name:** ``seg-<head>-lora`` (YAML ``segmentation.lora_rank``).
+**Method name:** ``seg-<head>``, setup column ``adaptation: lora`` (YAML ``segmentation.lora_rank``).
 Any head can train together with low-rank adapters on backbone ``nn.Linear`` layers selected by ``segmentation.lora_target_modules``; all pretrained backbone weights stay frozen. Adapters come from PEFT with its default initialisation (Kaiming-uniform ``A``, zero ``B``, no dropout), so training starts from the pretrained model. torchvision's Swin attention reads its ``qkv`` and ``proj`` weights directly instead of calling those layers, so those two projections receive an equivalent weight parametrization instead of a PEFT adapter. Presets target transformer attention and MLP projections (ConvNeXt: MLP projections only); embedding layers, DOFA's wavelength weight generator, and unused decoders are not adapted. The head trains at ``learning_rate`` and the adapters at ``backbone_learning_rate``. During training the backbone stays in eval mode except for its adapters, so pretrained dropout, stochastic depth, and normalisation statistics behave as at inference. Evaluation follows :ref:`segmentation-model-selection`.
 
 Training & evaluation (all heads)
@@ -304,7 +314,9 @@ Boundary IoU measures overlap within each class's inner contour band, following 
 Model selection
 ^^^^^^^^^^^^^^^
 
-All segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no early stopping or configurable final-epoch option.
+By default, all segmentation heads train for every configured epoch. After training, the solver restores the completed epoch with the highest validation dataset-level macro mIoU; ties retain the earliest epoch. Selection uses no test metrics. All test metrics and bootstrap confusion matrices use the restored state, on both loader and cached-feature paths. There is no configurable final-epoch option.
+
+``segmentation.early_stopping_patience`` (default ``null``, off) stops training once validation mIoU has not strictly improved for that many epochs; a tie does not count as an improvement. The learning-rate schedule still spans ``epochs``, so a stopped run matches the first epochs of the full run, and selection and test evaluation are unchanged. Early stopping requires validation; without it, training runs every epoch.
 
 Benchmark runs require a non-empty validation loader before training or feature extraction. Direct solver calls may omit validation and retain the final epoch; supplied validation must be non-empty. Non-finite validation mIoU raises an error. A failed run does not write a successful result.
 
@@ -313,10 +325,13 @@ After fitting, :class:`~geo_eval_harness.segmentation_task.SegmentationSolver` e
 * ``best_epoch``: the selected epoch, numbered from one.
 * ``best_val_miou``: the selected validation dataset-level macro mIoU.
 * ``val_history``: every epoch's validation mIoU in chronological order.
+* ``epoch_history``: one :class:`~geo_eval_harness.segmentation_task.EpochRecord` per epoch with training and validation loss, validation mIoU, learning rates, step counts, wall time, and peak CUDA memory.
 
-Each fit call resets these attributes. Without validation, ``best_epoch`` and ``best_val_miou`` are ``None`` and ``val_history`` is empty.
+Each fit call resets these attributes. Without validation, ``best_epoch`` and ``best_val_miou`` are ``None``, ``val_history`` is empty, and epoch records have no validation values. ``fit`` and ``fit_cached`` accept an ``on_epoch`` callback that receives each record before epoch selection; ``output.epoch_metrics`` uses it to stream curves (see :ref:`segmentation-epoch-metrics`).
 
 The solver keeps one independent CPU snapshot of the selected state: head parameters and buffers, trainable backbone parameters, and backbone buffers. Restoration copies values into the existing model tensors without replacing modules or hooks. Frozen backbone weights are not copied. The snapshot is for evaluation, not for resuming training.
+
+With a probe sweep (``segmentation.sweep_learning_rates``), :class:`~geo_eval_harness.segmentation_task.SweepSegmentationSolver` applies the same rule per head: each head keeps a snapshot of its own best validation epoch, and the head whose best epoch scores highest (ties: first in learning-rate-major grid order) is restored and alone evaluated on test. ``best_epoch`` and ``best_val_miou`` describe that head; ``head_val_history`` holds every head's validation mIoU per epoch; ``val_history`` holds the best head's score per epoch. The decay is a per-epoch cosine to zero (UniverSat ``LP_eval.py``) rather than to 1e-6.
 
 Segmentation knobs
 ------------------
@@ -360,9 +375,27 @@ Training knobs
    * - ``layers``
      - *(per model)*
      - Backbone layer names to hook.  For FPN / DPT, deepest layer first.
+   * - ``neck``
+     - ``none``
+     - ``vit`` adds the ViT neck before an ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
+   * - ``neck_norm``
+     - ``layernorm``
+     - Per-level LayerNorm before the ViT neck; ``none`` disables it.
+   * - ``weight_decay``
+     - ``0``
+     - AdamW weight decay for every trainable parameter (head, neck, LoRA adapters).
+   * - ``head_dropout``
+     - ``0``
+     - Channel dropout (``Dropout2d``) before the UPerNet classifier; UPerNet only.
+   * - ``upsampler``
+     - ``none``
+     - ``anyup`` upsamples UPerNet's fused features to input resolution with frozen AnyUp before the classifier; ``head_dropout`` then applies after AnyUp.
    * - ``epochs``
      - ``10``
      - Training epochs for the probe head.
+   * - ``early_stopping_patience``
+     - ``null``
+     - Stop once validation mIoU has not improved for this many epochs; ``null`` trains every epoch.
    * - ``learning_rate``
      - ``1e-3``
      - Initial learning rate (AdamW).
@@ -384,9 +417,25 @@ Training knobs
    * - ``lora_alpha``
      - ``16.0``
      - LoRA scaling numerator; updates are scaled by ``lora_alpha / lora_rank``.
+   * - ``lora_last_blocks``
+     - ``null``
+     - Adapt only targets in the last ``k`` backbone blocks; ``null`` adapts every match.
    * - ``backbone_learning_rate``
      - ``null``
-     - Learning rate for LoRA adapters; required with ``lora_rank``.
+     - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``full_finetune``
+     - ``false``
+     - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
+   * - ``feature_standardize``
+     - ``false``
+     - Z-score each feature channel with train-split statistics before the head (frozen only).
+   * - ``sweep_learning_rates``
+     - ``[]``
+     - ``patch_linear`` only: train one probe per learning rate x ``sweep_weight_decays`` cell
+       and keep the head with the best validation mIoU.
+   * - ``sweep_weight_decays``
+     - ``[0.0]``
+     - AdamW weight decays of the probe sweep.
 
 Feature caching
 ^^^^^^^^^^^^^^^
@@ -409,6 +458,11 @@ Feature caching
      - ``float16``
      - Storage dtype for cached features.  ``float16`` halves RAM;
        autocast upcasts during the head forward pass.
+   * - ``amp``
+     - ``fp16``
+     - CUDA float16 autocast for the backbone and head.  ``off`` runs in
+       float32 for backbones that overflow float16 (requires
+       ``cache_dtype: float32`` with cached features).
 
 Common configuration
 --------------------

@@ -11,6 +11,7 @@ classification:
     c_log10_stop: 5.0
     c_count: 60
 segmentation:
+  lora_target_modules: 's2_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[03])'
   layers:
     - s2_encoder.transformer.layers.23.1
     - s2_encoder.transformer.layers.17.1

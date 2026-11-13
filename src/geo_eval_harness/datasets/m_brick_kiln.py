@@ -15,6 +15,10 @@ class MBrickKiln(_V1Dataset):
     name = "m-brick-kiln"
     task = "classification"
     num_classes = 2
+    class_names: ClassVar[tuple[str, ...]] = (
+        "not brick kiln",
+        "brick kiln",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 15063, "val": 999, "test": 999}
