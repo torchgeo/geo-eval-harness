@@ -2,7 +2,7 @@
 
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import torch
@@ -520,8 +520,10 @@ class SegmentationProbe(nn.Module):
     def _dry_run_channels(self) -> list[int]:
         device = self._backbone_device()
         in_channels = int(getattr(self.backbone, "num_channels", 3))
-        dummy = torch.randn(1, in_channels, 224, 224, device=device)
-        self.dry_run_input_hw = (224, 224)
+        # Backbones built for one fixed input size declare it; everything else accepts 224.
+        side = int(getattr(self.backbone, "probe_input_size", None) or 224)
+        dummy = torch.randn(1, in_channels, side, side, device=device)
+        self.dry_run_input_hw = (side, side)
         if not self.layer_names:
             self.layer_names = ["backbone_output"]
             self.hooks.append(self.backbone.register_forward_hook(self._hook_fn("backbone_output")))
@@ -546,15 +548,27 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Infer NHWC when H == W and channels exceed the spatial dimensions; otherwise keep NCHW.
+        # Backbones that declare NHWC stage maps skip the shape guess, which fails once the grid
+        # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
+        # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
+            if getattr(self.backbone, "feature_layout", None) == "nhwc":
+                return feat.permute(0, 3, 1, 2).contiguous()
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()
         return feat
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
-        """Reshape token features into a spatial grid, accounting for prefix tokens."""
+        """Reshape token features into a spatial grid, accounting for prefix tokens.
+
+        A backbone that declares ``tokens_to_grid`` maps its own token layout instead.
+        """
+        to_grid: Callable[[torch.Tensor], torch.Tensor] | None = getattr(
+            self.backbone, "tokens_to_grid", None
+        )
+        if to_grid is not None:
+            return to_grid(feat)
         bsz, d1, d2 = feat.shape
         n_prefix = _resolve_num_prefix_tokens(self.backbone)
 
