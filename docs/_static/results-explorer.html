@@ -416,7 +416,7 @@
       <div class="label sans">Figure 5</div>
       <div class="title">Compute &amp; efficiency</div>
       <div class="subtitle">
-        The left panel plots linear-probe accuracy against the backbone's measured throughput on an A100-80GB. The right panel charts whichever metric <em>Sort by</em> selects ($, kgCO2, or raw throughput) for running each model on <em>one million</em> samples in the chosen cloud region. Cost is derived from throughput, so those two rank identically and differ only in units.
+        The left panel plots linear-probe accuracy against the backbone's measured throughput for 224-pixel classification inputs. The right panel charts whichever metric <em>Sort by</em> selects ($, kgCO2, or raw throughput) for running each model on <em>one million</em> samples in the chosen cloud region. Cost is derived from throughput, so those two rank identically and differ only in units.
       </div>
       <div class="fig-controls">
         <label>Cloud / region
@@ -450,9 +450,7 @@
     <div class="chart-frame" id="chart-efficiency-pareto"></div>
     <div class="chart-frame" id="chart-efficiency-cost"></div>
     <div class="source-line">
-      Profile rows measured on NVIDIA A100-SXM4-80GB. Prices from cloud
-      on-demand list (snapshot 2026-05-15); carbon intensity from
-      codecarbon's regional grid table. Both inlined into the page.
+      <span id="efficiency-hardware">Hardware and precision are read from the measured profiles.</span> Price estimates require a matching GPU in the cloud price table (snapshot 2026-05-15); carbon intensity comes from codecarbon's regional grid table.
     </div>
   </figure>
 
@@ -1145,10 +1143,14 @@ function _pivotProfile(data) {
   const wide = new Map();
   data.forEach(r => {
     if (r.method !== "profile") return;
-    const k = [r.model, r.name, r.bands, r.task, r.head_type].join("||");
+    const k = [r.model, r.name, r.bands, r.task, r.head_type, r.image_size,
+      r.gpu_name, r.config_hash, r.measured_at].join("||");
     if (!wide.has(k)) wide.set(k, {
-      model: r.model, name: r.name, bands: r.bands,
+      model: r.model, name: r.name, bands: r.bands, dataset: r.dataset,
       task: r.task, head_type: r.head_type, n_channels: r.n_channels,
+      image_size: r.image_size, gpu_name: r.gpu_name,
+      profile_precision: r.profile_precision, timing_batch_size: r.timing_batch_size,
+      efficiency_reference: r.efficiency_reference,
     });
     wide.get(k)[r.metric_name] = r.metric_value;
   });
@@ -1159,7 +1161,7 @@ function _accuracyByModel(data) {
   // Use the highest linear score for each model, dataset, and band selection.
   const acc = new Map();
   data.forEach(r => {
-    if (r.method !== "linear") return;
+    if (r.method !== "linear" || Number(r.image_size) !== 224) return;
     if (!Number.isFinite(r.metric_value)) return;
     const k = [r.name, r.dataset, r.bands].join("||");
     const prev = acc.get(k);
@@ -1168,13 +1170,13 @@ function _accuracyByModel(data) {
   return acc;
 }
 
-function _gpuModelMeasured() {
-  // The saved profiles were measured on this GPU.
-  return "NVIDIA A100-SXM4-80GB";
+function _gpuModelMeasured(profiles) {
+  const names = Array.from(new Set(profiles.map(p => p.gpu_name).filter(Boolean)));
+  return names.length === 1 ? names[0] : null;
 }
 
-function _pricePerHourPerGpu(provider) {
-  const gpu = _gpuModelMeasured();
+function _pricePerHourPerGpu(provider, gpu) {
+  if (!gpu) return null;
   const row = GPU_PRICES.find(p => p.provider === provider && p.gpu_model === gpu);
   if (!row) return null;
   return row.usd_per_hr / row.num_gpus;
@@ -1210,16 +1212,30 @@ function renderEfficiency(data) {
   const [provider, region] = regionSel.value.split("|");
   const carbonRow = CARBON_INTENSITY.find(c => c.provider === provider && c.region === region);
   if (!carbonRow) return;
-  const usdPerHr = _pricePerHourPerGpu(provider);
-
-  // Throughput is only measured for the classification configs; index them by
-  // (name, bands) and let every dataset probed with those bands reuse the
-  // measurement.  Accuracy varies by dataset, cost does not.
-  const profByKey = new Map();
-  _pivotProfile(data).forEach(p => {
-    if (!Number.isFinite(p.throughput_samples_per_sec)) return;
-    profByKey.set([p.name, p.bands].join("||"), p);
+  const profiles = _pivotProfile(data).filter(p => {
+    const reference = p.efficiency_reference == null
+      ? p.task === "classification" && !p.head_type && Number(p.image_size) === 224
+      : p.efficiency_reference;
+    return reference && !p.dataset && Number.isFinite(p.throughput_samples_per_sec);
   });
+  const cohorts = new Set(profiles.map(p =>
+    [p.gpu_name || "unknown", p.profile_precision || "unknown", p.timing_batch_size || "unknown"].join("||")));
+  if (cohorts.size > 1) {
+    const note = document.createElement("p");
+    note.className = "sans";
+    note.textContent = "Select one measurement cohort or snapshot to compare throughput on the same hardware, precision, and batch size.";
+    _mount("chart-efficiency-pareto", note);
+    _mount("chart-efficiency-cost", null);
+    return;
+  }
+  const gpu = _gpuModelMeasured(profiles);
+  const usdPerHr = _pricePerHourPerGpu(provider, gpu);
+  const hardware = document.getElementById("efficiency-hardware");
+  if (hardware) hardware.textContent = profiles.length
+    ? `Measured GPU: ${gpu || "not recorded"}; 224-pixel classification inputs.`
+    : "No matching 224-pixel classification measurements.";
+  const profByKey = new Map();
+  profiles.forEach(p => profByKey.set([p.name, p.bands].join("||"), p));
   const accByKey = _accuracyByModel(data);
 
   const joined = [];
@@ -1267,7 +1283,17 @@ function renderEfficiency(data) {
     co2Option.disabled = !hasEnergy;
     co2Option.title = hasEnergy ? "" : "No power-draw data in results/compute_cost.csv";
   }
-  const effectiveSort = sortKey === "kg_co2" && !hasEnergy ? "usd" : sortKey;
+  const hasUsd = bars.some(b => Number.isFinite(b.usd));
+  const usdOption = document.querySelector('#efficiency-sort option[value="usd"]');
+  if (usdOption) {
+    usdOption.disabled = !hasUsd;
+    usdOption.title = hasUsd ? "" : "No price reference for the measured GPU";
+  }
+  let effectiveSort = sortKey;
+  if ((sortKey === "kg_co2" && !hasEnergy) || (sortKey === "usd" && !hasUsd)) {
+    effectiveSort = "throughput";
+    document.getElementById("efficiency-sort").value = effectiveSort;
+  }
 
   // Sample count scales the extrapolated cost metrics and nothing else --
   // throughput is a rate.  Disable it there rather than leave a live control
