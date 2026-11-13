@@ -40,7 +40,7 @@ SMARTIES_PATCH_SIZE = 16
 SMARTIES_PROJECTION_SCALER = 12.0
 SMARTIES_NUM_PROJECTIONS = 17
 
-#: ``variant -> (repo, revision, sha256 of model.safetensors)``.
+# Checkpoint repository, revision and SHA-256 for each released model.
 SMARTIES_WEIGHTS: dict[str, tuple[str, str, str]] = {
     "base": (
         "gsumbul/SMARTIES-v1-ViT-B",
