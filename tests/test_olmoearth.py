@@ -64,13 +64,17 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["normalizer_inputs"][modality] = values.copy()
             return values / 1000 - np.arange(values.shape[-1])
 
-    class _FlexiEncoder:
+    class _FlexiEncoder(torch.nn.Module):
         supported_modality_names: ClassVar[list[str]] = ["sentinel2_l2a", "sentinel1"]
 
-        def __call__(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
+        def __init__(self) -> None:
+            super().__init__()
+            self.offset = torch.nn.Parameter(torch.zeros(4))
+
+        def forward(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
-            pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
+            pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4) + self.offset
             return {"tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled)}
 
         def collapse_and_combine_hwtc(
@@ -83,6 +87,8 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def __init__(self) -> None:
             super().__init__()
             self.encoder = _FlexiEncoder()
+            self.decoder = torch.nn.Linear(4, 4)
+            self.target_encoder = torch.nn.Linear(4, 4)
 
     def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
         state["loads"].append((model_id, load_weights))
@@ -114,6 +120,12 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             setattr(module, key, value)
         monkeypatch.setitem(sys.modules, name, module)
     return state
+
+
+def test_retains_only_inference_encoder(tiny_olmoearth: dict[str, Any]) -> None:
+    model = OlmoEarthBenchModel(_rgb_bands(), model_size="nano", normalization="identity")
+    assert list(dict(model.named_parameters())) == ["encoder_model.encoder.offset"]
+    assert sum(parameter.numel() for parameter in model.parameters()) == 4
 
 
 def test_mixed_sensor_payload_normalization_imputation_and_pooling(
