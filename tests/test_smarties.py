@@ -56,8 +56,8 @@ def test_forward_pools_resized_tokens(pool: str) -> None:
 @pytest.mark.parametrize(
     ("bands", "keep", "projections"),
     [
-        # B01-B12 with B10 dropped; upstream's B08 range is index 9 and B07's is 10.
-        (_bands("m-eurosat"), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12], [0, 1, 4, 6, 7, 8, 10, 9, 11, 12, 13, 14]),
+        # EuroSAT stores B01-B08, B09-B12, B8A; drop cirrus (B10).
+        (_bands("m-eurosat"), [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12], [0, 1, 4, 6, 7, 8, 10, 9, 12, 13, 14, 11]),
         (_bands("m-forestnet"), [0, 1, 2, 3, 4, 5], [2, 3, 5, 9, 13, 14]),
         (_bands("kuro_siwo", "rgb"), [0, 1], [15, 16]),
         (_bands("pastis", ["vh_asc", "vv_asc"]), [0, 1], [16, 15]),
