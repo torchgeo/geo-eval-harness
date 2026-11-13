@@ -105,8 +105,9 @@ def test_prithvi_rejects_dataset_with_no_matching_band(mock_registry: dict[str, 
 
 def test_clay_auxiliary_args_forwarded(mock_registry: dict[str, Any]) -> None:
     bands = _bands(["blue", "green", "red", "nir", "swir1", "swir2"])
-    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd=20.0)
-    images = torch.arange(6.0).view(1, 6, 1, 1).expand(2, 6, 256, 256)
+    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd=20.0, target_size=512)
+    assert mock_registry["build_calls"][-1][1]["img_size"] == 512
+    images = torch.arange(6.0).view(1, 6, 1, 1).expand(2, 6, 512, 512)
     out = model.forward_patch_features(images)
     torch.testing.assert_close(out, torch.ones(2, 8))
     instance = mock_registry["instances"][-1]
