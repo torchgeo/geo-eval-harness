@@ -279,7 +279,8 @@ def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
 
     data_mock.assert_not_called()
     df = pd.read_csv(out)
-    assert df["method"].tolist() == ["seg-upernet-lora"]
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert (df.loc[0, "adaptation"], df.loc[0, "decoder"]) == ("lora", "upernet")
     assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
 
 

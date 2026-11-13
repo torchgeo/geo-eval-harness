@@ -232,6 +232,7 @@ ini_options.markers = [
   "integration: offline workflows using toy data and real application components (included by default)",
   "slow: optional tests requiring downloaded datasets or pretrained weights (use -m slow to include)",
   "accuracy_check: per-class model accuracy regression tests (use -m accuracy_check to run)",
+  "geography: committed dataset-geography store checks (included by default; CI runs them in one job)",
 ]
 
 [tool.coverage]

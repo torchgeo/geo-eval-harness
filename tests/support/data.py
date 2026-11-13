@@ -44,6 +44,8 @@ def require_dataset_data(name: str) -> None:
         paths = [Path("data") / name]
     elif name.startswith("sen1floods11"):
         paths = [Path("data/sen1floods11")]
+    elif name.startswith("planteur"):
+        paths = [Path("data/planteur")]
     else:
         paths = [Path("data/geobenchv2") / name]
     if not any(path.exists() for path in paths):

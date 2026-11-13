@@ -7,6 +7,7 @@ kwargs:
   auto_resize: true
   target_size: 120
 segmentation:
+  lora_target_modules: 's2_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[03])'
   layers:
     - s2_encoder.transformer.layers.11.1
     - s2_encoder.transformer.layers.8.1

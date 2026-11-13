@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._input_units import InputUnit, _detect_band_group_unit, to_s2_dn
+from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -518,7 +518,7 @@ class OlmoEarthBenchModel(BenchModel):
         self._record_token_layout()
 
     def _record_token_layout(self) -> None:
-        """Record each modality's ``(h, w, t, band_sets)`` token shape as the encoder flattens them.
+        """Record each modality's ``(h, w, ...)`` token shape as the encoder flattens them.
 
         The encoder orders modalities through a ``set``, so the order is only known at call time.
         """
@@ -540,10 +540,7 @@ class OlmoEarthBenchModel(BenchModel):
         encoder.collapse_and_combine_hwtc = collapse_and_record
 
     def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
-        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid.
-
-        This matches the ``pool_spatially`` averaging behind :meth:`_forward_patch_features`.
-        """
+        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid."""
         sizes = [int(np.prod(shape)) for shape in self._token_layout]
         if sum(sizes) != tokens.shape[1]:
             raise ValueError(
@@ -649,7 +646,7 @@ class OlmoEarthBenchModel(BenchModel):
                 if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
                     g_images = g_images * self.landsat_scale_factor
             if group["sar_to_db"]:
-                g_images = 10.0 * torch.log10(g_images.clamp(min=1e-6))
+                g_images = linear_power_to_db(g_images)
 
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)

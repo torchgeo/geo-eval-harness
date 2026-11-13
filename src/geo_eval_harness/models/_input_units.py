@@ -1,6 +1,7 @@
 """Detect dataset input units and convert to the pretrained model's scale.
 
 Wrappers convert raw S2 DN, reflectance, or uint8 values to their pretraining scale.
+SAR wrappers convert linear power to dB when required by their normalization policy.
 They then apply model-specific per-band normalization.
 """
 
@@ -107,6 +108,11 @@ def to_s2_tci(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
         return images
     dn = to_s2_dn(images, src)
     return (dn * (255.0 / _S2_TCI_SATURATION_DN)).clamp(0.0, 255.0)
+
+
+def linear_power_to_db(images: torch.Tensor) -> torch.Tensor:
+    """Convert SAR linear power to dB, flooring power at 1e-6 without mutating inputs."""
+    return 10.0 * torch.log10(images.clamp(min=1e-6))
 
 
 def convert_unit(images: torch.Tensor, src: InputUnit, dst: InputUnit) -> torch.Tensor:
