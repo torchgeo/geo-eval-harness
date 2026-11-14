@@ -24,7 +24,7 @@ Added
 * Tessera V2 pixel students (``tessera_v2/nano``, ``tessera_v2/small``, ``tessera_v2/medium``, ``tessera_v2/large``) for classification, frozen segmentation, and segmentation LoRA on Sentinel-2 snapshots. Weights are pinned and checked against their sha256, and features match the official ``tessera_infer_v2`` pipeline in FP32. Each snapshot is encoded as the released eight-observation input with the missing-S1 token; this is computed as one token and one S1 pass, which gives the same features 6-10x faster. Unavailable S2 bands are mean-filled, and undated samples use ``fallback_doy`` (183). The presets run at native size only, on verified L2A datasets plus ``eurosat`` and ``sen1floods11-s2`` as a Level-1C approximation. Segmentation uses a linear head on the pixel map, or UPerNet on its average-pooled pyramid (``pyramid.s32`` to ``pyramid.s4``). See :doc:`models`.
 * Model presets can declare ``supported_datasets``; other datasets fail during config resolution, before data or weights load. ``BenchModel.feature_layout`` also accepts ``"nchw"`` for channels-first maps at any grid size.
 * Date-aware backbones can receive each sample's acquisition day of year (``doy``) through ``BenchModel.forward_batch``. PASTIS snapshots (``time_steps`` unset or 1) carry the date of the Sentinel-2 frame the loader selects, and feature extraction, the segmentation probe and solver, and the host, GPU, and disk sample caches pass it through. Other models ignore it; their results and ``config_hash`` values are unchanged. PASTIS sample caches are rebuilt once.
-* ConvNeXt DINOv3 Tiny, Small, and Base presets (``timm/convnext_{tiny,small,base}_dinov3``, timm ``*.dinov3_lvd1689m``) with the same segmentation layers and LoRA targets as ``timm/convnext_large_dinov3``. ``timm/convnext_small`` gains the ConvNeXt LoRA targets; frozen and full fine-tuning hashes are unchanged.
+* THOR (tiny, small, base, large) for classification and segmentation (``thor/tiny``, ``thor/small``, ``thor/base``, ``thor/large``). The encoder is reimplemented from a pinned upstream commit, and the weights are pinned and checked against their sha256. Sentinel-2 and Sentinel-1 dB bands are mapped by name, each band group is resampled to its pretraining GSD over the tile's ground extent, and segmentation reads merged group grids through ``taps.<i>``. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
   - Bands are mapped by name. Missing bands are imputed only with ``impute_missing``.
@@ -34,6 +34,7 @@ Added
   - The presets refuse TreeSatAI and FLAIR (pretraining overlap) and sub-metre SAR.
   See :doc:`models`.
 * ``segmentation.amp`` (``fp16`` default, or ``off``) switches segmentation training and evaluation between CUDA float16 autocast and float32 for backbones whose activations overflow float16. ``fp16`` leaves hashes unchanged; ``off`` with cached frozen features requires ``cache_dtype: float32``. Epoch records gain ``nonfinite_batches``.
+* ``classification.feature_standardize`` z-scores embeddings with training-split statistics before KNN and the linear probe (methods ``knn<k>-std`` and ``linear-std``); off by default with unchanged hashes.
 * Classification dataset classes declare ``class_names`` in label-index order, so per-class results can be labelled without loading data.
 * ``bright-post-sar-rgb`` repeats BRIGHT's post-event SAR channel into identical ``red``/``green``/``blue`` bands (sensor ``aerial``, no wavelengths) for RGB model inputs. It shares ``bright-post-sar`` tiles, labels, splits, normalization statistics, and installation; the single-band dataset is unchanged.
 * Linear-probe protocol (UniverSat ``LP_eval.py``) for any frozen backbone, off by default with unchanged hashes. ``segmentation.sweep_learning_rates`` x ``sweep_weight_decays`` trains one ``patch_linear`` head per cell in a single vectorised pass, each with its own AdamW group and a cosine decay to zero, and evaluates only the head with the best validation epoch on test (the selected learning rate and weight decay are reported; method suffix ``-sweep<n>``). ``segmentation.feature_standardize`` z-scores each hooked feature channel with exact training-split statistics, from the feature cache or one extra backbone pass (method suffix ``-std``).
@@ -74,6 +75,8 @@ Added
   OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
   ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
   into compact per-split files held in RAM.
+* PLANTEUR crop-type segmentation (``planteur``) from Hugging Face ``allenai/planteur-benchmark``: 2,750 Sentinel-2 + Sentinel-1 monthly time series over France's overseas territories, 8 classes, on the official 1,896 / 411 / 443 split. ``geo-eval-harness download planteur`` stacks the pinned release into memory-mapped per-split arrays.
+* PLANTEUR leave-one-island-out folds (``planteur_loio_guadeloupe``, ``planteur_loio_martinique``, ``planteur_loio_guyane``, ``planteur_loio_reunion``, ``planteur_loio_mayotte``) from the release's ``splits/loio.json``, reading the same downloaded arrays.
 
 Fixed
 ^^^^^
@@ -81,6 +84,7 @@ Fixed
 * A float16 overflow in the backbone no longer poisons segmentation heads. Training batches with non-finite backbone features are skipped before the head, so BatchNorm running statistics stay finite (previously one overflowing batch made every later evaluation predict a constant class); an epoch that skips more than 5% of its batches fails. Evaluation fails on non-finite features or logits instead of scoring a constant prediction.
 * Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
 * UniverSat pins its pretrained weights to a fixed Hugging Face commit (``weights_revision``), as it already pinned the torch.hub code. Before, an update to ``g-astruc/UniverSat`` could change results silently. Set ``weights_revision: null`` to follow the default branch. Hashes and resume keys are unchanged.
+* ``benv2`` names its Sentinel-1 bands by the stored channel order, VH then VV. geobench_v2 labels them VV, VH, so ``vv`` selected the cross-polarized channel and polarization-aware models received swapped inputs. The channel order of ``bands: all`` is unchanged.
 
 0.5.0 (2026-08-10)
 ------------------

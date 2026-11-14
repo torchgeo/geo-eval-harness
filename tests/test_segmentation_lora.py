@@ -170,6 +170,8 @@ _MULTISPECTRAL_INPUTS = {
     "torchgeo/croma_base": ("cloudsen12", "all"),
     "torchgeo/croma_large": ("cloudsen12", "all"),
     "universat_base_seg": ("burn_scars", "all"),
+    "smarties/base": ("m-eurosat", "all"),
+    "smarties/large": ("m-eurosat", "all"),
 }
 
 

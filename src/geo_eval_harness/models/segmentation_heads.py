@@ -234,7 +234,6 @@ class FeatureStandardizer(nn.Module):
         for index, channels in enumerate(channels_list):
             self.register_buffer(f"mean_{index}", torch.zeros(channels))
             self.register_buffer(f"std_{index}", torch.ones(channels))
-        self.fitted = False
 
     def stats(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Return the mean and standard deviation of layer ``index``."""
@@ -255,7 +254,6 @@ class FeatureStandardizer(nn.Module):
             var = (sq_total.double() / count - mu * mu).clamp(min=0.0)
             mean.copy_(mu.to(mean.dtype))
             std.copy_(torch.sqrt(var + self.eps).to(std.dtype))
-        self.fitted = True
 
     def forward(self, features: list[torch.Tensor]) -> list[torch.Tensor]:
         """Standardize each layer's ``(B, C, H, W)`` features channel-wise."""
