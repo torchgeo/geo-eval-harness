@@ -6,7 +6,7 @@ from typing import cast
 import torch
 from torch import nn
 
-from geo_eval_harness.hub import verify_checksums
+from geo_eval_harness.hub import fetch_pinned_file
 
 CLAY_V15_REPO = "made-with-clay/Clay"
 CLAY_V15_REVISION = "70200ebcccdf67bf2a0cb9984c77ddee26c10ed2"
@@ -62,11 +62,7 @@ class ClayV15Backbone(nn.Module):
 
     @staticmethod
     def _download() -> Path:
-        from huggingface_hub import hf_hub_download
-
-        path = Path(hf_hub_download(CLAY_V15_REPO, CLAY_V15_FILE, revision=CLAY_V15_REVISION))
-        verify_checksums(path.parent, {path.name: CLAY_V15_SHA256})
-        return path
+        return fetch_pinned_file(CLAY_V15_REPO, CLAY_V15_FILE, CLAY_V15_REVISION, CLAY_V15_SHA256)
 
     def load_checkpoint(self, path: str | Path) -> None:
         """Load the complete encoder state from a pretraining checkpoint."""
