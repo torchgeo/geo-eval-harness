@@ -1,5 +1,8 @@
 name: tgeo_resnet50_s2rgb_seco
 target: geo_eval_harness.models.TorchGeoResNetBench
+# torchgeo's SeCo transform is written for SeCo's 8-bit images, not the Sentinel-2 DN this
+# wrapper supplies, so model normalization is not offered.
+supports_model_normalization: false
 kwargs:
   factory: resnet50
   weights_class: ResNet50_Weights
