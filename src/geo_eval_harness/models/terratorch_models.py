@@ -215,7 +215,7 @@ class TerraTorchClayBench(_TerraTorchBench):
         pretrained: bool = True,
         checkpoint_path: str | None = None,
         target_size: int | None = 256,
-        modality: str = "sentinel-2-l2a",  # noqa: ARG002 — kept for config back-compat
+        modality: str = "sentinel-2-l2a",  # noqa: ARG002 - Clay uses Sentinel-2 inputs
         gsd: float = 10.0,
         **kwargs: Any,
     ) -> None:

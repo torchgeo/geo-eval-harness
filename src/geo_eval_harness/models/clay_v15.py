@@ -1,4 +1,4 @@
-"""Clay v1.5 Large encoder with pinned, strictly loaded pretrained weights."""
+"""Clay v1.5 Large encoder."""
 
 from pathlib import Path
 from typing import cast
@@ -33,7 +33,7 @@ def _build_encoder() -> nn.Module:
 
 
 class ClayV15Backbone(nn.Module):
-    """Run the v1.5 Large encoder without its pretraining decoder or teacher.
+    """Clay v1.5 Large encoder.
 
     Args:
         pretrained: Load the published encoder weights.
@@ -69,7 +69,7 @@ class ClayV15Backbone(nn.Module):
         return path
 
     def load_checkpoint(self, path: str | Path) -> None:
-        """Require every encoder weight from the full published pretraining checkpoint."""
+        """Load the complete encoder state from a pretraining checkpoint."""
         checkpoint = torch.load(path, map_location="cpu", weights_only=True, mmap=True)
         prefix = "model.encoder."
         weights = {

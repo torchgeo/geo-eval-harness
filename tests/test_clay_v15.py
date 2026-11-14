@@ -1,4 +1,4 @@
-"""Clay v1.5 checkpoint, input-geometry, and version-separation regressions."""
+"""Clay v1.5 checkpoint loading and input geometry."""
 
 from pathlib import Path
 
@@ -81,7 +81,7 @@ def test_native_grid_and_conditioning_are_preserved(encoder: _Encoder) -> None:
         model(torch.ones(1, 3, 31, 31), waves=waves, gsd=10.0)
 
 
-def test_v1_and_v15_presets_cannot_share_results() -> None:
+def test_clay_presets_select_the_requested_encoder() -> None:
     v1 = load_model_preset(ModelConfig(name="terratorch/clay_v1"))
     v15 = load_model_preset(ModelConfig(name="terratorch/clay_v1_5"))
     cls = load_model_preset(ModelConfig(name="terratorch/clay_v1_5_cls"))
