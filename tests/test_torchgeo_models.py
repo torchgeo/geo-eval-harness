@@ -195,6 +195,15 @@ def test_scalemae_rejects_non_rgb_order() -> None:
         TorchGeoScaleMAEBench(bands=list(reversed(_rgb_bands())))
 
 
+def test_scalemae_accepts_rgb_bands_under_alias_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    from geo_eval_harness.datasets.dynamic_earthnet import DynamicEarthNet
+
+    install_tiny_scalemae_factory(monkeypatch)
+    bands = DynamicEarthNet.resolve_band_specs("rgb")
+    assert [band.name for band in bands] == ["r", "g", "b"]
+    TorchGeoScaleMAEBench(bands=bands, normalization="identity")
+
+
 def test_scalemae_uses_bandspec_zscore_instead_of_checkpoint_transform(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

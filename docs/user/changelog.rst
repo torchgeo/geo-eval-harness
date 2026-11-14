@@ -22,6 +22,7 @@ Models
 * TerraFM's model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
 * Scale-MAE segmentation probes run at the constructed input size, and input sizes that are not multiples of 16 are rejected.
+* Scale-MAE accepts ordered RGB bands under any recognized band name, such as Planet's ``r``, ``g``, ``b``.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
