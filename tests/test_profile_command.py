@@ -26,6 +26,7 @@ from geo_eval_harness.commands.profile_arguments import add_profile_arguments, l
 from geo_eval_harness.config.presets import NORMALIZATIONS, ModelPreset
 from geo_eval_harness.config.profile import ProfileConfig
 from geo_eval_harness.config.schema import ModelConfig
+from tests.support.torchgeo_models import install_tiny_scalemae_factory
 
 
 class _Loader:
@@ -205,6 +206,8 @@ def test_profile_applies_image_size_to_model_and_loader(
     )
     inputs: dict[str, Any] = {}
     construction: dict[str, Any] = {}
+    calls = install_tiny_scalemae_factory(monkeypatch)
+    build_model = _profile_runtime.build_model
 
     def load(**kwargs: Any) -> tuple:
         inputs.update(kwargs)
@@ -215,7 +218,7 @@ def test_profile_applies_image_size_to_model_and_loader(
     def build(preset: ModelPreset, **kwargs: Any) -> nn.Module:
         construction["preset"] = preset
         construction["options"] = kwargs
-        return nn.Conv2d(3, 2, 1)
+        return build_model(preset, **kwargs)
 
     monkeypatch.setattr(_profile_runtime, "get_datasets", load)
     monkeypatch.setattr(_profile_runtime, "build_model", build)
@@ -225,9 +228,7 @@ def test_profile_applies_image_size_to_model_and_loader(
     record = json.loads(capsys.readouterr().out)
     model_kwargs = record["model_config"]["kwargs"]
     assert inputs["image_size"] == record["image_size"] == loader_size
-    assert (
-        construction["preset"].kwargs["image_size"] == model_kwargs["image_size"] == expected_size
-    )
+    assert calls[0][0]["img_size"] == expected_size
     assert record["model_config"]["input"]["image_size"] == loader_size
     assert record["input_shape"] == [4, 3, expected_size, expected_size]
     assert inputs["interpolation"] == record["interpolation"] == "area"

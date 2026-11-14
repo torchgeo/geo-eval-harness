@@ -19,6 +19,7 @@ from geo_eval_harness.models._input_units import InputUnit
 from geo_eval_harness.models.torchgeo_models import (
     TorchGeoCromaBench,
     TorchGeoDOFABench,
+    TorchGeoEarthLocBench,
     TorchGeoPanopticonBench,
     TorchGeoResNetBench,
     TorchGeoScaleMAEBench,
@@ -30,6 +31,7 @@ from geo_eval_harness.models.torchgeo_models import (
     _resolve_torchgeo_factory,
     _resolve_torchgeo_weights,
 )
+from tests.support.torchgeo_models import install_tiny_scalemae_factory
 
 
 def _rgb_bands() -> list[BandSpec]:
@@ -139,48 +141,6 @@ def test_normalize_transform_none_when_absent() -> None:
             return nn.Sequential(nn.Identity())
 
     assert _extract_normalize_transforms(_Weights()) is None
-
-
-def install_tiny_scalemae_factory(
-    monkeypatch: pytest.MonkeyPatch, transforms: nn.Module | None = None
-) -> list[tuple[dict[str, Any], nn.Module]]:
-    import geo_eval_harness.models.torchgeo_models as tg_models
-
-    class _PatchEmbed(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.proj = nn.Conv2d(3, 8, 1)
-
-    class _TinyScaleMAE(nn.Module):
-        def __init__(self, *, img_size: int, res: float) -> None:
-            super().__init__()
-            self.patch_embed = _PatchEmbed()
-            self.img_size = img_size
-            self.res = res
-
-        def forward_features(self, images: torch.Tensor) -> torch.Tensor:
-            batch = images.shape[0]
-            cls = torch.full((batch, 1, 8), 2.0, device=images.device)
-            patches = torch.ones(batch, 4, 8, device=images.device)
-            return torch.cat([cls, patches], dim=1)
-
-    calls: list[tuple[dict[str, Any], nn.Module]] = []
-
-    def factory(*, weights: object, **kwargs: Any) -> _TinyScaleMAE:
-        del weights
-        backbone = _TinyScaleMAE(**kwargs)
-        calls.append((kwargs, backbone))
-        return backbone
-
-    monkeypatch.setattr(tg_models, "_resolve_torchgeo_factory", lambda _name: factory)
-    monkeypatch.setattr(
-        tg_models,
-        "_resolve_torchgeo_weights",
-        lambda _weights_class, _weights_member: SimpleNamespace(
-            transforms=lambda: transforms if transforms is not None else nn.Identity()
-        ),
-    )
-    return calls
 
 
 def test_scalemae_pooling_cls_and_mean(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -808,7 +768,7 @@ class _TinySatlasSwin(nn.Module):
 def test_satlas_s2_presets_scale_dn_like_tci(
     monkeypatch: pytest.MonkeyPatch,
     name: str,
-    wrapper: type[nn.Module],
+    wrapper: Any,
     backbone: type[nn.Module],
 ) -> None:
     """Satlas S2 RGB checkpoints divide L1C TCI by 255; TCI saturates at DN 3558."""
@@ -871,10 +831,10 @@ def test_satlas_ms_presets_use_satlas_band_order(
     assert model.weights.meta["bands"] == (
         "B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "B12"
     )  # fmt: skip
-    # m-eurosat order: coastal, blue, green, red, red_edge_1-3, nir, red_edge_4, ..., swir_1-2.
+    # m-eurosat order: coastal, blue, green, red, red_edge_1-3, nir, B09, B10, swir_1-2, red_edge_4.
     images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
     selected = model.normalize_inputs(images).flatten().tolist()
-    assert selected == [3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 11.0, 12.0]
+    assert selected == [3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 10.0, 11.0]
 
 
 @pytest.mark.parametrize("name", _SATLAS_MS_PRESETS)
@@ -883,7 +843,7 @@ def test_satlas_ms_native_scales_tci_and_non_tci_bands(
 ) -> None:
     """R/G/B use L1C TCI (saturating at DN 3558); other bands are DN / 8160 clipped to 1."""
     model = _satlas_ms_model(monkeypatch, name, MEurosat().bands, "model_native")
-    dn = [0.0, 1779.0, 3558.0, 10000.0, 4080.0, 8160.0, 0.0, 2040.0, 0.0, 0.0, 0.0, 20000.0, -5.0]
+    dn = [0.0, 1779.0, 3558.0, 10000.0, 4080.0, 8160.0, 0.0, 2040.0, 0.0, 0.0, 20000.0, -5.0, 0.0]
     images = torch.tensor(dn).view(1, 13, 1, 1)
     # red, green, blue, rededge1, rededge2, rededge3, nir, swir1, swir2
     expected = [1.0, 1.0, 0.5, 0.5, 1.0, 0.0, 0.25, 1.0, 0.0]
@@ -943,3 +903,152 @@ def test_non_satlas_multiband_checkpoints_keep_first_conv_adaptation(
     assert model.weights.meta["dataset"] != "SatlasPretrain"
     assert model._satlas_s2_ms_indices is None
     assert model.backbone.conv1.in_channels == 13
+
+
+class _TinyConvNet(nn.Module):
+    """ResNet stand-in: a trainable conv, a per-pixel Linear for LoRA, then a classifier."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 8, 3, padding=1)
+        self.mix = nn.Linear(8, 8)
+        self.out = nn.Identity()
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Linear(8, 3)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        x = self.mix(self.conv1(images).permute(0, 2, 3, 1)).permute(0, 3, 1, 2)
+        return self.fc(self.pool(self.out(x)).flatten(1))
+
+
+class _TinyEarthLoc(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.backbone = _TinyConvNet()
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        return self.backbone(images)
+
+
+class _TinyPatchEmbed(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.proj = nn.Conv2d(3, 8, 8, stride=8)
+
+
+class _TinyViT(nn.Module):
+    """Scale-MAE stand-in with a trainable patch embedding and token block."""
+
+    def __init__(self, **_kwargs: Any) -> None:
+        super().__init__()
+        self.patch_embed = _TinyPatchEmbed()
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, 8))
+        self.block = nn.Linear(8, 8)
+
+    def forward_features(self, images: torch.Tensor) -> torch.Tensor:
+        tokens = self.patch_embed.proj(images).flatten(2).transpose(1, 2)
+        cls = self.cls_token.expand(tokens.shape[0], -1, -1)
+        return self.block(torch.cat([cls, tokens], dim=1))
+
+
+class _TinyTrainableCroma(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.register_buffer("attn_bias", torch.zeros(1))
+        self.s2_proj = nn.Linear(12, 8)
+        self.ffn = nn.Linear(8, 8)
+
+    def s2_encoder(self, imgs: torch.Tensor, attn_bias: torch.Tensor) -> torch.Tensor:
+        del attn_bias
+        return self.s2_proj(nn.functional.avg_pool2d(imgs, 30).flatten(2).transpose(1, 2))
+
+    def s2_GAP_FFN(self, x: torch.Tensor) -> torch.Tensor:
+        return self.ffn(x)
+
+
+def _install_tiny_backbone(monkeypatch: pytest.MonkeyPatch, backbone: type[nn.Module]) -> None:
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights, **kw: backbone(**kw)
+    )
+    monkeypatch.setattr(
+        tg_models,
+        "_resolve_torchgeo_weights",
+        lambda _weights_class, _weights_member: SimpleNamespace(transforms=nn.Identity(), meta={}),
+    )
+
+
+_GRADIENT_CASES = [
+    pytest.param(TorchGeoResNetBench, _TinyConvNet, "mix", 3, id="resnet"),
+    pytest.param(TorchGeoEarthLocBench, _TinyEarthLoc, "backbone.mix", 3, id="earthloc"),
+    pytest.param(TorchGeoScaleMAEBench, _TinyViT, "block", 3, id="scalemae"),
+    pytest.param(TorchGeoCromaBench, _TinyTrainableCroma, "s2_proj", 12, id="croma"),
+]
+
+
+@pytest.mark.parametrize("mode", ["full", "lora"])
+@pytest.mark.parametrize(("wrapper", "backbone", "lora_target", "channels"), _GRADIENT_CASES)
+def test_forward_patch_features_backpropagates_into_backbone(  # noqa: PLR0913 - parametrized
+    monkeypatch: pytest.MonkeyPatch,
+    wrapper: Any,
+    backbone: type[nn.Module],
+    lora_target: str,
+    channels: int,
+    mode: str,
+) -> None:
+    """Full fine-tuning and LoRA need gradients through the wrapper's forward."""
+    from geo_eval_harness.segmentation_lora import apply_lora
+
+    _install_tiny_backbone(monkeypatch, backbone)
+    bands = _rgb_bands() if channels == 3 else _s2_multispectral_bands()
+    model = wrapper(bands=bands, normalization="identity")
+    if mode == "lora":
+        apply_lora(model, lora_target, rank=2, alpha=4.0)
+    trainable = {n: p for n, p in model.backbone.named_parameters() if p.requires_grad}
+    assert trainable
+    assert mode == "full" or all("lora_" in n for n in trainable)
+
+    torch.manual_seed(0)
+    model.forward_patch_features(torch.rand(2, channels, 32, 32)).sum().backward()
+
+    assert all(p.grad is not None for p in trainable.values())
+
+
+@pytest.mark.parametrize("mode", ["full", "lora"])
+def test_segmentation_step_updates_torchgeo_backbone(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """One solver step under full fine-tuning / LoRA reaches the backbone's trainable weights."""
+    from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+
+    _install_tiny_backbone(monkeypatch, _TinyConvNet)
+    torch.manual_seed(0)
+    model = TorchGeoResNetBench(bands=_rgb_bands(), normalization="identity")
+    adaptation: dict[str, Any] = (
+        {"full_finetune": True}
+        if mode == "full"
+        else {"lora_rank": 2, "lora_alpha": 4.0, "lora_target_modules": "mix"}
+    )
+    cfg = SegmentationConfig(
+        head="linear",
+        layers=["out"],
+        batch_size=2,
+        cache_features=False,
+        backbone_learning_rate=1e-2,
+        **adaptation,
+    )
+    _, solver = build_seg_probe_and_solver(model, 2, cfg, torch.device("cpu"))
+    trainable = {n: p for n, p in model.backbone.named_parameters() if p.requires_grad}
+    before = {n: p.detach().clone() for n, p in trainable.items()}
+    solver._set_train_mode()
+    solver.optimizer.zero_grad()
+    images, masks = torch.rand(2, 3, 16, 16), torch.randint(0, 2, (2, 16, 16))
+    solver.criterion(solver.model(images), masks).backward()
+    solver.optimizer.step()
+
+    # The wrapper drops fc, so every trainable backbone weight feeds the hooked layer.
+    assert trainable
+    assert all(p.grad is not None for p in trainable.values())
+    assert any(not torch.equal(before[n], p) for n, p in trainable.items())

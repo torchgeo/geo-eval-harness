@@ -16,13 +16,16 @@ Three statuses:
 * ``no_geo`` — no coordinates are available; see :attr:`GeoRecord.reason` and :data:`NO_GEO`.
 * ``not_downloaded`` — registered, but no data files were found locally.
 
-Three coordinate sources are handled:
+Coordinate sources:
 
 * **V2**: read coordinates and place labels from ``.tortilla`` metadata, not imagery.
 * **V1**: reproject JSON affine/CRS origins from shards or HDF5 to EPSG:4326.
 * **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
-* **Manifest**: read tile-centre lon/lat from per-cell ``manifest.json`` records.
+* **GeoTIFF**: reproject image header origins to EPSG:4326.
+* **Packaged index**: Open Cities chip centres from the committed index; no download needed.
+* **PLANTEUR**: read the patch centres and islands in the ``metadata.csv`` that
+  ``geo-eval-harness download planteur`` writes.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -46,7 +49,7 @@ from .datasets.loading import download_command
 
 logger = logging.getLogger(__name__)
 
-STORE_DIR = Path(__file__).resolve().parents[2] / "docs" / "_static" / "_dataset_geography"
+STORE_DIR = Path(__file__).resolve().parent / "_static" / "_dataset_geography"
 INDEX_NAME = "index.json"
 
 Status = Literal["extracted", "no_geo", "not_downloaded"]
@@ -66,10 +69,27 @@ NO_GEO: dict[str, str] = {
         "land-use TIFFs with no georeferencing: all 2,100 images lack GeoTIFF tags, "
         "EXIF GPS, and XMP location fields; the release ships no coordinate table"
     ),
+    "loveda": (
+        "Google Earth PNG tiles with no georeferencing: tile ids encode no location, "
+        "and the release names only the source cities (Nanjing, Changzhou, Wuhan)"
+    ),
+    "levir-cd-post": (
+        "change-detection PNGs with no georeferencing: no PNG text or EXIF chunks, "
+        "and the release ships no coordinate table"
+    ),
 }
 
-# Re-splits reuse coordinates from the dataset with the same imagery.
-GEO_ALIAS: dict[str, str] = {"eurosat-spatial": "m-eurosat", "eurosat": "m-eurosat"}
+# Variants reuse coordinates from the dataset with the same imagery.
+GEO_ALIAS: dict[str, str] = {
+    "bright-post-sar-rgb": "bright-post-sar",
+    "eurosat-spatial": "m-eurosat",
+    "eurosat": "m-eurosat",
+    "sen1floods11-s2": "sen1floods11-s1",
+    **{
+        f"planteur_loio_{fold}": "planteur"
+        for fold in ("guadeloupe", "martinique", "guyane", "reunion", "mayotte")
+    },
+}
 
 BIN_RES = 0.25  # Degrees per density-map cell.
 POINT_CAP = 2000  # per-dataset cap on individually plotted samples
@@ -86,9 +106,9 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Source family — ``"v1"``, ``"v2"``, ``"torchgeo"``, or ``"hotosm"``.
-        version: Source family — ``"v1"``, ``"v2"``, ``"manifest"``, or ``"torchgeo"``.
-            ``None`` when nothing was read.
+        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``,
+            ``"planteur"``, or ``"geotiff"``/``"index"``/``"geojson"``. ``None`` when nothing was
+            read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -169,6 +189,57 @@ def _extract_hotosm(paths: list[Path]) -> dict:
     }
 
 
+def _extract_planteur(path: Path) -> dict:
+    """Read patch centres and islands from the converted ``planteur`` metadata."""
+    import pandas as pd
+
+    frame = pd.read_csv(path)
+    return {
+        "lon": frame["lon"].to_numpy(),
+        "lat": frame["lat"].to_numpy(),
+        "place": frame["island"].to_numpy(dtype=object),
+        "version": "planteur",
+    }
+
+
+def _extract_open_cities() -> dict:
+    """Read chip-centre lon/lat and city names from the packaged Open Cities index."""
+    from .datasets.open_cities import CITY_NAME, load_index
+
+    index = load_index()
+    return {
+        "lon": index.lon.to_numpy(),
+        "lat": index.lat.to_numpy(),
+        "place": index.city.map(CITY_NAME).to_numpy(dtype=object),
+        "version": "index",
+    }
+
+
+def _extract_oscd(root: Path) -> dict:
+    """Place OSCD tile centres in each city's GeoJSON bounding box; the rasters have no CRS."""
+    from .datasets.oscd_post import OSCDPost, read_window
+
+    lon, lat, place = [], [], []
+    for split in ("train", "val", "test"):
+        for city in OSCDPost.split_cities[split]:
+            footprint = OSCDPost.image_dir(root, city).parent / f"{city}.geojson"
+            ring = json.loads(footprint.read_text())["features"][0]["geometry"]["coordinates"][0]
+            (west, south), (east, north) = np.min(ring, axis=0), np.max(ring, axis=0)
+            height, width = read_window(OSCDPost.label_path(root, city)).shape
+            rows = np.arange(0, height, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            cols = np.arange(0, width, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            y, x = np.meshgrid(np.minimum(rows, height) / height, np.minimum(cols, width) / width)
+            lon += (west + x.ravel() * (east - west)).tolist()
+            lat += (north - y.ravel() * (north - south)).tolist()
+            place += [city] * x.size
+    return {
+        "lon": np.asarray(lon),
+        "lat": np.asarray(lat),
+        "place": np.asarray(place, dtype=object),
+        "version": "geojson",
+    }
+
+
 def _metadata_origin(meta: dict) -> tuple[float | None, float | None, str]:
     """Return the first usable affine origin and CRS from JSON metadata."""
     for entry in meta.values():
@@ -245,8 +316,6 @@ def _v1_shard_origins(path: str) -> list[tuple[float | None, float | None, str]]
 
 def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     """Extract and reproject raster origins for every sample of a V1 dataset."""
-    from pyproj import Transformer
-
     with ProcessPoolExecutor(max_workers=workers) as pool:
         if files and files[0].endswith(".tar"):
             results = [origin for shard in pool.map(_v1_shard_origins, files) for origin in shard]
@@ -266,9 +335,22 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
     if not usable:
         return None
 
-    # A dataset can span several coordinate systems; reproject each group separately.
+    lon, lat = reproject_origins(usable)
+    ok = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    return {
+        "lon": lon[ok],
+        "lat": lat[ok],
+        "place": np.full(int(ok.sum()), None, dtype=object),
+        "version": "v1",
+    }
+
+
+def reproject_origins(origins: list[tuple[float, float, str]]) -> tuple[np.ndarray, np.ndarray]:
+    """Group raster origins by CRS and transform each group to longitude/latitude."""
+    from pyproj import Transformer
+
     by_crs: dict[str, list[tuple[float, float]]] = {}
-    for x, y, epsg in usable:
+    for x, y, epsg in origins:
         by_crs.setdefault(epsg, []).append((x, y))
 
     lons: list[np.ndarray] = []
@@ -285,31 +367,47 @@ def _extract_v1(name: str, files: list[str], workers: int) -> dict | None:
         lons.append(np.asarray(lon))
         lats.append(np.asarray(lat))
 
-    lon = np.concatenate(lons)
-    lat = np.concatenate(lats)
-    ok = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)
+    return np.concatenate(lons), np.concatenate(lats)
+
+
+def extract_geotiffs(paths: list[Path]) -> dict | None:
+    """Read image origins from GeoTIFF headers, omitting images without georeferencing."""
+    import rasterio
+
+    origins = []
+    for path in paths:
+        with rasterio.open(path) as raster:
+            if raster.crs is not None and not raster.transform.is_identity:
+                origins.append((raster.transform.c, raster.transform.f, raster.crs.to_string()))
+    if not origins:
+        return None
+    lon, lat = reproject_origins(origins)
+    if not (np.isfinite(lon) & np.isfinite(lat) & (np.abs(lat) <= 90) & (np.abs(lon) <= 180)).all():
+        raise ValueError("GeoTIFF origins do not map to valid lon/lat")
     return {
-        "lon": lon[ok],
-        "lat": lat[ok],
-        "place": np.full(int(ok.sum()), None, dtype=object),
-        "version": "v1",
+        "lon": lon,
+        "lat": lat,
+        "place": np.full(len(lon), None, dtype=object),
+        "version": "geotiff",
     }
 
 
-def read_manifest_coordinates(paths: list[str]) -> dict:
-    """Read tile-centre lon/lat from each cell's ``manifest.json`` records."""
-    lons: list[float] = []
-    lats: list[float] = []
-    for path in sorted(paths):
-        for record in json.loads(Path(path).read_text())["records"]:
-            lons.append(float(record["lon"]))
-            lats.append(float(record["lat"]))
-    lon, lat = np.array(lons), np.array(lats)
-    ok = np.isfinite(lon) & np.isfinite(lat)
+def _extract_infrabench(directory: Path) -> dict:
+    """Read tile-centre coordinates from the Infra-Bench cell manifests."""
+    from .datasets.infrabench_cls import CELL_GLOB
+
+    records = [
+        record
+        for path in sorted(directory.glob(f"{CELL_GLOB}/manifest.json"))
+        for record in json.loads(path.read_text(encoding="utf-8"))["records"]
+    ]
+    lon = np.array([record["lon"] for record in records], dtype=float)
+    lat = np.array([record["lat"] for record in records], dtype=float)
+    valid = np.isfinite(lon) & np.isfinite(lat)
     return {
-        "lon": lon[ok],
-        "lat": lat[ok],
-        "place": np.full(int(ok.sum()), None, dtype=object),
+        "lon": lon[valid],
+        "lat": lat[valid],
+        "place": np.full(int(valid.sum()), None, dtype=object),
         "version": "manifest",
     }
 
@@ -400,14 +498,53 @@ def _build_record(name: str, data: dict, continents: Counter) -> GeoRecord:
     )
 
 
-def _extract_local_tables(name: str, directory: Path) -> dict | None:
-    """Read HOTOSM split files or per-cell manifests under ``directory``; ``None`` if neither."""
-    hotosm = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
-    if name == "hotosm_buildings" and all(path.is_file() for path in hotosm):
-        return _extract_hotosm(hotosm)
-    if manifests := sorted(glob.glob(str(directory / "*" / "manifest.json"))):
-        return read_manifest_coordinates(manifests)
-    return None
+def _extract_files(name: str, workers: int) -> dict | GeoRecord:
+    """Read coordinates from downloaded dataset files, or return a ``no_geo`` record."""
+    command = (
+        "geo-eval-harness download geobench_v1" if name.startswith("m-") else download_command(name)
+    )
+    directory = _dataset_dir(name)
+    if directory is None:
+        raise FileNotFoundError(f"No imagery for {name!r}. Run `{command}`.")
+
+    tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
+    shards = sorted(glob.glob(str(directory / "shard_*.tar")))
+    hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
+    hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    geotiffs = (
+        sorted(directory.glob("*/sar_images/*.tif"))
+        or sorted(directory.glob("data/flood_events/HandLabeled/LabelHand/*.tif"))
+        or sorted(directory.glob("post-event/*.tif"))
+    )
+
+    if tortillas:
+        data = _extract_v2(tortillas)
+        reason = "tortilla metadata has no lon/lat columns"
+    elif shards or hdf5s:
+        data = _extract_v1(name, shards or hdf5s, workers)
+        reason = "no sample carries a usable transform/crs"
+    elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
+        data = _extract_hotosm(hotosm_splits)
+        reason = "split files have no lon/lat columns"
+    elif name == "infrabench-cls":
+        data = _extract_infrabench(directory)
+        reason = "manifests have no lon/lat coordinates"
+    elif name == "planteur" and (directory / "metadata.csv").is_file():
+        data = _extract_planteur(directory / "metadata.csv")
+        reason = "metadata has no lon/lat columns"
+    elif name == "oscd-post":
+        data = _extract_oscd(directory)
+        reason = "city footprints have no coordinates"
+    elif geotiffs:
+        data = extract_geotiffs(geotiffs)
+        reason = "no image carries a usable GeoTIFF transform/crs"
+    else:
+        raise FileNotFoundError(
+            f"No .tortilla, V1 shard, .hdf5, or SAR .tif files under {directory}. Run `{command}`."
+        )
+    if data is None:
+        return GeoRecord(name=name, status="no_geo", reason=reason)
+    return data
 
 
 def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
@@ -434,34 +571,12 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
         record = extract_geography(target, workers=workers)
         return replace(record, name=name, alias_of=target)
 
-    command = (
-        "geo-eval-harness download geobench_v1" if name.startswith("m-") else download_command(name)
-    )
-    directory = _dataset_dir(name)
-    if directory is None:
-        raise FileNotFoundError(f"No imagery for {name!r}. Run `{command}`.")
-
-    tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
-    shards = sorted(glob.glob(str(directory / "shard_*.tar")))
-    hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
-
-    if tortillas:
-        data = _extract_v2(tortillas)
-        if data is None:
-            return GeoRecord(
-                name=name, status="no_geo", reason="tortilla metadata has no lon/lat columns"
-            )
-    elif shards or hdf5s:
-        data = _extract_v1(name, shards or hdf5s, workers)
-        if data is None:
-            return GeoRecord(
-                name=name, status="no_geo", reason="no sample carries a usable transform/crs"
-            )
-    elif (data := _extract_local_tables(name, directory)) is None:
-        raise FileNotFoundError(
-            f"No .tortilla, V1 shard, .hdf5, or manifest.json files under {directory}. "
-            f"Run `{command}`."
-        )
+    if name == "open_cities":
+        data = _extract_open_cities()
+    else:
+        data = _extract_files(name, workers)
+        if isinstance(data, GeoRecord):
+            return data
 
     if len(data["lon"]) == 0:
         return GeoRecord(name=name, status="no_geo", reason="all coordinates were non-finite")
@@ -531,7 +646,7 @@ def build_index(store_dir: Path | None = None) -> dict:
 
 
 def load_geography(name: str, store_dir: Path | None = None) -> GeoRecord:
-    """Load one dataset's record from the committed store.
+    """Load one dataset's record from the packaged store.
 
     Raises:
         FileNotFoundError: If the dataset has no record yet.

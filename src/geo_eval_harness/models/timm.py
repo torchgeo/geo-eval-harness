@@ -7,6 +7,7 @@ from typing import Any
 import timm
 import torch
 import torch.nn.functional as F
+from timm.models import is_model_in_modules
 
 from geo_eval_harness.datasets.base import BandSpec
 
@@ -47,6 +48,19 @@ def _rgb_first_permutation(bands: list[BandSpec]) -> list[int] | None:
     return rgb_idx + rest
 
 
+def _model_size_kwargs(
+    model_name: str, img_size: int | None, *, dynamic_img_size: bool
+) -> dict[str, Any]:
+    """Translate the wrapper's image-grid policy to the registered timm backend."""
+    options: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
+    if dynamic_img_size:
+        if is_model_in_modules(model_name, {"swin_transformer", "swin_transformer_v2"}):
+            options["strict_img_size"] = False
+        else:
+            options["dynamic_img_size"] = True
+    return options
+
+
 class TimmPatchBenchModel(BenchModel):
     """BenchModel wrapper for any timm backbone.
 
@@ -60,8 +74,14 @@ class TimmPatchBenchModel(BenchModel):
         use_cls_token: For ViT-family models, use the CLS token instead of
             averaging spatial tokens.
         auto_resize: If ``True``, bilinearly resize each batch to ``target_size``.
-        target_size: Square target size; auto-inferred from
-            ``backbone.default_cfg["input_size"]`` when not given.
+        target_size: Square target size; defaults to ``img_size`` when that is set, else
+            auto-inferred from ``backbone.default_cfg["input_size"]``. Flexible backbones may
+            use an explicit resize target different from ``img_size``.
+        img_size: Build the backbone for this square input size (passed to
+            ``timm.create_model``). Needed by fixed-size backbones such as Swin to
+            run at a size other than their pretrained one; ``None`` keeps timm's default.
+        dynamic_img_size: Use the backend's dynamic transformer grid handling. Swin pads
+            attention windows; other supported transformers interpolate position embeddings.
         input_normalization: One of ``"bands_zscore"`` (default; per-channel
             z-score using :class:`BandSpec` statistics — correct for raw
             remote-sensing data of any channel count), ``"imagenet"``
@@ -92,6 +112,8 @@ class TimmPatchBenchModel(BenchModel):
         global_pool: str | None = "avg",
         auto_resize: bool = False,
         target_size: int | None = None,
+        img_size: int | None = None,
+        dynamic_img_size: bool = False,
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -112,19 +134,25 @@ class TimmPatchBenchModel(BenchModel):
         self.pretrained = pretrained
         self.normalize = normalize
         self.auto_resize = auto_resize
+        # Fixed-size backbones (e.g. Swin built with img_size) only accept this input size.
+        self.probe_input_size = img_size
         self.use_cls_token = use_cls_token
         self.input_normalization = input_normalization
 
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
+        size_kwargs = _model_size_kwargs(model_name, img_size, dynamic_img_size=dynamic_img_size)
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
             in_chans=self.num_channels,
             num_classes=0,
             global_pool=global_pool,
+            **size_kwargs,
         )
+        if getattr(self.backbone, "output_fmt", None) == "NHWC":
+            self.feature_layout = "nhwc"
 
         # timm.models._manipulate.adapt_input_conv tiles [R, G, B] weights for extra channels.
         # Put physical RGB first to match the weights; native S2 order is blue/green/red.
@@ -134,10 +162,25 @@ class TimmPatchBenchModel(BenchModel):
 
         default_cfg = getattr(self.backbone, "default_cfg", {}) or {}
         cfg_input_size = default_cfg.get("input_size", None)
+        patch_embed = getattr(self.backbone, "patch_embed", None)
+        strict_img_size = getattr(patch_embed, "strict_img_size", False)
         inferred_size: int | None = None
-        if isinstance(cfg_input_size, (list, tuple)) and len(cfg_input_size) == 3:
+        if img_size is not None:
+            # timm keeps the pretrained size in default_cfg when img_size is overridden.
+            inferred_size = img_size
+        elif isinstance(cfg_input_size, (list, tuple)) and len(cfg_input_size) == 3:
             inferred_size = int(cfg_input_size[1])
         self.target_size = int(target_size) if target_size is not None else inferred_size
+        if (
+            img_size is not None
+            and strict_img_size
+            and auto_resize
+            and self.target_size != img_size
+        ):
+            raise ValueError(
+                f"{model_name} img_size={img_size} needs target_size={img_size} "
+                f"(or auto_resize: false), got target_size={self.target_size}."
+            )
 
         if self.auto_resize and self.target_size is None:
             logger.warning(
@@ -271,20 +314,24 @@ class TimmModelSettings:
     normalize: bool = False
     auto_resize: bool = False
     target_size: int | None = None
+    img_size: int | None = None
+    dynamic_img_size: bool = False
     use_cls_token: bool = False
 
     def __post_init__(self) -> None:
         """Validate settings before importing or constructing a backbone."""
-        for name in ("pretrained", "normalize", "auto_resize", "use_cls_token"):
+        for name in ("pretrained", "normalize", "auto_resize", "dynamic_img_size", "use_cls_token"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a boolean")
         if not self.model_name:
             raise ValueError("model_name must not be empty")
-        if self.target_size is not None:
-            if not isinstance(self.target_size, int):
-                raise TypeError("target_size must be an integer")
-            if self.target_size <= 0:
-                raise ValueError("target_size must be positive")
+        for name in ("target_size", "img_size"):
+            value = getattr(self, name)
+            if value is not None:
+                if not isinstance(value, int) or isinstance(value, bool):
+                    raise TypeError(f"{name} must be an integer")
+                if value <= 0:
+                    raise ValueError(f"{name} must be positive")
         if self.global_pool not in (None, "", "avg", "max", "avgmax", "catavgmax"):
             raise ValueError(f"unsupported global_pool: {self.global_pool!r}")
         if self.input_normalization not in _VALID_INPUT_NORMALIZATIONS:

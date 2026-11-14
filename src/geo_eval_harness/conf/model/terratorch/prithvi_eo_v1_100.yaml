@@ -5,6 +5,7 @@ kwargs:
   pretrained: true
   target_size: 224
 segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers:
     - blocks.11
     - blocks.8

@@ -4,7 +4,7 @@ Evaluation
 The evaluation pipeline lives in :mod:`geo_eval_harness.main` and a few
 focused sub-modules.  Each evaluation method (KNN-5, linear probe,
 segmentation, intrinsic dimension) consumes per-split feature embeddings
-or raw images and produces one :class:`EvaluationResult` row per metric.
+or raw images and produces :class:`~geo_eval_harness.results.EvaluationResult` rows.
 Image orchestration accepts
 :class:`~geo_eval_harness.config.run.RunConfig`; see :doc:`cli` for loading,
 preset resolution, and the separate standalone measurement schemas.
@@ -12,12 +12,14 @@ preset resolution, and the separate standalone measurement schemas.
 Result schema
 -------------
 
-.. currentmodule:: geo_eval_harness.main
+.. currentmodule:: geo_eval_harness.results
 
 .. autoclass:: EvaluationResult
 
 Feature extraction
 ------------------
+
+.. currentmodule:: geo_eval_harness.main
 
 .. autofunction:: embed_split
 
@@ -49,13 +51,21 @@ Segmentation
 
 .. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_segmentation
+.. autoclass:: LoaderSplits
+.. autoclass:: SegmentationOutcome
 
 .. currentmodule:: geo_eval_harness.segmentation_probe
 .. autoclass:: SegmentationProbe
+.. autoexception:: NonFiniteFeaturesError
 
 .. currentmodule:: geo_eval_harness.segmentation_task
 .. autoclass:: SegmentationSolver
+.. autoclass:: SweepSegmentationSolver
 .. autoclass:: SegMetrics
+.. autoclass:: EpochRecord
+
+.. currentmodule:: geo_eval_harness.epoch_metrics
+.. autoclass:: EpochMetricsWriter
 
 Intrinsic dimension
 -------------------
@@ -68,5 +78,7 @@ function lives in :mod:`geo_eval_harness.main`:
 
 Result I/O
 ----------
+
+.. currentmodule:: geo_eval_harness.results
 
 .. autofunction:: append_rows_atomic

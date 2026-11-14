@@ -29,8 +29,7 @@ use a separate output file when changing encoder kwargs or evaluation
 settings that are not part of the key.
 
 ``python -m geo_eval_harness coord`` and ``python -m geo_eval_harness.cli coord``
-are equivalent entry points. The former ``run mode=coord`` and dotted
-``key=value`` overrides are no longer supported.
+are equivalent entry points.
 
 Included encoders
 -----------------
@@ -136,8 +135,7 @@ remote tables:
 
    $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
 
-The coordinate schema deliberately has no image ``input``, ``segmentation``,
-or ``classification`` sections. See :doc:`/api/coordbench` for
+The coordinate schema has its own model, dataset, evaluation, runtime, and output sections. See :doc:`/api/coordbench` for
 ``CoordConfig`` and the Python loader.
 
 Add a location encoder

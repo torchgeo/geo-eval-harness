@@ -66,36 +66,18 @@ class InfraBenchSplit(Dataset):
 
 
 class InfraBenchCLS(BenchDataset):
-    """Facility-scale critical-infrastructure classification, 13 classes.
+    """Thirteen OpenStreetMap infrastructure classes from Sentinel-1/2 tiles.
 
-    OpenStreetMap assets cover seven regions and four sectors: energy, water, transport, telecom.
-
-    Each asset is a 600 m tile of Sentinel-2 L2A and Sentinel-1 RTC on a 10 m grid.
-
-    Labels derive from OSM tags, so they are weak.
-
-    The 28 region-by-sector cells match Zenodo doi:10.5281/zenodo.22118891.
-
-    Splits follow the paper's spatially blocked split, assigned by asset id.
-
-    Six border assets sit in two regional cells, so they appear twice, always in val or test.
-
-    Sentinel-2 comes from the least cloudy Planetary Computer L2A scene in 2021--2024.
-
-    Its digital numbers are divided by 10,000, scaled to 0--255, clipped, and rounded down.
-
-    The +1000 offset from baseline 04.00 was not subtracted, so about 95% of tiles read ~25 high.
-
-    Sentinel-1 is backscatter in dB clipped to -30--10, and zero where no scene was found.
-
-    Tiles of 60--65 px, a few truncated at a scene edge, are resized bilinearly to 60x60.
-
-    Data are ODbL 1.0 and contain information from OpenStreetMap (Geofabrik snapshot 2026-05-26).
+    Asset IDs define the spatial train/val/test split. Border assets present in two cells
+    retain both tiles within the same split. Tiles are resized bilinearly to 60x60 pixels.
+    Sentinel-2 values are clipped to 0--255; Sentinel-1 backscatter is in dB.
+    Data: https://doi.org/10.5281/zenodo.22118891 (ODbL 1.0).
     """
 
     name = "infrabench-cls"
     task = "classification"
     num_classes = len(CLASS_NAMES)
+    class_names = CLASS_NAMES
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["b04", "b03", "b02"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 13087, "val": 2856, "test": 2813}
@@ -111,8 +93,8 @@ class InfraBenchCLS(BenchDataset):
         BandSpec("s2", "b8a", "B8A", mean=89.1284, std=23.2075, min=0, max=255, wavelength_um=0.865),
         BandSpec("s2", "b11", "B11", mean=86.8086, std=26.0835, min=0, max=255, wavelength_um=1.61),
         BandSpec("s2", "b12", "B12", mean=72.0849, std=25.6110, min=0, max=255, wavelength_um=2.19),
-        BandSpec("s1", "vv", "VV", mean=-8.3180, std=5.0693, min=-30, max=10),
-        BandSpec("s1", "vh", "VH", mean=-14.4821, std=5.1196, min=-30, max=10),
+        BandSpec("s1", "vv", "VV", mean=-8.3180, std=5.0693, min=-30, max=10, unit="db"),
+        BandSpec("s1", "vh", "VH", mean=-14.4821, std=5.1196, min=-30, max=10, unit="db"),
     ]
     # fmt: on
 
@@ -147,7 +129,7 @@ class InfraBenchCLS(BenchDataset):
         paths: list[Path] = []
         labels: list[int] = []
         for cell in cells:
-            manifest = json.loads((cell / "manifest.json").read_text())
+            manifest = json.loads((cell / "manifest.json").read_text(encoding="utf-8"))
             for record in manifest["records"]:
                 if assigned.get(str(record["asset_id"])) != split:
                     continue

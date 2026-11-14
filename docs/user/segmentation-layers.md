@@ -1,6 +1,6 @@
 # Segmentation backbone layer reference
 
-This page records how the values for `eval.segmentation.layers` (see
+This page records how the values for `segmentation.layers` (see
 [Configuration](configuration.rst)) were determined for each model
 family, and serves as a reference when adding new models. It complements
 the [`SegmentationProbe`](../api/models.rst) and the segmentation-head
@@ -10,9 +10,9 @@ classes (`LinearHead`, `FPNHead`, `DPTHead`, …).
 
 `SegmentationProbe` hooks into named PyTorch modules via `backbone.named_modules()`. The layer names in each model config must exactly match these module names. Layers should be listed **deepest first** (coarsest feature map first) for the FPN head.
 
-## How Layer Names Were Discovered
+## Inspecting layer names
 
-Layer names were found by:
+To check a backbone's layer names and output shapes:
 1. Instantiating each timm model with `pretrained=False, num_classes=0`
 2. Running a dummy 224×224 input through the model with forward hooks on candidate layers
 3. Recording the output spatial size of each layer
@@ -45,7 +45,13 @@ print(shapes)
 
 ## Layer Names by Family
 
-All spatial sizes are for a 224×224 input image.
+### Tessera V2 students
+
+All four students expose `spatial_features`, the full-resolution NCHW pixel embedding map after the final MLP reducer, non-affine LayerNorm, and optional Matryoshka prefix selection. Its channel count is `embedding_dim` (128 by default), independent of student width. Use `layers: ["spatial_features"]`, `head: linear`, and no ViT neck. For UPerNet, use the average-pooled pyramid `pyramid.s32`, `pyramid.s16`, `pyramid.s8`, and `pyramid.s4`, in that order, with no neck. Temporal Transformer blocks are not spatial feature layers. Shape discovery uses an 8-by-8 input; actual images retain their configured grid size.
+
+This is a single-snapshot protocol. PASTIS dates follow the actual selected S2 frame, and undated samples use the explicit fallback DOY. See [Models](models.rst) for input normalization, dataset exclusions, LoRA targets, and memory considerations.
+
+For the following spatial backbones, sizes are given for a 224×224 input image.
 
 ### ResNet (resnet18, resnet34, resnet50, resnet101)
 
@@ -69,7 +75,7 @@ Config: `layers: ["layer4", "layer3", "layer2", "layer1"]`
 
 Config: `layers: ["features.denseblock4", "features.denseblock3", "features.denseblock2", "features.denseblock1"]`
 
-Note: `features.transition1/2/3` downsample between denseblocks. Using the denseblocks (before downsampling) gives richer features.
+`features.transition1/2/3` downsample between denseblocks. The listed taps read each denseblock before that downsampling.
 
 ### VGG16
 
@@ -108,7 +114,7 @@ Config: `layers: ["blocks.6", "blocks.5", "blocks.3", "blocks.1"]`
 
 **Note:** `blocks.4`, `blocks.5`, and `blocks.6` all operate at 7×7 (EfficientNet uses multiple MBConv stages at the same stride). We include `blocks.5` to get 4 layers, though it shares spatial size with `blocks.6`. If 3 distinct pyramid levels are preferred, use `["blocks.6", "blocks.3", "blocks.1"]`.
 
-### ConvNeXt (convnext_tiny, small, base, large, large_dinov3)
+### ConvNeXt (convnext_tiny, small, base, large; tiny/small/base/large_dinov3)
 
 | Layer | Spatial size | Channels (tiny) |
 |---|---|---|

@@ -4,93 +4,55 @@ Changelog
 Unreleased
 ----------
 
-Changed
-^^^^^^^
+Package and configuration
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Package, CLI, and repository name: ``geo-eval-harness``. Python imports and fully qualified model targets use ``geo_eval_harness``. Stored results and resume hashes remain compatible; update custom imports and YAML targets as described in :doc:`installation`.
-* TerraTorch models use a separate source installation because the published backend's TorchGeo requirement is incompatible. See :doc:`installation` for the pinned command.
+* The distribution and CLI are named ``geo-eval-harness``; the Python namespace is ``geo_eval_harness``.
+* Commands use explicit flags and Pydantic-validated YAML. Model presets separate constructor options from input and evaluation settings.
+* Dataset geography records are included in the wheel and source distribution.
+* Linux x86_64 installations use CUDA FAISS; other platforms use CPU FAISS.
+* TerraTorch models require the separate source installation documented in :doc:`installation`.
 
-Added
-^^^^^
+Models
+^^^^^^
 
-* Segmentation evaluations report Boundary IoU alongside mIoU, with the boundary width in pixels recorded in the result row.
-* UC Merced Land Use (``ucmerced``) via torchgeo: 2,100 RGB images, 21 classes, with published 1,260 / 420 / 420 splits and training-split normalization statistics. Download with ``geo-eval-harness download ucmerced``.
-* NWPU-RESISC45 (``resisc45``) via torchgeo: 31,500 RGB scenes, 45 classes, on
-  torchgeo's published 18,900 / 6,300 / 6,300 split.  Downloadable with
-  ``geo-eval-harness download resisc45``.  It is the most-divergent benchmark in
-  the GFM literature, so having it under a fixed protocol is the point.
-* ``scripts/compute_band_statistics.py`` computes the per-band ``BandSpec``
-  statistics a new dataset needs, from its train split only.
-* AID (``aid``), rehosted at Hugging Face ``isaaccorley/aid`` (pinned commit,
-  checksum-verified): 10,000 RGB scenes, 30 classes.  No official split
-  exists upstream, so ``scripts/generate_aid_splits.py`` derives a
-  deterministic, stratified 60/20/20 split per class (6,000 / 2,000 / 2,000).
-  Downloadable with ``geo-eval-harness download aid``.  One of the three
-  most-used benchmarks in the GFM literature.
-* HOTOSM building segmentation (``hotosm_buildings``) from Hugging Face
-  ``hotosm/vhr-building-segmentation``: 72,363 RGB tiles at about 0.3 m with
-  OpenStreetMap building masks, on the official 57,890 / 7,237 / 7,236 split.
-  ``geo-eval-harness download hotosm_buildings`` converts the upstream parquet
-  into compact per-split files held in RAM.
-* Infra-Bench CLS (``infrabench-cls``): 18,756 Sentinel-2 + Sentinel-1 tiles of OpenStreetMap critical infrastructure, 13 classes across seven regions and four sectors, on the paper's spatially blocked 13,087 / 2,856 / 2,813 split. Download with ``geo-eval-harness download infrabench-cls``. The coverage map reads its tile centres from per-cell ``manifest.json`` records.
+* Tessera V2 Nano, Small, Medium, and Large pixel students support Sentinel-2 snapshot classification, frozen segmentation, and LoRA. PASTIS supplies acquisition dates; undated inputs use the configured fallback day of year. See :doc:`models` for accepted datasets and input requirements.
+* Clay v1 Base and Clay v1.5 Large presets provide mean-patch and CLS-token embeddings.
+* TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
+* SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
+* THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
+* AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
+* UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
+* EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
+* ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
+* OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
 
-Fixed
-^^^^^
+Evaluation and results
+^^^^^^^^^^^^^^^^^^^^^^
 
-* Segmentation evaluation follows :ref:`segmentation-model-selection`. Resume distinguishes this protocol from final-epoch results without changing classification identities or CSV columns; see :doc:`results-format` for rerun implications.
+* CoordBench evaluates location encoders with random, spatial-block, and official holdouts, using KNN and ridge-linear probes.
+* The ``flops`` command measures backbone, decoder, and probe compute. The ``profile`` command measures execution on a fixed dataset batch.
+* Classification and frozen segmentation can standardize features with training-split statistics.
+* Segmentation supports frozen backbones, LoRA, and full fine-tuning, with configurable weight decay, head dropout, AMP, gradient checkpointing, and adapter block selection.
+* ViT necks form feature pyramids for dense decoders. UPerNet can use frozen AnyUp upsampling guided by RGB inputs.
+* Patch-linear sweeps train one head per learning-rate and weight-decay combination, then select the best validation head and epoch.
+* Segmentation restores the epoch with highest validation mIoU for test evaluation. Optional early stopping uses the same validation criterion.
+* Segmentation reports Boundary IoU alongside mIoU and can write per-epoch training records to JSON Lines.
+* Non-finite backbone features are counted and skipped during training; an epoch fails if more than 5% of batches are skipped. Evaluation rejects non-finite features and logits.
+* Sample caches store preprocessed segmentation samples on disk, in host memory, or on the training device.
+* Result rows record label counts and segmentation setup columns. The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings; Native bands views allow incomplete dataset coverage.
+* The results explorer dictionary-encodes repeated data and enforces a 50 MB limit for generated pages and snapshots.
 
-0.5.0 (2026-08-10)
-------------------
+Datasets
+^^^^^^^^
 
-Added
-^^^^^
-
-* CoordBench coordinate-only evaluation with random and spatial-block
-  cross-validation, KNN and ridge-linear probes, MIND and sine/cosine encoders,
-  optional SatCLIP/GeoCLIP/Climplicit/SINR wrappers, checked-in results, and a
-  mean-rank leaderboard.
-* A dedicated ``geo-eval-harness flops`` pipeline for per-sample backbone, head,
-  and probe compute, with a checked-in compute-cost table.
-* OlmoEarth v1.2 Nano, Tiny, Small, and Base presets, including Landsat-as-S2
-  routes for ``m-forestnet``.
-* Representative segmentation sweeps and protocol-validation artifacts.
-* GeoBench V1 subset downloads through ``download geobench_v1 --datasets ...``.
-
-Changed
-^^^^^^^
-
-* Image-benchmark result rows now record ``num_classes`` and include it in the
-  resume key. Rows from an older label schema cannot be silently reused.
-* Linux x86_64 installs use the CUDA FAISS backend; other platforms use CPU
-  FAISS. CoordBench KNN remains CPU by default unless ``coord.knn_device`` is
-  overridden.
-* SpaceNet2 and SpaceNet7 now use their native two-class building masks instead
-  of GeoBench's unused third background class.
-* TerraMind RGB routing, band selection, and pretrained normalization now match
-  the selected modality.
-
-Fixed
-^^^^^
-
-* The DPT segmentation head now follows the reference decoder's projection,
-  fusion, and output path.
-* PyTorch checkpoints are loaded with ``weights_only=True`` where applicable.
-* OlmoEarth rejects ambiguous sensor routes that collapse multiple input bands
-  onto the same pretrained channel.
-* Resume-only datasets are skipped before data and model initialization.
-
-Result migration
-^^^^^^^^^^^^^^^^
-
-The 128 checked-in SpaceNet2/7 rows produced under the obsolete three-class
-task were removed. They remain available through the 0.4.0 tag but are not
-comparable to current two-class runs. Other pre-0.5 rows do not carry
-``num_classes`` and therefore cannot satisfy the new resume key.
-
-`Full 0.4.0 to 0.5.0 diff <https://github.com/torchgeo/geo-eval-harness/compare/v0.4.0...v0.5.0>`__
-
-Older releases
---------------
-
-Earlier release notes remain available on
-`GitHub Releases <https://github.com/torchgeo/geo-eval-harness/releases>`__.
+* Infra-Bench CLS provides 13-class Sentinel-1/2 infrastructure classification with spatial splits.
+* GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
+* HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
+* OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
+* CaFFe and ``bright-post-sar-rgb`` expose grayscale SAR as three identical RGB channels for RGB model inputs.
+* AID, NWPU-RESISC45, and UC Merced provide RGB scene classification with fixed splits and training-split statistics.
+* PLANTEUR provides crop-type segmentation with monthly Sentinel-1/2 inputs and five leave-one-island-out folds.
+* SpaceNet2 and SpaceNet7 use binary building masks. BENV2 maps its stored Sentinel-1 channels in VH, VV order.
+* Classification datasets declare class names in label-index order.
+* Band-statistics tools support excluding ignored segmentation pixels; geography extraction and coverage checks include the registered datasets.

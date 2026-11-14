@@ -32,6 +32,7 @@ from geo_eval_harness.config.schema import ModelConfig
         {"segmentation": {"heads": ["fpn", "fpn"]}},
         {"segmentation": {"heads": ["other"]}},
         {"segmentation": {"heads": None}},
+        {"segmentation": {"neck_policy": "other"}},
         {"segmentation": {"band_configs": ["s2", "s2"]}},
         {"segmentation": {"probe": {"layers": None}}},
         {"segmentation": {"probe": {"learning_rate": float("inf")}}},
@@ -106,10 +107,19 @@ def test_explicit_null_target_and_empty_kwargs_preserve_selection() -> None:
 def test_every_packaged_image_preset_resolves_without_construction() -> None:
     for name in list_model_configs():
         config = FlopsConfig(model=ModelConfig(name=name))
-        if load_model_preset(config.model).track != "image":
+        selected = load_model_preset(config.model)
+        if selected.track != "image":
             with pytest.raises(ValueError, match="coordinate encoder"):
                 config.resolve()
         else:
+            if selected.supported_datasets is not None:
+                config = config.model_copy(
+                    update={
+                        "input": config.input.model_copy(
+                            update={"band_source": selected.supported_datasets[0]}
+                        )
+                    }
+                )
             resolved, preset = config.resolve()
             assert resolved.input.image_size > 0, name
             assert preset.target, name

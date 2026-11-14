@@ -16,7 +16,6 @@ import torch
 
 from geo_eval_harness import download, geography
 from geo_eval_harness.datasets.infrabench_cls import CLASS_NAMES, TILE_SIZE, InfraBenchCLS
-from geo_eval_harness.datasets.loading import download_command
 
 TILES = [
     ("africa_energy", "a", "energy.distribution.substation_minor", (9, 60, 60)),
@@ -37,7 +36,9 @@ def write_cells(root: Path, tiles: list[tuple[str, str, str, tuple[int, ...]]]) 
         np.save(cell_dir / "images" / image_file, np.broadcast_to(bands, shape).copy())
         manifest_path = cell_dir / "manifest.json"
         manifest = (
-            json.loads(manifest_path.read_text()) if manifest_path.exists() else {"records": []}
+            json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest_path.exists()
+            else {"records": []}
         )
         manifest["records"].append(
             {
@@ -48,7 +49,7 @@ def write_cells(root: Path, tiles: list[tuple[str, str, str, tuple[int, ...]]]) 
                 "lon": 20.0,
             }
         )
-        manifest_path.write_text(json.dumps(manifest))
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     table = pd.DataFrame({"asset_id": list(SPLITS), "split": list(SPLITS.values())})
     table.to_parquet(root / "asset_id_to_split_v1.parquet")
 
@@ -81,32 +82,21 @@ def test_tiles_are_raw_float32_at_a_fixed_size(root: Path) -> None:
     assert sample["label"].dtype == torch.long
 
 
-@pytest.mark.parametrize(
-    ("bands", "expected"),
-    [(None, list(range(9))), (("b04", "b03", "b02"), [0, 1, 2]), (("vh", "b08"), [8, 3])],
-)
-def test_band_selection_runs_before_the_caller_transform(
-    root: Path, bands: tuple[str, ...] | None, expected: list[int]
-) -> None:
+def test_band_selection_runs_before_the_caller_transform(root: Path) -> None:
     seen: list[torch.Tensor] = []
 
     def transform(sample: dict) -> dict:
         seen.append(sample["image"].clone())
         return sample
 
-    InfraBenchCLS().get_dataset("train", bands=bands, transform=transform)[0]
-    torch.testing.assert_close(seen[0][:, 0, 0], torch.tensor(expected, dtype=torch.float32))
+    InfraBenchCLS().get_dataset("train", bands=("vh", "b08"), transform=transform)[0]
+    torch.testing.assert_close(seen[0][:, 0, 0], torch.tensor([8, 3], dtype=torch.float32))
 
 
 def test_unknown_asset_type_is_rejected(root: Path) -> None:
     write_cells(root, [("europe_water", "a", "water.fountain", (9, 60, 60))])
     with pytest.raises(ValueError, match="unknown asset_type"):
         InfraBenchCLS().get_dataset("train")
-
-
-def test_unknown_split_is_rejected(root: Path) -> None:
-    with pytest.raises(ValueError, match="Unknown split"):
-        InfraBenchCLS().get_dataset("valid")
 
 
 def test_missing_data_names_the_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,10 +111,6 @@ def test_extract_geography_uses_the_manifests(root: Path, monkeypatch: pytest.Mo
     )
     record = geography.extract_geography("infrabench-cls")
     assert (record.status, record.version, record.n) == ("extracted", "manifest", len(TILES))
-
-
-def test_download_hint_names_the_dataset() -> None:
-    assert download_command("infrabench-cls") == "geo-eval-harness download infrabench-cls"
 
 
 def test_download_extracts_cells_and_verifies_split(

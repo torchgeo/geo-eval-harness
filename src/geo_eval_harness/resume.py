@@ -10,6 +10,7 @@ import pandas as pd
 
 from geo_eval_harness.config.presets import ModelPreset
 from geo_eval_harness.config.run import FeatureProfileConfig, RunConfig
+from geo_eval_harness.config.schema import Adaptation, SegmentationConfig
 from geo_eval_harness.intrinsic_dim import FEATURE_SPECTRUM_METRICS
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,19 @@ KEY_COLS = (
     "config_hash",
 )
 
-_LORA_FIELDS = {"lora_rank", "lora_target_modules", "lora_alpha", "backbone_learning_rate"}
+_LORA_FIELDS = {
+    "lora_rank",
+    "lora_target_modules",
+    "lora_alpha",
+    "lora_last_blocks",
+    "backbone_learning_rate",
+}
+
+_UNHASHED_ADAPTATION_FIELDS = {
+    Adaptation.FROZEN: _LORA_FIELDS | {"full_finetune"},
+    Adaptation.LORA: {"full_finetune"},
+    Adaptation.FULL: _LORA_FIELDS - {"backbone_learning_rate"},
+}
 
 
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
@@ -40,12 +53,20 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
 
     Excludes device and worker count, which only control execution. Includes batch size because
     it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
-    LoRA, so preset LoRA targets do not change frozen-probe hashes.
+    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
+    ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
+    ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` (both tasks),
+    ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
+    ``fp16``, and ``neck_norm`` only when a neck uses it, so hashes from before these options are
+    unchanged.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
     segmentation = config.segmentation
-    segmentation_exclude = _LORA_FIELDS if segmentation.lora_rank is None else None
+    segmentation_exclude = _unset_segmentation_fields(segmentation)
+    classification_exclude = {"methods"}
+    if not config.classification.feature_standardize:
+        classification_exclude.add("feature_standardize")
     payload = {
         "schema_version": config.schema_version,
         "model": {
@@ -54,7 +75,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
             "kwargs": model_cfg.kwargs,
         },
         "input": config.input.model_dump(mode="json"),
-        "classification": config.classification.model_dump(mode="json", exclude={"methods"}),
+        "classification": config.classification.model_dump(
+            mode="json", exclude=classification_exclude
+        ),
         "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
@@ -62,6 +85,36 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         payload["segmentation"]["selection_protocol"] = "best-validation-miou"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
+
+
+#: Segmentation options hashed only when set (truthy), so older hashes stay unchanged.
+_OPTIONAL_SEGMENTATION_FIELDS = (
+    "weight_decay",
+    "head_dropout",
+    "early_stopping_patience",
+    "lora_last_blocks",
+    "feature_standardize",
+    "gradient_checkpointing",
+)
+
+
+def _unset_segmentation_fields(segmentation: SegmentationConfig) -> set[str]:
+    """Return segmentation fields left out of the resume hash because they are unset."""
+    segmentation_exclude = set(_UNHASHED_ADAPTATION_FIELDS[segmentation.adaptation])
+    if segmentation.neck == "none":
+        segmentation_exclude.add("neck")
+    if segmentation.neck == "none" or segmentation.neck_norm == "none":
+        segmentation_exclude.add("neck_norm")
+    if segmentation.upsampler == "none":
+        segmentation_exclude.add("upsampler")
+    if segmentation.amp == "fp16":
+        segmentation_exclude.add("amp")
+    segmentation_exclude.update(
+        name for name in _OPTIONAL_SEGMENTATION_FIELDS if not getattr(segmentation, name)
+    )
+    if not segmentation.sweep_learning_rates:
+        segmentation_exclude.update({"sweep_learning_rates", "sweep_weight_decays"})
+    return segmentation_exclude
 
 
 def normalize_bands_value(bands: Iterable[object] | None) -> str:
@@ -207,8 +260,8 @@ def plan_dataset_run(
             skip_profile=True,
         )
 
-    knn_key = (ds_name, f"knn{cfg.classification.knn_k}", *model_key)
-    linear_key = (ds_name, "linear", *model_key)
+    knn_key = (ds_name, cfg.classification.knn_method, *model_key)
+    linear_key = (ds_name, cfg.classification.linear_method, *model_key)
     id_key = (ds_name, "intrinsic_dim", *model_key)
     profile_key = (ds_name, "profile", *model_key)
 

@@ -52,6 +52,7 @@ nitpick_ignore = [
     ("py:class", "geo_eval_harness.segmentation_probe.GPUTensorCache"),
     ("py:class", "CachedFeaturesDataset"),
     ("py:class", "GPUTensorCache"),
+    ("py:class", "geo_eval_harness.models.segmentation_heads.SweepPatchLinearHead"),
     # Names that autodoc cannot link to a documentation page.
     ("py:data", "_REGISTRY"),
     ("py:data", "OLMOEARTH_S2_BANDS"),
@@ -120,7 +121,7 @@ html_context = {
     "doc_path": "docs",
 }
 
-html_static_path = ["_static"]
+html_static_path = ["_static", os.path.join(os.path.dirname(geo_eval_harness.__file__), "_static")]
 html_css_files = ["custom.css"]
 
 
