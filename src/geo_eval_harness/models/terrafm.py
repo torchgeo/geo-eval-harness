@@ -238,7 +238,7 @@ class TerraFMBench(BenchModel):
         checkpoint_path: Local path to ``TerraFM-B.pth``.
         checkpoint_md5: Optional MD5 to verify the checkpoint against.
         pretrained: Load ``checkpoint_path``; ``True`` requires it to be set.
-        pool: Token pooling mode passed to :func:`pool_tokens`.
+        pool: Token pooling mode: ``cls``, ``mean``, or ``both``.
         auto_resize: Bilinearly resize inputs to ``target_size`` when needed.
         target_size: Spatial size fed to the backbone.
     """

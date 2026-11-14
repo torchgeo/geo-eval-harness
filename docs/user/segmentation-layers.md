@@ -10,9 +10,9 @@ classes (`LinearHead`, `FPNHead`, `DPTHead`, …).
 
 `SegmentationProbe` hooks into named PyTorch modules via `backbone.named_modules()`. The layer names in each model config must exactly match these module names. Layers should be listed **deepest first** (coarsest feature map first) for the FPN head.
 
-## How Layer Names Were Discovered
+## Inspecting layer names
 
-Layer names were found by:
+To check a backbone's layer names and output shapes:
 1. Instantiating each timm model with `pretrained=False, num_classes=0`
 2. Running a dummy 224×224 input through the model with forward hooks on candidate layers
 3. Recording the output spatial size of each layer
@@ -47,7 +47,7 @@ print(shapes)
 
 ### Tessera V2 students
 
-All four students expose `spatial_features`, the full-resolution NCHW pixel embedding map after the final MLP reducer, non-affine LayerNorm, and optional Matryoshka prefix selection. Its channel count is `embedding_dim` (128 by default), independent of student width. Use `layers: ["spatial_features"]`, `head: linear`, and no ViT neck. Temporal Transformer blocks are not spatial feature layers. Shape discovery uses an 8-by-8 input; actual images retain their configured grid size.
+All four students expose `spatial_features`, the full-resolution NCHW pixel embedding map after the final MLP reducer, non-affine LayerNorm, and optional Matryoshka prefix selection. Its channel count is `embedding_dim` (128 by default), independent of student width. Use `layers: ["spatial_features"]`, `head: linear`, and no ViT neck. For UPerNet, use the average-pooled pyramid `pyramid.s32`, `pyramid.s16`, `pyramid.s8`, and `pyramid.s4`, in that order, with no neck. Temporal Transformer blocks are not spatial feature layers. Shape discovery uses an 8-by-8 input; actual images retain their configured grid size.
 
 This is a single-snapshot protocol. PASTIS dates follow the actual selected S2 frame, and undated samples use the explicit fallback DOY. See [Models](models.rst) for input normalization, dataset exclusions, LoRA targets, and memory considerations.
 
@@ -75,7 +75,7 @@ Config: `layers: ["layer4", "layer3", "layer2", "layer1"]`
 
 Config: `layers: ["features.denseblock4", "features.denseblock3", "features.denseblock2", "features.denseblock1"]`
 
-Note: `features.transition1/2/3` downsample between denseblocks. Using the denseblocks (before downsampling) gives richer features.
+`features.transition1/2/3` downsample between denseblocks. The listed taps read each denseblock before that downsampling.
 
 ### VGG16
 

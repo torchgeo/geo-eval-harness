@@ -22,9 +22,7 @@ archived JSON snapshots with
 It covers classification (``knn5`` / ``linear``), segmentation (``seg-<head>``
 rows with their setup columns, reported as mIoU; see
 :ref:`segmentation-setup-columns`), intrinsic dimension, and the cost/throughput
-measurements.  New snapshots leave out segmentation rows without setup columns
-(the legacy ``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt``
-grids); archived snapshots keep them.  The segmentation method menus are
+measurements. New snapshots require setup columns for segmentation rows. The segmentation method menus are
 ``seg-<head>`` split by ``adaptation`` (frozen, LoRA, full fine-tuning).  ``compute_cost.csv`` is a
 wide table that the script melts into the long ``method="profile"`` rows the
 page expects.
@@ -33,8 +31,7 @@ The HTML stores repeated rows and column values once, then expands them in the b
 
 The page is regenerated automatically: whenever a results CSV lands on
 ``main``, the ``Results explorer`` GitHub Actions workflow reruns the script
-and opens a pull request with the refreshed page for a maintainer to merge, so
-the explorer never lags behind ``results/``.  On a pull request the same
+and opens a pull request with the refreshed page for a maintainer to merge.  On a pull request the same
 workflow regenerates the page and uploads it as a build artifact for preview
 instead of requiring it to be committed.
 

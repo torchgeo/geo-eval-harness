@@ -50,9 +50,7 @@ project in editable mode:
 Optional extras
 ---------------
 
-A number of dependencies are gated behind PEP 621 extras so that lean
-benchmarking installations do not pull in heavyweight libraries by
-default.  Combine extras with comma-separated lists:
+Install optional dependencies for the features you need. Combine extras as follows:
 
 .. code-block:: console
 
@@ -99,4 +97,4 @@ Run these models with ``uv run --no-sync geo-eval-harness ...`` so project synch
 Package name
 ------------
 
-Install and invoke ``geo-eval-harness``; Python imports and module entry points use ``geo_eval_harness``. Update imports and fully qualified ``model.target`` values in custom YAML files to that namespace. Stored CSVs retain their recorded model paths; resume and result comparisons recognize equivalent paths from ``torchgeo_bench`` without changing the recorded measurements or configuration hashes.
+Install and invoke ``geo-eval-harness``; Python imports and module entry points use ``geo_eval_harness``.
