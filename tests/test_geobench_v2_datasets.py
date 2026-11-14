@@ -199,6 +199,17 @@ def test_treesatai_rgb_selects_stored_red_green_blue_channels() -> None:
     assert bench.rgb_bands == ["red", "green", "blue"]
 
 
+@pytest.mark.parametrize(
+    ("dataset_name", "bands"),
+    [("benv2", ("vv", "b04", "vh")), ("kuro_siwo", ("dem", "vv", "vh"))],
+)
+def test_band_orders_the_loader_cannot_return_are_rejected(
+    dataset_name: str, bands: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match=f"{dataset_name}.*{', '.join(bands)}"):
+        get_bench_dataset_class(dataset_name)().build_band_order(bands)
+
+
 class MockKuroSiwo:
     """Match upstream Kuro Siwo samples, with each image shaped ``(C, H, W)``.
 

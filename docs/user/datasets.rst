@@ -536,7 +536,7 @@ objects.  Three modes are supported:
 * ``--bands rgb`` *(default)* — only the bands listed in
   :attr:`~geo_eval_harness.datasets.BenchDataset.rgb_bands`.
 * ``--bands all`` — every band the dataset exposes.
-* ``--bands red,green,blue,nir`` — an explicit subset.
+* ``--bands red,green,blue,nir`` — an explicit subset. GeoBench V2 datasets with several sensors need each sensor's bands listed next to each other, and ``kuro_siwo`` needs ``dem`` last.
 
 The runner derives ``num_channels`` from the loaded tensor and constructs
 the matching ``list[BandSpec]`` so the model wrapper can size its input
