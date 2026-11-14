@@ -382,6 +382,8 @@ and :doc:`eval_own_model` for the model interface.
 Standalone profiling
 --------------------
 
+Profiling preserves acquisition dates supplied by the dataset, including during FLOP counting and CPU measurements. Standalone JSON records include ``doy_sha256`` when date metadata is present.
+
 ``profile`` repeatedly measures one fixed real dataset batch, with the same model/dataset input-default resolution as an image run. It writes one JSON record to stdout by default. Use ``--output-dir`` to write ``profile.json`` beneath a directory, or ``--output`` for an exact filename; file output leaves stdout empty and replaces any existing JSON file.
 
 .. code-block:: console
