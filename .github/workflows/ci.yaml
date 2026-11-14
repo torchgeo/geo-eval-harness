@@ -234,3 +234,14 @@ jobs:
           package-env/bin/geo-eval-harness datasets m-eurosat
           package-env/bin/python -I -m geo_eval_harness run --model rcf --dataset m-eurosat --device cpu --dry-run
           package-env/bin/python -I -m geo_eval_harness.cli --help
+      - name: Load packaged geography outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: |
+          package-env/bin/python -I - <<'PYTHON'
+          from geo_eval_harness.geography import list_geography, load_geography, missing_datasets
+
+          record = load_geography("m-eurosat")
+          assert record.name == "m-eurosat" and record.n > 0
+          assert list_geography()[record.name] == record
+          assert not missing_datasets()
+          PYTHON

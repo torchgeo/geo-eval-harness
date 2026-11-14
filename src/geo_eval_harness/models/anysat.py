@@ -437,6 +437,8 @@ class AnySatBenchModel(BenchModel):
     # The class token precedes the patch tokens in every fusion-block output.
     num_prefix_tokens: int = 1
 
+    patch_size_unit = "meters"
+
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
         bands: list[BandSpec],

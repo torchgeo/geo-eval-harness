@@ -279,7 +279,12 @@ class SegmentationSolver:
             )
 
     def _train_step(
-        self, images: torch.Tensor, masks: torch.Tensor, tracker: "_EpochTracker"
+        self,
+        images: torch.Tensor,
+        masks: torch.Tensor,
+        tracker: "_EpochTracker",
+        *,
+        doy: torch.Tensor | None = None,
     ) -> None:
         """Take one optimizer step, or count and skip a batch whose backbone features overflowed.
 
@@ -288,7 +293,7 @@ class SegmentationSolver:
         self.optimizer.zero_grad()
         with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
             try:
-                logits = self.model(images)
+                logits = self.model(images, doy=doy)
             except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
                 tracker.nonfinite += 1
                 return
@@ -492,7 +497,12 @@ class SegmentationSolver:
                     tracker.skipped += 1
                     continue
 
-                self._train_step(images, masks, tracker)
+                self._train_step(
+                    images,
+                    masks,
+                    tracker,
+                    doy=batch.get("doy") if isinstance(batch, dict) else None,
+                )
 
             self._check_nonfinite(tracker)
             self._require_training_step(epoch + 1, tracker.steps)
@@ -727,7 +737,9 @@ class SegmentationSolver:
                 masks = masks.squeeze(1)
             masks = masks.long()
             with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                logits = self.model(images)
+                logits = self.model(
+                    images, doy=batch.get("doy") if isinstance(batch, dict) else None
+                )
             yield logits, masks
 
     @torch.no_grad()

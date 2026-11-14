@@ -244,7 +244,7 @@ def test_vit_neck_names_runs_and_needs_a_pyramid_head() -> None:
 
     assert frozen.method == "seg-upernet"
     assert lora.method == "seg-upernet"
-    config["segmentation"] = {"head": "linear", "neck": "vit"}
+    config["segmentation"] = {"head": "patch_linear", "neck": "vit"}
     with pytest.raises(ValueError, match="neck 'vit' requires head in"):
         validate_run_config(config)
 

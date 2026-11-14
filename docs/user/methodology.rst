@@ -1,13 +1,7 @@
 Evaluation methodology
 ======================
 
-This page describes the evaluation methodology used by
-:mod:`geo_eval_harness.main` for each supported task type.  In all cases
-the backbone model is kept **frozen** — the benchmark measures the
-quality of learned representations, not end-to-end fine-tuning
-performance.  The model is reinstantiated fresh for each dataset
-because ``num_channels`` (and therefore the input convolution) varies
-across datasets and band selections.
+Classification evaluates frozen backbone features with KNN or linear probes. Segmentation trains a decoder with a frozen backbone, LoRA adapters, or full backbone fine-tuning. Each dataset gets a new model instance with its selected bands.
 
 Overview
 --------
@@ -31,7 +25,7 @@ evaluation path is taken:
      - ``knn5``, ``linear``
      - micro-mAP
    * - Segmentation
-     - ``seg-{linear,conv_block,fpn,dpt}``
+     - ``seg-<head>`` (linear, conv_block, fpn, dpt, patch_linear, upernet, unet)
      - mIoU
 
 Optionally, intrinsic-dimension metrics
@@ -44,10 +38,8 @@ Feature extraction (classification)
 For classification tasks, features are extracted **once** per split and
 reused by both KNN and the linear probe.
 
-1. The backbone is placed in ``eval()`` mode with gradients disabled
-   (``torch.no_grad`` + ``torch.inference_mode``).
-2. Each batch is passed through ``forward_patch_features``, returning
-   embeddings of shape ``(B, K)``.
+1. The backbone is placed in ``eval()`` mode and features are extracted under ``torch.inference_mode``.
+2. ``forward_batch`` receives the images and optional day-of-year metadata. Its default implementation calls ``forward_patch_features``, returning embeddings of shape ``(B, K)``.
 3. Dictionary outputs (e.g. DINO-style models) are flattened on the
    first available key in order: ``"norm"``, ``"global_pool"``,
    ``"head.global_pool"``.
@@ -111,7 +103,7 @@ Procedure
 ^^^^^^^^^
 
 1. Extract train and test embeddings (see above).
-2. Fit a fixed **k = 5** nearest-neighbour classifier
+2. Fit a nearest-neighbour classifier (default **k = 5**, configurable with ``classification.knn_k``)
    (:class:`~geo_eval_harness.knn.KNNClassifier`, backed by FAISS) on the
    train embeddings.
 3. Predict labels for every test sample.
@@ -123,7 +115,7 @@ Procedure
 Key details
 ^^^^^^^^^^^
 
-* No hyperparameter tuning — k is fixed at 5.
+* The runner uses the requested ``knn_k`` without tuning it.
 * No validation use — the validation split is extracted but ignored.
 * FAISS is used for efficient L2 nearest-neighbour search and runs on
   CPU or GPU.
@@ -271,10 +263,7 @@ DPT probe
 ^^^^^^^^^
 
 **Method name:** ``seg-dpt`` (YAML ``segmentation: {head: dpt}``).
-A DPT-style reassemble + fusion-transformer decoder
-(:class:`~geo_eval_harness.models.DPTHead`).  Requires exactly four
-backbone layers in coarse-to-fine order; otherwise structurally
-similar to the FPN probe but with deeper fusion blocks.
+The DPT decoder (:class:`~geo_eval_harness.models.DPTHead`) projects and resamples four backbone layers, then combines them with residual convolutional fusion blocks. Supply layers in coarse-to-fine order.
 
 UPerNet probe
 ^^^^^^^^^^^^^
@@ -285,7 +274,7 @@ A UPerNet decoder (:class:`~geo_eval_harness.models.UPerNetHead`) wrapping the `
 ViT neck
 ^^^^^^^^
 
-**Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
+**Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``linear``, ``fpn``, and ``unet`` also accept it).
 Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
 
 ``neck: vit_fine`` (setup column ``neck`` = ``vit_fine``) is for backbones that also produce a finer output map than their trunk, such as UniverSat's block-14 output tokens. The first three layers are trunk blocks on one grid and fill the 1/2, 1, and 2 levels as above; the last layer replaces the two transposed convs as the finest level, bilinearly resized to 4× the trunk grid unless it is already there (UniverSat's ``output_scale: 4``).
@@ -301,7 +290,7 @@ Any head can train together with low-rank adapters on backbone ``nn.Linear`` lay
 Training & evaluation (all heads)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* **Optimiser:** AdamW over the probe head and, with LoRA, the backbone adapters; frozen backbone weights are never updated.
+* **Optimizer:** AdamW over the decoder and neck, plus LoRA adapters or all backbone weights when fine-tuning is enabled.
 * **Loss:** ``CrossEntropyLoss(ignore_index=255)`` so unlabeled pixels
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
@@ -365,7 +354,11 @@ Head type
    * - ``fpn``
      - FPN top-down pathway.  Layers must be coarse-to-fine.
    * - ``dpt``
-     - DPT-style reassemble + fusion-transformer decoder.
+     - Projection, resampling, and residual convolutional fusion of four layers.
+   * - ``patch_linear``
+     - LayerNorm followed by a linear classifier on patch features; supports probe sweeps.
+   * - ``unet``
+     - U-Net decoder over a feature pyramid, ending at the finest hooked map.
    * - ``upernet``
      - Pyramid pooling on the coarsest layer + FPN fusion.  Layers must be coarse-to-fine.
 
@@ -384,7 +377,7 @@ Training knobs
      - Backbone layer names to hook.  For FPN / DPT, deepest layer first.
    * - ``neck``
      - ``none``
-     - ``vit`` adds the ViT neck before an ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
+     - ``vit`` adds the ViT neck before a ``linear``, ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
@@ -498,7 +491,7 @@ All evaluation paths share these settings:
    * - ``input.interpolation``
      - ``bilinear``
      - Resize interpolation method.
-   * - ``resume``
+   * - ``output.resume``
      - ``false``
      - Skip already-computed
        ``(dataset, method, model, …)`` combinations.
@@ -506,6 +499,5 @@ All evaluation paths share these settings:
 Resume mode and output schema
 -----------------------------
 
-When ``resume=true`` the runner reads the existing CSV at startup and
-skips any combination already present.  See :doc:`results-format` for
+With ``--resume`` or YAML ``output.resume: true``, the runner reads the output CSV and skips combinations with matching configuration hashes.  See :doc:`results-format` for
 the full key, the column schema, and the atomic-append guarantee.

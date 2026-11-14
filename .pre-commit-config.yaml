@@ -24,7 +24,7 @@ repos:
       - id: check-json
       - id: sort-simple-yaml
       - id: pretty-format-json
-        exclude: ^(slides-js/|docs/_static/_results_snapshots/|docs/_static/_dataset_geography/)
+        exclude: ^(slides-js/|docs/_static/_results_snapshots/|src/geo_eval_harness/_static/_dataset_geography/)
       - id: debug-statements
       - id: check-added-large-files
         args: ["--maxkb=2000"]

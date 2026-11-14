@@ -11,6 +11,7 @@ from torch.utils.data import Dataset
 
 from geo_eval_harness.config.schema import NECK_HEADS
 from geo_eval_harness.models import anyup
+from geo_eval_harness.models.interface import forward_model_batch
 from geo_eval_harness.models.segmentation_heads import (
     ConvBlockHead,
     DPTHead,
@@ -252,7 +253,10 @@ class SegmentationProbe(nn.Module):
 
         self.head: nn.Module
         if head_type == "linear":
-            self.head = LinearHead(self.channels_list, num_classes)
+            single_map = neck == "vit" and len(self.channels_list) == 1
+            self.head = LinearHead(
+                self.channels_list * 4 if single_map else self.channels_list, num_classes
+            )
         elif head_type in _HIDDEN_DIM_HEADS:
             # A single-layer ViT neck builds four pyramid levels from that one map.
             single_map = neck == "vit" and len(self.channels_list) == 1
@@ -375,32 +379,37 @@ class SegmentationProbe(nn.Module):
         try:
             for batch in train:
                 images = (batch["image"] if isinstance(batch, dict) else batch[0]).to(device)
-                yield self._backbone_features(images)
+                yield self._backbone_features(
+                    images, batch.get("doy") if isinstance(batch, dict) else None
+                )
         finally:
             self.backbone.train(was_training)
 
-    def _backbone_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+    def _backbone_features(
+        self, x: torch.Tensor, doy: torch.Tensor | None = None
+    ) -> list[torch.Tensor]:
         """Run the backbone on images or a time series and return the hooked feature maps."""
+        self._validate_temporal_input(x)
         steps = 0
         if x.ndim == 5:
             batch, steps = x.shape[0], x.shape[1]
             x = x.reshape(batch * steps, *x.shape[2:])
         self._features.clear()
-        self._run_backbone(x)
+        self._run_backbone(x, doy)
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
             features = [self._pool_time(f, steps) for f in features]
         return features
 
-    def _run_backbone(self, x: torch.Tensor) -> None:
+    def _run_backbone(self, x: torch.Tensor, doy: torch.Tensor | None = None) -> None:
         """Run the backbone to fill the hooks; a frozen one runs under CUDA autocast if ``amp``."""
         if self.freeze_backbone:
             self.backbone.eval()
             use_amp = self.amp and x.device.type == "cuda"
             with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
-                _ = self.backbone(x)
+                _ = forward_model_batch(self.backbone, x, doy=doy)
         else:
-            _ = self.backbone(x)
+            _ = forward_model_batch(self.backbone, x, doy=doy)
 
     def _upernet_decoder(self) -> nn.Module:
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
@@ -538,16 +547,23 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Backbones that declare NHWC stage maps skip the shape guess, which fails once the grid
+        # Backbones that declare their 4D layout skip the shape guess, which fails once the grid
         # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
         # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
-            if getattr(self.backbone, "feature_layout", None) == "nhwc":
+            layout = getattr(self.backbone, "feature_layout", None)
+            if layout == "nhwc":
                 return feat.permute(0, 3, 1, 2).contiguous()
+            if layout == "nchw":
+                return feat
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()
         return feat
+
+    def _validate_temporal_input(self, images: torch.Tensor) -> None:
+        if images.ndim == 5 and getattr(self.backbone, "snapshot_only", False):
+            raise ValueError("This backbone supports snapshots only; drop input.time_steps.")
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
         """Reshape token features into a spatial grid, accounting for prefix tokens.
@@ -618,6 +634,7 @@ class SegmentationProbe(nn.Module):
                 else:
                     images, masks = batch[0].to(device), batch[1]
 
+                self._validate_temporal_input(images)
                 steps = 0
                 if images.ndim == 5:
                     steps = images.shape[1]
@@ -627,7 +644,11 @@ class SegmentationProbe(nn.Module):
                     masks = masks.squeeze(1)
                 masks = masks.long()
                 self._features.clear()
-                _ = self.backbone(images)
+                _ = forward_model_batch(
+                    self.backbone,
+                    images,
+                    doy=batch.get("doy") if isinstance(batch, dict) else None,
+                )
 
                 for li, n in enumerate(self.layer_names):
                     feat = self._process_feature(self._features[n])
@@ -643,24 +664,26 @@ class SegmentationProbe(nn.Module):
         logger.info("Cached features for %s samples.", masks_tensor.shape[0])
         return CachedFeaturesDataset(layer_tensors, masks_tensor)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *, doy: torch.Tensor | None = None) -> torch.Tensor:
         """Compute segmentation logits from input images.
 
         Args:
             x: ``(B, C, H, W)`` images or a ``(B, T, C, H, W)`` time series.
                 Each time step is encoded as an image before pooling features over ``T``.
                 This gives the head one map per sample.
+            doy: Optional image-aligned ordinal dates for date-aware backbones.
 
         Returns:
             Logits tensor of shape ``(B, num_classes, H, W)``.
         """
         input_h, input_w = x.shape[-2:]
+        self._validate_temporal_input(x)
         steps = 0
         if x.ndim == 5:
             batch, steps = x.shape[0], x.shape[1]
             x = x.reshape(batch * steps, *x.shape[2:])
 
-        self._run_backbone(x)
+        self._run_backbone(x, doy)
 
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
