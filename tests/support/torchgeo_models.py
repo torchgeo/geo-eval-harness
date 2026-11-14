@@ -48,5 +48,3 @@ def install_tiny_scalemae_factory(
         ),
     )
     return calls
-
-
