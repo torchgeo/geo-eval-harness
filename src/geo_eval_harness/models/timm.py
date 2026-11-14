@@ -63,6 +63,22 @@ def _model_size_kwargs(
     return options
 
 
+def _create_backbone(model_name: str, global_pool: str | None, **options: Any) -> torch.nn.Module:
+    """Create a headless timm model whose parameters match its checkpoint.
+
+    timm builds a pooled ViT with its final norm behind the pool, which renames the checkpoint's
+    norm weights and drops them on load. ViTs therefore keep their own layout and switch pooling
+    after construction.
+    """
+    if global_pool is None or not is_model_in_modules(model_name, {"vision_transformer", "deit"}):
+        return timm.create_model(model_name, num_classes=0, global_pool=global_pool, **options)
+    backbone: Any = timm.create_model(model_name, num_classes=0, **options)
+    backbone.reset_classifier(0, global_pool)
+    if backbone.global_pool != global_pool:
+        raise ValueError(f"{model_name} does not support global_pool={global_pool!r}.")
+    return backbone
+
+
 class TimmPatchBenchModel(BenchModel):
     """BenchModel wrapper for any timm backbone.
 
@@ -149,12 +165,11 @@ class TimmPatchBenchModel(BenchModel):
         size_kwargs = _model_size_kwargs(
             model_name, img_size, dynamic_img_size=dynamic_img_size, dynamic_img_pad=dynamic_img_pad
         )
-        self.backbone = timm.create_model(
+        self.backbone = _create_backbone(
             model_name,
+            global_pool,
             pretrained=pretrained,
             in_chans=self.num_channels,
-            num_classes=0,
-            global_pool=global_pool,
             **size_kwargs,
         )
         if getattr(self.backbone, "output_fmt", None) == "NHWC":

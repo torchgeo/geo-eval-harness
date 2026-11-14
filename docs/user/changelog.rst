@@ -25,6 +25,7 @@ Models
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
+* timm ViT and DeiT models keep their pretrained final normalization when patch tokens are pooled, so ``global_pool: avg`` averages the normalized patch tokens.
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
 
 Evaluation and results

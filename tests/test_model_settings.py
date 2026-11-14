@@ -6,6 +6,7 @@
 from typing import Any, cast
 
 import pytest
+import timm
 import torch
 
 from geo_eval_harness.config.presets import build_model, load_model_preset
@@ -66,6 +67,26 @@ def test_timm_transformer_builder_constructs_without_checkpoint() -> None:
     assert features.shape[0] == 2
     assert features.ndim == 2
     assert torch.equal(features, expected_features)
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["vit_tiny_patch16_224", "deit_tiny_patch16_224", "vit_little_patch16_reg4_gap_256"],
+)
+def test_timm_vit_pooling_keeps_checkpoint_norm_layout(model_name: str) -> None:
+    model = TimmModelSettings(model_name=model_name, pretrained=False).build(_bands(3))
+    checkpoint_keys = {
+        key for key in timm.create_model(model_name).state_dict() if not key.startswith("head.")
+    }
+
+    assert set(model.backbone.state_dict()) == checkpoint_keys
+    assert model.backbone.global_pool == "avg"
+
+
+def test_timm_vit_rejects_pooling_the_backbone_ignores() -> None:
+    settings = TimmModelSettings(model_name="deit_tiny_distilled_patch16_224", pretrained=False)
+    with pytest.raises(ValueError, match="global_pool='avg'"):
+        settings.build(_bands(3))
 
 
 def test_instantiate_routes_timm_preset_to_explicit_builder() -> None:
