@@ -52,6 +52,13 @@ Clay v1 Base
 
 ``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` use the 92.1M-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy``, with mean-patch and CLS-token pooling respectively.
 
+Clay v1.5 Large
+^^^^^^^^^^^^^^^
+
+``terratorch/clay_v1_5`` and ``terratorch/clay_v1_5_cls`` use the 311M-parameter Clay v1.5 Large encoder with mean-patch and CLS-token pooling respectively. The official checkpoint is pinned and SHA-256 verified. Segmentation reads blocks 5, 11, 17, and 23.
+
+Inputs default to 256 pixels and must be square with sides divisible by eight. Set ``--image-size`` to change the input size or ``model.kwargs.checkpoint_path`` to load a local checkpoint containing the complete ``model.encoder.*`` weights.
+
 TerraFM
 ^^^^^^^
 

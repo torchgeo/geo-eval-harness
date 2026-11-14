@@ -189,6 +189,7 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "tgeo_swinv2t_s2rgb_satlas_mi": ("SatlasNet Swin-v2-T (MI)", False),
     "tgeo_swinv2t_s2rgb_satlas_si": ("SatlasNet Swin-v2-T (SI)", False),
     "tt_clay_v1_base": ("Clay v1 Base", False),
+    "tt_clay_v1_5_large": ("Clay v1.5 Large", False),
     "tt_prithvi_eo_v1_100": ("Prithvi-EO-v1 100M", False),
     "tt_prithvi_eo_v2_100_tl": ("Prithvi-EO-v2 100M (TL)", False),
     "tt_prithvi_eo_v2_300": ("Prithvi-EO-v2 300M", False),
