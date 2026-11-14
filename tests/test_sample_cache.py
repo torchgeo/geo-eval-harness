@@ -63,6 +63,18 @@ def test_cached_batches_are_bitwise_identical(tmp_path, mode: str, *, shuffle: b
         assert not torch.equal(expected[0][0][0], expected[1][0][0])
 
 
+def test_cached_samples_accept_tensor_images_with_numpy_masks() -> None:
+    images = torch.arange(24, dtype=torch.float32).reshape(2, 3, 2, 2)
+    masks = np.arange(8, dtype=np.int16).reshape(2, 2, 2)
+    masks.setflags(write=False)
+    cached = sample_cache.CachedSamples(images, masks)
+
+    batch = next(iter(DataLoader(cached, batch_size=2)))
+
+    torch.testing.assert_close(batch["image"], images)
+    torch.testing.assert_close(batch["mask"], torch.arange(8).reshape(2, 2, 2))
+
+
 def test_disk_cache_is_built_once_and_stores_small_mask_dtype(tmp_path, monkeypatch) -> None:
     loader = DataLoader(ToySegmentation(), batch_size=4)
     options = {"mode": "disk", "identity": IDENTITY, "cache_dir": tmp_path, "num_workers": 0}
