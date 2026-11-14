@@ -62,9 +62,9 @@ spatial-block cross-validation:
 Benchmarks and probes
 ---------------------
 
-The ``linear`` probe uses ridge with an unpenalized intercept, matching ``sklearn.linear_model.Ridge(fit_intercept=True)`` on the same preprocessed features. Each fit centers features and targets using training-fold means and restores the target mean for prediction. Feature standardization and alpha selection remain fold-local.
+The ``linear`` probe uses ridge with an unpenalized intercept, matching ``sklearn.linear_model.Ridge(fit_intercept=True)`` on the same preprocessed features. Each fit centers features and targets using training-fold means and restores the target mean for prediction. Feature standardization remains fold-local.
 
-By default, the probe selects the best mean CV score over 21 half-decade penalties from ``1e-4`` to ``1e6``. Set ``evaluation.ridge_alphas: [0.01, 0.1, 1.0, 10.0]`` in YAML or ``--ridge-alphas 0.01 0.1 1 10`` to choose a grid. Supply one positive value, such as ``--ridge-alphas 1``, to disable alpha tuning. With an official holdout, tuning uses only the training pool; otherwise, the reported folds are also used to select alpha. Use a fresh output CSV when changing the grid because resume keys do not include it.
+By default, the probe tunes alpha over 21 half-decade penalties from ``1e-4`` to ``1e6``. Set ``evaluation.ridge_alphas: [0.01, 0.1, 1.0, 10.0]`` in YAML or ``--ridge-alphas 0.01 0.1 1 10`` to choose a grid. Supply one positive value, such as ``--ridge-alphas 1``, to disable alpha tuning. Every reported score selects alpha by cross-validation inside its own training data, so held-out rows never influence it: the other folds of a random or spatial split are held out in turn, which keeps spatial cells intact, and the training pool of an official holdout or a two-fold split is divided into ``evaluation.folds`` strided parts. Use a fresh output CSV when changing the grid because resume keys do not include it.
 
 ``--dataset`` accepts one or more family or benchmark names, for example
 ``--dataset pdfm satclip``. The corresponding YAML field is a list:

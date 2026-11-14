@@ -1,5 +1,7 @@
 """Sklearn parity for CoordBench ridge fitting and alpha selection."""
 
+import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -31,8 +33,6 @@ def test_ridge_matches_sklearn(*, standardize: bool, task_type: str, official: b
         targets = np.eye(3, dtype=np.float32)[labels]
     alphas = (10.0, 0.01, 10000.0, 0.01)
     test_mask = np.arange(90) >= 60 if official else None
-    pool = np.arange(60 if official else 90)
-    folds = [pool[i::3] for i in range(3)]
 
     def score(train: np.ndarray, test: np.ndarray, alpha: float) -> float:
         x_train, x_test = torch.from_numpy(features[train]), torch.from_numpy(features[test])
@@ -47,11 +47,21 @@ def test_ridge_matches_sklearn(*, standardize: bool, task_type: str, official: b
             return float(np.mean(pred.argmax(1) == labels[test]))
         return float(r2_score(targets[test], pred))
 
-    cv_scores = [
-        [score(np.setdiff1d(pool, fold), fold, alpha) for fold in folds] for alpha in alphas
-    ]
-    best = int(np.argmax(np.mean(cv_scores, axis=1)))
-    expected = [score(pool, np.arange(60, 90), alphas[best])] if official else cv_scores[best]
+    def tuned_score(train_folds: list[np.ndarray], test: np.ndarray) -> float:
+        train = np.concatenate(train_folds)
+        cv_scores = [
+            [score(np.setdiff1d(train, fold), fold, alpha) for fold in train_folds]
+            for alpha in alphas
+        ]
+        return score(train, test, alphas[int(np.argmax(np.mean(cv_scores, axis=1)))])
+
+    if official:
+        expected = [tuned_score([np.arange(60)[i::3] for i in range(3)], np.arange(60, 90))]
+    else:
+        folds = [np.arange(90)[i::3] for i in range(3)]
+        expected = [
+            tuned_score([other for other in folds if other is not fold], fold) for fold in folds
+        ]
     actual, fold_scores = linear_probe_score(
         features,
         labels,
@@ -64,6 +74,50 @@ def test_ridge_matches_sklearn(*, standardize: bool, task_type: str, official: b
     )
     np.testing.assert_allclose(fold_scores, expected, atol=2e-7, rtol=2e-7)
     assert actual == pytest.approx(np.mean(expected), abs=2e-7)
+
+
+@pytest.mark.parametrize("folds", [2, 3])
+@pytest.mark.parametrize("spatial", [False, True])
+def test_alpha_selection_excludes_the_scored_fold(
+    monkeypatch: pytest.MonkeyPatch, *, spatial: bool, folds: int
+) -> None:
+    selection_rows = []
+
+    def record(data: RidgeData, fold_ids: list[torch.Tensor], *args: object, **kwargs: object):
+        selection_rows.append(set(torch.cat(fold_ids).tolist()))
+        return _cv_alpha_scores(data, fold_ids, *args, **kwargs)
+
+    monkeypatch.setattr("geo_eval_harness.coordbench.probe._cv_alpha_scores", record)
+    rng = np.random.default_rng(3)
+    features = rng.normal(size=(60, 4)).astype(np.float32)
+    labels = features[:, 0] + rng.normal(size=60).astype(np.float32)
+    fold_assign = np.arange(60) % folds
+    _, fold_scores = linear_probe_score(
+        features,
+        labels,
+        "regression",
+        folds=folds,
+        alphas=(0.1, 1.0, 10.0),
+        fold_assign=fold_assign if spatial else None,
+    )
+    held_out = [set(range(60)) - rows for rows in selection_rows]
+    assert len(fold_scores) == len(held_out) == folds
+    assert all(len(rows) == 60 // folds for rows in held_out)
+    assert set().union(*held_out) == set(range(60))
+    if spatial:
+        assert [len({fold_assign[row] for row in rows}) for rows in held_out] == [1] * folds
+
+
+def test_null_labels_score_at_chance() -> None:
+    scores = []
+    for seed in range(20):
+        rng = np.random.default_rng(seed)
+        features = rng.normal(size=(300, 100)).astype(np.float32)
+        labels = rng.integers(0, 2, size=300)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            scores.append(linear_probe_score(features, labels, "classification", seed=seed)[0])
+    assert np.mean(scores) < 0.51
 
 
 def test_fixed_alpha_skips_holdout_tuning(monkeypatch: pytest.MonkeyPatch) -> None:

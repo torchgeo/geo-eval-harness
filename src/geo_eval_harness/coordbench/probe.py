@@ -159,6 +159,26 @@ def _cv_alpha_scores(
     return best_alpha, best_scores
 
 
+def _train_only_alpha(
+    data: RidgeData,
+    train_folds: list[torch.Tensor],
+    folds: int,
+    alphas: tuple[float, ...],
+    *,
+    standardize: bool,
+) -> float:
+    """Select alpha by cross-validation over training rows only.
+
+    Several training folds are held out in turn, which keeps spatial blocks intact. A single
+    training pool is divided into ``folds`` strided parts.
+    """
+    if len(alphas) == 1:
+        return alphas[0]
+    if len(train_folds) == 1:
+        train_folds = [train_folds[0][i::folds] for i in range(folds)]
+    return _cv_alpha_scores(data, train_folds, alphas, standardize=standardize)[0]
+
+
 def linear_probe_score(  # noqa: PLR0913 - public probe options.
     features: np.ndarray,
     labels: np.ndarray,
@@ -175,13 +195,15 @@ def linear_probe_score(  # noqa: PLR0913 - public probe options.
     """Closed-form ridge linear probe (regression R^2 / one-hot-ridge accuracy).
 
     Center features and targets on each training fold and restore the target mean
-    after prediction, leaving the intercept unpenalized as in sklearn Ridge.
+    after prediction, leaving the intercept unpenalized as in sklearn Ridge. Each reported
+    score selects alpha by cross-validation inside its own training rows, so held-out rows
+    never influence the penalty.
 
     Args:
         features: Feature matrix ``(N, D)``.
         labels: Per-point labels ``(N,)``.
         task_type: ``"regression"`` or ``"classification"``.
-        folds: CV folds; with ``test_mask``, tune alpha on train data and score the holdout once.
+        folds: CV folds; with ``test_mask``, score the holdout once.
         seed: RNG seed.
         device: Torch device or ``auto`` for current CUDA when available, otherwise CPU.
         alphas: L2 grid to CV-select from.
@@ -213,11 +235,7 @@ def linear_probe_score(  # noqa: PLR0913 - public probe options.
     if test_mask is not None:
         is_test = torch.as_tensor(np.asarray(test_mask)[valid], device=dev, dtype=torch.bool)
         train_pool, test_idx = all_idx[~is_test], all_idx[is_test]
-        tp = train_pool.cpu().numpy()
-        inner = [torch.as_tensor(tp[i::folds], device=dev) for i in range(folds)]
-        best_alpha = alphas[0]
-        if len(alphas) > 1:
-            best_alpha, _ = _cv_alpha_scores(data, inner, alphas, standardize=standardize)
+        best_alpha = _train_only_alpha(data, [train_pool], folds, alphas, standardize=standardize)
         score = ridge_scores(data, train_pool, test_idx, (best_alpha,), standardize=standardize)[0]
         return score, [score]
 
@@ -225,7 +243,14 @@ def linear_probe_score(  # noqa: PLR0913 - public probe options.
     fold_ids = [
         torch.as_tensor(idx, device=dev) for idx in _fold_indices(feats.shape[0], folds, seed, fa)
     ]
-    _, fold_scores = _cv_alpha_scores(data, fold_ids, alphas, standardize=standardize)
+    fold_scores = []
+    for test_idx in fold_ids:
+        train_folds = [fold for fold in fold_ids if fold is not test_idx]
+        best_alpha = _train_only_alpha(data, train_folds, folds, alphas, standardize=standardize)
+        train_idx = torch.cat(train_folds)
+        fold_scores.append(
+            ridge_scores(data, train_idx, test_idx, (best_alpha,), standardize=standardize)[0]
+        )
     return float(np.mean(fold_scores)), fold_scores
 
 
