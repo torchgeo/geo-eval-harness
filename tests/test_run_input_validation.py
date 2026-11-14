@@ -206,6 +206,15 @@ def test_rcf_preset_restriction_matches_runtime_normalization() -> None:
         assert torch.isfinite(features).all()
 
 
+@pytest.mark.parametrize("name", ["torchgeo/resnet18_s2rgb_seco", "torchgeo/resnet50_s2rgb_seco"])
+def test_seco_presets_reject_model_normalization(name: str) -> None:
+    """torchgeo's SeCo transform expects SeCo's 8-bit images, not the wrapper's Sentinel-2 DN."""
+    preset = load_model_preset(ModelConfig(name=name))
+    bands = get_bench_dataset_class("m-eurosat").resolve_band_specs("rgb")
+    with pytest.raises(UnsupportedNormalizationError, match="does not support"):
+        build_model(preset, bands=bands, normalization="model_native")
+
+
 def test_runtime_only_normalization_errors_use_config_error_presentation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

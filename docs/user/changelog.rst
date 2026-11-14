@@ -22,6 +22,7 @@ Models
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
+* SeCo ResNet presets reject ``--normalization model``; their published preprocessing expects SeCo's 8-bit quantile-scaled images.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
