@@ -32,6 +32,7 @@ from geo_eval_harness.config.schema import ModelConfig
         {"segmentation": {"heads": ["fpn", "fpn"]}},
         {"segmentation": {"heads": ["other"]}},
         {"segmentation": {"heads": None}},
+        {"segmentation": {"neck_policy": "other"}},
         {"segmentation": {"band_configs": ["s2", "s2"]}},
         {"segmentation": {"probe": {"layers": None}}},
         {"segmentation": {"probe": {"learning_rate": float("inf")}}},

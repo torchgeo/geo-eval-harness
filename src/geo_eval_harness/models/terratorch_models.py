@@ -196,7 +196,8 @@ class TerraTorchClayBench(_TerraTorchBench):
     """Clay v1 Base — S2 bands @ 256, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
     Input mapping and ``waves`` use available :data:`CLAY_BANDS` in pretrained order.
-    RGB inputs use three channels and wavelengths; full S2 inputs use all six.
+    RGB inputs use three channels and wavelengths; full S2 inputs use all six. The
+    encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
     """
 
     # Clay's published mean/std (see _CLAY_PRETRAIN_MEAN_BY_BAND) are raw S2
@@ -225,10 +226,13 @@ class TerraTorchClayBench(_TerraTorchBench):
             mean[ds_idx] = _CLAY_PRETRAIN_MEAN_BY_BAND[name]
             std[ds_idx] = _CLAY_PRETRAIN_STD_BY_BAND[name]
         self.pretrain_mean, self.pretrain_std = mean, std
+        backbone_kwargs: dict[str, Any] = {"pretrained": pretrained}
+        if target_size is not None:
+            backbone_kwargs["img_size"] = target_size
         super().__init__(
             bands=bands,
             target_size=target_size,
-            backbone_kwargs={"pretrained": pretrained},
+            backbone_kwargs=backbone_kwargs,
             **kwargs,
         )
         self.gsd = gsd

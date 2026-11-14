@@ -408,6 +408,8 @@ class UniverSatBenchModel(BenchModel):
     # Output embedding dimension of the released Base model.
     embed_dim: ClassVar[int] = 768
 
+    patch_size_unit = "meters"
+
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
         bands: list[BandSpec],

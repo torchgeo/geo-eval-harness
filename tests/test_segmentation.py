@@ -1452,7 +1452,7 @@ def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
         ViTNeck([8] * 4, input_norm="batchnorm")
 
 
-@pytest.mark.parametrize("head_type", ["upernet", "fpn", "unet"])
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "fpn", "unet"])
 @pytest.mark.parametrize("cached", [False, True])
 def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:
     from geo_eval_harness.models.segmentation_heads import NeckedHead
@@ -1499,7 +1499,7 @@ def test_vit_neck_builds_a_simple_pyramid_from_one_map() -> None:
         ViTNeck([8], native_finest=True)
 
 
-@pytest.mark.parametrize("head_type", ["upernet", "unet"])
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "unet"])
 def test_probe_vit_neck_trains_from_a_single_layer(head_type: str) -> None:
     probe = SegmentationProbe(
         FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"

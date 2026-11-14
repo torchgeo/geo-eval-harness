@@ -83,13 +83,13 @@ def _compute_df() -> pd.DataFrame:
     return pd.DataFrame(
         [
             {"name": "native_full", "band_config": "rgb", "gflops_backbone": 10.0},
-            {"name": "native_full", "band_config": "s2", "gflops_backbone": 20.0},
+            {"name": "native_full", "band_config": "all", "gflops_backbone": 20.0},
             {"name": "partial_native", "band_config": "rgb", "gflops_backbone": 5.0},
             {"name": "rcf", "band_config": "rgb", "gflops_backbone": 0.0},
             {"name": "tt_terramind_v1_base_rgb", "band_config": "rgb", "gflops_backbone": 30.0},
             {"name": "tt_terramind_v1_base_rgb", "band_config": "rgb", "gflops_backbone": ""},
         ]
-    )
+    ).assign(image_size=224, task="classification", head_type="")
 
 
 def test_harmonize_keeps_both_normalization_sources_for_selection() -> None:
@@ -240,7 +240,7 @@ def test_compute_join_rejects_conflicting_nonempty_measurements() -> None:
             {"name": "model", "band_config": "rgb", "gflops_backbone": 2.0},
             {"name": "model", "band_config": "rgb", "gflops_backbone": ""},
         ]
-    )
+    ).assign(image_size=224, task="classification", head_type="")
     with pytest.raises(ValueError, match="Conflicting non-empty"):
         rl.extract_compute_cost(raw)
 
