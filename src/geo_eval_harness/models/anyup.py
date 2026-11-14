@@ -10,7 +10,6 @@ The guidance image is built from the input's red, green, and blue bands, found b
 and ImageNet normalisation, so the raw input scale does not matter.
 """
 
-import hashlib
 import logging
 import math
 from pathlib import Path
@@ -21,12 +20,16 @@ import torch.nn as nn
 from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.hub import verify_checksums
 
 logger = logging.getLogger(__name__)
 
 ANYUP_REPO = "wimmerth/anyup"
 ANYUP_REF = "351807a9c4287368732cc247f26c7c81c9139af4"
 ANYUP_ENTRYPOINT = "anyup_multi_backbone"
+ANYUP_CHECKPOINT_URL = (
+    "https://github.com/wimmerth/anyup/releases/download/checkpoint_v2/anyup_multi_backbone.pth"
+)
 #: sha256 of the multi-backbone release checkpoint (``checkpoint_v2/anyup_multi_backbone.pth``).
 ANYUP_CHECKPOINT_SHA256 = "b6cc407da8986c7e5c9098e61f7531767a9aca8fff20a1bc6c99d488e61aac59"
 
@@ -84,21 +87,24 @@ def _checkpoint_path() -> Path:
 
 def load_anyup() -> nn.Module:
     """Load the pinned multi-backbone AnyUp, verify its checkpoint, and freeze it."""
+    checkpoint = _checkpoint_path()
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    if not checkpoint.is_file():
+        torch.hub.download_url_to_file(
+            ANYUP_CHECKPOINT_URL, str(checkpoint), hash_prefix=ANYUP_CHECKPOINT_SHA256
+        )
+    verify_checksums(checkpoint.parent, {checkpoint.name: ANYUP_CHECKPOINT_SHA256})
     model = cast(
         nn.Module,
         torch.hub.load(
             f"{ANYUP_REPO}:{ANYUP_REF}",
             ANYUP_ENTRYPOINT,
+            pretrained=False,
             trust_repo=True,
             skip_validation=True,
         ),
     )
-    checkpoint = _checkpoint_path()
-    digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
-    if digest != ANYUP_CHECKPOINT_SHA256:
-        raise RuntimeError(
-            f"AnyUp checkpoint {checkpoint} has sha256 {digest}, expected {ANYUP_CHECKPOINT_SHA256}."
-        )
+    model.load_state_dict(torch.load(checkpoint, map_location="cpu", weights_only=True))
     for param in model.parameters():
         param.requires_grad = False
     return model.eval()
