@@ -78,7 +78,7 @@ def _show_catalog(
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """Reject retired override syntax without confusing equals signs in flag values."""
+    """Reject ``key=value`` overrides without confusing equals signs in flag values."""
     parser = _setup_parser()
     args, extras = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
     if extras:

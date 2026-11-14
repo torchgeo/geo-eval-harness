@@ -250,7 +250,7 @@ class GeoCLIPLocationEncoder(_RSHFEncoder):
         from safetensors.torch import load_file
 
         # Build from config + weights explicitly: PyTorchModelHubMixin.from_pretrained
-        # no longer reconstructs the GeoCLIPConfig under recent huggingface_hub.
+        # does not reconstruct the GeoCLIPConfig under recent huggingface_hub.
         cfg = json.loads(Path(hf_hub_download(repo, "config.json")).read_text())
         config = GeoCLIPConfig(
             sigma=cfg["sigma"],
