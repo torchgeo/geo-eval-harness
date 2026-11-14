@@ -263,7 +263,7 @@ def _single_sensor_selections() -> list[tuple[str, list[str]]]:
 #: (aerial NIR, SAR without a declared unit). Their datasets keep ``model`` for the main bands.
 _DATASET_NORMALIZATION_ONLY = {
     ("flair2", "red,green,blue,nir"),
-    ("treesatai", "red,green,blue,nir"),
+    ("treesatai", "nir,green,blue,red"),
     ("so2sat", "vv,vh"),
 }
 
