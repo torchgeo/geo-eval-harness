@@ -3,8 +3,9 @@ target: geo_eval_harness.models.ThorBenchModel
 # THOR's pretraining statistics are a reference only; its own fine-tuning configs z-score with
 # dataset statistics, so model normalization is not offered.
 supports_model_normalization: false
-# Tiles keep their native size (THOR has no fixed input size). input_gsd is the GSD of the pixels
-# the model receives; each band group is resampled to its pretraining GSD over the tile's extent.
+# Tiles keep their native size (THOR has no fixed input size). input_gsd is the GSD of native-size
+# tiles and native_size their side in pixels, so a run that resizes inputs (--image-size) keeps each
+# tile's ground extent; each band group is resampled to its pretraining GSD over that extent.
 # patch_size (px) is shared by all groups: 4 for tiles up to 128 px, larger for bigger tiles so
 # the token count stays near THOR's pretraining budget (1,296). The 60 m S2 bands are dropped as in
 # the authors' Sentinel-2 fine-tuning config (FM4CS/thor_terratorch_ext); B10 is not in THOR.
@@ -20,17 +21,33 @@ segmentation:
   lora_target_modules: 'encoder\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
   layers: [taps.11, taps.8, taps.5, taps.2]
 dataset_overrides:
+  eurosat:  # S2 10 m, 64 px
+    kwargs: {native_size: 64}
+  eurosat-spatial:
+    kwargs: {native_size: 64}
+  m-eurosat:
+    kwargs: {native_size: 64}
+  m-brick-kiln:  # S2 10 m, 64 px
+    kwargs: {native_size: 64}
+  m-bigearthnet:  # S2 10 m, 120 px
+    kwargs: {native_size: 120}
+  benv2:  # S2 + S1 dB 10 m, 120 px
+    kwargs: {native_size: 120}
+  m-so2sat:  # S2 10 m, 32 px
+    kwargs: {native_size: 32}
+  so2sat:  # S2 10 m, 32 px
+    kwargs: {native_size: 32}
   burn_scars:  # HLS 30 m, 512 px
-    kwargs: {input_gsd: 30.0, patch_size: 32}
+    kwargs: {input_gsd: 30.0, native_size: 512, patch_size: 32}
   forestnet:  # Landsat-8 pan-sharpened 15 m, 332 px
-    kwargs: {input_gsd: 15.0, patch_size: 16}
+    kwargs: {input_gsd: 15.0, native_size: 332, patch_size: 16}
   cloudsen12:  # S2 L1C 10 m, 512 px
-    kwargs: {patch_size: 16}
+    kwargs: {native_size: 512, patch_size: 16}
   sen1floods11-s2:  # S2 10 m, 512 px
-    kwargs: {patch_size: 16}
+    kwargs: {native_size: 512, patch_size: 16}
   sen1floods11-s1:  # S1 dB 10 m, 512 px
-    kwargs: {patch_size: 16}
+    kwargs: {native_size: 512, patch_size: 16}
   fotw:  # S2 10 m, 256 px
-    kwargs: {patch_size: 8}
+    kwargs: {native_size: 256, patch_size: 8}
   oscd-post:  # S2 10 m, 256 px
-    kwargs: {patch_size: 8}
+    kwargs: {native_size: 256, patch_size: 8}

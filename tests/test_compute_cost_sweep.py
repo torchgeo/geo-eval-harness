@@ -156,6 +156,8 @@ def test_synthetic_sweep_uses_native_sensor_gsd_instead_of_fixed_tile_resize(
     assert anysat.resolve()[1].kwargs["patch_size"] == 80
     assert universat.resolve()[1].kwargs["input_res"] is None
     assert universat.resolve()[1].kwargs["patch_px"] == 4
+    thor = sweep.job_config(sweep.Job("thor/base", 256, "all", "cloudsen12", ("linear",)), args)
+    assert thor.resolve()[1].kwargs["native_size"] == 256
 
 
 def test_sweep_labels_panopticon_with_its_actual_patch_aligned_image_sizes(tmp_path: Path) -> None:

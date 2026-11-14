@@ -138,6 +138,8 @@ def resolution_kwargs(preset: ModelPreset, size: int) -> dict[str, Any]:
         kwargs["input_gsd"] = None
     elif preset.target == "geo_eval_harness.models.UniverSatBenchModel":
         kwargs["input_res"] = None
+    elif preset.target == "geo_eval_harness.models.ThorBenchModel":
+        kwargs["native_size"] = size
     return kwargs
 
 
