@@ -2,7 +2,7 @@
 
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import torch
@@ -104,15 +104,6 @@ class CachedFeaturesDataset(Dataset):
 
     def __getitem__(self, index: int) -> tuple[list[torch.Tensor], torch.Tensor]:
         return [t[index] for t in self.layer_tensors], self.masks[index]
-
-
-def _estimate_cache_bytes(cache: "CachedFeaturesDataset") -> int:
-    if not cache.layer_tensors:
-        return 0
-    return (
-        sum(t.numel() * t.element_size() for t in cache.layer_tensors)
-        + cache.masks.numel() * cache.masks.element_size()
-    )
 
 
 class GPUTensorCache:
@@ -245,7 +236,6 @@ class SegmentationProbe(nn.Module):
         self.layer_names = layer_names
         self.freeze_backbone = freeze_backbone
         self.head_type = head_type
-        self.effective_classes = num_classes
 
         self._features: dict[str, torch.Tensor] = {}
         self.hooks: list[Any] = []
@@ -520,8 +510,10 @@ class SegmentationProbe(nn.Module):
     def _dry_run_channels(self) -> list[int]:
         device = self._backbone_device()
         in_channels = int(getattr(self.backbone, "num_channels", 3))
-        dummy = torch.randn(1, in_channels, 224, 224, device=device)
-        self.dry_run_input_hw = (224, 224)
+        # Backbones built for one fixed input size declare it; everything else accepts 224.
+        side = int(getattr(self.backbone, "probe_input_size", None) or 224)
+        dummy = torch.randn(1, in_channels, side, side, device=device)
+        self.dry_run_input_hw = (side, side)
         if not self.layer_names:
             self.layer_names = ["backbone_output"]
             self.hooks.append(self.backbone.register_forward_hook(self._hook_fn("backbone_output")))
@@ -558,7 +550,15 @@ class SegmentationProbe(nn.Module):
         return feat
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
-        """Reshape token features into a spatial grid, accounting for prefix tokens."""
+        """Reshape token features into a spatial grid, accounting for prefix tokens.
+
+        A backbone that declares ``tokens_to_grid`` maps its own token layout instead.
+        """
+        to_grid: Callable[[torch.Tensor], torch.Tensor] | None = getattr(
+            self.backbone, "tokens_to_grid", None
+        )
+        if to_grid is not None:
+            return to_grid(feat)
         bsz, d1, d2 = feat.shape
         n_prefix = _resolve_num_prefix_tokens(self.backbone)
 

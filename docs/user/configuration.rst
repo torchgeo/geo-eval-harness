@@ -155,6 +155,7 @@ Classification
      knn_k: 5
      knn_device: null
      bootstrap_samples: 200
+     feature_standardize: false
      linear:
        c_log10_start: -6.0
        c_log10_stop: 4.0
@@ -178,6 +179,8 @@ on train plus validation. ``--refit-train-val`` /
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.
+
+``feature_standardize: true`` z-scores every embedding dimension with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before KNN and the linear probe. Results are written under the methods ``knn<k>-std`` and ``linear-std``. Intrinsic-dimension and spectrum measurements use the unscaled embeddings.
 
 Segmentation
 ^^^^^^^^^^^^
@@ -209,6 +212,7 @@ Segmentation
      backbone_learning_rate: null
      full_finetune: false
      feature_standardize: false
+     gradient_checkpointing: false
      sweep_learning_rates: []
      sweep_weight_decays: [0.0]
 
@@ -241,6 +245,8 @@ Segmentation confidence intervals use ``classification.bootstrap_samples``.
 See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
 Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such rows record ``lora_last_blocks``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (``adaptation: full`` in the result row), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with ``adaptation: lora`` (see :ref:`segmentation-setup-columns`).
+
+``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. Unset, it leaves hashes unchanged; set, it is part of ``config_hash``.
 
 .. code-block:: yaml
 

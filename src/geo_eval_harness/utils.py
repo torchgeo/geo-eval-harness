@@ -26,6 +26,18 @@ class FeatureSplits[T]:
     test: FeatureSplit[T]
 
 
+def standardize_features(splits: FeatureSplits[np.ndarray]) -> FeatureSplits[np.ndarray]:
+    """Z-score each feature dimension using the training mean and variance."""
+    train = splits.train.features
+    mean = train.mean(axis=0, dtype=np.float64).astype(train.dtype)
+    scale = np.sqrt(train.var(axis=0, dtype=np.float64) + 1e-6).astype(train.dtype)
+
+    def scaled(split: FeatureSplit[np.ndarray]) -> FeatureSplit[np.ndarray]:
+        return FeatureSplit((split.features - mean) / scale, split.labels)
+
+    return FeatureSplits(scaled(splits.train), scaled(splits.val), scaled(splits.test))
+
+
 def extract_features(
     model: torch.nn.Module,
     dataloader: DataLoader,
