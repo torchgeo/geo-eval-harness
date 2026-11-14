@@ -49,7 +49,7 @@ def _rgb_first_permutation(bands: list[BandSpec]) -> list[int] | None:
 
 
 def _model_size_kwargs(
-    model_name: str, img_size: int | None, *, dynamic_img_size: bool
+    model_name: str, img_size: int | None, *, dynamic_img_size: bool, dynamic_img_pad: bool
 ) -> dict[str, Any]:
     """Translate the wrapper's image-grid policy to the registered timm backend."""
     options: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
@@ -58,6 +58,8 @@ def _model_size_kwargs(
             options["strict_img_size"] = False
         else:
             options["dynamic_img_size"] = True
+    if dynamic_img_pad:
+        options["dynamic_img_pad"] = True
     return options
 
 
@@ -82,6 +84,7 @@ class TimmPatchBenchModel(BenchModel):
             run at a size other than their pretrained one; ``None`` keeps timm's default.
         dynamic_img_size: Use the backend's dynamic transformer grid handling. Swin pads
             attention windows; other supported transformers interpolate position embeddings.
+        dynamic_img_pad: Pad partial patches for supported ViTs; use with ``dynamic_img_size``.
         input_normalization: One of ``"bands_zscore"`` (default; per-channel
             z-score using :class:`BandSpec` statistics — correct for raw
             remote-sensing data of any channel count), ``"imagenet"``
@@ -114,6 +117,7 @@ class TimmPatchBenchModel(BenchModel):
         target_size: int | None = None,
         img_size: int | None = None,
         dynamic_img_size: bool = False,
+        dynamic_img_pad: bool = False,
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -142,7 +146,9 @@ class TimmPatchBenchModel(BenchModel):
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
-        size_kwargs = _model_size_kwargs(model_name, img_size, dynamic_img_size=dynamic_img_size)
+        size_kwargs = _model_size_kwargs(
+            model_name, img_size, dynamic_img_size=dynamic_img_size, dynamic_img_pad=dynamic_img_pad
+        )
         self.backbone = timm.create_model(
             model_name,
             pretrained=pretrained,
@@ -316,11 +322,19 @@ class TimmModelSettings:
     target_size: int | None = None
     img_size: int | None = None
     dynamic_img_size: bool = False
+    dynamic_img_pad: bool = False
     use_cls_token: bool = False
 
     def __post_init__(self) -> None:
         """Validate settings before importing or constructing a backbone."""
-        for name in ("pretrained", "normalize", "auto_resize", "dynamic_img_size", "use_cls_token"):
+        for name in (
+            "pretrained",
+            "normalize",
+            "auto_resize",
+            "dynamic_img_size",
+            "dynamic_img_pad",
+            "use_cls_token",
+        ):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a boolean")
         if not self.model_name:

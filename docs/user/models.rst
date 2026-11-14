@@ -253,6 +253,8 @@ ViT-style backbones expect a fixed spatial resolution.  Set
 ``bicubic`` / ``nearest`` via ``--interpolation``) to resize the
 dataset tiles for any model.
 
+For supported timm ViTs, set ``model.kwargs.dynamic_img_size: true`` to interpolate positional embeddings across input sizes. Add ``model.kwargs.dynamic_img_pad: true`` to zero-pad partial patches when an input dimension is not divisible by the patch size.
+
 timm models rebuild their input convolution for any number of channels —
 they work with ``--bands all`` out of the box (pretrained
 3-channel weights are averaged / replicated as needed).
