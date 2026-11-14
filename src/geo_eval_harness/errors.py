@@ -6,3 +6,7 @@
 
 class UnsupportedNormalizationError(ValueError):
     """A model does not define the requested normalization pipeline."""
+
+
+class UnsupportedInputSizeError(ValueError):
+    """An encoder resolution is unsupported or cannot be verified."""

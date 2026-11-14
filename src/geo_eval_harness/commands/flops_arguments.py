@@ -28,7 +28,15 @@ def add_flops_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--band-configs", choices=("rgb", "s2"), nargs="+", default=argparse.SUPPRESS
     )
-    parser.add_argument("--image-size", type=int, default=argparse.SUPPRESS)
+    sizes = parser.add_mutually_exclusive_group()
+    sizes.add_argument("--image-size", type=int, default=argparse.SUPPRESS)
+    sizes.add_argument(
+        "--image-sizes",
+        type=int,
+        nargs="+",
+        default=argparse.SUPPRESS,
+        help="Encoder-only GFLOPs sweep over square sizes; no timing or task heads",
+    )
     parser.add_argument(
         "--normalization",
         choices=("dataset", "model", "minmax", "minmax_zscore", "none"),

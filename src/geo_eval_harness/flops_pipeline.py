@@ -7,6 +7,8 @@ No data is loaded or downloaded.
 Use the benchmark's probe builders and profiling helpers so measurements match evaluation.
 """
 
+import hashlib
+import json
 import logging
 import os
 import warnings
@@ -26,12 +28,14 @@ from geo_eval_harness.config.schema import SegmentationConfig, resolve_output_pa
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.errors import UnsupportedInputSizeError
 from geo_eval_harness.model_profile import (
     ProfileTiming,
     _count_gflops,
     _count_params,
     measure_profile,
 )
+from geo_eval_harness.models.interface import BenchModel
 from geo_eval_harness.results import append_rows_atomic
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 
@@ -48,6 +52,162 @@ _TERRAMIND_MERGED_NAME = {
     "tt_terramind_v1_large": "tt_terramind_v1_large",
     "tt_terramind_v1_large_rgb": "tt_terramind_v1_large",
 }
+
+_SCALING_COLUMNS = (
+    "name",
+    "model",
+    "band_config",
+    "n_channels",
+    "image_size",
+    "encoder_height",
+    "encoder_width",
+    "config_hash",
+    "config_json",
+    "gflops",
+    "gflops_per_megapixel",
+    "status",
+    "reason",
+    "counter",
+    "convention",
+    "coverage",
+)
+
+
+def _load_scaling_completed(path: str) -> frozenset[str]:
+    """Validate the sweep CSV and resume successful cells only."""
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return frozenset()
+    with FileLock(f"{path}.lock"):
+        frame = pd.read_csv(path)
+    if set(frame.columns) != set(_SCALING_COLUMNS):
+        raise ValueError(f"{path} is not an encoder scaling CSV; choose a different --output")
+    return frozenset(frame.loc[frame["status"] == "measured", "config_hash"])
+
+
+def _scaling_row(
+    cfg: FlopsConfig,
+    preset: ModelPreset,
+    band_config: str,
+    band_specs: list[BandSpec],
+) -> dict[str, Any]:
+    payload = {
+        "model": {"name": preset.name, "target": preset.target, "kwargs": preset.kwargs},
+        "input": cfg.input.model_dump(mode="json", exclude={"image_sizes", "band_configs"}),
+        "band_config": band_config,
+        "seed": cfg.runtime.seed,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    row: dict[str, Any] = dict.fromkeys(_SCALING_COLUMNS)
+    row.update(
+        name=preset.name,
+        model=preset.target,
+        band_config=band_config,
+        n_channels=len(band_specs),
+        image_size=cfg.input.image_size,
+        config_hash=hashlib.sha256(encoded.encode()).hexdigest()[:16],
+        config_json=encoded,
+        counter="torch.utils.flop_counter.FlopCounterMode",
+        convention="one multiply-add is two operations",
+        coverage="registered operators only; total coverage unverified",
+    )
+    return row
+
+
+def _verified_gflops(model: nn.Module, sample: torch.Tensor, row: dict[str, Any]) -> float:
+    """Observe the actual encoder input during the counted forward pass."""
+    size = row["image_size"]
+    if not isinstance(model, BenchModel):
+        raise UnsupportedInputSizeError("Model does not implement the BenchModel boundary")
+
+    def verify_size(_module: nn.Module, args: tuple[Any, ...]) -> None:
+        if not args or not isinstance(args[0], torch.Tensor) or args[0].ndim != 4:
+            raise UnsupportedInputSizeError("Encoder boundary did not receive an NCHW tensor")
+        row["encoder_height"], row["encoder_width"] = args[0].shape[-2:]
+        if args[0].shape[-2:] != (size, size):
+            raise UnsupportedInputSizeError(
+                f"Requested {size}x{size}, encoder received {tuple(args[0].shape[-2:])}"
+            )
+
+    boundary = model.flops_input_module(size)
+    with boundary.register_forward_pre_hook(verify_size):
+        gflops = _count_gflops(model, sample)
+    if row["encoder_height"] is None:
+        raise UnsupportedInputSizeError("Encoder input boundary was not reached")
+    return gflops
+
+
+def _measure_scaling_row(
+    row: dict[str, Any],
+    preset: ModelPreset,
+    band_specs: list[BandSpec],
+    normalization: str,
+    device: torch.device,
+) -> None:
+    """Count one encoder pass, recording only recognized per-cell failures."""
+    size = row["image_size"]
+    if _is_terramind(preset):
+        declared = str(preset.kwargs.get("modality", "S2L2A"))
+        if declared != _MODALITY_FOR_BAND_CONFIG[row["band_config"]]:
+            row.update(status="unsupported", reason="TerraMind modality does not match band config")
+            logger.warning("%s/%s/%d: %s", row["name"], row["band_config"], size, row["reason"])
+            return
+    model: nn.Module | None = None
+    try:
+        model = build_model(preset, bands=band_specs, normalization=normalization)
+        model.to(device).eval()
+        gflops = _verified_gflops(
+            model, torch.randn(1, len(band_specs), size, size, device=device), row
+        )
+        row.update(
+            gflops=gflops,
+            gflops_per_megapixel=gflops / (size * size / 1e6),
+            status="measured",
+        )
+    except (
+        UnsupportedInputSizeError,
+        BandCompatibilityError,
+    ) as exc:  # allow-except: Record unsupported sweep cells.
+        row.update(status="unsupported", reason=str(exc))
+        logger.warning("%s/%s/%d: %s", row["name"], row["band_config"], size, exc)
+    except (
+        torch.cuda.OutOfMemoryError
+    ) as exc:  # allow-except: Record OOM and continue the size sweep.
+        row.update(status="oom", reason=str(exc))
+        logger.warning("%s/%s/%d: CUDA out of memory", row["name"], row["band_config"], size)
+    finally:
+        del model
+        _free(device)
+
+
+def _scaling_main(cfg: FlopsConfig, preset: ModelPreset) -> None:
+    """Persist an encoder-only curve without invoking timing or task probes."""
+    sizes = cfg.input.image_sizes
+    assert sizes is not None
+    device = resolve_device(cfg.runtime.device)
+    path = resolve_output_path(cfg.output.directory, cfg.output.file, "compute_scaling.csv")
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    completed = _load_scaling_completed(path)
+    if not cfg.output.resume:
+        completed = frozenset()
+    bench = get_bench_dataset_class(cfg.input.band_source)()
+    for band_config in cfg.input.band_configs:
+        bands = bench.select_band_specs(bench.rgb_bands if band_config == "rgb" else None)
+        for size in sizes:
+            inputs = cfg.input.model_copy(update={"image_size": size, "image_sizes": None})
+            cell_cfg = cfg.model_copy(update={"input": inputs})
+            cell_preset = preset.model_copy(
+                update={"input": preset.input.model_copy(update={"image_size": size})}
+            )
+            row = _scaling_row(cell_cfg, cell_preset, band_config, bands)
+            if row["config_hash"] in completed:
+                logger.info("Skip %s/%s/%d: already measured", preset.name, band_config, size)
+                continue
+            torch.manual_seed(cfg.runtime.seed)
+            _measure_scaling_row(
+                row, cell_preset, bands, NORMALIZATIONS[cfg.input.normalization], device
+            )
+            append_rows_atomic(path, [row])
+            logger.info("%s/%s/%d: %s -> %s", preset.name, band_config, size, row["status"], path)
 
 
 def _load_completed(path: str) -> frozenset[tuple]:
@@ -390,6 +550,9 @@ def _segmentation_row(
 def main(config: FlopsConfig) -> None:
     """Measure per-sample compute cost for one model config."""
     cfg, preset = config.resolve()
+    if cfg.input.image_sizes is not None:
+        _scaling_main(cfg, preset)
+        return
     device = resolve_device(cfg.runtime.device)
     output_path = resolve_output_path(cfg.output.directory, cfg.output.file, "compute_cost.csv")
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)

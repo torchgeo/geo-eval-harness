@@ -26,6 +26,12 @@ from geo_eval_harness.config.schema import ModelConfig
         {"input": {"image_size": None}},
         {"input": {"image_size": 0}},
         {"input": {"image_size": "32"}},
+        {"input": {"image_sizes": []}},
+        {"input": {"image_sizes": [32, 32]}},
+        {"input": {"image_sizes": [0]}},
+        {"input": {"image_sizes": [True]}},
+        {"input": {"image_sizes": ["32"]}},
+        {"input": {"image_sizes": [32], "image_size": 64}},
         {"input": {"normalization": "identity"}},
         {"classification": {"head": "other"}},
         {"classification": {"num_classes": 0}},
@@ -127,3 +133,12 @@ def test_custom_constructor_is_not_imported() -> None:
     )
     _, preset = config.resolve()
     assert preset.kwargs == config.model.kwargs
+
+
+def test_size_sweep_overrides_preset_size_without_importing_model() -> None:
+    config = FlopsConfig.model_validate(
+        {"model": {"name": "timm/resnet18"}, "input": {"image_sizes": [128, 256]}}
+    )
+    resolved, _ = config.resolve()
+    assert resolved.input.image_sizes == [128, 256]
+    assert resolved.resolve()[0].input.image_sizes == [128, 256]

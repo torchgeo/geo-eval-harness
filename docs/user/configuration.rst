@@ -492,6 +492,46 @@ FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_co
 YAML mapping of constructor options; reusable custom models can use
 ``model.target`` and ``model.kwargs`` in the file instead.
 
+Encoder compute versus image size
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For a spatial scaling curve, ``--image-sizes`` (YAML ``input.image_sizes``)
+selects an encoder-only sweep over distinct positive square sizes:
+
+.. code-block:: console
+
+   $ geo-eval-harness flops --model timm/resnet18 --device cpu --band-configs rgb \
+       --image-sizes 128 256 512 1024
+
+This mode counts one forward pass per image size without timing, classification
+probes, or segmentation heads. It writes ``compute_scaling.csv`` under the output
+root, or to the exact ``--output`` path. Do not combine an explicit
+``image_size`` with ``image_sizes``.
+
+The CSV reports ``gflops`` per image and ``gflops_per_megapixel``, computed by
+dividing per-image GFLOPs by the requested pixel count in millions. Bands,
+temporal settings, normalization, model options, and seed stay fixed across
+the curve; changing pixel dimensions does not change ground sampling distance.
+The counter treats one multiply-add as two operations and covers registered
+PyTorch operators only, so these measurements may undercount total work.
+
+Resolution verification supports timm ResNet/ViT and TorchGeo ResNet wrappers.
+It observes the encoder's spatial input during the counted pass; other adapters
+report ``unsupported`` until they expose this boundary. Fixed resizing and
+incompatible resolutions also report ``unsupported``, while CUDA allocation
+failures report ``oom``. Failed cells have a reason and empty metrics; unexpected
+implementation errors propagate. No preset resizing or positional embeddings are
+automatically changed to make a size work.
+
+Sweep resume matches the image size and measurement configuration and retries
+failed cells. Its output cannot share a file with legacy compute-cost rows.
+For single-size measurements, resume keys omit image size, so use separate output
+files when changing ``--image-size``.
+
+For interpretation, convolutional work commonly grows with pixel count, whereas
+global attention includes a term quadratic in token count. The measured curve
+includes the encoder's other operations; it is not assumed to follow one power law.
+
 Coordinate evaluation
 ----------------------
 
