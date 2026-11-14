@@ -159,10 +159,13 @@ def test_unknown_dataset_task_raises() -> None:
         get_dataset_task("unregistered-dataset")
 
 
-def test_open_cities_public_export_matches_registry() -> None:
-    from geo_eval_harness.datasets import OpenCities
+@pytest.mark.parametrize("name", list_datasets())
+def test_public_export_matches_registry(name: str) -> None:
+    from geo_eval_harness import datasets
 
-    assert OpenCities is get_bench_dataset_class("open_cities")
+    cls = get_bench_dataset_class(name)
+    assert cls.__name__ in datasets.__all__
+    assert getattr(datasets, cls.__name__) is cls
 
 
 @pytest.mark.parametrize(
