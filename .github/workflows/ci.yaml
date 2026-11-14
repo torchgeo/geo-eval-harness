@@ -199,6 +199,8 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Audit locked dependencies
+        run: uv audit --locked
       - name: Run pre-commit
         run: uv run pre-commit run --all-files -v
 

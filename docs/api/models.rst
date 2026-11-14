@@ -68,6 +68,11 @@ THOR
 
 .. autoclass:: ThorBenchModel
 
+SMARTIES
+^^^^^^^^
+
+.. autoclass:: SmartiesBench
+
 SAM 3
 ^^^^^
 
