@@ -180,6 +180,32 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     assert int((df["method"] == "seg-fpn").sum()) == 1
 
 
+def _randomly_initialized_backbone(*_args: object) -> torch.nn.Module:
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    return backbone
+
+
+def test_dataset_row_does_not_depend_on_earlier_datasets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "geo_eval_harness.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    monkeypatch.setattr(
+        "geo_eval_harness.main.instantiate_dataset_model", _randomly_initialized_backbone
+    )
+    rows = []
+    for datasets in (["caffe"], ["burn_scars", "caffe"]):
+        out = tmp_path / f"{len(datasets)}.csv"
+        segmentation = {"head": "linear", "layers": ["0"], "epochs": 2}
+        main(_cfg_for_segmentation(out, {"datasets": datasets, "segmentation": segmentation}))
+        df = pd.read_csv(out)
+        rows.append(df.loc[df["dataset"] == "caffe", ["metric_value", "ci_lower", "ci_upper"]])
+
+    assert rows[0].to_numpy().tolist() == rows[1].to_numpy().tolist()
+
+
 _TINY_VIT = {
     "name": "tiny-vit",
     "target": "geo_eval_harness.models.TimmPatchBenchModel",
