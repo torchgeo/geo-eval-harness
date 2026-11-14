@@ -33,6 +33,7 @@ Evaluation and results
 * CoordBench evaluates location encoders with random, spatial-block, and official holdouts, using KNN and ridge-linear probes.
 * The ``flops`` command measures backbone, decoder, and probe compute. The ``profile`` command measures execution on a fixed dataset batch.
 * Classification and frozen segmentation can standardize features with training-split statistics.
+* A non-default ``--partition`` on a classification dataset requires ``--no-refit-train-val`` when the linear probe is selected, so the final fit excludes the complete validation split.
 * Segmentation supports frozen backbones, LoRA, and full fine-tuning, with configurable weight decay, head dropout, AMP, gradient checkpointing, and adapter block selection.
 * ViT necks form feature pyramids for dense decoders. UPerNet can use frozen AnyUp upsampling guided by RGB inputs.
 * Patch-linear sweeps train one head per learning-rate and weight-decay combination, then select the best validation head and epoch.

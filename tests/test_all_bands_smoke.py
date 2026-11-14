@@ -30,7 +30,12 @@ def test_all_bands_e2e(tmp_path: Path) -> None:
                 "runtime": {"batch_size": 16, "workers": 0, "device": "cpu", "seed": 0},
                 "classification": {
                     "bootstrap_samples": 10,
-                    "linear": {"c_log10_start": -2.0, "c_log10_stop": 2.0, "c_count": 3},
+                    "linear": {
+                        "c_log10_start": -2.0,
+                        "c_log10_stop": 2.0,
+                        "c_count": 3,
+                        "refit_train_val": False,
+                    },
                 },
                 "output": {"file": str(output)},
             }

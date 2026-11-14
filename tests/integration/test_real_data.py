@@ -43,7 +43,12 @@ def test_real_classification_program(
                 "runtime": {"batch_size": 64, "workers": 0, "device": "cpu"},
                 "classification": {
                     "bootstrap_samples": 5,
-                    "linear": {"c_log10_start": -2.0, "c_log10_stop": 2.0, "c_count": 3},
+                    "linear": {
+                        "c_log10_start": -2.0,
+                        "c_log10_stop": 2.0,
+                        "c_count": 3,
+                        "refit_train_val": partition == "default",
+                    },
                 },
                 "output": {"file": str(output)},
             }

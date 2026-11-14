@@ -91,6 +91,20 @@ def test_boolean_flags_override_config(tmp_path: Path, capsys: pytest.CaptureFix
     assert "refit_train_val: false" in capsys.readouterr().out
 
 
+def test_training_partition_rejects_linear_refit_on_validation(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    command = ["run", "--model", "rcf", "--dry-run", "--dataset"]
+    subset = ["m-eurosat", "--partition", "0.01x_train"]
+    with pytest.raises(SystemExit) as error:
+        main([*command, *subset])
+    assert error.value.code == 2
+    assert "--no-refit-train-val" in capsys.readouterr().err
+    main([*command, *subset, "--no-refit-train-val"])
+    main([*command, *subset, "--methods", "knn"])
+    main([*command, "hotosm_buildings", "--partition", "full"])
+
+
 @pytest.mark.parametrize("selection", [["--dataset", "m-eurosat"], ["--model", "rcf"]])
 def test_missing_model_or_dataset_fails_before_execution(selection: list[str]) -> None:
     with pytest.raises(SystemExit) as error:

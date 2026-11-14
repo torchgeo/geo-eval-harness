@@ -581,7 +581,9 @@ V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. 
 .. code-block:: console
 
    $ # Train on 1% of the V1 training split, write to a separate CSV
-   $ geo-eval-harness run --model rcf --dataset m-eurosat --partition 0.01x_train --output results/1pct.csv
+   $ geo-eval-harness run --model rcf --dataset m-eurosat --partition 0.01x_train --no-refit-train-val --output results/1pct.csv
+
+A partition changes only the training split, so a classification run that selects the linear probe requires ``--no-refit-train-val``; the default final refit would train on the complete validation split.
 
 Common partition values: ``default``, ``0.01x_train``, ``0.02x_train``,
 ``0.05x_train``, ``0.10x_train``, ``0.20x_train``, ``0.50x_train``,

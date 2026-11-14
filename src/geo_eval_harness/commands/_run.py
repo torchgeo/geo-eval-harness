@@ -11,7 +11,7 @@ import yaml
 from .. import commands
 from ..config.presets import NORMALIZATIONS, resolve_run_config
 from ..config.run import RunConfig, validate_run_config
-from ..datasets import get_bench_dataset_class, list_datasets
+from ..datasets import get_bench_dataset_class, get_dataset_task, list_datasets
 from ._config import (
     OUTPUT_FLAG_OVERRIDES,
     FlagOverride,
@@ -62,6 +62,19 @@ def load_config(args: argparse.Namespace) -> RunConfig:
                 raise ValueError("input.bands must be rgb, all, or a YAML list of band names")
         else:
             get_bench_dataset_class(dataset).resolve_band_specs(effective.input.bands)
+        classification = effective.classification
+        if (
+            effective.input.partition != "default"
+            and get_dataset_task(dataset) == "classification"
+            and "linear" in classification.methods
+            and classification.linear.refit_train_val
+        ):
+            raise ValueError(
+                f"input.partition={effective.input.partition!r} changes only the training split of "
+                f"{dataset!r}, so the linear probe's final refit would train on the complete "
+                "validation split; pass --no-refit-train-val "
+                "(classification.linear.refit_train_val: false)"
+            )
     return config
 
 
