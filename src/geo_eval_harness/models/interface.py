@@ -47,6 +47,9 @@ class BenchModel(nn.Module, ABC):
     #: channel dry run uses it instead of 224.
     probe_input_size: int | None = None
 
+    #: Unit of a wrapper's patch_size; physical patches do not imply a fixed pixel grid.
+    patch_size_unit: str = "pixels"
+
     def __init__(
         self,
         bands: list[BandSpec],
