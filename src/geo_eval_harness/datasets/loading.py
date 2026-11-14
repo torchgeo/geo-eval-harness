@@ -8,6 +8,7 @@ import warnings
 from importlib import import_module
 from typing import TYPE_CHECKING, Literal
 
+from ..errors import MissingDatasetError
 from .base import BenchDataset
 
 if TYPE_CHECKING:
@@ -299,7 +300,7 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         FileNotFoundError,
         DatasetNotFoundError,
     ) as error:  # allow-except: add download command.
-        raise FileNotFoundError(
+        raise MissingDatasetError(
             f"Required files for {dataset_name!r} are missing. Run `{download_command(dataset_name)}`."
         ) from error
 

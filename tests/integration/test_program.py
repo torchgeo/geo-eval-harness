@@ -158,6 +158,7 @@ def test_program_fails_when_any_requested_data_is_unavailable(
     assert completed.returncode != 0, cli_output(completed)
     assert "Required files for 'm-forestnet' are missing" in completed.stderr
     assert "geo-eval-harness download geobench_v1 --datasets m-forestnet" in completed.stderr
+    assert "Traceback" not in completed.stderr
     if dataset_names[0] == "m-eurosat":
         rows = pd.read_csv(output)
         assert set(rows["method"]) == {"knn5", "linear"}

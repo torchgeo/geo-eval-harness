@@ -44,6 +44,12 @@ def run(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         print(yaml.safe_dump(config.model_dump_yaml(), sort_keys=False), end="")
         return
+    from geo_eval_harness.devices import resolve_device
+
+    try:
+        resolve_device(config.runtime.device)
+    except ValueError as error:  # allow-except: report unavailable or invalid requested devices
+        raise SystemExit(f"error: {error}") from error
     from geo_eval_harness.coordbench.run import run_coordbench
 
     run_coordbench(config)

@@ -544,7 +544,7 @@ def test_coordinate_run_rejects_invalid_cuda_before_loading(
             with pytest.raises(ValueError, match=message):
                 run_coordbench(config)
         else:
-            with pytest.raises(ValueError, match=message):
+            with pytest.raises(SystemExit, match=f"^error: .*{message}"):
                 main(
                     [
                         "coord",
