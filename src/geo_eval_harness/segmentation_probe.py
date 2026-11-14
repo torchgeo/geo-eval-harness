@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 #: standardizer, that may be skipped for non-finite backbone features.
 MAX_NONFINITE_FRACTION = 0.05
 
+# Leave room for decoder activations when placing a feature cache on CUDA.
+_CACHE_HEADROOM_BYTES = 6 * 2**30
+
 
 class NonFiniteFeaturesError(FloatingPointError):
     """Backbone features contain ``inf`` or ``NaN``, for example after a float16 overflow.
@@ -108,14 +111,13 @@ class CachedFeaturesDataset(Dataset):
 
 
 class GPUTensorCache:
-    """Cached features and masks kept on the target device.
+    """Cached features and masks kept together on CPU or CUDA.
 
     Build with :meth:`from_cached` to avoid copying or stacking features each batch.
     Use :meth:`shuffled_batches` for training and :meth:`ordered_batches` for evaluation.
 
     Args:
         layer_tensors: Contiguous ``(N, C, H, W)`` tensors, one per hooked layer on ``device``.
-            ``from_cached`` uses float16 on CUDA and float32 on CPU.
         masks: ``(N, H, W)`` long tensor on the target device.
         device: The device these tensors live on.
     """
@@ -141,7 +143,7 @@ class GPUTensorCache:
         *,
         amp: bool = True,
     ) -> "GPUTensorCache":
-        """Move cached features and masks to ``device``.
+        """Place cached features on ``device``, using CPU if CUDA memory is insufficient.
 
         Args:
             cache: CPU-resident cached features.
@@ -149,20 +151,33 @@ class GPUTensorCache:
             amp: Store float16 features on CUDA for mixed precision; ``False`` keeps float32.
 
         Returns:
-            A :class:`GPUTensorCache` with all data on *device*.
+            A cache on the selected storage device, with dtype determined by ``device`` and ``amp``.
         """
         target_device = torch.device(device)
-        # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
         dtype = torch.float16 if amp and target_device.type == "cuda" else torch.float32
+        if target_device.type == "cuda":
+            needed = (
+                sum(t.numel() for t in cache.layer_tensors)
+                * torch.empty((), dtype=dtype).element_size()
+            )
+            needed += cache.masks.numel() * torch.empty((), dtype=torch.long).element_size()
+            free, _ = torch.cuda.mem_get_info(target_device)
+            free += torch.cuda.memory_reserved(target_device) - torch.cuda.memory_allocated(
+                target_device
+            )
+            if needed > free - _CACHE_HEADROOM_BYTES:
+                logger.info("Keeping %.1f GiB of cached features in host memory", needed / 2**30)
+                target_device = torch.device("cpu")
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
         masks = cache.masks.to(target_device, dtype=torch.long)
         return cls(layer_tensors, masks, target_device)
 
     def shuffled_batches(
-        self, batch_size: int
+        self, batch_size: int, *, shuffle_device: torch.device | str | None = None
     ) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
-        """Yield *(features, masks)* mini-batches in random order."""
-        idx = torch.randperm(len(self), device=self.device)
+        """Yield random mini-batches, drawing the permutation on ``shuffle_device`` if given."""
+        rng_device = self.device if shuffle_device is None else shuffle_device
+        idx = torch.randperm(len(self), device=rng_device).to(self.device)
         for start in range(0, len(self), batch_size):
             b = idx[start : start + batch_size]
             yield [t[b] for t in self.layer_tensors], self.masks[b]

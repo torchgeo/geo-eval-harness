@@ -1285,6 +1285,34 @@ def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data, monkeypatch
     assert gpu_cache.masks.shape == (len(cache), 64, 64)
 
 
+@pytest.mark.parametrize("amp", [True, False])
+def test_host_feature_cache_trains_and_evaluates_without_cuda(
+    mock_backbone, dummy_data, monkeypatch: pytest.MonkeyPatch, *, amp: bool
+) -> None:
+    cache = _make_cpu_cache(mock_backbone, dummy_data)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (0, 8 * 2**30))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 0)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 0)
+
+    staged = GPUTensorCache.from_cached(cache, "cuda:0", amp=amp)
+    dtype = torch.float16 if amp else torch.float32
+    assert staged.device == torch.device("cpu")
+    for actual, expected in zip(staged.layer_tensors, cache.layer_tensors, strict=True):
+        torch.testing.assert_close(actual, expected.to(dtype=dtype))
+    torch.testing.assert_close(staged.masks, cache.masks)
+
+    probe = make_probe(mock_backbone, ["layer1", "layer2"])
+    solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, device="cpu")
+    before = [parameter.detach().clone() for parameter in probe.head.parameters()]
+    score = solver.fit_cached(staged, val_cache=staged, batch_size=2, epochs=1, verbose=False)
+    assert isinstance(score, float)
+    assert 0 <= score <= 1
+    assert any(
+        not torch.equal(old, new) for old, new in zip(before, probe.head.parameters(), strict=True)
+    )
+    assert solver.epoch_history[0].train_steps > 0
+
+
 def test_gpu_tensor_cache_shuffling_keeps_features_paired_with_masks() -> None:
     ids = torch.arange(5).reshape(5, 1, 1)
     cache = CachedFeaturesDataset([ids[:, None].float(), (ids[:, None] + 10).float()], ids)

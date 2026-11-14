@@ -224,6 +224,8 @@ feature layers. See
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 
+Feature caches stay on the training device when they fit in available CUDA memory with 6 GiB reserved for decoder activations. Larger caches stay in host memory and transfer one batch at a time, preserving the configured precision.
+
 ``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
 runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
 whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
