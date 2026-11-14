@@ -221,7 +221,7 @@ all three files -- ``results/models/<name>.csv``,
 
 Resume checks each method separately, so ``--methods linear`` never requires a KNN row. Profile and intrinsic-dimension passes do not change ``config_hash``; each requested metric must be present before a pass is skipped.
 
-Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device`` and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
+Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device``, ``classification.knn_device``, and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
 Segmentation hashes include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
 
