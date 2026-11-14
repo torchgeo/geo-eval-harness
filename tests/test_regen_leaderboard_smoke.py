@@ -107,7 +107,10 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
             pd.DataFrame(
                 [
                     _row("native_full_cls", "d1", "linear", "rgb", 0.5, "bandspec_zscore"),
-                    _row("native_full_lsat_x", "d1", "linear", "rgb", 0.5, "bandspec_zscore"),
+                    _row("olmoearth_v1_nano_naip_rgb", "d1", "linear", "rgb", 0.5, "model_native"),
+                    _row(
+                        "tgeo_swinv2b_naip_satlas_mi", "d1", "linear", "rgb", 0.5, "bandspec_zscore"
+                    ),
                     _row("native_full", "m-pv4ger", "linear", "rgb", 0.5, "bandspec_zscore"),
                 ]
             ),
@@ -116,7 +119,8 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     )
     out = rl.harmonize(raw)
     assert "cls-token" in set(out["pooling"])
-    assert not out["base_model"].str.contains("_lsat_").any()
+    assert "olmoearth_v1_nano_naip_rgb" not in set(out["base_model"])
+    assert "tgeo_swinv2b_naip_satlas_mi" in set(out["base_model"])
     assert "m-pv4ger" not in set(out["dataset"])
 
 
