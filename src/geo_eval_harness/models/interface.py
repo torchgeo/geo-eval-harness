@@ -115,3 +115,19 @@ class BenchModel(nn.Module, ABC):
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """Alias for :meth:`forward_patch_features`."""
         return self.forward_patch_features(images)
+
+    def forward_batch(
+        self, images: torch.Tensor, *, doy: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Forward images, ignoring date metadata for date-independent models."""
+        del doy
+        return self(images)
+
+
+def forward_model_batch(
+    model: nn.Module, images: torch.Tensor, *, doy: torch.Tensor | None = None
+) -> torch.Tensor:
+    """Preserve optional dates without changing raw torch model interfaces."""
+    if isinstance(model, BenchModel):
+        return model.forward_batch(images, doy=doy)
+    return model(images)

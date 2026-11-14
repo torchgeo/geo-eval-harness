@@ -21,6 +21,7 @@ Changed
 Added
 ^^^^^
 
+* Date-aware backbones can receive each sample's acquisition day of year (``doy``) through ``BenchModel.forward_batch``. PASTIS snapshots (``time_steps`` unset or 1) carry the date of the Sentinel-2 frame the loader selects, and feature extraction, the segmentation probe and solver, and the host, GPU, and disk sample caches pass it through. Other models ignore it; their results and ``config_hash`` values are unchanged. PASTIS sample caches are rebuilt once.
 * THOR (tiny, small, base, large) for classification and segmentation (``thor/tiny``, ``thor/small``, ``thor/base``, ``thor/large``). The encoder is reimplemented from a pinned upstream commit, and the weights are pinned and checked against their sha256. Sentinel-2 and Sentinel-1 dB bands are mapped by name, each band group is resampled to its pretraining GSD over the tile's ground extent, and segmentation reads merged group grids through ``taps.<i>``. See :doc:`models`.
 * AnySat v1 (Base) for classification and segmentation (``anysat_base``, ``anysat_base_seg``). Model code and weights are pinned, and the weights are checked against their sha256.
   - Each input is resampled to its projector's GSD over the tile's ground extent (``input_gsd``), with patch sizes in metres.
