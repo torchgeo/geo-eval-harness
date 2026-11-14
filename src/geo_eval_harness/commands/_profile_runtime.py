@@ -26,7 +26,7 @@ from ..devices import resolve_device
 from ..model_profile import ProfileResult, profile_inference
 
 
-def _load_batch(config: ProfileConfig) -> tuple[Dataset, torch.Tensor, list[BandSpec]]:
+def _load_batch(config: ProfileConfig) -> tuple[Dataset, dict[str, torch.Tensor], list[BandSpec]]:
     """Load one full batch and its ordered band metadata."""
     inputs = config.input
     dataset = get_bench_dataset_class(config.dataset)()
@@ -43,10 +43,10 @@ def _load_batch(config: ProfileConfig) -> tuple[Dataset, torch.Tensor, list[Band
         partition_name=inputs.partition,
         time_steps=inputs.time_steps,
     )
-    batch = next(iter(train_loader))["image"]
-    if batch.shape[0] != config.runtime.batch_size:
+    batch = next(iter(train_loader))
+    if batch["image"].shape[0] != config.runtime.batch_size:
         raise RuntimeError(
-            f"dataset returned batch size {batch.shape[0]}, requested {config.runtime.batch_size}"
+            f"dataset returned batch size {batch['image'].shape[0]}, requested {config.runtime.batch_size}"
         )
     return train_dataset, batch, selected
 
@@ -132,11 +132,11 @@ def run(config: ProfileConfig) -> None:
     with redirect_stdout(sys.stderr):
         train_dataset, batch, selected_bands = _load_batch(config)
         model = (
-            _build_model(preset, config, train_dataset, selected_bands, batch.shape[-1])
+            _build_model(preset, config, train_dataset, selected_bands, batch["image"].shape[-1])
             .to(device)
             .eval()
         )
-        sample = batch.to(device)
+        sample = batch["image"].to(device)
         result = profile_inference(
             model,
             sample,
@@ -145,8 +145,13 @@ def run(config: ProfileConfig) -> None:
             n_warmup=config.warmup,
             n_measure=config.measurements,
             count_flops=config.count_flops,
+            doy=batch.get("doy"),
         )
-    payload = json.dumps(_record(config, preset, selected_bands, sample, result), allow_nan=False)
+    record = _record(config, preset, selected_bands, sample, result)
+    doy = batch.get("doy")
+    if doy is not None:
+        record["doy_sha256"] = hashlib.sha256(doy.detach().cpu().numpy().tobytes()).hexdigest()
+    payload = json.dumps(record, allow_nan=False)
     if config.output.directory is None and config.output.file is None:
         print(payload)
     else:

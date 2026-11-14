@@ -578,3 +578,68 @@ def test_invalid_profile_request_fails_before_loading(
         profile(profile_args)
     assert error.value.code == 2
     assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("entrypoint", ["standalone", "image-run"])
+def test_profiling_preserves_dates_for_timing_flops_and_cpu_batches(
+    profile_config: ProfileConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entrypoint: str,
+) -> None:
+    from geo_eval_harness.config.presets import resolve_run_config
+    from geo_eval_harness.config.run import RunConfig
+    from geo_eval_harness.datasets import get_bench_dataset_class
+    from geo_eval_harness.main import dataset_metadata, evaluate_profile
+    from tests.support.models import DatedBenchModel
+
+    images = torch.zeros(4, 1, 8, 8)
+    dates = torch.tensor([20, 70, 150, 240])
+    loader = [{"image": images, "doy": dates}]
+    model = DatedBenchModel()
+    observed: list[torch.Tensor] = []
+    model.spatial_features.register_forward_hook(
+        lambda _module, _inputs, output: observed.append(output[:, 0, 0, 0].clone())
+    )
+    if entrypoint == "standalone":
+        profile_config.warmup = 1
+        profile_config.measurements = 1
+        profile_config.count_flops = True
+        monkeypatch.setattr(
+            _profile_runtime, "get_datasets", lambda **_: (None, loader, None, None)
+        )
+        monkeypatch.setattr(_profile_runtime, "build_model", lambda *_, **__: model)
+        _profile_runtime.run(profile_config)
+        record = json.loads(capsys.readouterr().out)
+        assert record["profile"]["flops"]["status"] == "measured"
+        assert record["doy_sha256"] == hashlib.sha256(dates.numpy().tobytes()).hexdigest()
+    else:
+        config = RunConfig.model_validate(
+            {
+                "model": {"name": "rcf"},
+                "datasets": ["m-eurosat"],
+                "runtime": {"device": "cpu"},
+                "profile": {
+                    "n_warmup": 1,
+                    "n_measure": 1,
+                    "cpu_throughput": {
+                        "enabled": True,
+                        "batch_size": 2,
+                        "n_warmup": 0,
+                        "n_measure": 1,
+                    },
+                },
+            }
+        )
+        config, preset = resolve_run_config(config, "m-eurosat")
+        meta = dataset_metadata(
+            config, "m-eurosat", get_bench_dataset_class("m-eurosat"), preset, "test"
+        )
+        meta.update(feature_dim=1, n_train=4, n_val=4, n_test=4)
+        rows = evaluate_profile(model, loader, config, meta)
+        assert any(row["metric_name"] == "throughput_samples_per_sec_cpu" for row in rows)
+    assert [len(values) for values in observed] == (
+        [4, 4, 1] if entrypoint == "standalone" else [4, 4, 1, 2]
+    )
+    for values in observed:
+        torch.testing.assert_close(values, dates[: len(values)].float())

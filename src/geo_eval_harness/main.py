@@ -578,9 +578,13 @@ def evaluate_profile(
     profile_cfg = cfg.profile
     n_warmup, n_measure = profile_cfg.n_warmup, profile_cfg.n_measure
     cpu_cfg = profile_cfg.cpu_throughput
-    sample = next(iter(sample_loader))["image"].to(device)
+    batch = next(iter(sample_loader))
+    sample = batch["image"].to(device)
+    doy = batch.get("doy")
 
-    metrics = measure_profile(model, sample, device, n_warmup=n_warmup, n_measure=n_measure)
+    metrics = measure_profile(
+        model, sample, device, n_warmup=n_warmup, n_measure=n_measure, doy=doy
+    )
 
     if cpu_cfg.enabled:
         metrics.update(
@@ -593,6 +597,7 @@ def evaluate_profile(
                     n_measure=cpu_cfg.n_measure,
                 ),
                 time_budget_s=cpu_cfg.time_budget_s,
+                doy=doy,
             )
         )
 
