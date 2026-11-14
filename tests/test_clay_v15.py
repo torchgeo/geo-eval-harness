@@ -83,11 +83,13 @@ def test_native_grid_and_conditioning_are_preserved(encoder: _Encoder) -> None:
 
 def test_clay_presets_select_the_requested_encoder() -> None:
     v1 = load_model_preset(ModelConfig(name="terratorch/clay_v1"))
+    v1_cls = load_model_preset(ModelConfig(name="terratorch/clay_v1_cls"))
     v15 = load_model_preset(ModelConfig(name="terratorch/clay_v1_5"))
     cls = load_model_preset(ModelConfig(name="terratorch/clay_v1_5_cls"))
     assert v1.name == "tt_clay_v1_base"
+    assert v1_cls.name == "tt_clay_v1_base_cls"
     assert v15.name == "tt_clay_v1_5_large"
     assert cls.name == "tt_clay_v1_5_large_cls"
-    assert v1.kwargs["backbone_name"] == "timm_clay_v1_base"
+    assert v1.kwargs["backbone_name"] == v1_cls.kwargs["backbone_name"] == "timm_clay_v1_base"
     assert v15.kwargs["backbone_name"] == cls.kwargs["backbone_name"] == "clay_v1_5_large"
     assert len(v15.segmentation.layers) == 4
