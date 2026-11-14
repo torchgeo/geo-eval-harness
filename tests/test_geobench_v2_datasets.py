@@ -407,3 +407,36 @@ class TestPASTISSampleConstruction:
     def test_time_steps_rejected_when_not_multi_temporal(self):
         with pytest.raises(ValueError, match="not multi-temporal"):
             BurnScars().get_dataset("train", time_steps=2)
+
+
+def test_dynamic_earthnet_s2_names_select_stored_bands() -> None:
+    """Dynamic EarthNet Sentinel-2 files store the 10 m bands, then the 20 m, then the 60 m."""
+    from geobench_v2.datasets import GeoBenchDynamicEarthNet
+
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    names = [band.name for band in bench.bands if band.sensor == "s2"]
+    stored = {"planet": torch.arange(4.0)[:, None, None], "s2": torch.arange(12.0)[:, None, None]}
+    selected = object.__new__(GeoBenchDynamicEarthNet).rearrange_bands(
+        stored, bench.build_band_order(None)
+    )
+    channels = selected["image_s2"].flatten().int().tolist()
+    assert dict(zip(names, channels, strict=True)) == {
+        "b02": 0,
+        "b03": 1,
+        "b04": 2,
+        "b08": 3,
+        "b05": 4,
+        "b06": 5,
+        "b07": 6,
+        "b8a": 7,
+        "b11": 8,
+        "b12": 9,
+        "b01": 10,
+        "b09": 11,
+    }
+
+
+def test_dynamic_earthnet_requires_a_planet_band() -> None:
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    with pytest.raises(ValueError, match="Planet band"):
+        bench.build_band_order(("b04", "b03", "b02"))
