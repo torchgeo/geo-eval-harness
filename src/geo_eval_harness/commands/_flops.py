@@ -33,6 +33,7 @@ _FLAG_OVERRIDES = (
     FlagOverride("seg_heads", ("segmentation", "heads")),
     FlagOverride("seg_band_configs", ("segmentation", "band_configs")),
     FlagOverride("seg_num_classes", ("segmentation", "num_classes")),
+    FlagOverride("seg_neck_policy", ("segmentation", "neck_policy")),
     FlagOverride("seg_layers", ("segmentation", "probe", "layers")),
     FlagOverride("temporal_pool", ("segmentation", "probe", "temporal_pool")),
     FlagOverride("timing_batch_size", ("timing", "batch_size")),

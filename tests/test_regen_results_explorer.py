@@ -223,3 +223,47 @@ def test_missing_headline_does_not_overwrite_the_page(
     with pytest.raises(SystemExit, match="headline-text"):
         explorer.main()
     assert explorer.HTML_PATH.read_text() == broken
+
+
+def test_efficiency_reference_preserves_other_sizes_and_heads_in_the_table(
+    explorer_root: Path,
+) -> None:
+    shared = {
+        "model": "example.Model",
+        "name": "model",
+        "band_config": "rgb",
+        "n_channels": 3,
+        "image_size": 224,
+        "feature_dim": 32,
+        "task": "classification",
+        "head_type": "",
+        "gflops_backbone": 10,
+        "throughput_samples_per_sec": 50,
+        "config_hash": "measured",
+        "gpu_name": "RTX",
+        "precision": "float32",
+        "timing_batch_size": 1,
+        "measured_at": "2026-11-12T12:00:00Z",
+    }
+    _write_csv(
+        explorer.COMPUTE_COST_CSV,
+        [
+            shared,
+            {
+                **shared,
+                "image_size": 512,
+                "gpu_name": "H100",
+                "measured_at": "2026-11-13T12:00:00Z",
+            },
+            {**shared, "task": "segmentation", "head_type": "unet", "gflops_backbone": 100},
+        ],
+    )
+    profiles = [row for row in explorer._load_csv_rows("test") if row["method"] == "profile"]
+    assert {row["image_size"] for row in profiles} == {224, 512}
+    assert {row["head_type"] for row in profiles} == {None, "unet"}
+    selected = [row for row in profiles if row["efficiency_reference"]]
+    assert len(selected) == 2
+    assert all(row["image_size"] == 224 and row["task"] == "classification" for row in selected)
+    assert all(
+        row["gpu_name"] == "RTX" and row["profile_precision"] == "float32" for row in selected
+    )

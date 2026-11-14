@@ -200,7 +200,8 @@ class TerraTorchClayBench(_TerraTorchBench):
     """Clay v1 Base or v1.5 Large, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
     Input mapping and ``waves`` use available :data:`CLAY_BANDS` in pretrained order.
-    RGB inputs use three channels and wavelengths; full S2 inputs use all six.
+    RGB inputs use three channels and wavelengths; full S2 inputs use all six. The
+    encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
     """
 
     # Clay's published mean/std (see _CLAY_PRETRAIN_MEAN_BY_BAND) are raw S2
