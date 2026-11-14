@@ -39,8 +39,7 @@ All measurement commands share ``--output-dir`` for an output root and ``--outpu
 
 All measurement commands support ``--dry-run``. See
 :doc:`/user/configuration` for exact YAML fields and :doc:`/user/coordbench`
-for coordinate examples. Legacy ``key=value`` / ``+key=value`` syntax is
-rejected; it is not available through an alternate module entry point.
+for coordinate examples.
 
 Strict image configuration
 --------------------------

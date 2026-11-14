@@ -1,9 +1,7 @@
 User Guide
 ==========
 
-Welcome to the ``geo-eval-harness`` user guide.  These pages walk you through
-installing the framework, running your first benchmark, configuring datasets
-and models, and interpreting the results.
+Install ``geo-eval-harness``, run a benchmark, and inspect its results. The guides below cover configuration, datasets, models, and contributions.
 
 .. toctree::
    :caption: Getting Started

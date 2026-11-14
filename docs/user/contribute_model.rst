@@ -1,10 +1,7 @@
 Contribute a model (Stage 2)
 ============================
 
-This guide covers everything a pull request needs to add a new frozen
-pretrained model to ``geo-eval-harness``.  Before continuing, complete
-:doc:`eval_own_model` which demonstrates how to implement your new model to work with the geo-eval-harness pipeline and verify your model produces sensible results
-on the applicable datasets.
+Add a pretrained model to the shared catalog after implementing and evaluating its wrapper with :doc:`eval_own_model`. This guide covers package exports, dependencies, weights, tests, and the pull request.
 
 .. _contrib-prerequisites:
 
@@ -105,7 +102,7 @@ Weights
 Write tests
 -----------
 
-Create :file:`tests/test_<model>.py`.  Every added code path must be covered.
+Create :file:`tests/test_<model>.py` with offline tests for the wrapper's input and output behavior.
 
 **Fast tests (run in CI) — no network I/O:**
 
@@ -205,8 +202,8 @@ Before opening the PR, apply auto-fixes and verify the full test suite passes:
 
 .. code-block:: console
 
-   $ uv run ruff check . --fix && uv run ruff format .
-   $ uv run pytest --no-cov
+   $ uv run pre-commit run --all-files
+   $ uv run pytest
 
 .. _contrib-pr:
 

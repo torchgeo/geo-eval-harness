@@ -6,6 +6,8 @@ V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
+Commands that use ``docs/examples/`` paths run from the repository root. With an installed package, save the example YAML locally and pass that path to ``--config``.
+
 Filesystem layout
 -----------------
 
@@ -71,7 +73,7 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
 Downloading
 -----------
 
-The :doc:`/api/cli` accepts one or more dataset names. Collection aliases remain available for downloading a whole GeoBench family or a selected subset:
+The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are available for downloading a whole GeoBench family or a selected subset:
 
 .. code-block:: console
 
@@ -130,11 +132,9 @@ V1 readers use JSON metadata only. Tar shards pair ``<sample_id>.bands.npz`` wit
 
 Per-band ``transform`` and ``crs`` entries are optional. Geographic extraction accepts six affine coefficients ``[a, b, c, d, e, f]`` (or the nine-element affine matrix) and a CRS string; use ``null`` when georeferencing is unavailable. Python objects such as affine/CRS classes and NumPy label arrays must be exported as JSON numbers, lists, and strings by the data producer.
 
-.. warning::
+If an archive checksum fails, remove the named corrupt archive and retry the download. Custom datasets must supply JSON metadata.
 
-   Existing pickle-based V1 caches are not converted or unpickled. Replace them with ``geo-eval-harness download geobench_v1`` (or ``--datasets m-eurosat`` for a subset). If an archive checksum fails, remove the named corrupt archive and retry the download. Custom datasets must supply JSON metadata.
-
-Geography extraction reads the JSON metadata directly from the default shards or custom HDF5 files. ``scripts/repack_geobench_v1.py`` repacks custom JSON-metadata HDF5 files into JSON-based shards; it does not read or convert pickle metadata.
+Geography extraction reads the JSON metadata directly from the default shards or custom HDF5 files. ``scripts/repack_geobench_v1.py`` repacks custom JSON-metadata HDF5 files into JSON-based shards.
 
 Supported V1 datasets
 ^^^^^^^^^^^^^^^^^^^^^
@@ -213,7 +213,7 @@ before running a benchmark, for example with
    normalisation conventions:
 
    * ``m-bigearthnet`` (V1) — original BigEarthNet, 43-class
-     **multilabel** scene tags, S2 top-of-atmosphere DN.
+     **multilabel** scene tags, S2 Level-2A DN.
      ``benv2`` (V2) — BigEarthNet v2.0 with 19-class multilabel and
      stacked S1 + S2.
    * ``m-so2sat`` (V1) — 18-band stack including LCZ context.
@@ -285,7 +285,7 @@ than being silently omitted.
 
    $ geo-eval-harness run --model imagestats --dataset ucmerced --device cpu
 
-``hotosm_buildings`` is binary building segmentation on 72,363 RGB tiles (256x256, zoom 19, about 0.3 m GSD) from 93 Humanitarian OpenStreetMap Team projects. Imagery comes from OpenAerialMap (CC-BY 4.0) and labels from OpenStreetMap (ODbL 1.0). It uses the official 57,890 / 7,237 / 7,236 train/val/test split, which is grouped by project; 5 tile coordinates appear in both train and val, and overlapping projects repeat some tiles within a split. Train is skewed: three Myanmar projects hold 76% of its tiles, and Eswatini appears in val and test only. ``geo-eval-harness download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes the masks as small PNGs, and deletes the upstream shards, leaving about 1.1 GB. Masks are 0 (background), 1 (building), and 255 where the image is transparent nodata, which the segmentation probe ignores. All three splits load into about 1.5 GB of RAM. With spawn or forkserver multiprocessing (including the defaults on macOS and Windows), use ``--workers 0``; forked workers share the encoded splits through copy-on-write. The full train split is too large for the default in-memory feature cache, so set ``segmentation: {cache_features: false}`` in the ``--config`` YAML for every model.
+``hotosm_buildings`` provides binary building segmentation on RGB imagery. See `HOTOSM buildings — segmentation`_ for its training subset, split definitions, download, and memory requirements.
 
 ``openearthmap-sar`` uses the official IEEE GRSS Data Fusion Contest 2025 Track I splits: **4,333 training, 210 validation, and 490 test** image/label pairs. Images are single-band ``uint8`` SAR GeoTIFFs at **1024 x 1024** pixels, with published GSD of **0.15-0.5 m**.
 
@@ -382,7 +382,7 @@ Classes are 0 background, 1 intact, 2 damaged, and 3 destroyed, kept as native l
 
 Images are single-band ``uint8`` amplitude (display-scaled, not calibrated backscatter) at **1024 x 1024** pixels, exposed as one ``sar`` band in raw float32 ``0..255`` units; the default ``rgb`` selector resolves to ``sar``. The polarisation is not recorded in the files, so the band has no ``vv``/``hh`` alias and no ``unit``. Zero is the swath fill value (12.5% of training pixels). It is kept as input, and its labels are kept, because labelled buildings overlap it. Dataset normalization uses statistics over all 2,918 native-resolution training images, zeros included. The runner owns resizing; tiles are not cropped.
 
-``bright-post-sar-rgb`` serves the same SAR tile as three identical ``red``/``green``/``blue`` channels, using sensor ``aerial``, no wavelengths, and the SAR statistics for each channel (mean 56.8231, std 45.8553). Both the default ``rgb`` selector and ``all`` select all three; explicit band names select fewer copies. This pseudo-RGB representation lets models use their RGB input paths; it is not optical imagery. Tiles, masks, split memberships, geography, and the installation below are identical to ``bright-post-sar``. Download once with ``geo-eval-harness download bright-post-sar``, then select ``--dataset bright-post-sar-rgb`` for evaluation. The two dataset ids distinguish result rows and run hashes; the single-band dataset is unchanged.
+``bright-post-sar-rgb`` serves the same SAR tile as three identical ``red``/``green``/``blue`` channels, using sensor ``aerial``, no wavelengths, and the SAR statistics for each channel (mean 56.8231, std 45.8553). Both the default ``rgb`` selector and ``all`` select all three; explicit band names select fewer copies. This pseudo-RGB representation lets models use their RGB input paths; it is not optical imagery. Tiles, masks, split memberships, geography, and the installation below are identical to ``bright-post-sar``. Download once with ``geo-eval-harness download bright-post-sar``, then select ``--dataset bright-post-sar-rgb`` for evaluation. The two dataset ids distinguish result rows and run hashes.
 
 .. code-block:: text
 
@@ -445,14 +445,18 @@ HOTOSM buildings — segmentation
 ``--partition``          train tiles  use
 ======================== ============ ===============================================================
 ``default``              5,000        benchmark and leaderboard version
-``full``                 57,890       the whole official train split (the behaviour before the 5k default)
+``full``                 57,890       the whole official train split
 ======================== ============ ===============================================================
 
 The subset is packaged as ``hotosm_buildings_train_5k.csv.gz``, which lists each tile's ``project_id``, ``tile_id``, and row in the converted ``train.parquet``. Loading checks that every listed row holds the listed tile, so a train file converted differently fails instead of silently training on other tiles. The tiles were drawn per project in proportion to its size, after excluding train tiles that also appear in val or test, so the subset keeps the project and country mix of the full split (76% Myanmar).
 
-Why 5k: in a training-budget study (13 models, frozen and LoRA, UPerNet, 10 epochs, budgets 1k to all 57,880 eligible tiles, 3 subsets x 3 training seeds), the model ranking at 5k tiles matched full-data training with Kendall tau-b 0.97 (frozen) and 0.88 (LoRA). Rankings from two training seeds on the full data agree only at 0.87 to 0.94, so 5k is within seed noise, at about 1/12 of the training compute. The packaged subset is the study's subset seed 1. Normalization statistics remain those of the full train split.
+In a training-budget study (13 models, frozen and LoRA, UPerNet, 10 epochs, budgets 1k to all 57,880 eligible tiles, 3 subsets x 3 training seeds), the model ranking at 5k tiles matched full-data training with Kendall tau-b 0.97 (frozen) and 0.88 (LoRA). Rankings from two training seeds on the full data agree only at 0.87 to 0.94, so 5k is within seed noise, at about 1/12 of the training compute. The packaged subset is the study's subset seed 1. Normalization statistics remain those of the full train split.
 
-Imagery CC-BY 4.0 (OpenAerialMap); labels ODbL 1.0 (OpenStreetMap).
+``geo-eval-harness download hotosm_buildings`` fetches the pinned parquet (5.9 GB), keeps the image bytes, re-encodes masks as PNGs, and removes the upstream shards, leaving about 1.1 GB. Labels are 0 for background, 1 for building, and 255 for transparent nodata, which loss and metrics ignore. The complete encoded splits use about 1.5 GB of RAM. With spawn or forkserver workers, including on macOS and Windows, use ``--workers 0`` to avoid copying that data. Set ``segmentation: {cache_features: false}`` when the feature cache would exceed available RAM.
+
+The full training split contains three Myanmar projects with 76% of its tiles; Eswatini appears only in validation and test. Five tile coordinates occur in both full train and validation, and overlapping projects can repeat tiles within a split. The default subset excludes train tiles shared with validation or test.
+
+Imagery is CC-BY 4.0 (OpenAerialMap); labels are ODbL 1.0 (OpenStreetMap).
 
 Open Cities AI Challenge — segmentation
 ---------------------------------------
@@ -463,11 +467,11 @@ CLI name             #cls   bands notes                                        C
 ``open_cities``      2      3     drone RGB, native 0.02-0.20 m GSD            :class:`~geo_eval_harness.datasets.OpenCities`
 ==================== ====== ===== ============================================ ==============================================================
 
-``open_cities`` is building footprint segmentation on drone imagery of seven African cities (Accra, Dar es Salaam, Kampala, Monrovia, Niamey, Pointe-Noire, and Zanzibar), from the tier-1 scenes of the Open Cities AI Challenge (GFDRR Labs, 2020). The upstream release ships 31 large georeferenced scenes with OpenStreetMap footprints and a test set without labels, so the benchmark defines its own chips and splits. Samples are 512x512 chips cut on each scene's native pixel grid. Since the native ground sampling distance ranges from 0.02 m to 0.20 m, a chip covers between 10 m and 100 m on the ground, and any resizing is left to the model's transforms.
+``open_cities`` is building footprint segmentation on drone imagery of seven African cities (Accra, Dar es Salaam, Kampala, Monrovia, Niamey, Pointe-Noire, and Zanzibar), from the tier-1 scenes of the Open Cities AI Challenge (GFDRR Labs, 2020). The upstream release contains 31 large georeferenced scenes with OpenStreetMap footprints and a test set without labels, so the benchmark defines its own chips and splits. Samples are 512x512 chips cut on each scene's native pixel grid. Since the native ground sampling distance ranges from 0.02 m to 0.20 m, a chip covers between 10 m and 100 m on the ground, and any resizing is left to the model's transforms.
 
 The chips and their train/val/test assignment are fixed in the packaged ``open_cities_index.csv.gz``, which ``scripts/generate_open_cities_index.py`` generated once. Within each city, 500 m geographic blocks are assigned to the splits so that chip count and building pixels both come close to 70/10/20, which gives 76,818 train, 11,236 validation, and 22,408 test chips. A chip is kept when at least half of it is valid imagery, and chips that duplicate an overlapping scene are dropped. Zanzibar is mostly rural bush, so its blocks with less than 1% building cover are dropped as well. ``scripts/plot_open_cities_splits.py`` draws the split map of each city and writes the block polygons as GeoJSON for inspection in a GIS.
 
-The default training partition is a fixed 10,000-chip subset: the sorted first 10,000 entries of ``numpy.random.default_rng(0).permutation(76818)``. This is exactly the ``train-n10000-s0`` subset of the training-budget study, independent of the training seed. The packaged ``open_cities_train_10k.csv.gz`` pins the train rows and chip IDs with a SHA-256 checksum; loading also checks chip identities against the full index. ``scripts/generate_open_cities_subset.py`` reproduces the manifest. ``--partition full`` restores all 76,818 training chips; validation and test remain complete for both partitions. Earlier results with ``partition=default`` used the full split: use a fresh output file rather than resuming those rows as 10k runs.
+The default training partition is a fixed 10,000-chip subset: the sorted first 10,000 entries of ``numpy.random.default_rng(0).permutation(76818)``. This is exactly the ``train-n10000-s0`` subset of the training-budget study, independent of the training seed. The packaged ``open_cities_train_10k.csv.gz`` pins the train rows and chip IDs with a SHA-256 checksum; loading also checks chip identities against the full index. ``scripts/generate_open_cities_subset.py`` reproduces the manifest. ``--partition full`` restores all 76,818 training chips; validation and test remain complete for both partitions.
 
 ``geo-eval-harness download open_cities`` fetches the 31 scenes and their label GeoJSONs (about 34 GB) from source.coop and verifies them against packaged SHA-256 checksums. The imagery is kept byte-identical. The download then rasterises one mask GeoTIFF per scene on the same pixel grid, with 0 for background, 1 for building, and 255 where the image is transparent or black, which the loss and metrics ignore. Normalization statistics exclude these nodata pixels.
 
@@ -560,19 +564,12 @@ Model compatibility
 * The torchgeo RGB-only wrappers hold fixed-channel pretrained weights
   and don't currently adapt to non-RGB inputs — see
   `#16 <https://github.com/torchgeo/geo-eval-harness/issues/16>`__.
-* :class:`~geo_eval_harness.models.TorchGeoDOFABench` accepts variable
-  channels via wavelength tokens but the current wrapper hard-codes
-  Sentinel-2 RGB wavelengths — see
-  `#15 <https://github.com/torchgeo/geo-eval-harness/issues/15>`__.
+* :class:`~geo_eval_harness.models.TorchGeoDOFABench` resolves one wavelength per selected band from ``BandSpec`` metadata or known optical band names, with a placeholder for SAR. Unknown bands require an explicit ``wavelengths`` constructor argument.
 
 Data partitions
 ---------------
 
-V1 datasets and ``hotosm_buildings`` honour the ``--partition`` argument; other
-datasets ignore it or reject non-default values. For HOTOSM, ``default`` is the
-5k benchmark training subset and ``full`` is the whole train split (see
-`HOTOSM buildings — segmentation`_). For V1 datasets, ``--partition`` selects one
-of the partition JSON files distributed with each dataset.
+V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets ignore or reject non-default values.
 
 .. code-block:: console
 

@@ -3,8 +3,7 @@
 geo-eval-harness
 ================
 
-A lightweight benchmarking framework for frozen geospatial foundation models.
-Choose your path below.
+Evaluate geospatial image models and location encoders with classification, segmentation, and coordinate prediction tasks.
 
 .. grid:: 1 2 2 4
 
@@ -12,7 +11,7 @@ Choose your path below.
       :link: user/quickstart
       :link-type: doc
 
-      Evaluate any frozen backbone on GeoBench V1 / V2.
+      Run frozen-backbone probes, LoRA, or full fine-tuning.
 
    .. grid-item-card:: Bring your own model
       :link: user/eval_own_model
@@ -30,7 +29,7 @@ Choose your path below.
       :link: user/contribute_dataset
       :link-type: doc
 
-      Wire a new geospatial dataset into the benchmark and generate results.
+      Register a geospatial dataset and evaluate models on it.
 
 .. toctree::
    :maxdepth: 2
