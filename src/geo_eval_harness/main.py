@@ -1098,6 +1098,9 @@ def main(cfg: RunConfig, *, strict: bool = False) -> None:
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
     torch.manual_seed(cfg.runtime.seed)
+    if device.type == "cuda":
+        # One setting for the whole run keeps a result independent of dataset order and resume.
+        torch.set_float32_matmul_precision("high")
     dataset_names = _expand_dataset_list(cfg.datasets)
 
     output_path = _resolve_output_path(cfg)

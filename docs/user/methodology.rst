@@ -163,7 +163,7 @@ implementation matching scikit-learn's objective scaling:
 * **No feature standardisation by default** — embeddings are used as-is.
   ``classification.feature_standardize: true`` z-scores each dimension with
   training-split statistics first (method name ``linear-std``).
-* **TF32** is enabled on CUDA for faster matmul when available.
+* **TF32** matrix multiplication is enabled for the whole run on CUDA, so feature extraction, the probe, and segmentation training use one precision setting.
 
 Hyperparameters
 ^^^^^^^^^^^^^^^
