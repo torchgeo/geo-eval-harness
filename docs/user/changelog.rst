@@ -26,6 +26,7 @@ Models
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
+* timm models built with ``global_pool: ""`` average channels-last feature maps over their spatial axes and exclude register tokens from the patch average; ``use_cls_token`` is rejected for backbones without a class token.
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
 * timm ViT and DeiT models keep their pretrained final normalization when patch tokens are pooled, so ``global_pool: avg`` averages the normalized patch tokens.
