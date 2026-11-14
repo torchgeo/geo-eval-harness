@@ -186,6 +186,19 @@ class TestV2Loading:
                 assert kwargs["return_stacked_image"] is True
 
 
+def test_treesatai_rgb_selects_stored_red_green_blue_channels() -> None:
+    """TreeSatAI aerial files store NIR, green, blue, red."""
+    from geobench_v2.datasets import GeoBenchTreeSatAI
+
+    bench = get_bench_dataset_class("treesatai")()
+    stored = torch.arange(4.0)[:, None, None]
+    selected = object.__new__(GeoBenchTreeSatAI).rearrange_bands(
+        {"aerial": stored}, bench.build_band_order(("red", "green", "blue", "nir"))
+    )
+    assert selected["image_aerial"].flatten().tolist() == [3, 1, 2, 0]
+    assert bench.rgb_bands == ["red", "green", "blue"]
+
+
 class MockKuroSiwo:
     """Match upstream Kuro Siwo samples, with each image shaped ``(C, H, W)``.
 
