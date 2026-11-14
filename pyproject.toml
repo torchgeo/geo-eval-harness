@@ -37,6 +37,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
+  "einops>=0.8",
   "faissknn[cpu]>=0.4; sys_platform!='linux' or platform_machine!='x86_64'",
   "faissknn[cuda]>=0.4; sys_platform=='linux' and platform_machine=='x86_64'",
   "filelock>=3.12",

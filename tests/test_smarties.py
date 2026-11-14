@@ -88,7 +88,7 @@ def test_bands_without_a_projection_raise(bands: list[BandSpec], match: str) -> 
 def test_vectorized_tokenizer_matches_upstream_per_band_loop() -> None:
     bands = _bands("m-bigearthnet")
     model = SmartiesBench(bands, pretrained=False, normalization="identity").eval()
-    images = torch.randn(2, len(bands), 224, 224)
+    images = torch.randn(2, len(bands), 224, 224, requires_grad=True)
 
     # Upstream tensor_patchify: (B, C, H, W) -> (B, h, w, C, p, p), then one Linear per band.
     p = 16
@@ -103,8 +103,11 @@ def test_vectorized_tokenizer_matches_upstream_per_band_loop() -> None:
         dim=1,
     )
     expected = SMARTIES_PROJECTION_SCALER * per_band.mean(dim=1).reshape(2, 196, TINY[0])
-    with torch.no_grad():
-        assert torch.allclose(model.embed_patches(images), expected, atol=1e-4)
+    actual = model.embed_patches(images)
+    torch.testing.assert_close(actual, expected, atol=1e-4, rtol=1e-5)
+    actual_grad = torch.autograd.grad(actual.square().mean(), images)[0]
+    expected_grad = torch.autograd.grad(expected.square().mean(), images)[0]
+    torch.testing.assert_close(actual_grad, expected_grad)
 
 
 def _normalize(bands: list[BandSpec], images: torch.Tensor, level: str = "l2a") -> torch.Tensor:

@@ -15,6 +15,7 @@ from typing import cast
 
 import torch
 import torch.nn.functional as F
+from einops import rearrange
 from torch import nn
 
 #: Band groups in THOR's token order (``_default_input_params["groups"]`` upstream). Bands of a
@@ -105,11 +106,14 @@ class _Attention(nn.Module):
 
     def forward(self, x: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
         """Attend over ``(B, N, D)`` tokens with a ``(1, H, N, N)`` bias."""
-        batch, tokens, dim = x.shape
-        qkv = self.qkv(x).reshape(batch, tokens, 3, self.num_heads, dim // self.num_heads)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
+        q, k, v = rearrange(
+            self.qkv(x),
+            "batch token (qkv head dim) -> qkv batch head token dim",
+            qkv=3,
+            head=self.num_heads,
+        ).unbind(0)
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=bias.to(q.dtype))
-        return self.proj(out.transpose(1, 2).reshape(batch, tokens, dim))
+        return self.proj(rearrange(out, "batch head token dim -> batch token (head dim)"))
 
 
 class _Mlp(nn.Module):
