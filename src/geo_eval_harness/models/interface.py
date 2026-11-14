@@ -59,8 +59,12 @@ class BenchModel(nn.Module, ABC):
         self,
         bands: list[BandSpec],
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
-        **_: object,
+        **unexpected: object,
     ) -> None:
+        if unexpected:
+            raise TypeError(
+                f"{type(self).__name__} got unexpected keyword arguments {sorted(unexpected)}."
+            )
         super().__init__()
         if not bands:
             raise ValueError("BenchModel requires a non-empty list of BandSpec.")

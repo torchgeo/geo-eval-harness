@@ -50,6 +50,11 @@ def test_empty_bands_rejected() -> None:
         _Toy(bands=[])
 
 
+def test_unknown_constructor_options_rejected() -> None:
+    with pytest.raises(TypeError, match=r"_Toy .*\['auto_resise', 'normalisation'\]"):
+        _Toy(bands=_bands(2), normalisation="identity", auto_resise=True)
+
+
 def test_date_metadata_does_not_change_date_independent_models() -> None:
     model = _Toy(bands=_bands(2))
     images = torch.zeros(2, 2, 2, 2)

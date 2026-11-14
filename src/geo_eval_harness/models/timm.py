@@ -117,8 +117,8 @@ class TimmPatchBenchModel(BenchModel):
     _band_min: torch.Tensor
     _band_range: torch.Tensor
 
-    #: Constructor kwargs come from user YAML, and __init__ ignores unknown
-    #: keys, so validate them instead of silently dropping a typo.
+    #: Constructor kwargs come from user YAML; these settings validate their values before the
+    #: backbone is built.
     validated_settings: "type[TimmModelSettings]"
 
     def __init__(  # noqa: PLR0913 - public YAML options

@@ -29,6 +29,7 @@ Models
 * Scale-MAE accepts ordered RGB bands under any recognized band name, such as Planet's ``r``, ``g``, ``b``.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
+* Model constructors raise ``TypeError`` for keyword arguments they do not name, so a misspelled ``model.kwargs`` entry fails instead of being ignored.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
 * SeCo ResNet model normalization converts RGB inputs to its 8-bit image scale, applies per-band quantiles, and standardizes with ImageNet statistics.
 * torchgeo wrappers apply their model-native normalization out of place, so forwarding the same batch again gives the same features.
