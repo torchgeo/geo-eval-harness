@@ -1123,6 +1123,20 @@ def test_patch_linear_head_infers_patch_geometry(
     assert torch.isfinite(logits).all()
 
 
+def test_patch_linear_head_keeps_parameter_dtype_for_float16_features() -> None:
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
+
+    head = PatchLinearHead([8], num_classes=3)
+    head([torch.zeros(1, 8, 4, 4)], 64, 64)
+    params = list(head.parameters())
+
+    logits = head([torch.randn(2, 8, 4, 4).half()], 64, 64)
+
+    assert all(param.dtype == torch.float32 for param in params)
+    assert logits.dtype == torch.float32
+    assert torch.isfinite(logits).all()
+
+
 def test_patch_linear_head_ignores_extra_channels():
     """PatchLinearHead uses only the first feature map when extra layers are passed."""
     from geo_eval_harness.models.segmentation_heads import PatchLinearHead
