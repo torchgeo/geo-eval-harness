@@ -250,7 +250,15 @@ def test_standardized_head_feeds_z_scored_features_to_the_head() -> None:
     mean = features.mean(dim=(0, 2, 3), keepdim=True)
     std = torch.sqrt(features.var(dim=(0, 2, 3), unbiased=False, keepdim=True) + 1e-6)
 
-    torch.testing.assert_close(head([features], 32, 32), inner([(features - mean) / std], 32, 32))
+    original = features.clone()
+    features.requires_grad_()
+    actual = head([features], 32, 32)
+    expected = inner([(features - mean) / std], 32, 32)
+    torch.testing.assert_close(actual, expected)
+    torch.testing.assert_close(features, original, rtol=0, atol=0)
+    actual_grad = torch.autograd.grad(actual.square().sum(), features)[0]
+    expected_grad = torch.autograd.grad(expected.square().sum(), features)[0]
+    torch.testing.assert_close(actual_grad, expected_grad, rtol=1e-4, atol=1e-4)
     assert head.min_train_batch_size == 1
 
 
