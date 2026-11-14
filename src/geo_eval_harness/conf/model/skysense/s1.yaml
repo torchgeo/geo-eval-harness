@@ -1,0 +1,10 @@
+name: skysense_s1
+target: geo_eval_harness.models.SkySenseBench
+supports_model_normalization: false
+kwargs:
+  modality: s1
+input:
+  bands: all
+  image_size: 64
+segmentation:
+  layers: ["layers.23", "layers.17", "layers.11", "layers.5"]
