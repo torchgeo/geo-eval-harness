@@ -125,7 +125,6 @@ class SAM3Encoder(BenchModel):
             param.requires_grad = False
         self.backbone.eval()
 
-    @torch.no_grad()
     def _forward_patch_features(
         self,
         images: torch.Tensor,

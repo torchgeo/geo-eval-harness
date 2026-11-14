@@ -686,6 +686,16 @@ class SegmentationProbe(nn.Module):
         self._run_backbone(x, doy)
 
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
+        if (
+            not self.freeze_backbone
+            and torch.is_grad_enabled()
+            and not any(f.requires_grad for f in features)
+        ):
+            raise RuntimeError(
+                f"{type(self.backbone).__name__} returned features with no gradient, so LoRA or "
+                "full fine-tuning would leave its weights unchanged. Remove torch.no_grad() or "
+                "torch.inference_mode() from the model's forward pass."
+            )
         if steps:
             features = [self._pool_time(f, steps) for f in features]
         check_finite_features(features)
