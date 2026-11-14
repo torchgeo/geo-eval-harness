@@ -20,6 +20,7 @@ from torchvision.transforms.v2 import Normalize as NormalizeV2
 
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.errors import UnsupportedNormalizationError
 
 from ._band_mapping import (
     BandMappingPolicy,
@@ -37,6 +38,7 @@ from ._input_units import (
 )
 from ._normalization import NormalizationStrategy, build_normalizer
 from ._pooling import pool_tokens
+from ._seco import normalize_seco
 from .interface import BenchModel
 
 
@@ -393,10 +395,11 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
     These return ``timm.models.resnet.ResNet`` instances.  We replace ``.fc``
     with ``Identity()`` to get headless ``(B, K)`` feature vectors.
 
-    Defaults match the SeCo / MoCo Sentinel-2 RGB pretrained weights, whose
+    Defaults match the MoCo Sentinel-2 RGB pretrained weights, whose
     ``Normalize`` transform expects raw Sentinel-2 DN values divided into
     a single global scale. Satlas multispectral checkpoints select their bands by name
     (see ``_TorchGeoBackboneBench._prepare_input_conv``).
+    SeCo model normalization uses its RGB quantiles and 8-bit image pipeline.
     """
 
     weights_input_unit = "s2_dn_div10000"
@@ -428,6 +431,22 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
         )
         self.backbone.fc = nn.Identity()
         self._prepare_input_conv("conv1", weights_member)
+        self._seco_weights = weights_member == "SENTINEL2_RGB_SECO"
+        if (
+            self._seco_weights
+            and self.normalization is NormalizationStrategy.MODEL_NATIVE
+            and [canonical_band_name(band.name) for band in bands] != ["red", "green", "blue"]
+        ):
+            raise UnsupportedNormalizationError(
+                "SeCo model normalization requires exactly three ordered RGB bands; "
+                "use --bands rgb or --normalization dataset."
+            )
+
+    def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
+        """Apply SeCo's RGB preprocessing or the selected shared normalization."""
+        if self._seco_weights and self.normalization is NormalizationStrategy.MODEL_NATIVE:
+            return normalize_seco(images, cast(InputUnit, self._dataset_input_unit))
+        return super().normalize_inputs(images)
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         if self.auto_resize and self.target_size:

@@ -282,7 +282,7 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
 
    $ # Sentinel-2 RGB SSL
    $ geo-eval-harness run --model torchgeo/resnet50_s2rgb_moco --dataset m-eurosat
-   $ geo-eval-harness run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat --normalization model
    $ geo-eval-harness run --model torchgeo/resnet50_fmow_gassl --dataset m-eurosat
 
    $ # ScaleMAE on fMoW RGB
@@ -297,6 +297,8 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
 
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
+
+SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
 

@@ -33,6 +33,8 @@ from geo_eval_harness.models import RCFBench
         ("rcf", "caffe", "rgb", "minmax_zscore"),
         ("timm/resnet50", "m-eurosat", "red,green,blue", "model"),
         ("torchgeo/scalemae_large_fmow", "m-eurosat", "rgb", "model"),
+        ("torchgeo/resnet18_s2rgb_seco", "m-eurosat", "rgb", "model"),
+        ("torchgeo/resnet50_s2rgb_seco", "m-so2sat", "rgb", "model"),
         ("torchgeo/deo_rgb", "m-eurosat", "rgb", "model"),
         ("torchgeo/deo_s2", "m-eurosat", "all", "model"),
         ("olmoearth_nano", "m-eurosat", "all", "model"),
@@ -204,15 +206,6 @@ def test_rcf_preset_restriction_matches_runtime_normalization() -> None:
         features = model(torch.ones(2, len(bands), 8, 8))
         assert features.shape == (2, 8)
         assert torch.isfinite(features).all()
-
-
-@pytest.mark.parametrize("name", ["torchgeo/resnet18_s2rgb_seco", "torchgeo/resnet50_s2rgb_seco"])
-def test_seco_presets_reject_model_normalization(name: str) -> None:
-    """torchgeo's SeCo transform expects SeCo's 8-bit images, not the wrapper's Sentinel-2 DN."""
-    preset = load_model_preset(ModelConfig(name=name))
-    bands = get_bench_dataset_class("m-eurosat").resolve_band_specs("rgb")
-    with pytest.raises(UnsupportedNormalizationError, match="does not support"):
-        build_model(preset, bands=bands, normalization="model_native")
 
 
 def test_runtime_only_normalization_errors_use_config_error_presentation(
