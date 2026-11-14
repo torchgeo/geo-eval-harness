@@ -576,7 +576,7 @@ Model compatibility
 Data partitions
 ---------------
 
-V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets ignore or reject non-default values.
+V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets reject non-default values.
 
 .. code-block:: console
 

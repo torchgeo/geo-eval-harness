@@ -57,6 +57,11 @@ def load_config(args: argparse.Namespace) -> RunConfig:
     for dataset in datasets if config.datasets == ["all"] else config.datasets:
         effective, preset = resolve_run_config(config, dataset)
         preset.validate_normalization(NORMALIZATIONS[effective.input.normalization])
+        partition = effective.input.partition
+        if partition != "default" and not get_bench_dataset_class(dataset).supports_partitions:
+            raise ValueError(
+                f"Dataset {dataset!r} supports only the default partition, got {partition!r}."
+            )
         if isinstance(effective.input.bands, str):
             if effective.input.bands not in {"rgb", "all"}:
                 raise ValueError("input.bands must be rgb, all, or a YAML list of band names")
