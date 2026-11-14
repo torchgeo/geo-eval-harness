@@ -75,7 +75,7 @@ TerraFM
        checkpoint_path: checkpoints/TerraFM-B.pth
    datasets: [m-eurosat]
 
-The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
+The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. With ``pretrain`` statistics, Sentinel-1 bands must declare unit ``db`` or ``linear_power``; other SAR inputs raise an error. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
 
 SMARTIES
 ^^^^^^^^
