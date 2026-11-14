@@ -232,7 +232,7 @@ GeoBench V2 — segmentation
 ==================== ====== ===== ============================================ ==============================================================
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
-``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
+``burn_scars``       2      6     no-data (2) ignored                          :class:`~geo_eval_harness.datasets.BurnScars`
 ``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
 ``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
