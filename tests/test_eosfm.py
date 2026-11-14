@@ -115,7 +115,7 @@ def test_pins_weights_and_hash() -> None:
 
 
 def test_weights_are_hash_checked(ensemble: Path) -> None:
-    with pytest.raises(RuntimeError, match="sha256"):
+    with pytest.raises(ValueError, match="SHA-256"):
         EoSFMBenchModel(_RGB, weights_path=str(ensemble), normalization="identity")
 
 

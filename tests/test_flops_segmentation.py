@@ -115,3 +115,32 @@ def test_sweep_resume_keeps_distinct_resolutions(
     before = path.read_bytes()
     flops_pipeline.main(config)
     assert path.read_bytes() == before
+
+
+def test_rows_append_to_the_committed_compute_cost_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(flops_pipeline, "_build_model", lambda *args: FeatureBackbone().eval())
+    with (Path(__file__).parents[1] / "results" / "compute_cost.csv").open() as committed:
+        header = committed.readline()
+    path = tmp_path / "cost.csv"
+    path.write_text(header)
+    config = FlopsConfig.model_validate(
+        {
+            "model": {"name": "custom", "target": "example.Model"},
+            "runtime": {"device": "cpu"},
+            "input": {"band_configs": ["rgb"], "image_size": 32},
+            "segmentation": {"heads": ["linear"], "probe": {"layers": LAYERS}},
+            "timing": {"batch_size": 1, "n_warmup": 0, "n_measure": 1},
+            "output": {"file": str(path)},
+        }
+    )
+    flops_pipeline.main(config)
+    before = path.read_text()
+    config.input.image_size = 64
+    flops_pipeline.main(config)
+    after = path.read_text()
+    assert before.startswith(header)
+    assert after.startswith(before)
+    assert list(pd.read_csv(path).task) == ["classification", "segmentation"] * 2
+    assert "schema drift" not in caplog.text

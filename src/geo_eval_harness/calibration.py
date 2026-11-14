@@ -103,7 +103,7 @@ def fit_temperature(
     """
     z = torch.as_tensor(logits, dtype=torch.float64)
     log_T = torch.zeros(1, dtype=torch.float64, requires_grad=True)
-    optimizer = torch.optim.LBFGS([log_T], lr=0.1, max_iter=max_iter)
+    optimizer = torch.optim.LBFGS([log_T], lr=1.0, max_iter=max_iter, line_search_fn="strong_wolfe")
 
     if multi_label:
         y = torch.as_tensor(y_true, dtype=torch.float64)

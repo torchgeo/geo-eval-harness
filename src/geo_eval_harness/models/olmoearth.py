@@ -139,7 +139,8 @@ _MODALITY_INFO: dict[str, dict] = {
         ],
     },
     # Sentinel-1 uses vv (0) and vh (1): BandSet(["vv", "vh"], 16), is_multitemporal=True.
-    # m-so2sat's SAR variants share these slots; the last band per polarization wins.
+    # Only backscatter intensities fill them (m-so2sat's Lee-filtered VV/VH included); complex
+    # parts, covariance cross-terms and the VV/VH ratio have no slot.
     "sar": {
         "modality_name": "SENTINEL1",
         "sample_field": "sentinel1",
@@ -147,19 +148,18 @@ _MODALITY_INFO: dict[str, dict] = {
         "num_band_sets": 1,
         "name_to_idx": {
             "vv": 0,
-            "vv_real": 0,
-            "vv_imag": 0,
+            "vv_real": None,
+            "vv_imag": None,
             "vv_lee": 0,
-            "vv_lee_real": 0,
-            "vv_lee_imag": 0,
+            "vv_lee_real": None,
+            "vv_lee_imag": None,
             "vh": 1,
-            "vh_real": 1,
-            "vh_imag": 1,
+            "vh_real": None,
+            "vh_imag": None,
             "vh_lee": 1,
-            "vh_lee_real": 1,
-            "vh_lee_imag": 1,
-            # TreeSatAI's VV/VH ratio shares vh; later source bands overwrite earlier ones.
-            "vv_vh": 1,
+            "vh_lee_real": None,
+            "vh_lee_imag": None,
+            "vv_vh": None,
         },
     },
     # NAIP / aerial: no dedicated OlmoEarth modality, route RGB through
@@ -196,12 +196,15 @@ _SENSOR_INPUT_RES: dict[str, int] = {
     "naip": 1,
 }
 
-# SAR, including large Lee-filtered values, keeps its scale for the S1 normalizer.
+# SAR keeps its scale for the S1 normalizer.
 _PASSTHROUGH_SENSORS: frozenset[str] = frozenset({"sar", "s1"})
 
 # Under norm_from_pretrained="auto", Landsat uses dataset statistics.
 # GeoBench's uint8 Landsat scale does not match the pretrained DN statistics.
 _DATASET_STATS_SENSORS: frozenset[str] = frozenset({"landsat"})
+
+# The pretrained S1 statistics describe sigma0 in dB; linear power is converted first.
+_PRETRAINED_SAR_UNITS: frozenset[str | None] = frozenset({"db", "linear_power"})
 
 # Released checkpoints per version; e.g. Large exists only for v1 and v1.3 ships Base only.
 _VERSION_SIZES: dict[str, frozenset[str]] = {
@@ -363,7 +366,8 @@ class OlmoEarthBenchModel(BenchModel):
 
     ``normalize_inputs`` is identity; this wrapper normalizes internally per sensor group.
     With ``norm_from_pretrained="auto"``, S2 values are converted to S2 DN.
-    SAR passes through unchanged before OlmoEarth's pretrained ``Normalizer``.
+    SAR declared in dB or linear power goes through OlmoEarth's pretrained ``Normalizer``.
+    SAR in an undeclared unit uses ``BandSpec`` stats unless ``sar_log_scale`` is set.
     GeoBench's uint8 Landsat values use ``BandSpec`` stats instead of pretrained DN stats.
     Pass ``True`` or ``False`` to force pretrained or dataset statistics for all groups.
 
@@ -419,7 +423,9 @@ class OlmoEarthBenchModel(BenchModel):
               ``NORM_NO_CLIP_2_STD`` and supersedes ``landsat_scale_factor``
               (the DN rescale is skipped).
             * ``"auto"`` — decide per sensor group: dataset stats for sensors
-              in ``_DATASET_STATS_SENSORS`` (Landsat), pretrained for the rest.
+              in ``_DATASET_STATS_SENSORS`` (Landsat) and for SAR whose bands do
+              not all declare unit ``db`` or ``linear_power`` (unless
+              ``sar_log_scale`` is set), pretrained for the rest.
         sensor_remap: Optional dict mapping sensor names to alternate routing
             keys before modality resolution, e.g. ``{"landsat": "aerial"}`` to
             route Landsat RGB+NIR through the aerial/S2 path.
@@ -491,6 +497,11 @@ class OlmoEarthBenchModel(BenchModel):
                 sar_log_scale
                 if sar_log_scale is not None
                 else all(self.bands[i].unit == "linear_power" for i in g["src_indices"])
+            )
+            g["dataset_stats"] = g["sensor"] in _DATASET_STATS_SENSORS or (
+                g["sensor"] in _PASSTHROUGH_SENSORS
+                and sar_log_scale is None
+                and not {self.bands[i].unit for i in g["src_indices"]} <= _PRETRAINED_SAR_UNITS
             )
         self._sensor_groups = sensor_groups
 
@@ -638,7 +649,7 @@ class OlmoEarthBenchModel(BenchModel):
         g_images = images[:, group["src_indices"]]  # (B, Csensor, H, W)
 
         if self.norm_from_pretrained == "auto":
-            use_pretrained = group["sensor"] not in _DATASET_STATS_SENSORS
+            use_pretrained = not group["dataset_stats"]
         else:
             use_pretrained = self.norm_from_pretrained
 

@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID and Infra-Bench CLS (Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -38,6 +38,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``aid``
      - ``data/aid/``
      - Hugging Face ``isaaccorley/aid``, pinned commit + checksum-verified
+   * - ``infrabench-cls``
+     - ``data/infrabench_cls/``
+     - Pinned Hugging Face tiles and GitHub spatial split, both checksum-verified
    * - ``open_cities``
      - ``data/open_cities/<city>/``
      - source.coop ``open-cities/ai-challenge`` tier 1, checksum-verified; masks built locally
@@ -85,6 +88,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download eurosat                                  # torchgeo EuroSAT
    $ geo-eval-harness download resisc45                                 # torchgeo RESISC45
    $ geo-eval-harness download aid                                      # isaaccorley/aid rehost
+   $ geo-eval-harness download infrabench-cls
    $ geo-eval-harness download open_cities                              # source.coop, ~34 GB
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
@@ -254,6 +258,7 @@ CLI name                Class
 ``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
 ``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
 ``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+``infrabench-cls``       :class:`~geo_eval_harness.datasets.InfraBenchCLS` (13 infrastructure classes, S2 + S1)
 
 ``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
 ``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
@@ -278,6 +283,8 @@ no geolocation, so it appears on the coverage map as an explicit gap rather
 than being silently omitted.
 
 ``aid`` contains 10,000 RGB scenes at 600x600 across 30 classes (Xia et al., 2017). With no official split, ``scripts/generate_aid_splits.py`` generates a deterministic, stratified 60/20/20 split. Downloads use the pinned, checksum-verified ``isaaccorley/aid`` rehost. Upstream specifies no license or image geolocation. Band subsets and ordering are applied before user transforms.
+
+``infrabench-cls`` contains 18,756 OpenStreetMap infrastructure tiles in 13 classes, with seven Sentinel-2 bands and Sentinel-1 VV/VH. The spatial split assigns 13,087 / 2,856 / 2,813 tiles by asset ID; duplicated border assets stay within one split. Images are resized bilinearly to 60x60 pixels. Sentinel-2 values use clipped 0--255 scaling, including the upstream L2A processing offset; Sentinel-1 backscatter is clipped to -30--10 dB. Labels come from OSM tags. The dataset is distributed under ODbL 1.0; see `Infra-Bench CLS <https://doi.org/10.5281/zenodo.22118891>`_.
 
 ``ucmerced`` contains 2,100 RGB aerial images across 21 land use classes, resized to 256x256 by torchgeo. Its published split files contain 1,260 training, 420 validation, and 420 test images. Normalization statistics use the training split only. The source resolution is 1 ft (0.3048 m); the shared ``aerial`` sensor tag uses an approximate 1 m GSD for resolution-aware models. Images have no georeferencing, which is recorded in the coverage map.
 
