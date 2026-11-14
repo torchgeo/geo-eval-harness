@@ -386,7 +386,7 @@ def test_l1c_approximation_presets_map_every_band(tiny: None, dataset: str) -> N
     effective, preset = resolve_run_config(config, dataset)
     assert effective.input.image_size is None
     bands = get_bench_dataset_class(dataset).resolve_band_specs(effective.input.bands)
-    model = build_model(preset, bands=bands, normalization="model_native")
+    model = build_model(preset, native_image_size=64, bands=bands, normalization="model_native")
     targets = [canonical_band_name(name) for name in tessera.S2_BANDS]
     one_std_above = torch.tensor(tessera.S2_MEAN) + torch.tensor(tessera.S2_STD)
     raw = torch.tensor(

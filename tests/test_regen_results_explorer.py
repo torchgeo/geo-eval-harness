@@ -180,7 +180,9 @@ def test_regeneration_preserves_references_history_and_current_rows(
     ]
     assert _constant(text, "GPU_PRICES") == _constant(HTML, "GPU_PRICES")
     assert _constant(text, "CARBON_INTENSITY") == _constant(HTML, "CARBON_INTENSITY")
-    assert explorer._read_snapshot(explorer.SNAPSHOT_DIR / f"{label}.json") == expected
+    snapshot_path = explorer.SNAPSHOT_DIR / f"{label}.json"
+    assert isinstance(json.loads(snapshot_path.read_text()), dict)
+    assert explorer._read_snapshot(snapshot_path) == expected
     assert old_path.read_bytes() == old_bytes
     assert "This snapshot contains 4 measurements" in text
     assert "1 frozen-backbone variants on 1 classification datasets" in text

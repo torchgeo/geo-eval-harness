@@ -1006,6 +1006,7 @@ name = "geo-eval-harness"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "einops" },
     { name = "faissknn" },
     { name = "faissknn", extra = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'" },
     { name = "faissknn", extra = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -1017,6 +1018,7 @@ dependencies = [
     { name = "lazy-loader" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "pillow" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -1096,6 +1098,7 @@ olmoearth = [
 
 [package.metadata]
 requires-dist = [
+    { name = "einops", specifier = ">=0.8" },
     { name = "evaluma", marker = "extra == 'dev'", specifier = ">=0.3" },
     { name = "faissknn", extras = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'", specifier = ">=0.4" },
     { name = "faissknn", extras = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=0.4" },
@@ -1119,6 +1122,7 @@ requires-dist = [
     { name = "olmoearth-pretrain-minimal", marker = "extra == 'olmoearth'", specifier = ">=0.1.5" },
     { name = "pandas", specifier = ">=2" },
     { name = "peft", marker = "extra == 'lora'", specifier = ">=0.21" },
+    { name = "pillow", specifier = ">=13" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3" },
     { name = "pyarrow", specifier = ">=14" },
     { name = "pydantic", specifier = ">=2" },

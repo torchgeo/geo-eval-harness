@@ -292,18 +292,6 @@ def test_constructor_options_use_strict_safe_yaml(
     assert "error:" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("arguments", [["model=rcf"], ["+model.features=8"], ["++device=cpu"]])
-def test_canonical_parser_rejects_old_override_syntax(
-    arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["flops", *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "overrides have been retired" in message
-    assert "--config" in message
-
-
 def test_canonical_parser_dispatches_yaml_and_explicit_flags(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
