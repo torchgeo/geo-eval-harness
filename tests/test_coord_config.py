@@ -11,9 +11,9 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from torchgeo_bench.commands._coord import load_config, run
-from torchgeo_bench.commands.coord_arguments import add_coord_arguments
-from torchgeo_bench.coordbench.config import CoordConfig, load_coord_config, resolve_coord_preset
+from geo_eval_harness.commands._coord import load_config, run
+from geo_eval_harness.commands.coord_arguments import add_coord_arguments
+from geo_eval_harness.coordbench.config import CoordConfig, load_coord_config, resolve_coord_preset
 
 
 def _parse(*args: str) -> argparse.Namespace:
@@ -240,12 +240,12 @@ class BlockRuntime(importlib.abc.MetaPathFinder):
         if root in {"torch", "numpy", "pandas", "omegaconf", "sklearn",
                     "huggingface_hub", "uncached_optional_encoder"}:
             raise AssertionError(f"dry-run imported {fullname}")
-        if fullname in {"torchgeo_bench.coordbench.run", "torchgeo_bench.coordbench.datasets"}:
+        if fullname in {"geo_eval_harness.coordbench.run", "geo_eval_harness.coordbench.datasets"}:
             raise AssertionError(f"dry-run imported {fullname}")
 
 sys.meta_path.insert(0, BlockRuntime())
-from torchgeo_bench.commands.coord_arguments import add_coord_arguments
-from torchgeo_bench.commands._coord import run
+from geo_eval_harness.commands.coord_arguments import add_coord_arguments
+from geo_eval_harness.commands._coord import run
 parser = argparse.ArgumentParser()
 add_coord_arguments(parser)
 run(parser.parse_args(["--config", sys.argv[1], "--dry-run"]))
@@ -267,7 +267,7 @@ run(parser.parse_args(["--config", sys.argv[1], "--dry-run"]))
 
 def test_command_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
     configs = []
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.run_coordbench", configs.append)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.run_coordbench", configs.append)
     run(_parse("--model", "sincos", "--dataset", "country"))
     assert len(configs) == 1
     assert isinstance(configs[0], CoordConfig)

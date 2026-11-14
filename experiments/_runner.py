@@ -17,7 +17,7 @@ from tempfile import NamedTemporaryFile
 
 import yaml
 
-from torchgeo_bench.config.run import RunConfig
+from geo_eval_harness.config.run import RunConfig
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ def _command(config_path: str, gpu: int, output: str | None) -> list[str]:
     command = [
         sys.executable,
         "-m",
-        "torchgeo_bench",
+        "geo_eval_harness",
         "run",
         "--config",
         config_path,

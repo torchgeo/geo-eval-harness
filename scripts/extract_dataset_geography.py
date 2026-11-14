@@ -1,6 +1,6 @@
 """Write geographic metadata for every registered dataset.
 
-Write dataset records and ``index.json`` to ``docs/_static/_dataset_geography/``.
+Write dataset records and ``index.json`` to ``src/geo_eval_harness/_static/_dataset_geography/``.
 
 Use the registry so newly added datasets appear in the store.
 
@@ -21,8 +21,8 @@ import logging
 import os
 import warnings
 
-from torchgeo_bench.datasets import list_datasets
-from torchgeo_bench.geography import (
+from geo_eval_harness.datasets import list_datasets
+from geo_eval_harness.geography import (
     STORE_DIR,
     build_index,
     extract_geography,

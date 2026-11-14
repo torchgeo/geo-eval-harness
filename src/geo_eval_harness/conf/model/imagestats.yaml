@@ -1,0 +1,2 @@
+name: imagestats
+target: geo_eval_harness.models.ImageStatsBench

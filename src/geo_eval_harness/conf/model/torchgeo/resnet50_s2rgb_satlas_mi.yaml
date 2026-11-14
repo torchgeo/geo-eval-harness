@@ -1,0 +1,26 @@
+name: tgeo_resnet50_s2rgb_satlas_mi
+target: geo_eval_harness.models.TorchGeoResNetBench
+kwargs:
+  factory: resnet50
+  weights_class: ResNet50_Weights
+  weights_member: SENTINEL2_MI_RGB_SATLAS
+  normalization_input_unit: s2_tci_div255
+  auto_resize: false
+  target_size: 224
+input:
+  # Satlas trains on Sentinel-2 TCI / 255 without mean/std; `model` reproduces that (see _input_units.to_s2_tci).
+  normalization: model
+dataset_overrides:
+  # No TCI scale: SAR dB (sen1floods11-s1) or linear backscatter (kuro_siwo); `all` mixes sensor units (rest).
+  sen1floods11-s1: {input: {normalization: dataset}}
+  kuro_siwo: {input: {normalization: dataset}}
+  benv2: {input: {normalization: dataset}}
+  so2sat: {input: {normalization: dataset}}
+  m-so2sat: {input: {normalization: dataset}}
+  treesatai: {input: {normalization: dataset}}
+segmentation:
+  layers:
+    - layer4
+    - layer3
+    - layer2
+    - layer1

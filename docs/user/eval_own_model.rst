@@ -1,9 +1,7 @@
 Evaluate your own model (Stage 1)
 ==================================
 
-This guide demonstrates how you can benchmark any frozen pretrained geospatial model against
-the included benchmark datasets. If you want to contribute a new open-source model with available weights such that the broader community can easily access your model, see
-:doc:`contribute_model`.
+Implement a model wrapper and benchmark it on the included datasets. To contribute the wrapper and its weights to the shared catalog, see :doc:`contribute_model`.
 
 .. _eval-prerequisites:
 
@@ -14,11 +12,11 @@ Clone the repository and install the package with uv:
 
 .. code-block:: console
 
-   $ git clone https://github.com/torchgeo/torchgeo-bench.git
-   $ cd torchgeo-bench
+   $ git clone https://github.com/torchgeo/geo-eval-harness.git
+   $ cd geo-eval-harness
    $ uv sync --extra dev
 
-Run commands through ``uv run`` so they use that installation. Alternatively, activate the ``torchgeo-bench`` conda environment, run ``pip install -e ".[dev]"``, and omit ``uv run`` below. Do not combine conda activation with ``uv sync``: uv manages a separate environment.
+Run commands through ``uv run`` so they use that installation. Alternatively, activate the ``geo-eval-harness`` conda environment, run ``pip install -e ".[dev]"``, and omit ``uv run`` below. Do not combine conda activation with ``uv sync``: uv manages a separate environment.
 
 If your model requires optional dependencies (e.g. a special
 :doc:`model library </user/models>` or a custom tokenizer), install the
@@ -35,13 +33,11 @@ You can check how to download one or more dataset for evaluation in the :doc:`da
 Implement your model
 --------------------
 
-We provide a template file to give you a general setup and fill in the gaps that are unique to your model and ensure
-that each of those parts will be used correctly in the benchmark pipeline. Copy the template file to your working directory and fill in the ``TODO``
-sections:
+Copy the model template to your working directory and implement its ``TODO`` sections:
 
 .. code-block:: console
 
-   $ cp src/torchgeo_bench/models/contrib_template.py ./new_model.py
+   $ cp src/geo_eval_harness/models/contrib_template.py ./new_model.py
 
 The template defines ``NewModel``. Its constructor receives the selected ``bands`` and the requested ``normalization`` strategy. Forward both to ``BenchModel`` rather than hard-coding a strategy or silently discarding the caller's choice. Implement ``_forward_patch_features``; leave ``forward_patch_features`` unchanged so normalization is applied exactly once.
 
@@ -63,14 +59,14 @@ Pick the strategy that matches how your backbone was trained:
 
      - Forward the constructor's ``normalization`` argument. The runner maps this choice to ``bandspec_zscore``.
    * - ``none``
-     - Your backbone ships its own normalizer and must receive raw sensor
+     - Your backbone includes its own normalizer and must receive raw sensor
        values — applying a second normalization on top would corrupt the
        inputs.
 
        *In-repo example:* OlmoEarth — its internal ``Normalizer`` consumes
        raw DN/reflectance directly and auto-detects the sensor scale.  See
-       :class:`~torchgeo_bench.models.OlmoEarthBenchModel` and
-       :file:`src/torchgeo_bench/models/olmoearth.py` for the pattern.
+       :class:`~geo_eval_harness.models.OlmoEarthBenchModel` and
+       :file:`src/geo_eval_harness/models/olmoearth.py` for the pattern.
      - The runner passes ``identity``. If the model always normalizes internally, declare ``handles_own_normalization = True`` on the wrapper, as OlmoEarth does.
    * - ``model``
      - The exact pretraining input scale is published and you can declare it
@@ -78,7 +74,7 @@ Pick the strategy that matches how your backbone was trained:
        backbone's expected unit, then applies any declared per-channel
        mean/std.
 
-     - Declare ``expected_input_unit`` using ``InputUnit`` from ``torchgeo_bench.models``, plus matching ``pretrain_mean`` and ``pretrain_std``, or implement the wrapper's explicit model-native normalizer. Select ``--normalization model``; declaring the attributes alone does not change the default.
+     - Declare ``expected_input_unit`` using ``InputUnit`` from ``geo_eval_harness.models``, plus matching ``pretrain_mean`` and ``pretrain_std``, or implement the wrapper's explicit model-native normalizer. Select ``--normalization model``; declaring the attributes alone does not change the default.
    * - ``minmax``
      - Scale each band using its dataset ``BandSpec.min`` and ``BandSpec.max``.
      - Forward ``normalization`` unchanged; the constructor strategy is also named ``minmax``.
@@ -87,7 +83,7 @@ Pick the strategy that matches how your backbone was trained:
      - Forward ``normalization`` unchanged; the constructor uses the same name.
 
 For the full list of available strategies and their exact semantics, see
-:file:`src/torchgeo_bench/models/_normalization.py`.
+:file:`src/geo_eval_harness/models/_normalization.py`.
 
 Accessing band metadata
 ^^^^^^^^^^^^^^^^^^^^^^^
@@ -96,10 +92,8 @@ The template shows ``backbone(images)`` as the minimal forward call, but many
 models need more than raw pixels — for example a wavelength list for
 band-agnostic ViTs, or sensor-conditional routing.
 
-The framework makes this straightforward.  The pipeline **reinstantiates your
-class once per dataset**, so the ``bands`` argument passed to ``__init__``
-always reflects exactly the channels being loaded for that run.  Every
-:class:`~torchgeo_bench.datasets.BandSpec` in that list carries the
+The runner constructs your class once per dataset. Its ``bands`` argument contains the channels selected for that run.  Every
+:class:`~geo_eval_harness.datasets.BandSpec` in that list carries the
 dataset-level metadata that is available:
 
 .. list-table::
@@ -126,8 +120,8 @@ Extract the metadata you need from ``bands`` in ``__init__``, then use it in ``_
 
    import torch
 
-   from torchgeo_bench.datasets.base import BandSpec
-   from torchgeo_bench.models.interface import BenchModel
+   from geo_eval_harness.datasets.base import BandSpec
+   from geo_eval_harness.models.interface import BenchModel
 
    class NewModel(BenchModel):
        def __init__(
@@ -150,7 +144,7 @@ Extract the metadata you need from ``bands`` in ``__init__``, then use it in ``_
            return self.backbone(images, wavelengths=self.wavelengths)
 
 For a complete example see ``TorchGeoDOFABench`` in
-:file:`src/torchgeo_bench/models/torchgeo_models.py`, which reads
+:file:`src/geo_eval_harness/models/torchgeo_models.py`, which reads
 ``wavelength_um`` from each ``BandSpec`` at construction and passes the
 resulting list to ``backbone.forward_features(images, wavelengths=...)``.
 
@@ -159,7 +153,7 @@ resulting list to ``backbone.forward_features(images, wavelengths=...)``.
 Create a model config
 ---------------------
 
-Create a model YAML file at :file:`src/torchgeo_bench/conf/model/new_model.yaml`.
+Create a model YAML file at :file:`src/geo_eval_harness/conf/model/new_model.yaml`.
 The preset identifies your importable class and its result name. Add any constructor options your model needs:
 
 .. code-block:: yaml
@@ -170,11 +164,11 @@ The preset identifies your importable class and its result name. Add any constru
    kwargs:
      pretrained: true
 
-Only ``kwargs`` are passed as constructor options. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings; ``_target_``, interpolation, and recursive instantiation are not supported.
+Only ``kwargs`` are passed as constructor options. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings.
 
 .. note::
 
-   **Do not put** ``bands`` **in the YAML.** The pipeline selects the current dataset's :class:`~torchgeo_bench.datasets.BandSpec` objects at runtime. Configure normalization through ``input.normalization`` or ``--normalization``, not by overriding the model constructor in the preset.
+   **Do not put** ``bands`` **in the YAML.** The pipeline selects the current dataset's :class:`~geo_eval_harness.datasets.BandSpec` objects at runtime. Configure normalization through ``input.normalization`` or ``--normalization``, not by overriding the model constructor in the preset.
 
 If your class is not importable from the default Python path, add the
 parent directory to ``PYTHONPATH`` before running:
@@ -188,14 +182,14 @@ parent directory to ``PYTHONPATH`` before running:
 Run the benchmark
 -----------------
 
-Select the preset with ``--model`` and repeat ``--dataset`` for each applicable dataset. The CLI accepts explicit flags and Pydantic-validated YAML; the old ``key=value`` interface is retired:
+Select the preset with ``--model`` and repeat ``--dataset`` for each applicable dataset. The CLI accepts explicit flags and Pydantic-validated YAML:
 
 .. code-block:: console
 
-   $ uv run torchgeo-bench models new_model
-   $ uv run torchgeo-bench run --model new_model --dataset m-eurosat --device cpu --dry-run
-   $ uv run torchgeo-bench run --model new_model --dataset m-eurosat --device cpu
-   $ uv run torchgeo-bench run --model new_model \
+   $ uv run geo-eval-harness models new_model
+   $ uv run geo-eval-harness run --model new_model --dataset m-eurosat --device cpu --dry-run
+   $ uv run geo-eval-harness run --model new_model --dataset m-eurosat --device cpu
+   $ uv run geo-eval-harness run --model new_model \
        --dataset m-eurosat --dataset m-bigearthnet --dataset benv2 --device cuda:0
 
 For segmentation, the wrapper must expose suitable spatial backbone layers. Configure ``segmentation.layers`` and a compatible head in a run YAML; a pooled ``(B, K)`` output alone is not enough. See :doc:`segmentation-layers`.
@@ -204,7 +198,7 @@ Skip the (slow) linear probe and reduce bootstrap samples for a quick trial:
 
 .. code-block:: console
 
-   $ uv run torchgeo-bench run --model new_model --dataset m-eurosat \
+   $ uv run geo-eval-harness run --model new_model --dataset m-eurosat \
        --device cpu --methods knn --bootstrap-samples 10
 
 For a reusable run, create ``new_model_run.yaml``. This is a run configuration, separate from the model preset:
@@ -225,9 +219,9 @@ Validate it before running, then use ``--resume`` to continue against the same o
 
 .. code-block:: console
 
-   $ uv run torchgeo-bench run --config new_model_run.yaml --dry-run
-   $ uv run torchgeo-bench run --config new_model_run.yaml
-   $ uv run torchgeo-bench run --config new_model_run.yaml --resume
+   $ uv run geo-eval-harness run --config new_model_run.yaml --dry-run
+   $ uv run geo-eval-harness run --config new_model_run.yaml
+   $ uv run geo-eval-harness run --config new_model_run.yaml --resume
 
 Only explicitly supplied flags override YAML values. ``run --config-help`` describes the supported fields, and :file:`docs/examples/image-run.yaml` provides a complete example.
 

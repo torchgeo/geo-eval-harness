@@ -1,0 +1,6 @@
+name: convnextv2_tiny
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: convnextv2_tiny
+  pretrained: true
+  global_pool: avg

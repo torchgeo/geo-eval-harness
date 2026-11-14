@@ -8,22 +8,22 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from torchgeo_bench.bands import BandSpec
-from torchgeo_bench.config.presets import NORMALIZATIONS, build_model, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.datasets import get_bench_dataset_class, list_datasets
-from torchgeo_bench.datasets.loading import get_dataset_task
-from torchgeo_bench.models import BenchModel, HandcraftedBench, ImageStatsBench
-from torchgeo_bench.models._handcrafted_bands import normalized_difference
-from torchgeo_bench.models._handcrafted_structure import (
+from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class, list_datasets
+from geo_eval_harness.datasets.loading import get_dataset_task
+from geo_eval_harness.models import BenchModel, HandcraftedBench, ImageStatsBench
+from geo_eval_harness.models._handcrafted_bands import normalized_difference
+from geo_eval_harness.models._handcrafted_structure import (
     harris_corners,
     local_binary_patterns,
     quadrants,
     weighted_shape,
 )
-from torchgeo_bench.models._handcrafted_texture import gradients, statistics
-from torchgeo_bench.utils import extract_features
+from geo_eval_harness.models._handcrafted_texture import gradients, statistics
+from geo_eval_harness.utils import extract_features
 
 DEVICES = [
     "cpu",

@@ -9,10 +9,10 @@ import pandas as pd
 import pytest
 import yaml
 
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.run import RunConfig
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import write_classification_files
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.run import RunConfig
 
 pytestmark = pytest.mark.integration
 
@@ -157,7 +157,7 @@ def test_program_fails_when_any_requested_data_is_unavailable(
     )
     assert completed.returncode != 0, cli_output(completed)
     assert "Required files for 'm-forestnet' are missing" in completed.stderr
-    assert "torchgeo-bench download geobench_v1 --datasets m-forestnet" in completed.stderr
+    assert "geo-eval-harness download geobench_v1 --datasets m-forestnet" in completed.stderr
     if dataset_names[0] == "m-eurosat":
         rows = pd.read_csv(output)
         assert set(rows["method"]) == {"knn5", "linear"}

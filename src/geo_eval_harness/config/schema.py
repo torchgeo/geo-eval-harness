@@ -1,0 +1,428 @@
+# Copyright (c) TorchGeo Contributors. All rights reserved.
+# Licensed under the MIT License.
+
+"""Shared strict configuration sections and safe YAML loading."""
+
+import pathlib
+import re
+from enum import StrEnum
+from typing import Annotated, Any, Literal
+
+import yaml
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictFloat,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
+from yaml.constructor import ConstructorError
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader that rejects duplicate mapping keys."""
+
+    def construct_mapping(
+        self,
+        node: yaml.MappingNode,
+        deep: bool = False,  # noqa: FBT001, FBT002 - PyYAML passes this positionally
+    ) -> dict:
+        """Construct a mapping and reject duplicate or unhashable keys."""
+        mapping = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            try:
+                duplicate = key in mapping
+            except TypeError as error:  # allow-except: report invalid YAML mapping keys
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found an unhashable key",
+                    key_node.start_mark,
+                ) from error
+            if duplicate:
+                raise ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"found duplicate key {key!r}",
+                    key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
+_UniqueKeyLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(
+        r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?
+        |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)|\.[0-9_]+(?:[eE][-+]?[0-9]+)?
+        |[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$""",
+        re.X,
+    ),
+    list("-+0123456789."),
+)
+
+
+class StrictModel(BaseModel):
+    """Base for configuration sections with strict fields and no extras."""
+
+    model_config = ConfigDict(
+        extra="forbid", strict=True, validate_default=True, allow_inf_nan=False
+    )
+
+    def model_dump_yaml(self) -> dict[str, Any]:
+        """Return supplied settings without turning omitted defaults into overrides."""
+        return self.model_dump(mode="json", exclude_unset=True)
+
+
+def _check_device(value: str) -> str:
+    """Reject malformed device strings without importing Torch."""
+    if value == "auto" or re.fullmatch(r"(cpu|cuda(?::[0-9]+)?)", value):
+        return value
+    raise ValueError("device must be 'auto', 'cpu', 'cuda', or 'cuda:<index>'")
+
+
+def _check_knn_device(value: str) -> str:
+    """Reject malformed KNN device strings; FAISS has no 'auto' selection."""
+    if value in {"cpu", "cuda"} or re.fullmatch(r"cuda:[0-9]+", value):
+        return value
+    raise ValueError("knn_device must be 'cpu', 'cuda', or 'cuda:<index>'")
+
+
+def _check_methods(value: list["Method"]) -> list["Method"]:
+    """Reject repeated probe selections."""
+    if len(set(value)) != len(value):
+        raise ValueError("methods must not contain duplicates")
+    return value
+
+
+def _check_schema_version(value: object) -> object:
+    """Reject non-integer versions before literal validation."""
+    if type(value) is not int:
+        raise ValueError("schema_version must be the integer 1")  # noqa: TRY004 - Pydantic field validation
+    return value
+
+
+def _check_output_path(value: str) -> str:
+    """Reject blank output paths without rewriting valid strings."""
+    if not value.strip():
+        raise ValueError("output path must not be blank")
+    return value
+
+
+type Method = Literal["knn", "linear"]
+type Device = Annotated[StrictStr, AfterValidator(_check_device)]
+type KnnDevice = Annotated[StrictStr, AfterValidator(_check_knn_device)]
+type Methods = Annotated[list[Method], AfterValidator(_check_methods)]
+type SchemaVersion = Annotated[Literal[1], BeforeValidator(_check_schema_version)]
+type OutputPath = Annotated[StrictStr, AfterValidator(_check_output_path)]
+
+
+class OutputPaths(StrictModel):
+    """Output root and optional explicit file for CSV benchmark commands."""
+
+    directory: OutputPath = "results"
+    file: OutputPath | None = None
+
+
+def resolve_output_path(
+    directory: str | None, file: str | None, relative_path: str | pathlib.Path
+) -> str:
+    """Return the explicit file or a command's default path under the output root."""
+    if file is not None:
+        return file
+    if directory is None:
+        raise ValueError("An output directory or file is required")
+    return str(pathlib.Path(directory) / relative_path)
+
+
+def default_methods() -> list[Method]:
+    """Return the default probe selection, shared by image and coordinate runs."""
+    return ["knn", "linear"]
+
+
+class ModelConfig(StrictModel):
+    """Selected preset or importable custom model with constructor-only options."""
+
+    name: StrictStr = Field(min_length=1)
+    target: StrictStr | None = None
+    kwargs: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, value: str | None) -> str | None:
+        """Require an importable dotted symbol, without importing optional models."""
+        if value is not None and (
+            "." not in value or any(not part.isidentifier() for part in value.split("."))
+        ):
+            raise ValueError("target must be a dotted Python symbol")
+        return value
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        """Reject whitespace-only model names."""
+        if not value.strip():
+            raise ValueError("model name must not be blank")
+        return value
+
+
+class InputConfig(StrictModel):
+    """Input bands, resizing, dataset partition, and normalization."""
+
+    bands: StrictStr | list[StrictStr] = "rgb"
+    partition: StrictStr = "default"
+    time_steps: StrictInt | None = Field(default=None, gt=0)
+    image_size: StrictInt | None = Field(default=224, gt=0)
+    interpolation: Literal["area", "bilinear", "bicubic", "nearest"] = "bilinear"
+    normalization: Literal["dataset", "model", "minmax", "minmax_zscore", "none"] = "dataset"
+
+    @field_validator("partition")
+    @classmethod
+    def validate_partition(cls, value: str) -> str:
+        """Reject whitespace-only partition names."""
+        if not value.strip():
+            raise ValueError("partition must not be blank")
+        return value
+
+    @field_validator("bands")
+    @classmethod
+    def validate_bands(cls, value: StrictStr | list[StrictStr]) -> StrictStr | list[StrictStr]:
+        """Reject empty band specifications."""
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("bands must not be empty")
+        if isinstance(value, list) and (
+            not value or any(not band.strip() for band in value) or len(set(value)) != len(value)
+        ):
+            raise ValueError("bands must contain non-empty names")
+        return value
+
+
+class LinearConfig(StrictModel):
+    """Linear probe hyperparameters."""
+
+    c_log10_start: StrictFloat = -6.0
+    c_log10_stop: StrictFloat = 4.0
+    c_count: StrictInt = Field(default=40, gt=0)
+    refit_train_val: StrictBool = True
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "LinearConfig":
+        """Require an ascending regularization range."""
+        if self.c_log10_stop < self.c_log10_start:
+            raise ValueError("c_log10_stop must be greater than or equal to c_log10_start")
+        return self
+
+
+class CalibrationConfig(StrictModel):
+    """Classification calibration metrics."""
+
+    n_bins_knn: StrictInt | None = Field(default=None, gt=0)
+    n_bins_linear: StrictInt = Field(default=15, gt=0)
+    temp_scale: StrictBool = False
+
+
+class ClassificationConfig(StrictModel):
+    """KNN, linear probe, and bootstrap settings."""
+
+    methods: Methods = Field(default_factory=default_methods, min_length=1)
+    knn_k: StrictInt = Field(default=5, gt=0)
+    knn_device: KnnDevice | None = None
+    linear: LinearConfig = Field(default_factory=LinearConfig)
+    calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
+    bootstrap_samples: StrictInt = Field(default=200, gt=0)
+    feature_standardize: StrictBool = False
+
+    @property
+    def knn_method(self) -> str:
+        """Return ``knn<k>``, with ``-std`` when features are standardized."""
+        return f"knn{self.knn_k}{self._method_suffix}"
+
+    @property
+    def linear_method(self) -> str:
+        """Return ``linear``, with ``-std`` when features are standardized."""
+        return f"linear{self._method_suffix}"
+
+    @property
+    def _method_suffix(self) -> str:
+        return "-std" if self.feature_standardize else ""
+
+    @model_validator(mode="after")
+    def validate_calibration(self) -> "ClassificationConfig":
+        """Require held-out validation when temperature scaling is enabled."""
+        if self.calibration.temp_scale and (
+            "linear" not in self.methods or self.linear.refit_train_val
+        ):
+            raise ValueError("temp_scale requires linear selected and refit_train_val=false")
+        return self
+
+
+#: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
+NECK_HEADS = frozenset({"linear", "fpn", "upernet", "unet"})
+
+
+class Adaptation(StrEnum):
+    """How a segmentation run trains the backbone."""
+
+    FROZEN = "frozen"
+    LORA = "lora"
+    FULL = "full"
+
+
+class SegmentationConfig(StrictModel):
+    """Segmentation probe settings."""
+
+    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
+    neck: Literal["none", "vit", "vit_fine"] = "none"
+    neck_norm: Literal["layernorm", "none"] = "layernorm"
+    upsampler: Literal["none", "anyup"] = "none"
+    weight_decay: StrictFloat = Field(default=0.0, ge=0)
+    head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
+    early_stopping_patience: StrictInt | None = Field(default=None, gt=0)
+    layers: list[StrictStr] = Field(default_factory=list)
+    learning_rate: StrictFloat = Field(default=1e-3, gt=0)
+    epochs: StrictInt = Field(default=10, gt=0)
+    batch_size: StrictInt = Field(default=64, gt=0)
+    temporal_pool: Literal["mean", "max"] = "mean"
+    scheduler: Literal["cosine", "none"] = "cosine"
+    ignore_index: StrictInt = 255
+    cache_features: StrictBool = True
+    cache_dtype: Literal["float16", "float32"] = "float16"
+    amp: Literal["fp16", "off"] = "fp16"
+    lora_rank: StrictInt | None = Field(default=None, gt=0)
+    lora_target_modules: StrictStr | None = None
+    lora_alpha: StrictFloat = Field(default=16.0, gt=0)
+    lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
+    backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+    full_finetune: StrictBool = False
+    feature_standardize: StrictBool = False
+    gradient_checkpointing: StrictBool = False
+    sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
+    sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
+        default_factory=lambda: [0.0]
+    )
+
+    @property
+    def sweep_grid(self) -> list[tuple[float, float]]:
+        """Return the (learning rate, weight decay) cells of the probe sweep, or ``[]``."""
+        return [(lr, wd) for lr in self.sweep_learning_rates for wd in self.sweep_weight_decays]
+
+    @property
+    def adaptation(self) -> Adaptation:
+        """Return whether the backbone is frozen, LoRA-adapted, or fully fine-tuned."""
+        if self.full_finetune:
+            return Adaptation.FULL
+        if self.lora_rank is not None:
+            return Adaptation.LORA
+        return Adaptation.FROZEN
+
+    @property
+    def uses_feature_cache(self) -> bool:
+        """Return whether the head trains on cached features, which needs a frozen backbone."""
+        return self.cache_features and self.adaptation is Adaptation.FROZEN
+
+    @model_validator(mode="after")
+    def validate_probe_protocol(self) -> "SegmentationConfig":
+        """Restrict the linear-probe sweep and feature standardization to frozen probes."""
+        frozen = self.adaptation is Adaptation.FROZEN
+        if self.feature_standardize and (not frozen or self.upsampler != "none"):
+            raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
+        if not self.sweep_learning_rates:
+            if self.sweep_weight_decays != [0.0]:
+                raise ValueError("sweep_weight_decays requires sweep_learning_rates")
+            return self
+        if not self.sweep_weight_decays:
+            raise ValueError("sweep_weight_decays must not be empty")
+        if self.head != "patch_linear" or self.neck != "none" or not frozen:
+            raise ValueError(
+                "sweep_learning_rates requires head 'patch_linear', no neck, and a frozen backbone"
+            )
+        if len(set(self.sweep_grid)) != len(self.sweep_grid):
+            raise ValueError("sweep learning rates and weight decays must not repeat")
+        return self
+
+    @model_validator(mode="after")
+    def validate_precision(self) -> "SegmentationConfig":
+        """Reject ``amp: off`` with a float16 feature cache, which would still overflow."""
+        if self.amp == "off" and self.uses_feature_cache and self.cache_dtype == "float16":
+            raise ValueError(
+                "amp 'off' with cached frozen features requires cache_dtype 'float32'; a float16 "
+                "cache still overflows"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_lora(self) -> "SegmentationConfig":
+        """Pair LoRA settings with ``lora_rank``; target modules may come from a model preset."""
+        if self.full_finetune and self.lora_rank is not None:
+            raise ValueError("full_finetune and lora_rank are mutually exclusive")
+        if self.lora_rank is not None and self.backbone_learning_rate is None:
+            raise ValueError("lora_rank requires backbone_learning_rate")
+        if self.full_finetune and self.backbone_learning_rate is None:
+            raise ValueError("full_finetune requires backbone_learning_rate")
+        if self.lora_rank is None and (
+            (self.backbone_learning_rate is not None and not self.full_finetune)
+            or self.lora_alpha != type(self).model_fields["lora_alpha"].default
+            or self.lora_last_blocks is not None
+        ):
+            raise ValueError(
+                "backbone_learning_rate (without full_finetune), lora_alpha, and lora_last_blocks "
+                "require lora_rank"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_neck(self) -> "SegmentationConfig":
+        """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
+        if self.neck != "none" and self.head not in NECK_HEADS:
+            raise ValueError(
+                f"neck {self.neck!r} requires head in {sorted(NECK_HEADS)}, got {self.head!r}"
+            )
+        if self.head_dropout and self.head != "upernet":
+            raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.head != "upernet":
+            raise ValueError(f"upsampler 'anyup' requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.cache_features:
+            raise ValueError("upsampler 'anyup' needs input images; set cache_features: false")
+        return self
+
+    @property
+    def method(self) -> str:
+        """Return ``seg-<head>``.
+
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
+        Linear-probe settings have no setup columns yet: feature standardization appends ``-std``
+        and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
+        """
+        probe = "-std" if self.feature_standardize else ""
+        if self.sweep_grid:
+            probe += f"-sweep{len(self.sweep_grid)}"
+        return f"seg-{self.head}{probe}"
+
+
+class RuntimeConfig(StrictModel):
+    """Execution settings."""
+
+    device: Device = "cuda:0"
+    batch_size: StrictInt = Field(default=64, gt=0)
+    workers: StrictInt = Field(default=4, ge=0)
+    seed: StrictInt = 0
+    verbose: StrictBool = False
+    sample_cache: Literal["none", "disk", "host", "gpu"] = "none"
+    sample_cache_dir: StrictStr = "~/.cache/geo_eval_harness/samples"
+
+
+def load_yaml(path: str | pathlib.Path) -> dict[str, Any]:
+    """Load one YAML mapping with safe tags and unique keys."""
+    with pathlib.Path(path).open(encoding="utf-8") as file:
+        value = yaml.load(file, Loader=_UniqueKeyLoader)
+    if not isinstance(value, dict):
+        raise ValueError(f"{path}: top level must be a YAML mapping")  # noqa: TRY004 - preserve the CLI configuration-error contract
+    return value

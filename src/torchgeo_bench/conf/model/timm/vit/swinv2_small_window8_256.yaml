@@ -1,7 +1,0 @@
-name: swinv2_small_window8_256
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: swinv2_small_window8_256
-  pretrained: true
-  global_pool: avg
-  auto_resize: true

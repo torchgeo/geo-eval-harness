@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review torchgeo-bench pull requests for correctness, security, unnecessary code and tests, duplicated behavior, and inflated prose. Use during automated Copilot PR reviews and requested code reviews. Keep findings brief and conversational.
+description: Review geo-eval-harness pull requests for correctness, security, unnecessary code and tests, duplicated behavior, and inflated prose. Use during automated Copilot PR reviews and requested code reviews. Keep findings brief and conversational.
 ---
 
 # Code review

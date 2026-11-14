@@ -1,0 +1,6 @@
+name: densenet201
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: densenet201
+  pretrained: true
+  global_pool: avg

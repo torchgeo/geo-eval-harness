@@ -7,11 +7,12 @@ import pytest
 import torch
 import torch.nn as nn
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models.terratorch_models import (
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
+    _sar_to_db,
 )
 
 terratorch_available = find_spec("terratorch") is not None
@@ -69,7 +70,7 @@ def mock_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         state["instances"].append(instance)
         return instance
 
-    monkeypatch.setattr("torchgeo_bench.models.terratorch_models._build_backbone", _fake_build)
+    monkeypatch.setattr("geo_eval_harness.models.terratorch_models._build_backbone", _fake_build)
     return state
 
 
@@ -104,8 +105,9 @@ def test_prithvi_rejects_dataset_with_no_matching_band(mock_registry: dict[str, 
 
 def test_clay_auxiliary_args_forwarded(mock_registry: dict[str, Any]) -> None:
     bands = _bands(["blue", "green", "red", "nir", "swir1", "swir2"])
-    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd=20.0)
-    images = torch.arange(6.0).view(1, 6, 1, 1).expand(2, 6, 256, 256)
+    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd=20.0, target_size=512)
+    assert mock_registry["build_calls"][-1][1]["img_size"] == 512
+    images = torch.arange(6.0).view(1, 6, 1, 1).expand(2, 6, 512, 512)
     out = model.forward_patch_features(images)
     torch.testing.assert_close(out, torch.ones(2, 8))
     instance = mock_registry["instances"][-1]
@@ -318,3 +320,159 @@ def test_invalid_pool_mode_raises(mock_registry: dict[str, Any]) -> None:
     bands = _bands(["blue", "green", "red", "nir_narrow", "swir1", "swir2"])
     with pytest.raises(ValueError, match="pool"):
         TerraTorchPrithviBench(bands=bands, normalization="identity", pool="bogus")
+
+
+def _sar(names: list[str], unit: str | None, sensor: str = "s1") -> list[BandSpec]:
+    return [
+        BandSpec(
+            sensor=sensor,
+            name=n,
+            source_name=n.upper(),
+            mean=-12.0,
+            std=5.0,
+            min=-50.0,
+            max=10.0,
+            unit=unit,
+        )
+        for n in names
+    ]
+
+
+@pytest.mark.parametrize("modality", ["S1GRD", "S1RTC"])
+def test_terramind_s1_modality_feeds_vv_vh(mock_registry: dict[str, Any], modality: str) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vh", "vv"], "db"), normalization="identity", modality=modality
+    )
+    _, build_kwargs = mock_registry["build_calls"][0]
+    assert build_kwargs["modalities"] == [modality]
+    assert "bands" not in build_kwargs
+    x = torch.arange(2.0).view(1, 2, 1, 1).expand(1, 2, 224, 224)
+    model.forward_patch_features(x)
+    payload = mock_registry["instances"][-1].last_forward_input[modality]
+    assert torch.equal(payload, x[:, [1, 0]])
+
+
+def test_terramind_s1_skips_non_sar_bands(mock_registry: dict[str, Any]) -> None:
+    dem = BandSpec(sensor="dem", name="dem", source_name="dem", mean=0.0, std=1.0, min=0.0, max=1.0)
+    bands = [*_sar(["vv", "vh"], "linear_power", sensor="sar"), dem]
+    model = TerraTorchTerraMindBench(bands=bands, normalization="identity", modality="S1GRD")
+    x = torch.arange(3.0).view(1, 3, 1, 1).expand(1, 3, 224, 224)
+    model.forward_patch_features(x)
+    payload = mock_registry["instances"][-1].last_forward_input["S1GRD"]
+    assert torch.equal(payload, x[:, [0, 1]])
+
+
+def test_terramind_s1_single_polarisation_uses_band_selection(
+    mock_registry: dict[str, Any],
+) -> None:
+    TerraTorchTerraMindBench(bands=_sar(["vv"], "db"), normalization="identity", modality="S1GRD")
+    _, build_kwargs = mock_registry["build_calls"][0]
+    assert build_kwargs["bands"] == {"S1GRD": ["VV"]}
+
+
+def test_terramind_s1_without_sar_bands_raises(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="none of the target bands"):
+        TerraTorchTerraMindBench(
+            bands=_bands(["red", "green", "blue"]), normalization="identity", modality="S1GRD"
+        )
+
+
+def test_terramind_sar_to_db_converts_only_selected_linear_channels() -> None:
+    dem = BandSpec(sensor="dem", name="dem", source_name="dem", mean=0.0, std=1.0, min=0.0, max=1.0)
+    bands = [dem, *_sar(["vh"], "db"), *_sar(["vv"], "linear_power")]
+    images = torch.tensor([7.0, -20.0, 0.1]).view(1, 3, 1, 1)
+    original = images.clone()
+
+    actual = _sar_to_db(bands, [2, 1])(images)
+
+    torch.testing.assert_close(actual, torch.tensor([7.0, -20.0, -10.0]).view_as(images))
+    torch.testing.assert_close(images, original)
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_db_zscores_with_pretraining_stats(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vv", "vh"], "db"), normalization="model_native", modality="S1GRD"
+    )
+    out = model.normalize_inputs(torch.full((1, 2, 4, 4), -10.0))
+    # TerraMind v1 S1GRD pretraining stats: VV (-12.599, 5.195), VH (-20.293, 5.890)
+    assert torch.allclose(out[:, 0], torch.full((1, 4, 4), (-10.0 + 12.599) / 5.195), atol=1e-4)
+    assert torch.allclose(out[:, 1], torch.full((1, 4, 4), (-10.0 + 20.293) / 5.890), atol=1e-4)
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_linear_power_converts_to_db(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchTerraMindBench(
+        bands=_sar(["vv", "vh"], "linear_power", sensor="sar"),
+        normalization="model_native",
+        modality="S1GRD",
+    )
+    out = model.normalize_inputs(torch.full((1, 2, 4, 4), 0.1))  # 0.1 linear power = -10 dB
+    assert torch.allclose(out[:, 0], torch.full((1, 4, 4), (-10.0 + 12.599) / 5.195), atol=1e-4)
+
+
+@requires_terratorch
+def test_terramind_model_native_s1_undeclared_unit_raises(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="declare no unit"):
+        TerraTorchTerraMindBench(
+            bands=_sar(["vv", "vh"], None, sensor="sar"),
+            normalization="model_native",
+            modality="S1GRD",
+        )
+
+
+def test_full_finetune_undoes_only_the_wrapper_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Backbone(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = nn.Parameter(torch.ones(1))
+            self.pos_embed = nn.Parameter(torch.zeros(1), requires_grad=False)  # fixed by design
+
+    monkeypatch.setattr(
+        "geo_eval_harness.models.terratorch_models._build_backbone", lambda name, **_: _Backbone()
+    )
+    model = TerraTorchTerraMindBench(bands=_bands(_S2L2A_FULL), normalization="identity")
+    assert not any(p.requires_grad for p in model.backbone.parameters())
+
+    model.enable_full_finetune()
+
+    assert model.backbone.weight.requires_grad
+    assert not model.backbone.pos_embed.requires_grad
+
+
+@pytest.mark.parametrize("mode", ["full", "lora"])
+def test_clay_forward_backpropagates_into_backbone(
+    monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Full fine-tuning and LoRA need gradients through Clay's forward."""
+    from geo_eval_harness.segmentation_lora import apply_lora
+
+    class _TinyClay(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.patch_embed = nn.Conv2d(3, 8, 32, stride=32)
+            self.block = nn.Linear(8, 8)
+
+        def forward(self, x: torch.Tensor, waves: torch.Tensor, gsd: float) -> torch.Tensor:
+            del waves, gsd
+            return self.block(self.patch_embed(x).flatten(2).transpose(1, 2))
+
+    monkeypatch.setattr(
+        "geo_eval_harness.models.terratorch_models._build_backbone", lambda name, **_: _TinyClay()
+    )
+    model = TerraTorchClayBench(bands=_bands(["red", "green", "blue"]), normalization="identity")
+    if mode == "full":
+        model.enable_full_finetune()
+    else:
+        apply_lora(model, "block", rank=2, alpha=4.0)
+    trainable = {n: p for n, p in model.backbone.named_parameters() if p.requires_grad}
+    assert trainable
+    assert mode == "full" or all("lora_" in n for n in trainable)
+
+    model.forward_patch_features(torch.rand(2, 3, 64, 64)).sum().backward()
+
+    assert all(p.grad is not None for p in trainable.values())

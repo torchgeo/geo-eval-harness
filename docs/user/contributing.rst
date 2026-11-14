@@ -1,10 +1,7 @@
 Contributing
 ============
 
-We welcome contributions!  This page summarises the local development
-workflow.  See `AGENTS.md <https://github.com/torchgeo/torchgeo-bench/blob/main/AGENTS.md>`__
-for the longer-form guide aimed at AI coding agents (which captures the
-same conventions).
+Use this workflow to develop and validate changes. `AGENTS.md <https://github.com/torchgeo/geo-eval-harness/blob/main/AGENTS.md>`__ records the repository's coding conventions.
 
 Environment
 -----------
@@ -15,24 +12,22 @@ environment for you:
 
 .. code-block:: console
 
-   $ git clone https://github.com/torchgeo/torchgeo-bench.git
-   $ cd torchgeo-bench
+   $ git clone https://github.com/torchgeo/geo-eval-harness.git
+   $ cd geo-eval-harness
    $ uv sync --extra dev
 
-If you prefer `conda <https://docs.conda.io>`_, create an environment with a
-compatible Python first and run ``uv sync`` inside it:
+If you prefer `conda <https://docs.conda.io>`_, install into that environment with pip. ``uv sync`` manages a separate :file:`.venv`:
 
 .. code-block:: console
 
-   $ conda create -n torchgeo-bench 'python>=3.12,<3.13'
-   $ conda activate torchgeo-bench
-   $ uv sync --extra dev
+   $ conda create -n geo-eval-harness 'python>=3.12,<3.13'
+   $ conda activate geo-eval-harness
+   $ pip install -e ".[dev]"
 
 Makefile shortcuts
 ------------------
 
-The top-level :file:`Makefile` provides convenient wrappers around the
-above:
+The top-level :file:`Makefile` runs commands through the ``geo-eval-harness`` conda environment:
 
 =================== ===================================================
 Target              What it does
@@ -58,9 +53,7 @@ formatting:
    $ uv run ruff check .
    $ uv run ruff format .
 
-The project's ruff configuration enables ``E``, ``W``, ``F``, ``I``,
-``B``, ``C4``, ``UP``, ``ARG``, ``SIM``, and ``D`` (pydocstyle, Google
-convention) checks.  Line length is 100.
+Ruff rules are configured in :file:`pyproject.toml`, including Google-style docstrings and a 100-character line length. Run ``uv run pre-commit run --all-files`` for the full formatting, lint, type, and lockfile checks.
 
 Tests
 -----
@@ -71,6 +64,7 @@ Tests
    $ uv run pytest -m integration                   # toy-data workflows only
    $ uv run pytest -m slow                          # optional downloaded-data/weight tests
    $ uv run pytest -m accuracy_check                # optional model accuracy baselines
+   $ uv run pytest -m geography                     # committed dataset-geography store checks
    $ uv run pytest tests/test_intrinsic_dim.py -v   # one file
    $ uv run pytest -k "m-eurosat" -v                # by keyword
    $ uv run pytest --no-cov                         # disable coverage for speed
@@ -79,13 +73,17 @@ All test cases live under :file:`tests/`. Shared inputs and subprocess helpers b
 
 The default suite needs no downloaded datasets or pretrained weights and can run on CPU; GPU-specific tests skip when CUDA is unavailable. The :file:`tests/integration/` suite creates small on-disk datasets with separate training, validation, and test samples. It exercises CLI parsing, data loading, feature extraction, fitting, output files, and resume behavior together. External download transport is replaced with local fixture data, and a temporary random-weight preset lets the public CLI exercise segmentation offline; numerical algorithms and result writers run normally. Integration tests must assert meaningful outputs, not just a zero exit status.
 
-``pytest-cov`` measures both lines and branches across :mod:`torchgeo_bench`, including Python subprocesses. Every normal run displays missing coverage and writes :file:`coverage.xml`; CI saves that report as an artifact and uploads it to Codecov. Generate a navigable local report with ``uv run pytest --cov-report=html`` and open :file:`htmlcov/index.html`. Optional model packages remain in the coverage denominator even when they are not installed, so compare results using the same dependency extras.
+``pytest-cov`` measures both lines and branches across :mod:`geo_eval_harness`, including Python subprocesses. Every normal run displays missing coverage and writes :file:`coverage.xml`; CI saves that report as an artifact and uploads it to Codecov. Generate a navigable local report with ``uv run pytest --cov-report=html`` and open :file:`htmlcov/index.html`. Optional model packages remain in the coverage denominator even when they are not installed, so compare results using the same dependency extras.
+
+CI tests Python 3.12, 3.13, and 3.14 on Linux, macOS, and Windows. It sets ``UV_PYTHON`` to the matrix version for installation and execution and verifies the active interpreter before running tests, so the local :file:`.python-version` pin does not override the matrix.
+
+The default suite includes the ``geography`` tests; CI deselects them from the OS/Python matrix and runs them once in its ``geography`` job. A pull request that changes only :file:`results/models/*.csv` skips the matrix test steps (the required ``test`` checks still report success); the ``test (ubuntu-latest, 3.13)`` cell runs :file:`tests/test_setup_columns.py` and :file:`tests/test_results_store.py` against the committed CSVs instead, and pre-commit and the results-explorer workflow still run.
 
 Only the explicitly selected ``slow`` and ``accuracy_check`` suites need real data or cached weights. Missing datasets skip individually; present but malformed data must fail. They use the canonical subdirectories documented in :doc:`datasets`.
 
 Accuracy checks default to CPU with a 600-second timeout per model/dataset combination. Override these explicitly for larger models, for example ``uv run pytest -m accuracy_check --accuracy-device cuda:0 --accuracy-timeout 3600``. The absolute accuracy tolerance remains 0.02 for both KNN and linear probes.
 
-Refresh :file:`tests/fixtures/accuracy_baselines.csv` with ``uv run python scripts/update_baselines.py``. The script reads stored results without running models or downloading weights. Its explicit case list preserves the small regression matrix; selection matches the resolved model target, normalization, bands, partition, seed, image settings, class count, resolution, pooling, and linear-probe settings before choosing the latest hashed result. Missing comparable results are an error. The fixture records the source hash for provenance, but does not require a rerun to share it: resume hashes also include bootstrap and batch-size settings. The default offline suite checks that the fixture still matches the stored results and current presets. Terratorch execution compatibility is tracked separately in `issue #397 <https://github.com/torchgeo/torchgeo-bench/issues/397>`__; refreshing its stored baselines does not verify that optional backend.
+Refresh :file:`tests/fixtures/accuracy_baselines.csv` with ``uv run python scripts/update_baselines.py``. The script reads stored results without running models or downloading weights. Its explicit case list preserves the small regression matrix; selection matches the resolved model target, normalization, bands, partition, seed, image settings, class count, resolution, pooling, and linear-probe settings before choosing the latest hashed result. Missing comparable results are an error. The fixture records the source hash for provenance, but does not require a rerun to share it: resume hashes also include bootstrap and batch-size settings. The default offline suite checks that the fixture still matches the stored results and current presets. Terratorch execution compatibility is tracked separately in `issue #397 <https://github.com/torchgeo/geo-eval-harness/issues/397>`__; refreshing its stored baselines does not verify that optional backend.
 
 Code style
 ----------
@@ -103,20 +101,14 @@ Code style
 Documentation
 -------------
 
-This very site is built with Sphinx.  The quickest way to build it locally
-is via the Makefile shortcut:
+Build the Sphinx site with warnings treated as errors:
 
 .. code-block:: console
 
-   $ make docs
-   $ open docs/_build/html/index.html
+   $ uv sync --extra dev --extra docs
+   $ uv run sphinx-build -W --keep-going -b html docs docs/_build/html
 
-This assumes ``sphinx-build`` is on your ``PATH`` (install with
-``uv sync --extra docs``).  To rebuild from scratch:
-
-.. code-block:: console
-
-   $ make docs-clean && make docs
+Open :file:`docs/_build/html/index.html` to inspect the result. Add ``-E`` to rebuild Sphinx's cached environment.
 
 Releasing to PyPI
 -----------------
@@ -125,9 +117,11 @@ PyPI publishing uses the ``pypi`` GitHub environment and a
 `Trusted Publisher <https://docs.pypi.org/trusted-publishers/>`_. Prepare every
 release through a pull request:
 
+The PyPI Trusted Publisher uses GitHub owner ``torchgeo``, repository ``geo-eval-harness``, workflow ``release.yml``, and environment ``pypi``.
+
 1. Update :file:`docs/user/changelog.rst`, ``project.version`` in
    :file:`pyproject.toml`, the fallback ``__version__`` in
-   :file:`src/torchgeo_bench/__init__.py`, and :file:`uv.lock`.
+   :file:`src/geo_eval_harness/__init__.py`, and :file:`uv.lock`.
 2. Run the release gate from a clean checkout:
 
    .. code-block:: console
@@ -135,7 +129,9 @@ release through a pull request:
       $ uv run pre-commit run --all-files
       $ uv run pytest
       $ uv run --extra docs sphinx-build -W --keep-going -b html docs docs/_build/html
-      $ uv build
+      $ uv build --no-sources
+      $ uv run --no-project python scripts/check_distributions.py --tag vX.Y.Z
+      $ uvx twine check --strict dist/*
 
 3. Merge the release PR only after CI and the docs preview pass. Pull the merge
    commit onto ``main`` and confirm that the worktree is clean.
@@ -159,9 +155,11 @@ release through a pull request:
    .. code-block:: console
 
       $ gh run list --workflow release.yml
-      $ uvx --from "torchgeo-bench==X.Y.Z" torchgeo-bench --help
+      $ uvx --from "geo-eval-harness==X.Y.Z" geo-eval-harness --help
 
 The ``Publish to PyPI`` workflow (:file:`.github/workflows/release.yml`)
 builds the source distribution and wheel in an unprivileged job, then uploads
 them from a separate OIDC-authenticated job. The tag is the publication trigger;
 do not move or reuse a published version tag.
+
+CI installs the built wheel into a fresh environment and exercises the CLI outside the checkout. The release job checks that the tag matches ``project.version``, both archives contain the source package and its resources, and package metadata contains no direct URL dependencies.

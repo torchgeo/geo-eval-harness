@@ -109,6 +109,10 @@ data/
 *.csv
 *.json
 # Keep the result and metadata files needed by the benchmark and docs.
+!results/compute_cost.csv
+!results/compute_cost.md
+!results/compute_cost_coverage.csv
+!results/compute_cost_provenance.json
 !results/models/
 !results/models/*.csv
 !results/profiles/
@@ -121,7 +125,7 @@ data/
 !**/band_stats.json
 !**/normalizer.json
 !docs/_static/_results_snapshots/*.json
-!docs/_static/_dataset_geography/*.json
+!src/geo_eval_harness/_static/_dataset_geography/*.json
 
 # Logs
 *.log

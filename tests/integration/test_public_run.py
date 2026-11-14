@@ -88,7 +88,7 @@ def test_public_classification_and_resume(tmp_path: Path, *, temperature_scaling
 
 def test_classification_fixture_has_no_split_leakage(tmp_path: Path) -> None:
     """Keep toy perfection meaningful: held-out examples are not training duplicates."""
-    from torchgeo_bench.datasets import get_datasets
+    from geo_eval_harness.datasets import get_datasets
 
     directory = write_classification_files(tmp_path, "m-eurosat", (2, 7))
     partition = json.loads((directory / "default_partition.json").read_text())

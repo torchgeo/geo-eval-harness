@@ -1,0 +1,12 @@
+name: maxvit_tiny_tf_224
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: maxvit_tiny_tf_224
+  pretrained: true
+  global_pool: avg
+segmentation:
+  layers:
+    - stages.3
+    - stages.2
+    - stages.1
+    - stages.0

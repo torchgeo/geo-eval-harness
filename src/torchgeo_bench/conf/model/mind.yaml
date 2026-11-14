@@ -1,8 +1,0 @@
-name: mind
-target: torchgeo_bench.coordbench.models.MINDLocationEncoder
-track: coord
-kwargs:
-  repo: isaaccorley/MIND
-  filename: mind.safetensors
-  feature: pooled
-  dim: 64

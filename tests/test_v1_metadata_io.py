@@ -13,13 +13,13 @@ import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness.datasets import geobench_v1
+from geo_eval_harness.datasets._metadata import decode_metadata
+from geo_eval_harness.datasets._v1_webdataset import GeoBenchv1Sharded
+from geo_eval_harness.datasets.geobench_v1 import GeoBenchv1
+from geo_eval_harness.datasets.m_eurosat import MEurosat
+from geo_eval_harness.geography import _v1_origin, _v1_shard_origins, extract_geography
 from scripts.repack_geobench_v1 import repack, validate
-from torchgeo_bench.datasets import geobench_v1
-from torchgeo_bench.datasets._metadata import decode_metadata
-from torchgeo_bench.datasets._v1_webdataset import GeoBenchv1Sharded
-from torchgeo_bench.datasets.geobench_v1 import GeoBenchv1
-from torchgeo_bench.datasets.m_eurosat import MEurosat
-from torchgeo_bench.geography import _v1_origin, _v1_shard_origins, extract_geography
 
 RED = "04 - Red_2020-01-01"
 GREEN = "03 - Green_2020-01-01"
@@ -320,7 +320,7 @@ def test_legacy_cache_error_explains_how_to_replace_it(tmp_path: Path) -> None:
     source = tmp_path / "m-eurosat"
     _write_shard(source, pickle.dumps(_ObjectMetadata()), "meta.pkl")
     with pytest.raises(
-        ValueError, match="torchgeo-bench download geobench_v1 --datasets m-eurosat"
+        ValueError, match="geo-eval-harness download geobench_v1 --datasets m-eurosat"
     ):
         GeoBenchv1Sharded(source.parent, source.name, "train")[0]
 
@@ -384,7 +384,9 @@ def test_geography_prefers_the_json_sharded_cache(
     _write_hdf5(hdf5_root / "m-eurosat", _payload("repr"), attribute="pickle")
     monkeypatch.setattr(geobench_v1, "V1_SHARDED_ROOT", sharded_root)
     monkeypatch.setattr(geobench_v1, "V1_ROOT", hdf5_root)
-    monkeypatch.setattr("torchgeo_bench.geography._attribute_continents", lambda *_args: Counter())
+    monkeypatch.setattr(
+        "geo_eval_harness.geography._attribute_continents", lambda *_args: Counter()
+    )
     record = extract_geography("m-eurosat", workers=1)
     assert record.status == "extracted"
     assert record.n == 1

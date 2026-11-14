@@ -1,20 +1,22 @@
 """Regression tests for resume hashing and metric completeness."""
 
+import hashlib
+import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from tests.support.runner import _resume_row
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.resume import (
+from geo_eval_harness.config.presets import ModelPreset, merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.resume import (
     ResumeState,
     load_completed,
     plan_dataset_run,
     resume_config_hash,
 )
+from tests.support.runner import _resume_row
 
 
 def _cfg(**sections) -> RunConfig:
@@ -25,7 +27,49 @@ def _cfg(**sections) -> RunConfig:
 
 def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
     resolved, preset = resolve_run_config(config, dataset)
-    return resume_config_hash(resolved, preset)
+    return resume_config_hash(resolved, preset, task=get_bench_dataset_class(dataset).task)
+
+
+def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str:
+    """Reproduce the frozen-probe hash payload before segmentation selected an epoch."""
+    assert config.segmentation.lora_rank is None
+    payload = {
+        "schema_version": config.schema_version,
+        "model": {
+            "name": preset.name,
+            "target": preset.target.replace("geo_eval_harness.", "torchgeo_bench.", 1),
+            "kwargs": preset.kwargs,
+        },
+        "input": config.input.model_dump(mode="json"),
+        "classification": config.classification.model_dump(
+            mode="json", exclude={"methods", "feature_standardize"}
+        ),
+        "segmentation": config.segmentation.model_dump(
+            mode="json",
+            exclude={
+                "lora_rank",
+                "lora_target_modules",
+                "lora_alpha",
+                "lora_last_blocks",
+                "backbone_learning_rate",
+                "neck",
+                "neck_norm",
+                "upsampler",
+                "weight_decay",
+                "head_dropout",
+                "full_finetune",
+                "early_stopping_patience",
+                "feature_standardize",
+                "gradient_checkpointing",
+                "amp",
+                "sweep_learning_rates",
+                "sweep_weight_decays",
+            },
+        ),
+        "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 
 
 @pytest.mark.parametrize(
@@ -35,20 +79,16 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
         {"intrinsic_dim": {"enabled": True}},
         {"datasets": ["m-forestnet"]},
         {"output": {"resume": True}},
+        {"output": {"epoch_metrics": "curves.jsonl"}},
         {"runtime": {"device": "cpu", "workers": 0}},
-        {"segmentation": {"early_stopping": {"patience": 3}}},
-        {"segmentation": {"learning_rates": []}},
-        {"segmentation": {"mixed_precision": True, "batch_membership": "shuffled"}},
     ],
     ids=[
         "profile-pass",
         "intrinsic-dim-pass",
         "dataset-selection",
         "resume-toggle",
+        "epoch-metrics-path",
         "execution",
-        "disabled-early-stopping",
-        "empty-learning-rate-grid",
-        "default-precision-and-batches",
     ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
@@ -77,12 +117,9 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"classification": {"linear": {"refit_train_val": False}}},
         {"classification": {"calibration": {"n_bins_linear": 10}}},
         {"classification": {"bootstrap_samples": 100}},
+        {"classification": {"feature_standardize": True}},
         {"segmentation": {"head": "linear"}},
         {"segmentation": {"learning_rate": 0.01}},
-        {"segmentation": {"learning_rates": [0.001, 0.01]}},
-        {"segmentation": {"scheduler": "none", "early_stopping": {"enabled": True}}},
-        {"segmentation": {"mixed_precision": False}},
-        {"segmentation": {"batch_membership": "fixed"}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
     ],
 )
@@ -90,9 +127,84 @@ def test_config_hash_changes_with_result_affecting_settings(overrides: dict) -> 
     assert _hash(_cfg()) != _hash(_cfg(**overrides))
 
 
-def test_default_config_hash_is_unchanged_by_opt_in_segmentation_options() -> None:
-    """Stored rows keep resuming: this is the default hash from before those options existed."""
-    assert _hash(_cfg()) == "608c653a164202c5"
+def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
+    def vit(**segmentation: object) -> RunConfig:
+        return _cfg(model={"name": "timm/vit/vit_base_patch16_224"}, segmentation=segmentation)
+
+    lora = {"lora_rank": 8, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(lora_target_modules="blocks")) == _hash(vit())
+    assert _hash(vit(**lora)) != _hash(vit())
+    assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+    full = {"full_finetune": True, "backbone_learning_rate": 1e-4}
+    assert _hash(vit(full_finetune=False)) == _hash(vit())
+    assert _hash(vit(**full)) not in {_hash(vit()), _hash(vit(**lora))}
+    assert _hash(vit(**full)) != _hash(vit(**(full | {"backbone_learning_rate": 3e-5})))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora))
+    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora, lora_last_blocks=3))
+
+
+def test_regularisation_changes_the_hash_only_when_set() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _hash(upernet())
+    assert _hash(upernet(weight_decay=0.05)) != _hash(upernet())
+    assert _hash(upernet(head_dropout=0.1)) != _hash(upernet())
+
+
+def test_neck_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(neck="none")) == _hash(upernet())
+    assert _hash(upernet(neck="vit")) != _hash(upernet())
+    assert _hash(upernet(neck="vit_fine")) != _hash(upernet(neck="vit"))
+    # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
+    assert _hash(upernet(neck_norm="none")) == _hash(upernet())
+    assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
+
+
+def test_unet_head_has_its_own_hash() -> None:
+    def seg(head: str, **segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": head, **segmentation})
+
+    assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
+    assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+
+
+def test_upsampler_changes_the_hash_only_when_enabled() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
+
+    assert _hash(upernet(upsampler="none")) == _hash(upernet())
+    assert _hash(upernet(upsampler="anyup")) != _hash(upernet())
+
+
+def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", **segmentation})
+
+    assert _hash(upernet(early_stopping_patience=None)) == _hash(upernet())
+    assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
+
+
+def test_amp_changes_the_hash_only_when_off() -> None:
+    def upernet(**segmentation: object) -> RunConfig:
+        return _cfg(segmentation={"head": "upernet", "cache_dtype": "float32", **segmentation})
+
+    assert _hash(upernet(amp="fp16")) == _hash(upernet())
+    assert _hash(upernet(amp="off")) != _hash(upernet())
+
+
+def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:
+    config = _cfg(model={"name": "torchgeo/dofa_base"}, datasets=["burn_scars"])
+    changed = _cfg(
+        model={"name": "torchgeo/dofa_base"},
+        datasets=["burn_scars"],
+        segmentation={"lora_target_modules": "another.target"},
+    )
+    assert _hash(config, "burn_scars") == _hash(changed, "burn_scars")
 
 
 def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
@@ -107,6 +219,147 @@ def test_config_hash_includes_resolved_model_target_and_kwargs() -> None:
 def test_config_hash_reflects_dataset_resolved_preset_overrides() -> None:
     config = _cfg(model={"name": "torchgeo/scalemae_large_fmow"})
     assert _hash(config, "m-eurosat") != _hash(config, "forestnet")
+
+
+@pytest.mark.parametrize(
+    ("model", "dataset", "image_size", "expected"),
+    [
+        ("timm/vit/vit_base_patch16_224", "loveda", 224, "753ad78a92964b15"),
+        ("timm/vit/vit_base_patch16_224", "fotw", 256, "45b542d6fc9e1fad"),
+        ("torchgeo/dofa_base", "loveda", 224, "a1576b55b8148680"),
+        ("torchgeo/dofa_large", "loveda", 512, "220816abc0f0e8b3"),
+        ("torchgeo/panopticon", "loveda", 224, "2563a8cdf53c8b93"),
+        ("torchgeo/panopticon", "fotw", 256, "37b64ab9d70e8352"),
+        ("torchgeo/deo_rgb", "loveda", 224, "124beafa38c51b41"),
+        ("torchgeo/deo_s2", "loveda", 512, "cbbe48ef58163741"),
+    ],
+)
+def test_native_size_options_leave_existing_preset_hashes_unchanged(
+    model: str, dataset: str, image_size: int, expected: str
+) -> None:
+    """Native-size kwargs are opt-in, so presets that do not set them keep their stored hashes."""
+    config = _cfg(model={"name": model}, datasets=[dataset], input={"image_size": image_size})
+    assert _hash(config, dataset) == expected
+
+
+_SWINV2_L_512 = {"auto_resize": False, "img_size": 512}
+
+
+@pytest.mark.parametrize(
+    ("model", "kwargs", "dataset", "segmentation", "expected"),
+    [
+        (
+            "timm/vit/swinv2_large_window12to16_192to256",
+            _SWINV2_L_512,
+            "loveda",
+            {"head": "upernet", "full_finetune": True, "backbone_learning_rate": 1e-5},
+            "8842077faf8a8079",
+        ),
+        (
+            "timm/vit/swinv2_large_window12to16_192to256",
+            _SWINV2_L_512,
+            "spacenet7",
+            {"head": "unet", "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "d4aa776b7ff0f62f",
+        ),
+        (
+            "terratorch/prithvi_eo_v2_600",
+            {"target_size": None},
+            "spacenet2",
+            {
+                "head": "upernet",
+                "neck": "vit",
+                "full_finetune": True,
+                "backbone_learning_rate": 1e-5,
+            },
+            "63c623cf02734139",
+        ),
+        (
+            "olmoearth_v1_2_base",
+            {},
+            "loveda",
+            {"head": "unet", "neck": "vit", "lora_rank": 8, "backbone_learning_rate": 1e-4},
+            "6cd6066b942d5154",
+        ),
+    ],
+)
+def test_gradient_checkpointing_is_hashed_only_when_set(
+    model: str, kwargs: dict, dataset: str, segmentation: dict, expected: str
+) -> None:
+    """Unset (or false) keeps the hashes pinned at 9a96493; set, it is a new configuration."""
+
+    def config(**extra: object) -> RunConfig:
+        seg = {"cache_features": False, "epochs": 30, **segmentation, **extra}
+        return _cfg(
+            model={"name": model, "kwargs": kwargs},
+            datasets=[dataset],
+            input={"image_size": 512},
+            segmentation=seg,
+        )
+
+    assert _hash(config(), dataset) == expected
+    assert _hash(config(gradient_checkpointing=False), dataset) == expected
+    assert _hash(config(gradient_checkpointing=True), dataset) != expected
+
+
+@pytest.mark.parametrize("dataset", ["m-eurosat", "burn_scars"])
+def test_package_rename_preserves_result_resume(tmp_path: Path, dataset: str) -> None:
+    config, preset = resolve_run_config(_cfg(datasets=[dataset], output={"resume": True}), dataset)
+    ds_cls = get_bench_dataset_class(dataset)
+    stored_preset = preset.model_copy(
+        update={"target": preset.target.replace("geo_eval_harness.", "torchgeo_bench.", 1)}
+    )
+    stored_hash = resume_config_hash(config, stored_preset, task=ds_cls.task)
+    assert resume_config_hash(config, preset, task=ds_cls.task) == stored_hash
+    method = config.segmentation.method if ds_cls.task == "segmentation" else "knn5"
+    metadata = _resume_row(
+        config, method=method, metric_name="mIoU" if ds_cls.task == "segmentation" else "accuracy"
+    )
+    path = tmp_path / "results.csv"
+    pd.DataFrame([{**metadata, "model": stored_preset.target, "config_hash": stored_hash}]).to_csv(
+        path, index=False
+    )
+    original = path.read_bytes()
+    completed = ResumeState(*load_completed(str(path)))
+    plan = plan_dataset_run(config, ds_cls, metadata, completed)
+    assert plan.skip_dataset if ds_cls.task == "segmentation" else plan.skip_knn
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("dataset", ["m-eurosat", "forestnet"])
+def test_epoch_selection_preserves_classification_hashes(dataset: str) -> None:
+    config, preset = resolve_run_config(_cfg(datasets=[dataset]), dataset)
+    ds_cls = get_bench_dataset_class(dataset)
+    assert ds_cls.task == "classification"
+    assert resume_config_hash(config, preset, task=ds_cls.task) == _hash_without_epoch_selection(
+        config, preset
+    )
+
+
+@pytest.mark.parametrize(
+    ("selection_protocol", "can_resume"),
+    [("final-epoch", False), ("best-validation", True)],
+)
+def test_segmentation_resume_requires_best_validation_protocol(
+    tmp_path: Path, selection_protocol: str, *, can_resume: bool
+) -> None:
+    dataset = "burn_scars"
+    config, preset = resolve_run_config(_cfg(datasets=[dataset], output={"resume": True}), dataset)
+    ds_cls = get_bench_dataset_class(dataset)
+    metadata = _resume_row(config, method=f"seg-{config.segmentation.head}", metric_name="mIoU")
+    protocol_hashes = {
+        "final-epoch": _hash_without_epoch_selection(config, preset),
+        "best-validation": resume_config_hash(config, preset, task=ds_cls.task),
+    }
+    assert metadata["config_hash"] == protocol_hashes["best-validation"]
+    path = tmp_path / "results.csv"
+    row = {**metadata, "config_hash": protocol_hashes[selection_protocol]}
+    pd.DataFrame([row]).to_csv(path, index=False)
+
+    completed = ResumeState(*load_completed(str(path)))
+    plan = plan_dataset_run(config, ds_cls, metadata, completed)
+
+    assert plan.skip_dataset is can_resume
 
 
 def test_resume_keys_require_the_requested_metric(tmp_path: Path) -> None:

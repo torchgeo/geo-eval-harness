@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from torchgeo_bench import knn
+from geo_eval_harness import knn
 
 
 def test_missing_gpu_faiss_is_reported_before_cuda_initialization(monkeypatch):

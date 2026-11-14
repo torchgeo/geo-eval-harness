@@ -1,11 +1,13 @@
 """Numerical, training, and caching contracts for dense segmentation probes."""
 
+import math
 from unittest import mock
 
 import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from torchmetrics.functional.classification import (
     multiclass_confusion_matrix,
@@ -15,20 +17,22 @@ from torchmetrics.functional.classification import (
     multiclass_recall,
 )
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.config.schema import EarlyStoppingConfig, SegmentationConfig
-from torchgeo_bench.results import bootstrap_miou
-from torchgeo_bench.segmentation_probe import (
+from geo_eval_harness.boundary_iou import MulticlassBoundaryIoU
+from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
     SegmentationProbe,
     _resolve_num_prefix_tokens,
 )
-from torchgeo_bench.segmentation_task import (
+from geo_eval_harness.segmentation_task import (
+    EpochRecord,
     SegmentationSolver,
-    ValidationStopping,
+    _EpochTracker,
     build_seg_probe_and_solver,
 )
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 NUM_CLASSES = 5
 
@@ -251,7 +255,7 @@ def test_segmentation_probe_conv_block_head(mock_backbone, dummy_data):
 
     logits = probe(data["image"])
     assert logits.shape == (2, num_classes, 64, 64)
-    from torchgeo_bench.models.segmentation_heads import ConvBlockHead
+    from geo_eval_harness.models.segmentation_heads import ConvBlockHead
 
     assert isinstance(probe.head, ConvBlockHead)
 
@@ -266,14 +270,28 @@ def test_solver_fit_and_evaluate(mock_backbone, dummy_data):
     )
 
     solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, lr=1e-3, device="cpu")
+    assert [group["lr"] for group in solver.optimizer.param_groups] == [1e-3]
 
     solver.fit(loader, epochs=1, verbose=True)
 
     metrics = solver.evaluate(loader)
 
     assert isinstance(metrics, dict)
-    assert set(metrics.keys()) == {"mIoU", "fw_IoU", "precision", "recall", "f1"}
+    assert metrics.keys() == {
+        "mIoU",
+        "fw_IoU",
+        "precision",
+        "recall",
+        "f1",
+        "boundary_IoU",
+        "boundary_IoU_width",
+        "loss",
+    }
     assert 0.0 <= metrics["mIoU"] <= 1.0
+    assert 0.0 <= metrics["boundary_IoU"] <= 1.0
+    assert metrics["boundary_IoU_width"] >= 1.0
+    assert math.isfinite(metrics["loss"])
+    assert metrics["loss"] > 0
 
 
 @pytest.mark.parametrize("collect_confusions", [False, True])
@@ -352,6 +370,11 @@ def test_solver_evaluation_parity(
         "recall": multiclass_recall(predictions, masks, average="macro", **metric_args).item(),
         "f1": multiclass_f1_score(predictions, masks, average="macro", **metric_args).item(),
     }
+    boundary = MulticlassBoundaryIoU(**metric_args)
+    boundary.update(predictions, masks)
+    expected_metrics.update(
+        boundary_IoU=boundary.compute().item(), boundary_IoU_width=boundary.boundary_width
+    )
     if collect_confusions:
         expected_confusions = torch.stack(
             [
@@ -359,6 +382,12 @@ def test_solver_evaluation_parity(
                 for pred, mask in zip(predictions, masks, strict=True)
             ]
         )
+    raw_loss, cached_loss = (
+        (result[0] if isinstance(result, tuple) else result)["loss"]
+        for result in (raw_result, cached_result)
+    )
+    assert math.isfinite(raw_loss)
+    assert raw_loss == pytest.approx(cached_loss)
     for result in (raw_result, cached_result):
         if collect_confusions:
             assert isinstance(result, tuple)
@@ -367,11 +396,35 @@ def test_solver_evaluation_parity(
         else:
             metrics = result
         assert isinstance(metrics, dict)
+        metrics.pop("loss")
         assert metrics == pytest.approx(expected_metrics)
 
 
+@pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 1.0])])
+def test_validation_loss_is_the_split_mean_of_the_criterion(
+    class_weight: torch.Tensor | None,
+) -> None:
+    """Uneven and fully ignored batches combine into one criterion mean over the split."""
+    torch.manual_seed(0)
+    images = torch.randn(5, 3, 4, 4)
+    masks = torch.randint(0, 3, (5, 4, 4))
+    masks[1, :2] = 255
+    masks[4] = 255
+    probe = SegmentationProbe(nn.Sequential(nn.Conv2d(3, 3, 1)), ["0"], num_classes=3)
+    criterion = nn.CrossEntropyLoss(weight=class_weight, ignore_index=255)
+    solver = SegmentationSolver(probe, num_classes=3, device="cpu", criterion=criterion)
+
+    metrics = solver.evaluate(DataLoader(TensorDataset(images, masks), batch_size=2))
+
+    probe.eval()
+    with torch.no_grad():
+        expected = criterion(probe(images).float(), masks)
+    assert isinstance(metrics, dict)
+    assert metrics["loss"] == pytest.approx(expected.item(), rel=1e-5)
+
+
 def test_probe_fpn_head(mock_backbone, dummy_data):
-    from torchgeo_bench.models.segmentation_heads import FPNHead
+    from geo_eval_harness.models.segmentation_heads import FPNHead
 
     probe = make_probe(mock_backbone, ["layer2", "layer1"], head_type="fpn", hidden_dim=16)
 
@@ -390,7 +443,7 @@ def test_probe_backbone_prefix_stripping(dummy_data):
 
 
 def test_linear_head_weights_each_scale_before_fusion() -> None:
-    from torchgeo_bench.models.segmentation_heads import LinearHead
+    from geo_eval_harness.models.segmentation_heads import LinearHead
 
     head = LinearHead([1, 1], num_classes=1).eval()
     with torch.no_grad():
@@ -428,6 +481,28 @@ def test_probe_vit_token_features():
     images = torch.randn(2, 3, 64, 64)
     logits = probe(images)
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
+
+
+def test_probe_uses_backbone_declared_token_grid():
+    """Map multi-modality token sequences through the backbone's own layout, not a square guess."""
+
+    class TwoModalityViT(ViTBackbone):
+        def forward(self, x):
+            tokens = self.patch_embed(x).flatten(2).transpose(1, 2)
+            return self.blocks(torch.cat([tokens, 3 * tokens], dim=1))
+
+        def tokens_to_grid(self, tokens):
+            first, second = tokens.chunk(2, dim=1)
+            side = math.isqrt(first.shape[1])
+            return ((first + second) / 2).transpose(1, 2).reshape(len(tokens), -1, side, side)
+
+    backbone = TwoModalityViT()
+    probe = make_probe(backbone, ["blocks"], head_type="linear")
+    images = torch.randn(2, 3, 64, 64)
+
+    assert probe(images).shape == (2, NUM_CLASSES, 64, 64)
+    expected = 2 * backbone.patch_embed(images)
+    torch.testing.assert_close(probe._process_feature(probe._features["blocks"]), expected)
 
 
 def test_resolve_num_prefix_tokens_walks_module_tree():
@@ -499,6 +574,52 @@ def test_probe_dry_run_uses_backbone_num_channels():
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
 
 
+class _ChannelsLastBackbone(nn.Module):
+    """Emit an NHWC stage map whose grid is wider than its channels (Swin stage 0 at 512)."""
+
+    def __init__(self, feature_layout: str | None) -> None:
+        super().__init__()
+        from torchvision.ops.misc import Permute
+
+        self.feature_layout = feature_layout
+        self.stage = nn.Sequential(nn.Conv2d(3, 8, kernel_size=4, stride=4), Permute([0, 2, 3, 1]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.stage(x)
+
+
+def test_probe_reads_declared_nhwc_maps_whose_grid_exceeds_the_channels() -> None:
+    probe = make_probe(_ChannelsLastBackbone("nhwc"), ["stage"], head_type="linear")
+    assert probe.channels_list == [8]
+    assert probe.feature_hw_list == [(56, 56)]
+    nhwc = torch.randn(2, 56, 56, 8)
+    torch.testing.assert_close(probe._process_feature(nhwc), nhwc.permute(0, 3, 1, 2))
+    # Undeclared, the shape guess reads the 56-wide grid as channels.
+    assert make_probe(_ChannelsLastBackbone(None), ["stage"]).channels_list == [56]
+
+
+def test_timm_swin_declares_nhwc_stage_maps() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(
+        bands(3), model_name="swin_tiny_patch4_window7_224", pretrained=False
+    )
+    probe = make_probe(model, ["layers.3", "layers.0"], head_type="fpn")
+
+    assert model.feature_layout == "nhwc"
+    assert probe.channels_list == [768, 96]
+    assert probe.feature_hw_list == [(7, 7), (56, 56)]
+
+
+def test_timm_cnn_declares_no_feature_layout() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(bands(3), model_name="resnet18", pretrained=False)
+    assert model.feature_layout is None
+
+
 @pytest.mark.parametrize("cached", [False, True])
 @pytest.mark.parametrize(
     ("lr_scheduler", "expected_lrs"),
@@ -535,6 +656,8 @@ def test_solver_training_schedule_and_frozen_backbone(
 
     assert result is None
     assert solver.val_history == []
+    assert solver.best_epoch is None
+    assert solver.best_val_miou is None
     assert [*lrs, solver.optimizer.param_groups[0]["lr"]] == pytest.approx(expected_lrs)
     assert not backbone.training
     for name, value in backbone.state_dict().items():
@@ -547,7 +670,7 @@ def test_solver_training_schedule_and_frozen_backbone(
 
 
 def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
-    """fit returns the final epoch val mIoU when a val_loader is provided."""
+    """A single completed epoch is the selected validation epoch."""
     images, masks = dummy_data["image"], dummy_data["mask"]
     train_loader = make_loader(images, masks)
     val_loader = make_loader(images, masks)
@@ -557,6 +680,249 @@ def test_solver_fit_with_val_loader(mock_backbone, dummy_data):
     assert isinstance(val_miou, float)
     assert 0.0 <= val_miou <= 1.0
     assert solver.val_history == [val_miou]
+    assert solver.best_epoch == 1
+    assert solver.best_val_miou == val_miou
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(
+    ("patience", "epochs_run"),
+    [(None, 6), (2, 4), (3, 5), (4, 6)],
+)
+def test_solver_early_stopping_patience(
+    monkeypatch: pytest.MonkeyPatch, patience: int | None, epochs_run: int, *, cached: bool
+) -> None:
+    scores = [0.3, 0.8, 0.5, 0.8, 0.4, 0.2]  # best at epoch 2; the tie at 4 is not an improvement
+    images = torch.randn(2, 3, 8, 8)
+    loader = make_loader(images, torch.randint(0, NUM_CLASSES, (2, 8, 8)))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"], freeze=cached)
+    solver = SegmentationSolver(
+        probe, NUM_CLASSES, device="cpu", lr_scheduler="cosine", early_stopping_patience=patience
+    )
+    calls: list[float] = []
+
+    def validation(*_args: object, **_kwargs: object) -> dict[str, float]:
+        calls.append(scores[len(calls)])
+        return {"mIoU": calls[-1]}
+
+    monkeypatch.setattr(solver, "_evaluate", validation)
+    if cached:
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        result = solver.fit_cached(cache, cache, epochs=len(scores), verbose=False)
+    else:
+        result = solver.fit(loader, loader, epochs=len(scores), verbose=False)
+
+    assert len(calls) == epochs_run
+    assert result == 0.8
+    assert solver.best_epoch == 2
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(
+    "scores",
+    [[0.3, 0.8, 0.2], [0.8, 0.8, 0.2]],
+    ids=["earlier-maximum", "earliest-tie"],
+)
+def test_solver_restores_best_validation_parameters_and_buffers(
+    monkeypatch: pytest.MonkeyPatch, scores: list[float], *, cached: bool
+) -> None:
+    images = torch.randn(2, 3, 8, 8)
+    loader = make_loader(images, torch.randint(0, NUM_CLASSES, (2, 8, 8)))
+    backbone = nn.Sequential(nn.Conv2d(3, 4, 1), nn.BatchNorm2d(4))
+    probe = make_probe(backbone, ["1"], freeze=cached)
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr=0.1, lr_scheduler="none")
+    frozen = {name: p.clone() for name, p in backbone.named_parameters() if not p.requires_grad}
+    cache = (
+        probe.extract_segmentation_features(loader, cache_dtype=torch.float32) if cached else None
+    )
+    states: list[dict[str, torch.Tensor]] = []
+
+    def validation(*_args: object, **_kwargs: object) -> dict[str, float]:
+        probe.eval()
+        states.append({name: value.clone() for name, value in probe.state_dict().items()})
+        return {"mIoU": scores[len(states) - 1]}
+
+    monkeypatch.setattr(solver, "_evaluate", validation)
+    if cached:
+        assert cache is not None
+        result = solver.fit_cached(cache, cache, epochs=len(scores), verbose=False)
+    else:
+        result = solver.fit(loader, loader, epochs=len(scores), verbose=False)
+
+    assert result == max(scores)
+    selected = scores.index(max(scores))
+    assert len(states) == len(scores)
+    assert solver.val_history == scores
+    assert solver.best_epoch == selected + 1
+    assert solver.best_val_miou == max(scores)
+    for name, value in probe.state_dict().items():
+        torch.testing.assert_close(value, states[selected][name], rtol=0, atol=0)
+    assert any(
+        not torch.equal(states[selected][name], states[-1][name])
+        for name, _ in probe.head.named_parameters(prefix="head")
+    )
+    assert any(
+        not torch.equal(states[selected][name], states[-1][name])
+        for name, _ in probe.head.named_buffers(prefix="head")
+    )
+    if not cached:
+        assert any(
+            not torch.equal(states[selected][name], states[-1][name])
+            for name, _ in backbone.named_parameters(prefix="backbone")
+        )
+    for name, p in backbone.named_parameters():
+        if name in frozen:
+            torch.testing.assert_close(p, frozen[name], rtol=0, atol=0)
+
+
+def test_solver_snapshot_is_independent_and_excludes_frozen_weights() -> None:
+    backbone = nn.Sequential(nn.Conv2d(3, 4, 1), nn.BatchNorm2d(4))
+    backbone.register_buffer("runtime_count", torch.tensor(0), persistent=False)
+    probe = make_probe(backbone, ["1"]).double()
+    backbone[0].weight.requires_grad_(True)
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+
+    solver._select_epoch(1, 0.8, verbose=False)
+
+    captured = {id(tensor) for tensor, _ in solver._best_state}
+    assert all(id(p) in captured for p in probe.head.parameters())
+    assert all(id(buffer) in captured for buffer in probe.buffers())
+    for parameter in backbone.parameters():
+        assert (id(parameter) in captured) == parameter.requires_grad
+
+    with torch.no_grad():
+        for tensor, saved in solver._best_state:
+            assert saved.device.type == "cpu"
+            assert not saved.requires_grad
+            assert saved.dtype == tensor.dtype
+            assert saved.data_ptr() != tensor.data_ptr()
+            torch.testing.assert_close(saved, tensor, rtol=0, atol=0)
+            tensor.add_(1)
+            assert not torch.equal(saved, tensor)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(
+    "with_validation", [True, False], ids=["with-validation", "without-validation"]
+)
+def test_solver_refit_clears_previous_selection(
+    monkeypatch: pytest.MonkeyPatch, *, cached: bool, with_validation: bool
+) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    scores = iter([0.9, 0.8, 0.1])
+    monkeypatch.setattr(solver, "_evaluate", lambda *_args, **_kwargs: {"mIoU": next(scores)})
+    train_data = (
+        probe.extract_segmentation_features(loader, cache_dtype=torch.float32) if cached else loader
+    )
+    fit = solver.fit_cached if cached else solver.fit
+
+    assert fit(train_data, train_data, epochs=2, verbose=False) == 0.9
+    assert solver.val_history == [0.9, 0.8]
+    head_before_refit = [p.clone() for p in probe.head.parameters()]
+
+    records: list[EpochRecord] = []
+    result = fit(
+        train_data,
+        train_data if with_validation else None,
+        epochs=1,
+        verbose=False,
+        on_epoch=records.append,
+    )
+
+    assert solver.epoch_history == records
+    assert [record.epoch for record in records] == [1]
+    assert records[0].val_miou == (0.1 if with_validation else None)
+    assert records[0].backbone_lr is None
+    assert records[0].train_steps == 1
+    assert result == (0.1 if with_validation else None)
+    assert solver.best_epoch == (1 if with_validation else None)
+    assert solver.best_val_miou == result
+    assert solver.val_history == ([0.1] if with_validation else [])
+    assert any(
+        not torch.equal(before, after)
+        for before, after in zip(head_before_refit, probe.head.parameters(), strict=True)
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is unavailable")
+def test_solver_records_peak_cuda_memory_per_epoch() -> None:
+    loader = make_loader(torch.randn(4, 3, 8, 8), torch.zeros(4, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cuda:0")
+
+    solver.fit(loader, loader, epochs=2, verbose=False)
+
+    assert [record.epoch for record in solver.epoch_history] == [1, 2]
+    for record in solver.epoch_history:
+        assert record.peak_gpu_mem_mb is not None
+        assert record.peak_gpu_mem_mb > 0
+        assert math.isfinite(record.train_loss)
+        assert record.train_miou is not None
+        assert 0.0 <= record.train_miou <= 1.0
+        assert record.val_loss is not None
+        assert math.isfinite(record.val_loss)
+
+
+def test_epoch_tracker_train_miou_matches_torchmetrics() -> None:
+    generator = torch.Generator().manual_seed(0)
+    optimizer = torch.optim.SGD([nn.Parameter(torch.zeros(1))], lr=1.0)
+    tracker = _EpochTracker(1, optimizer, "cpu", NUM_CLASSES, ignore_index=255)
+    all_logits, all_masks = [], []
+    for _ in range(3):
+        logits = torch.randn(2, NUM_CLASSES, 6, 6, generator=generator)
+        # Class 4 never occurs, so it must be left out of the macro mean, as in validation.
+        masks = torch.randint(0, NUM_CLASSES - 1, (2, 6, 6), generator=generator)
+        masks[:, 0] = 255
+        logits[:, 4] = -100.0
+        tracker.add_step(torch.tensor(1.0), 2, logits, masks)
+        all_logits.append(logits)
+        all_masks.append(masks)
+
+    expected = multiclass_jaccard_index(
+        torch.cat(all_logits), torch.cat(all_masks), NUM_CLASSES, average="macro", ignore_index=255
+    )
+    assert tracker.train_miou() == pytest.approx(expected.item(), abs=1e-6)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_solver_rejects_empty_validation_before_training(*, cached: bool) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    initial_state = {name: tensor.clone() for name, tensor in probe.state_dict().items()}
+    if cached:
+        train = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        val = CachedFeaturesDataset([t[:0] for t in train.layer_tensors], train.masks[:0])
+        with pytest.raises(ValueError, match="validation cache must contain at least one sample"):
+            solver.fit_cached(train, val, epochs=1, verbose=False)
+    else:
+        val_loader = make_loader(torch.empty(0, 3, 8, 8), torch.empty(0, 8, 8, dtype=torch.long))
+        with pytest.raises(ValueError, match="validation loader must contain at least one batch"):
+            solver.fit(loader, val_loader, epochs=1, verbose=False)
+
+    assert not solver.optimizer.state
+    for name, tensor in probe.state_dict().items():
+        torch.testing.assert_close(tensor, initial_state[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), -float("inf")])
+def test_solver_rejects_nonfinite_validation(
+    monkeypatch: pytest.MonkeyPatch, score: float, *, cached: bool
+) -> None:
+    loader = make_loader(torch.randn(2, 3, 8, 8), torch.zeros(2, 8, 8, dtype=torch.long))
+    probe = make_probe(nn.Sequential(nn.Conv2d(3, 4, 1)), ["0"])
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu")
+    monkeypatch.setattr(solver, "_compute_metrics", lambda: {"mIoU": score})
+    if cached:
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        with pytest.raises(ValueError, match="must be finite"):
+            solver.fit_cached(cache, cache, epochs=1, verbose=False)
+    else:
+        with pytest.raises(ValueError, match="must be finite"):
+            solver.fit(loader, loader, epochs=1, verbose=False)
 
 
 class MockBackbone4Layer(nn.Module):
@@ -582,7 +948,7 @@ class MockBackbone4Layer(nn.Module):
 
 
 def test_probe_dpt_head_forward():
-    from torchgeo_bench.models.segmentation_heads import DPTHead
+    from geo_eval_harness.models.segmentation_heads import DPTHead
 
     backbone = MockBackbone4Layer()
     # Coarse-to-fine order (same convention as FPN)
@@ -606,11 +972,103 @@ def test_probe_dpt_wrong_num_layers():
         make_probe(backbone, layers=["layer1", "layer2"], head_type="dpt", hidden_dim=16)
 
 
+def test_probe_upernet_head_decodes_coarse_to_fine_pyramid():
+    """The coarsest map, which has the most channels here, must reach the pyramid pooling module."""
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
+
+    probe = make_probe(
+        MockBackbone4Layer(),
+        layers=["layer4", "layer3", "layer2", "layer1"],
+        head_type="upernet",
+        hidden_dim=16,
+    )
+
+    assert isinstance(probe.head, UPerNetHead)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+
+
+def _upernet_solver_and_data(n_samples: int, batch_size: int):
+    loader = DataLoader(
+        TensorDataset(
+            torch.randn(n_samples, 3, 32, 32),
+            torch.randint(0, NUM_CLASSES, (n_samples, 32, 32)),
+        ),
+        batch_size=batch_size,
+    )
+    probe = make_probe(
+        MockBackbone4Layer(),
+        layers=["layer4", "layer3", "layer2", "layer1"],
+        head_type="upernet",
+        hidden_dim=16,
+    )
+    return probe, SegmentationSolver(probe, NUM_CLASSES, device="cpu"), loader
+
+
+def _fit_upernet(solver, probe, loader, batch_size: int, *, cached: bool) -> None:
+    if cached:
+        cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
+        solver.fit_cached(cache, batch_size=batch_size, epochs=2, verbose=False)
+    else:
+        solver.fit(loader, epochs=2, verbose=False)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_upernet_rejects_a_training_batch_size_below_its_minimum(*, cached: bool) -> None:
+    probe, solver, loader = _upernet_solver_and_data(n_samples=4, batch_size=1)
+    initial_state = {name: tensor.clone() for name, tensor in probe.state_dict().items()}
+
+    with pytest.raises(ValueError, match="batch size 1 is below the UPerNetHead minimum of 2"):
+        _fit_upernet(solver, probe, loader, batch_size=1, cached=cached)
+
+    assert not solver.optimizer.state
+    for name, tensor in probe.state_dict().items():
+        torch.testing.assert_close(tensor, initial_state[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_upernet_rejects_an_epoch_without_a_usable_training_batch(*, cached: bool) -> None:
+    """A one-sample training split passes the batch-size check but cannot train UPerNet."""
+    probe, solver, loader = _upernet_solver_and_data(n_samples=1, batch_size=2)
+
+    with pytest.raises(ValueError, match="epoch 1 had no usable training batch"):
+        _fit_upernet(solver, probe, loader, batch_size=2, cached=cached)
+
+    assert not solver.optimizer.state
+
+
+def test_upernet_head_decodes_same_scale_vit_features():
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
+
+    head = UPerNetHead([32, 32, 32, 32], num_classes=NUM_CLASSES, hidden_dim=16)
+    features = [torch.randn(2, 32, 14, 14) for _ in range(4)]
+
+    assert head(features, 224, 224).shape == (2, NUM_CLASSES, 224, 224)
+
+
+def test_timm_wrapper_trains_through_probe_and_extracts_without_autograd():
+    """Unfrozen probes get backbone gradients; frozen feature extraction still yields arrays."""
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.utils import extract_features
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    images = torch.randn(2, 3, 224, 224)
+    probe = make_probe(model, ["blocks.11", "blocks.5"], head_type="fpn", freeze=False)
+
+    probe(images).sum().backward()
+
+    assert model.backbone.blocks[0].attn.qkv.weight.grad is not None
+    features, _ = extract_features(
+        model, [{"image": images, "label": torch.zeros(2)}], "cpu", description=None
+    )
+    assert features.shape == (2, model.backbone.num_features)
+
+
 def test_dpt_fusion_layer_shim_matches_reference():
     """These checks protect decoder behavior when transformers changes its private fusion API."""
     from transformers.models.dpt.modeling_dpt import DPTPreActResidualLayer
 
-    from torchgeo_bench.models.segmentation_heads import _dpt_fusion_layer
+    from geo_eval_harness.models.segmentation_heads import _dpt_fusion_layer
 
     layer = _dpt_fusion_layer(16)
 
@@ -632,7 +1090,7 @@ def test_dpt_fusion_layer_shim_matches_reference():
 
 def test_dpt_head_upsamples_purely_through_fusion_cascade():
     """Four fusion stages must reach 224x224 from 14x14 without relying on the final resize."""
-    from torchgeo_bench.models.segmentation_heads import DPTHead
+    from geo_eval_harness.models.segmentation_heads import DPTHead
 
     head = DPTHead([32, 32, 32, 32], num_classes=NUM_CLASSES, hidden_dim=16)
     features = [torch.randn(1, 32, 14, 14) for _ in range(4)]
@@ -654,7 +1112,7 @@ def test_dpt_head_upsamples_purely_through_fusion_cascade():
 def test_patch_linear_head_infers_patch_geometry(
     grid: int, size: int, patch: int, dtype: torch.dtype
 ) -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     head = PatchLinearHead([8], num_classes=3).to(dtype=dtype)
     logits = head([torch.randn(2, 8, grid, grid, dtype=dtype)], size, size)
@@ -667,7 +1125,7 @@ def test_patch_linear_head_infers_patch_geometry(
 
 def test_patch_linear_head_ignores_extra_channels():
     """PatchLinearHead uses only the first feature map when extra layers are passed."""
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     head = PatchLinearHead([8, 16], num_classes=3)
     primary = torch.randn(2, 8, 16, 16)
@@ -689,7 +1147,7 @@ def test_patch_linear_head_ignores_extra_channels():
     ],
 )
 def test_probe_patch_linear_head_initializes_on_backbone_device(device: str) -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     probe = make_probe(ViTBackbone().to(device), ["blocks"], head_type="patch_linear")
 
@@ -702,7 +1160,7 @@ def test_probe_patch_linear_head_initializes_on_backbone_device(device: str) -> 
 
 
 def test_probe_patch_linear_head_vit() -> None:
-    from torchgeo_bench.models.segmentation_heads import PatchLinearHead
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
 
     probe = make_probe(ViTBackbone(), ["blocks"], head_type="patch_linear")
     assert isinstance(probe.head, PatchLinearHead)
@@ -812,16 +1270,47 @@ def _make_cpu_cache(mock_backbone, dummy_data):
     return probe.extract_segmentation_features(loader, cache_dtype=torch.float16)
 
 
-def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data):
+def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data, monkeypatch):
     """The device-cache path must also work without CUDA."""
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     cache = _make_cpu_cache(mock_backbone, dummy_data)
     gpu_cache = GPUTensorCache.from_cached(cache, device="cpu")
 
     assert len(gpu_cache) == len(cache)
     assert len(gpu_cache.layer_tensors) == 2
+    assert all(tensor.device.type == "cpu" for tensor in gpu_cache.layer_tensors)
+    assert gpu_cache.masks.device.type == "cpu"
     assert gpu_cache.layer_tensors[0].dtype == torch.float32  # CPU path uses float32
     assert gpu_cache.masks.dtype == torch.long
     assert gpu_cache.masks.shape == (len(cache), 64, 64)
+
+
+@pytest.mark.parametrize("amp", [True, False])
+def test_host_feature_cache_trains_and_evaluates_without_cuda(
+    mock_backbone, dummy_data, monkeypatch: pytest.MonkeyPatch, *, amp: bool
+) -> None:
+    cache = _make_cpu_cache(mock_backbone, dummy_data)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (0, 8 * 2**30))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 0)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 0)
+
+    staged = GPUTensorCache.from_cached(cache, "cuda:0", amp=amp)
+    dtype = torch.float16 if amp else torch.float32
+    assert staged.device == torch.device("cpu")
+    for actual, expected in zip(staged.layer_tensors, cache.layer_tensors, strict=True):
+        torch.testing.assert_close(actual, expected.to(dtype=dtype))
+    torch.testing.assert_close(staged.masks, cache.masks)
+
+    probe = make_probe(mock_backbone, ["layer1", "layer2"])
+    solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, device="cpu")
+    before = [parameter.detach().clone() for parameter in probe.head.parameters()]
+    score = solver.fit_cached(staged, val_cache=staged, batch_size=2, epochs=1, verbose=False)
+    assert isinstance(score, float)
+    assert 0 <= score <= 1
+    assert any(
+        not torch.equal(old, new) for old, new in zip(before, probe.head.parameters(), strict=True)
+    )
+    assert solver.epoch_history[0].train_steps > 0
 
 
 def test_gpu_tensor_cache_shuffling_keeps_features_paired_with_masks() -> None:
@@ -836,66 +1325,6 @@ def test_gpu_tensor_cache_shuffling_keeps_features_paired_with_masks() -> None:
     for features, masks in batches:
         torch.testing.assert_close(features[0][:, 0], masks.float())
         torch.testing.assert_close(features[1][:, 0], masks.float() + 10)
-
-
-def test_gpu_tensor_cache_fixed_batches_keep_membership_and_shuffle_order() -> None:
-    ids = torch.arange(7).reshape(7, 1, 1)
-    gpu_cache = GPUTensorCache.from_cached(
-        CachedFeaturesDataset([ids[:, None].float()], ids), "cpu"
-    )
-
-    torch.manual_seed(0)
-    epochs = [
-        tuple(tuple(masks.flatten().tolist()) for _, masks in gpu_cache.fixed_batches(2))
-        for _ in range(6)
-    ]
-
-    for batches in epochs:
-        assert sorted(batches) == [(0, 1), (2, 3), (4, 5), (6,)]
-    assert len(set(epochs)) > 1
-
-
-def test_fit_cached_in_float32_upcasts_float16_features(mock_backbone, dummy_data):
-    """Without autocast, a float32 head must accept float16 cached features."""
-    cache = _make_cpu_cache(mock_backbone, dummy_data)
-    half = GPUTensorCache([t.half() for t in cache.layer_tensors], cache.masks.long(), "cpu")
-    solver = SegmentationSolver(
-        model=make_probe(mock_backbone, ["layer1", "layer2"]),
-        num_classes=NUM_CLASSES,
-        device="cpu",
-        mixed_precision=False,
-        batch_membership="fixed",
-    )
-
-    val_miou = solver.fit_cached(half, half, batch_size=2, epochs=2, verbose=False)
-
-    assert val_miou is not None
-    assert 0.0 <= val_miou <= 1.0
-    assert solver.stopped_epoch == 2
-    assert solver.fit_seconds > 0
-
-
-def test_caches_larger_than_free_gpu_memory_stay_in_host_memory(
-    mock_backbone, dummy_data, monkeypatch: pytest.MonkeyPatch
-):
-    cache = _make_cpu_cache(mock_backbone, dummy_data)
-    solver = SegmentationSolver(
-        model=make_probe(mock_backbone, ["layer1", "layer2"]),
-        num_classes=NUM_CLASSES,
-        device="cpu",
-        mixed_precision=False,
-    )
-    monkeypatch.setattr(solver, "device_type", "cuda")
-    monkeypatch.setattr(solver, "_free_device_bytes", lambda: cache.nbytes(torch.float16) - 1)
-
-    staged = solver._device_cache(cache)
-    solver._train_epoch(staged, batch_size=2, desc="", verbose=False)
-    metrics = solver._evaluate(staged, batch_size=2)
-
-    assert staged.device == torch.device("cpu")
-    assert staged.layer_tensors[0].dtype == torch.float16
-    assert isinstance(metrics, dict)
-    assert 0.0 <= metrics["mIoU"] <= 1.0
 
 
 def test_gpu_tensor_cache_ordered_batches(mock_backbone, dummy_data):
@@ -965,7 +1394,7 @@ def test_solver_fit_cached_builds_missing_validation_gpu_cache(mock_backbone, du
         )
 
     assert isinstance(val_miou, float)
-    transfer.assert_called_once_with(val_cache, solver.device)
+    transfer.assert_called_once_with(val_cache, solver.device, amp=True)
 
 
 def test_probe_pools_time_series_features(mock_backbone, dummy_data):
@@ -1000,135 +1429,399 @@ def test_probe_rejects_unknown_temporal_pool(mock_backbone):
         SegmentationProbe(mock_backbone, ["layer1"], NUM_CLASSES, temporal_pool="median")
 
 
-def test_validation_stopping_needs_cumulative_gains_and_minimum_epochs() -> None:
-    """Many tiny gains still count as stale; stopping waits for min_epochs."""
-    tracker = ValidationStopping(EarlyStoppingConfig(patience=2, min_delta=0.01, min_epochs=15))
-    observed = [tracker.observe(epoch, miou) for epoch, miou in [(0, 0.5), (5, 0.505), (10, 0.509)]]
-    assert observed == [(True, False), (True, False), (True, False)]
-    assert tracker.stale_checks == 2
-    assert tracker.observe(15, 0.509) == (False, True)
-    assert (tracker.best_epoch, tracker.best_miou) == (10, 0.509)
+class FourBlockViT(nn.Module):
+    """Four token blocks on one 16-pixel patch grid, like a plain ViT."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.patch_embed = nn.Conv2d(3, 8, kernel_size=16, stride=16)
+        self.blocks = nn.Sequential(*(nn.Linear(8, 8) for _ in range(4)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.blocks(self.patch_embed(x).flatten(2).transpose(1, 2))
 
 
-def test_validation_stopping_keeps_earliest_tied_best() -> None:
-    tracker = ValidationStopping(EarlyStoppingConfig(patience=5, min_delta=0.0, min_epochs=0))
-    for epoch, miou in [(0, 0.2), (5, 0.6), (10, 0.6)]:
-        tracker.observe(epoch, miou)
-    assert tracker.best_epoch == 5
+_VIT_LAYERS = ["blocks.3", "blocks.2", "blocks.1", "blocks.0"]
 
 
-def _scripted_solver(mock_backbone, dummy_data, scores: list[float], **kwargs):
-    """Return a solver whose validation checks replay ``scores`` and record head snapshots."""
-    images, masks = dummy_data["image"], dummy_data["mask"]
-    probe = make_probe(mock_backbone, ["layer1", "layer2"])
-    cache = probe.extract_segmentation_features(
-        make_loader(images, masks), cache_dtype=torch.float32
-    )
-    solver = SegmentationSolver(
-        model=probe, num_classes=NUM_CLASSES, lr=1e-2, device="cpu", lr_scheduler="none", **kwargs
-    )
-    snapshots: list[dict[str, torch.Tensor]] = []
-    remaining = iter(scores)
+@pytest.mark.parametrize("grid", [14, 16, 28])
+def test_vit_neck_rescales_one_grid_into_a_stride_pyramid(grid: int) -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
 
-    def evaluate(_cache, _batch_size):
-        snapshots.append({k: v.clone() for k, v in probe.head.state_dict().items()})
-        return {"mIoU": next(remaining)}
+    neck = ViTNeck([8] * 4)
+    features = [torch.randn(2, 8, grid, grid) for _ in range(4)]
+    shapes = [tuple(f.shape) for f in neck(features)]
 
-    solver._evaluate = evaluate
-    return solver, cache, snapshots
-
-
-def test_fit_cached_early_stopping_restores_best_checkpoint(mock_backbone, dummy_data):
-    scores = [0.1, 0.4, 0.3, 0.35, 0.2, 0.9]
-    solver, cache, snapshots = _scripted_solver(mock_backbone, dummy_data, scores)
-    config = EarlyStoppingConfig(
-        enabled=True, check_every=2, patience=3, min_delta=0.0, min_epochs=0, max_epochs=50
-    )
-
-    best = solver.fit_cached(cache, cache, batch_size=2, verbose=False, early_stopping=config)
-
-    assert best == 0.4
-    assert solver.val_history == [0.1, 0.4, 0.3, 0.35, 0.2]
-    assert (solver.best_epoch, solver.stopped_epoch) == (2, 8)
-    for name, value in solver.model.head.state_dict().items():
-        torch.testing.assert_close(value, snapshots[1][name])
-
-
-def test_fit_cached_early_stopping_honors_max_epochs(mock_backbone, dummy_data):
-    solver, cache, _ = _scripted_solver(mock_backbone, dummy_data, [0.1, 0.2, 0.3, 0.4])
-    config = EarlyStoppingConfig(
-        enabled=True, check_every=2, patience=5, min_delta=0.0, min_epochs=0, max_epochs=5
-    )
-    assert (
-        solver.fit_cached(cache, cache, batch_size=2, verbose=False, early_stopping=config) == 0.4
-    )
-    assert solver.stopped_epoch == 5
-    assert solver.val_history == [0.1, 0.2, 0.3, 0.4]
-
-
-def test_fit_cached_early_stopping_requires_validation_and_constant_lr(mock_backbone, dummy_data):
-    solver, cache, _ = _scripted_solver(mock_backbone, dummy_data, [])
-    config = EarlyStoppingConfig(enabled=True)
-    with pytest.raises(ValueError, match="validation cache"):
-        solver.fit_cached(cache, None, verbose=False, early_stopping=config)
-    solver.lr_scheduler_type = "cosine"
-    with pytest.raises(ValueError, match="lr_scheduler='none'"):
-        solver.fit_cached(cache, cache, verbose=False, early_stopping=config)
-
-
-def test_select_learning_rate_refits_same_initial_head(mock_backbone, dummy_data):
-    """Each rate starts from identical weights; exact ties go to the lower rate."""
-    images, masks = dummy_data["image"], dummy_data["mask"]
-    probe = make_probe(mock_backbone, ["layer1", "layer2"])
-    cache = probe.extract_segmentation_features(
-        make_loader(images, masks), cache_dtype=torch.float32
-    )
-    solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, device="cpu")
-    initial = {k: v.clone() for k, v in probe.head.state_dict().items()}
-    scores = {0.1: 0.5, 0.01: 0.7, 0.001: 0.7}
-    starts, finals = [], {}
-
-    def fake_fit(_train, _val, _batch_size, _epochs, *, verbose, early_stopping):
-        lr = solver.optimizer.param_groups[0]["lr"]
-        starts.append({k: v.clone() for k, v in probe.head.state_dict().items()})
-        with torch.no_grad():
-            for parameter in probe.head.parameters():
-                parameter.add_(lr)
-        finals[lr] = {k: v.clone() for k, v in probe.head.state_dict().items()}
-        return scores[lr]
-
-    solver.fit_cached = fake_fit
-    chosen = solver.select_learning_rate_cached(
-        cache, cache, [0.1, 0.01, 0.001], batch_size=2, seed=0, verbose=False
-    )
-
-    assert chosen == 0.001
-    assert [(entry["lr"], entry["val_miou"]) for entry in solver.lr_history] == [
-        (0.1, 0.5),
-        (0.01, 0.7),
-        (0.001, 0.7),
+    assert shapes == [
+        (2, 8, grid // 2, grid // 2),
+        (2, 8, grid, grid),
+        (2, 8, 2 * grid, 2 * grid),
+        (2, 8, 4 * grid, 4 * grid),
     ]
-    for start in starts:
-        for name, value in start.items():
-            torch.testing.assert_close(value, initial[name])
-    for name, value in probe.head.state_dict().items():
-        torch.testing.assert_close(value, finals[0.001][name])
+    with pytest.raises(ValueError, match="one channel count"):
+        ViTNeck([8, 6, 4, 2])
+
+
+def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    features = [torch.randn(2, 8, 14, 14) for _ in range(4)]
+    for feature in features:
+        feature[:, 0] *= 1e4  # one outlier channel, as in raw ViT block outputs
+    plain = ViTNeck([8] * 4, input_norm="none")
+    normed = ViTNeck([8] * 4)
+
+    # Max-pool passes the outlier straight through without the norm.
+    assert plain(features)[0].abs().max() > 1e3
+    # LayerNorm over channels bounds every position: |x| <= sqrt(C - 1) at identity affine.
+    assert normed(features)[0].abs().max() <= math.sqrt(7) + 1e-4
+    torch.testing.assert_close(normed(features)[1], normed.input_norms[1](features[1]))
+    with pytest.raises(ValueError, match="input_norm must be"):
+        ViTNeck([8] * 4, input_norm="batchnorm")
+
+
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "fpn", "unet"])
+@pytest.mark.parametrize("cached", [False, True])
+def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:
+    from geo_eval_harness.models.segmentation_heads import NeckedHead
+
+    probe = SegmentationProbe(
+        FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+    neck_before = {n: p.clone() for n, p in probe.head.neck.named_parameters()}
+
+    assert isinstance(probe.head, NeckedHead)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=cached)
+    assert any(not torch.equal(p, neck_before[n]) for n, p in probe.head.neck.named_parameters())
+
+
+def test_vit_fine_neck_takes_the_finest_level_from_the_last_input() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8] * 4, input_norm="none", native_finest=True)
+    trunk = [torch.randn(2, 8, 14, 14) for _ in range(3)]
+    fine = torch.randn(2, 8, 56, 56)
+
+    levels = neck([*trunk, fine])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[-1], fine)
+    assert neck([*trunk, torch.randn(2, 8, 14, 14)])[-1].shape[-2:] == (56, 56)
+
+
+def test_vit_neck_builds_a_simple_pyramid_from_one_map() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8], input_norm="none")
+    feature = torch.randn(2, 8, 14, 14)
+
+    levels = neck([feature])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[1], feature)
+    with pytest.raises(ValueError, match="native_finest needs 4 inputs"):
+        ViTNeck([8], native_finest=True)
+
+
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "unet"])
+def test_probe_vit_neck_trains_from_a_single_layer(head_type: str) -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=False)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type="upernet", neck="vit_fine"
+        )
+
+
+class FineOutputViT(FourBlockViT):
+    """Three trunk blocks on a 16-pixel grid plus a fine output block on a 4-pixel grid."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fine = nn.Conv2d(3, 8, kernel_size=4, stride=4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        trunk = super().forward(x)
+        return trunk.mean() + self.fine(x).flatten(2).transpose(1, 2)
+
+
+def test_probe_vit_fine_neck_accepts_a_finer_last_layer() -> None:
+    layers = ["blocks.3", "blocks.2", "blocks.1", "fine"]
+    probe = SegmentationProbe(
+        FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit_fine"
+    )
+    assert probe.feature_hw_list == [(14, 14)] * 3 + [(56, 56)]
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit"
+        )
+
+
+def test_probe_vit_neck_rejects_pyramid_layers_and_other_heads() -> None:
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            MockBackbone4Layer(),
+            ["layer4", "layer3", "layer2", "layer1"],
+            NUM_CLASSES,
+            head_type="upernet",
+            hidden_dim=16,
+            neck="vit",
+        )
+    with pytest.raises(ValueError, match="requires head in"):
+        SegmentationProbe(FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="dpt", neck="vit")
+    with pytest.raises(ValueError, match="Unknown neck"):
+        SegmentationProbe(FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", neck="cnn")
+
+
+def test_build_seg_probe_and_solver_attaches_the_configured_neck() -> None:
+    from geo_eval_harness.models.segmentation_heads import NeckedHead
+
+    config = SegmentationConfig(head="upernet", neck="vit", layers=_VIT_LAYERS)
+    probe, _ = build_seg_probe_and_solver(FourBlockViT(), NUM_CLASSES, config, torch.device("cpu"))
+
+    assert isinstance(probe.head, NeckedHead)
+
+
+def test_head_dropout_sits_before_the_upernet_classifier_and_trains_only() -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        head_dropout=0.5,
+    )
+    classifier = probe.head.head.decoder.classifier
+    assert isinstance(classifier, nn.Sequential)
+    assert isinstance(classifier[0], nn.Dropout2d)
+    assert classifier[0].p == 0.5
+    x = torch.randn(2, 3, 64, 64)
+    probe.eval()
+    torch.testing.assert_close(probe(x), probe(x))
+    probe.train()
+    assert not torch.equal(probe(x), probe(x))
+    with pytest.raises(ValueError, match="requires the upernet head"):
+        SegmentationProbe(
+            FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", head_dropout=0.1
+        )
+
+
+def test_build_seg_probe_and_solver_applies_weight_decay_and_dropout() -> None:
+    config = SegmentationConfig(
+        head="upernet", neck="vit", layers=_VIT_LAYERS, weight_decay=0.05, head_dropout=0.2
+    )
+    probe, solver = build_seg_probe_and_solver(
+        FourBlockViT(), NUM_CLASSES, config, torch.device("cpu")
+    )
+    assert {g["weight_decay"] for g in solver.optimizer.param_groups} == {0.05}
+    assert probe.head.head.decoder.classifier[0].p == 0.2
+    _, default = build_seg_probe_and_solver(
+        FourBlockViT(),
+        NUM_CLASSES,
+        SegmentationConfig(head="upernet", layers=_VIT_LAYERS, neck="vit"),
+        torch.device("cpu"),
+    )
+    assert {g["weight_decay"] for g in default.optimizer.param_groups} == {0.0}
+
+
+class _StandInAnyUp(nn.Module):
+    """Frozen stand-in with AnyUp's call signature: bilinear upsampling plus a frozen weight."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(()), requires_grad=False)
+        self.calls: list[tuple] = []
+
+    def forward(self, guidance, features, output_size):
+        self.calls.append((tuple(guidance.shape), tuple(features.shape), output_size))
+        return F.interpolate(features, size=output_size, mode="bilinear") * self.weight
+
+
+def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    stand_in = _StandInAnyUp()
+    monkeypatch.setattr(anyup, "load_anyup", lambda: stand_in)
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        upsampler="anyup",
+    )
+    decoder = probe.head.head.decoder
+    assert isinstance(decoder.classifier, anyup.AnyUpClassifier)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    assert decoder.classifier.guidance is None
+    guidance, features, size = stand_in.calls[-1]
+    assert guidance == (2, 3, 64, 64)
+    assert size == (64, 64)
+    assert features[-2:] != (64, 64)
+    probe.train()
+    assert not stand_in.training
+    assert decoder.classifier.classifier.training
+    with pytest.raises(ValueError, match="requires the upernet head"):
+        SegmentationProbe(
+            FourBlockViT(), _VIT_LAYERS, NUM_CLASSES, head_type="fpn", upsampler="anyup"
+        )
+
+
+def test_anyup_guidance_bands_follow_wavelengths() -> None:
+    from geo_eval_harness.datasets.base import BandSpec
+    from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
+
+    def band(name: str, wavelength: float | None, sensor: str = "s2") -> BandSpec:
+        return BandSpec(name, sensor, name, mean=0, std=1, min=0, max=1, wavelength_um=wavelength)
+
+    s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
+    assert rgb_guidance_indices(s2) == (2, 1, 0)
+    assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
+    assert guide.shape == (2, 3, 8, 8)
+    assert guide.abs().max() < 3
+
+
+def test_anyup_chunks_large_attention_with_checkpointing(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    stand_in = _StandInAnyUp()
+    classifier = nn.Conv2d(4, 2, 1)
+    module = anyup.AnyUpClassifier(classifier, stand_in)
+    module.guidance = torch.randn(5, 3, 16, 16)
+    features = torch.randn(5, 4, 4, 4, requires_grad=True)
+    whole = module(features)
+    assert len(stand_in.calls) == 1
+    monkeypatch.setattr(anyup, "ATTENTION_BUDGET", 4 * 16 * 16 * 4 * 4)
+    monkeypatch.setattr(anyup, "CHUNK_BUDGET", 2 * 16 * 16 * 4 * 4)
+    stand_in.calls.clear()
+    chunked = module(features)
+    chunked.sum().backward()
+    assert [c[1][0] for c in stand_in.calls[:3]] == [2, 2, 1]
+    torch.testing.assert_close(chunked, whole)
+    assert features.grad is not None
+
+
+def test_anyup_wraps_the_head_dropout_and_classifier(monkeypatch) -> None:
+    from geo_eval_harness.models import anyup
+
+    monkeypatch.setattr(anyup, "load_anyup", _StandInAnyUp)
+    probe = SegmentationProbe(
+        FourBlockViT(),
+        _VIT_LAYERS,
+        NUM_CLASSES,
+        head_type="upernet",
+        hidden_dim=16,
+        neck="vit",
+        head_dropout=0.5,
+        upsampler="anyup",
+    )
+    wrapper = probe.head.head.decoder.classifier
+    assert isinstance(wrapper, anyup.AnyUpClassifier)
+    assert isinstance(wrapper.classifier, nn.Sequential)
+    assert isinstance(wrapper.classifier[0], nn.Dropout2d)
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+
+
+def _stock_and_separable_upernet(channels: int, num_classes: int):
+    import copy
+
+    from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
+
+    from geo_eval_harness.models.segmentation_heads import UPerNetHead
+
+    torch.manual_seed(0)
+    head = UPerNetHead([channels], num_classes, hidden_dim=16)
+    stock = copy.deepcopy(head)
+    stock.decoder.psp_modules.__class__ = UperNetPyramidPoolingModule
+    return stock, head
+
+
+def _loss_and_grads(head, features, masks, *, amp: bool):
+    head.zero_grad()
+    with torch.autocast(device_type=features.device.type, enabled=amp):
+        logits = head([features], *masks.shape[-2:])
+        loss = nn.functional.cross_entropy(logits, masks)
+    loss.backward()
+    grads = torch.cat([p.grad.flatten().float() for p in head.parameters() if p.grad is not None])
+    return logits, loss.detach(), grads
 
 
 @pytest.mark.parametrize(
-    ("settings", "message"),
-    [
-        ({"early_stopping": {"enabled": True}}, "scheduler 'none'"),
-        (
-            {"cache_features": False, "learning_rates": [0.001], "scheduler": "none"},
-            "cache_features=true",
-        ),
-        ({"cache_features": False, "batch_membership": "fixed"}, "cache_features=true"),
-        ({"learning_rates": [0.001, 0.001]}, "positive and unique"),
-        ({"learning_rates": [0.0]}, "positive and unique"),
-        ({"early_stopping": {"min_epochs": 30, "max_epochs": 20}}, "max_epochs"),
-    ],
-)
-def test_segmentation_config_rejects_unsupported_fitting_options(settings, message) -> None:
-    with pytest.raises(ValueError, match=message):
-        SegmentationConfig.model_validate(settings)
+    ("size_in", "size_out"),
+    [((1, 1), (154, 88)), ((2, 2), (210, 211)), ((3, 3), (154, 88)), ((6, 6), (210, 211)),
+     ((1, 5), (9, 12)), ((4, 1), (9, 12))],
+)  # fmt: skip
+def test_separable_bilinear_upsample_matches_interpolate(size_in, size_out) -> None:
+    from geo_eval_harness.models.segmentation_heads import separable_bilinear_upsample
+
+    x = torch.randn(2, 3, *size_in, dtype=torch.float64).float().requires_grad_()
+    expected = nn.functional.interpolate(x, size=size_out, mode="bilinear", align_corners=False)
+    actual = separable_bilinear_upsample(x, size_out)
+    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
+    weight = torch.randn_like(expected)
+    (grad_expected,) = torch.autograd.grad((expected * weight).sum(), x)
+    (grad_actual,) = torch.autograd.grad((actual * weight).sum(), x)
+    assert ((grad_actual - grad_expected).norm() / grad_expected.norm()).item() < 1e-5
+    devices = [("cpu", torch.bfloat16)] + [("cuda", torch.float16)] * torch.cuda.is_available()
+    for device, low in devices:
+        with torch.autocast(device_type=device):
+            y = x.detach().to(device, low)
+            reference = nn.functional.interpolate(y, size=size_out, mode="bilinear")
+            assert separable_bilinear_upsample(y, size_out).dtype == reference.dtype
+
+
+@pytest.mark.parametrize("hw", [(154, 88), (210, 211), (13, 7)])
+def test_upernet_pyramid_upsampling_matches_the_reference_head_in_float32(hw) -> None:
+    stock, head = _stock_and_separable_upernet(channels=8, num_classes=3)
+    features = torch.randn(3, 8, *hw)
+    masks = torch.randint(0, 3, (3, hw[0] + 5, hw[1] + 3))
+    stock.train(), head.train()
+    ref_logits, ref_loss, ref_grads = _loss_and_grads(stock, features, masks, amp=False)
+    logits, loss, grads = _loss_and_grads(head, features, masks, amp=False)
+    torch.testing.assert_close(logits, ref_logits, rtol=1e-4, atol=1e-5)
+    torch.testing.assert_close(loss, ref_loss, rtol=1e-6, atol=1e-6)
+    # Conv weights feeding train-mode BatchNorm have ill-conditioned float32 gradients whose
+    # rounding differs across platforms, so compare both heads against a float64 stock run.
+    _, _, exact_grads = _loss_and_grads(stock.double(), features.double(), masks, amp=False)
+    stock_error = ((ref_grads.double() - exact_grads).norm() / exact_grads.norm()).item()
+    error = ((grads.double() - exact_grads).norm() / exact_grads.norm()).item()
+    assert error <= 1.1 * stock_error + 1e-6
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="autocast float16 path needs CUDA")
+@pytest.mark.parametrize("hw", [(154, 88), (210, 211)])
+def test_upernet_pyramid_upsampling_matches_the_reference_head_under_amp(hw) -> None:
+    stock, head = _stock_and_separable_upernet(channels=16, num_classes=4)
+    stock, head = stock.cuda().train(), head.cuda().train()
+    features = torch.randn(4, 16, *hw, device="cuda")
+    masks = torch.randint(0, 4, (4, 256, 256), device="cuda")
+    _, _, ref_grads = _loss_and_grads(stock, features, masks, amp=False)
+    stock_logits, stock_loss, stock_grads = _loss_and_grads(stock, features.half(), masks, amp=True)
+    logits, loss, grads = _loss_and_grads(head, features.half(), masks, amp=True)
+    assert logits.dtype == stock_logits.dtype
+    with torch.autocast(device_type="cuda"):
+        x = features.half()
+        assert [t.dtype for t in head.decoder.psp_modules(x)] == [
+            t.dtype for t in stock.decoder.psp_modules(x)
+        ]
+    torch.testing.assert_close(loss, stock_loss, rtol=2e-3, atol=2e-3)
+    stock_error = ((stock_grads - ref_grads).norm() / ref_grads.norm()).item()
+    error = ((grads - ref_grads).norm() / ref_grads.norm()).item()
+    assert error <= 1.1 * stock_error + 1e-3

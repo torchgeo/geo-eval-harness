@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from torchgeo_bench.knn import KNNClassifier, gpu_faiss_available
+from geo_eval_harness.knn import KNNClassifier, gpu_faiss_available
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available() or not gpu_faiss_available(),

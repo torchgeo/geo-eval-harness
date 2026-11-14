@@ -5,9 +5,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import _resolve_output_path
-from torchgeo_bench.results import (
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import _resolve_output_path
+from geo_eval_harness.results import (
     load_results,
     model_results_path,
     sanitize_name,
@@ -123,11 +123,20 @@ def test_load_results_drops_legacy_rows_superseded_by_a_hashed_rerun(tmp_path):
     assert df["config_hash"].iloc[0] == "abc123"
 
 
-def test_load_results_keeps_last_hashed_row_among_hash_vs_hash_ties(tmp_path):
+@pytest.mark.parametrize(
+    ("stored_target", "current_target"),
+    [
+        ("timm/resnet50", "timm/resnet50"),
+        ("torchgeo_bench.models.RCFBench", "geo_eval_harness.models.RCFBench"),
+    ],
+)
+def test_load_results_keeps_last_hashed_row_among_hash_vs_hash_ties(
+    tmp_path: Path, stored_target: str, current_target: str
+) -> None:
     pd.DataFrame(
         [
-            _dedup_row(config_hash="abc123", metric_value=0.6),
-            _dedup_row(config_hash="def456", metric_value=0.60001),
+            _dedup_row(model=stored_target, config_hash="abc123", metric_value=0.6),
+            _dedup_row(model=current_target, config_hash="def456", metric_value=0.60001),
         ]
     ).to_csv(tmp_path / "a.csv", index=False)
     df = load_results(tmp_path)

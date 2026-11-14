@@ -7,13 +7,19 @@ from pathlib import Path
 import pytest
 import torch
 
-from torchgeo_bench.bands import BandSpec
-from torchgeo_bench.models.terrafm import (
+from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.models.terrafm import (
+    TERRAFM_MEAN_S1,
+    TERRAFM_MEAN_S2_L1C,
+    TERRAFM_MEAN_S2_L2A,
     TERRAFM_S1_2,
     TERRAFM_S2_12,
+    TERRAFM_STD_S1,
+    TERRAFM_STD_S2_L1C,
+    TERRAFM_STD_S2_L2A,
     TerraFMBench,
 )
-from torchgeo_bench.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 TINY = (192, 2, 3)
 
@@ -203,8 +209,8 @@ def test_released_base_checkpoint_loads_strictly(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.parametrize("preset_name", ["base_s1", "base_s2", "base_s2_l1c"])
 def test_presets_build_with_current_config(preset_name: str) -> None:
-    from torchgeo_bench.config.presets import build_model, load_model_preset
-    from torchgeo_bench.config.schema import ModelConfig
+    from geo_eval_harness.config.presets import build_model, load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
 
     preset = load_model_preset(
         ModelConfig(name=f"terrafm/{preset_name}", kwargs={"pretrained": False})
@@ -216,3 +222,53 @@ def test_presets_build_with_current_config(preset_name: str) -> None:
         embedding = model(torch.rand(1, len(bands), 224, 224))
     assert embedding.shape == (1, TINY[0])
     assert torch.isfinite(embedding).all()
+
+
+@pytest.mark.parametrize("level", ["l1c", "l2a"])
+def test_model_native_scales_with_the_stems_pretraining_stats(level: str) -> None:
+    is_l2a = level == "l2a"
+    model = TerraFMBench(
+        bands=_s2_bands(reverse=True), pretrained=False, is_l2a=is_l2a, normalization="model_native"
+    )
+    image = torch.rand(1, 12, 224, 224) * 10000
+    out = model._prepare_input(model.normalize_inputs(image))
+    mean = torch.tensor(TERRAFM_MEAN_S2_L2A if is_l2a else TERRAFM_MEAN_S2_L1C).view(1, -1, 1, 1)
+    std = torch.tensor(TERRAFM_STD_S2_L2A if is_l2a else TERRAFM_STD_S2_L1C).view(1, -1, 1, 1)
+    assert torch.allclose(out, (image.flip(1) - (mean - 2 * std)) / (4 * std), atol=1e-5)
+
+
+@pytest.mark.parametrize("vh_unit", ["linear_power", "db"])
+def test_model_native_converts_linear_power_s1_to_db(vh_unit: str) -> None:
+    bands = [
+        BandSpec("sar", n, n.upper(), mean=0.1, std=0.1, min=0, max=1, unit=unit)
+        for n, unit in zip(TERRAFM_S1_2, ["linear_power", vh_unit], strict=True)
+    ]
+    model = TerraFMBench(bands=bands, modality="s1", pretrained=False, normalization="model_native")
+    power = torch.full((1, 2, 224, 224), 0.01)
+    if vh_unit == "db":
+        power[:, 1] = -20.0
+    original = power.clone()
+    power.requires_grad_()
+    out = model._prepare_input(model.normalize_inputs(power))
+    mean, std = torch.tensor(TERRAFM_MEAN_S1), torch.tensor(TERRAFM_STD_S1)
+    expected = ((-20.0 - (mean - 2 * std)) / (4 * std)).view(1, -1, 1, 1).expand_as(out)
+    assert torch.allclose(out, expected, atol=1e-5)
+    torch.testing.assert_close(power, original, rtol=0, atol=0)
+    grad = torch.autograd.grad(out.sum(), power)[0]
+    expected_grad = torch.ones_like(power)
+    for channel, band in enumerate(bands):
+        if band.unit == "linear_power":
+            expected_grad[:, channel] = 10.0 / (
+                original[:, channel] * torch.log(torch.tensor(10.0))
+            )
+    expected_grad /= 4 * std.view(1, -1, 1, 1)
+    torch.testing.assert_close(grad, expected_grad)
+
+
+def test_model_native_dataset_stats_maps_mean_plus_minus_two_std_to_unit_range() -> None:
+    model = TerraFMBench(
+        bands=_s2_bands(), pretrained=False, normalization="model_native", native_stats="dataset"
+    )
+    lo, hi = torch.full((1, 12, 224, 224), 800.0), torch.full((1, 12, 224, 224), 1200.0)
+    assert torch.allclose(model._prepare_input(model.normalize_inputs(lo)), torch.zeros(1))
+    assert torch.allclose(model._prepare_input(model.normalize_inputs(hi)), torch.ones(1))

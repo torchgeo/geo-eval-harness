@@ -1,1 +1,1 @@
-"""Tests package for torchgeo-bench."""
+"""Tests package for geo-eval-harness."""

@@ -26,8 +26,8 @@ def _run(
 def run_cli(
     *arguments: str, cwd: Path, timeout: int = 120, offline: bool = True
 ) -> subprocess.CompletedProcess[str]:
-    """Run the canonical ``python -m torchgeo_bench`` interface."""
-    return run_module_cli("torchgeo_bench", *arguments, cwd=cwd, timeout=timeout, offline=offline)
+    """Run the canonical ``python -m geo_eval_harness`` interface."""
+    return run_module_cli("geo_eval_harness", *arguments, cwd=cwd, timeout=timeout, offline=offline)
 
 
 def run_module_cli(
@@ -43,9 +43,9 @@ def run_public_cli(
     *arguments: str, cwd: Path, timeout: int = 120, offline: bool = True
 ) -> subprocess.CompletedProcess[str]:
     """Run the installed console script, including its installed entry-point mapping."""
-    executable = shutil.which("torchgeo-bench", path=str(Path(sys.executable).parent))
+    executable = shutil.which("geo-eval-harness", path=str(Path(sys.executable).parent))
     if executable is None:
-        raise FileNotFoundError("Install torchgeo-bench in the pytest environment first.")
+        raise FileNotFoundError("Install geo-eval-harness in the pytest environment first.")
     return _run([executable, *arguments], cwd=cwd, timeout=timeout, offline=offline)
 
 

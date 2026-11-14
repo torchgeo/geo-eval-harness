@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from torchgeo_bench.commands.run_arguments import add_run_arguments
+from geo_eval_harness.commands.run_arguments import add_run_arguments
 
 
 def test_omitted_flags_do_not_set_config_defaults() -> None:

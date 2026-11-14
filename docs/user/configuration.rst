@@ -2,24 +2,19 @@ Configuration
 =============
 
 All commands use explicit flags and strict Pydantic-validated YAML.
-``torchgeo-bench``, ``python -m torchgeo_bench``, and
-``python -m torchgeo_bench.cli`` expose the same interface.
+``geo-eval-harness``, ``python -m geo_eval_harness``, and
+``python -m geo_eval_harness.cli`` expose the same interface.
 
-.. warning::
-
-   The old ``key=value`` and ``+key=value`` overrides are rejected, including
-   through the module entry points. Replace them with flags or ``--config``.
-   There is no Hydra/OmegaConf composition, interpolation, or recursive
-   ``_target_`` instantiation.
+Commands that use ``docs/examples/`` paths run from the repository root. With an installed package, save the example YAML locally and pass that path to ``--config``.
 
 For example:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 --dataset m-eurosat \
+   $ geo-eval-harness run --model timm/resnet50 --dataset m-eurosat \
        --methods knn --bootstrap-samples 100 --device cpu
-   $ torchgeo-bench run --config docs/examples/image-run.yaml --methods linear --dry-run
-   $ torchgeo-bench run --config-help
+   $ geo-eval-harness run --config docs/examples/image-run.yaml --methods linear --dry-run
+   $ geo-eval-harness run --config-help
 
 ``--dry-run`` validates selections and prints reusable YAML without loading weights or dataset samples. For image runs, it checks explicit band names against each dataset's metadata and rejects model-native normalization when the preset declares it unsupported, as RCF does. These checks use resolved model and dataset defaults without writing those defaults into the output YAML. Custom model targets are not imported; constructor-specific requirements, including RGB-only inputs and weight-specific normalization, may still fail at runtime.
 
@@ -63,14 +58,14 @@ A minimal run file selects a model and one or more datasets:
      name: timm/resnet50
    datasets: [m-eurosat]
 
-Run it with ``torchgeo-bench run --config my-run.yaml``. A model selection is
-always a mapping, not the old ``model: timm/resnet50`` scalar.
+Run it with ``geo-eval-harness run --config my-run.yaml``. A model selection is
+a mapping with a ``name`` field.
 Use ``datasets: [all]`` to select the image dataset catalog. On the CLI,
 ``--dataset`` is repeatable:
 
 .. code-block:: console
 
-   $ torchgeo-bench run --model timm/resnet50 \
+   $ geo-eval-harness run --model timm/resnet50 \
        --dataset m-eurosat --dataset m-pv4ger --device cpu
 
 The complete field example is :file:`docs/examples/image-run.yaml`. It explicitly
@@ -95,13 +90,17 @@ Input and runtime
      workers: 4
      seed: 0
      verbose: false
+     sample_cache: none
+     sample_cache_dir: ~/.cache/geo_eval_harness/samples
 
 ``bands`` accepts ``rgb``, ``all``, or an ordered YAML list of dataset band
 names. The equivalent flag accepts comma-separated names, for example
 ``--bands red,green,blue``. Band names differ by dataset; see :doc:`datasets`.
 ``time_steps`` selects a positive temporal length where supported.
 ``image_size: null`` (``--image-size none``) retains native dimensions.
-Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest``.
+Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest`` and applies to images; segmentation masks are always resized with ``nearest-exact``, which samples each output pixel at its centre like ``bilinear`` and ``bicubic`` do.
+
+``runtime.sample_cache`` serves segmentation splits from a copy of the preprocessed samples (after band selection and resizing), so each sample is decoded once instead of once per epoch. ``disk`` writes ``.npy`` memory maps under ``sample_cache_dir`` (built once per dataset, split, bands, size, interpolation, and code/data fingerprint; concurrent runs share them through the OS page cache), ``host`` keeps them in process memory, and ``gpu`` on the training device. Images stay float32 and batch order matches the uncached loader exactly, so the setting does not change results or ``config_hash``. ``disk`` needs free disk space and benefits from free RAM; ``host`` and ``gpu`` need the whole split in RAM or device memory.
 
 For ``run`` and ``profile``, ``--image-size`` accepts a positive integer or case-insensitive ``none``. FLOPs measurements require a concrete positive image size.
 
@@ -134,7 +133,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests now raise an error when CUDA is unavailable or the index is invalid, rather than silently falling back to CPU. Use ``auto`` to allow CPU fallback. The image default remains ``cuda:0``.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``,
 ``--seed``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``,
@@ -151,6 +150,7 @@ Classification
      knn_k: 5
      knn_device: null
      bootstrap_samples: 200
+     feature_standardize: false
      linear:
        c_log10_start: -6.0
        c_log10_stop: 4.0
@@ -175,6 +175,8 @@ on train plus validation. ``--refit-train-val`` /
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.
 
+``feature_standardize: true`` z-scores every embedding dimension with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before KNN and the linear probe. Results are written under the methods ``knn<k>-std`` and ``linear-std``. Intrinsic-dimension and spectrum measurements use the unscaled embeddings.
+
 Segmentation
 ^^^^^^^^^^^^
 
@@ -182,42 +184,92 @@ Segmentation
 
    segmentation:
      head: fpn
+     neck: none
+     neck_norm: layernorm
+     upsampler: none
+     weight_decay: 0.0
+     head_dropout: 0.0
      layers: []
      learning_rate: 1e-3
      epochs: 10
+     early_stopping_patience: null
      batch_size: 64
      temporal_pool: mean
      scheduler: cosine
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
-     learning_rates: []
-     early_stopping:
-       enabled: false
-       check_every: 5
-       patience: 16
-       min_delta: 0.001
-       min_epochs: 25
-       max_epochs: 1000
-     mixed_precision: true
-     batch_membership: shuffled
+     amp: fp16
+     lora_rank: null
+     lora_target_modules: null
+     lora_alpha: 16.0
+     lora_last_blocks: null
+     backbone_learning_rate: null
+     full_finetune: false
+     feature_standardize: false
+     gradient_checkpointing: false
+     sweep_learning_rates: []
+     sweep_weight_decays: [0.0]
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
-``fpn``, ``dpt``, and ``patch_linear``; not every head works with every
-backbone. Omit ``layers`` to inherit the model's selection. An explicit
+``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before a ``linear``, ``fpn``, ``upernet``, or ``unet`` head. It takes either one feature map or four layers that share one resolution and is recorded as ``neck: vit`` in the result row (see :ref:`segmentation-setup-columns`). ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, recorded as ``upsampler: anyup`` in the result row; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.
 
-``runtime.batch_size`` controls feature extraction;
-``segmentation.batch_size`` controls probe training. ``temporal_pool`` is
+``runtime.batch_size`` controls image loading, feature extraction, and uncached training. ``segmentation.batch_size`` controls training on cached features. ``temporal_pool`` is
 ``mean`` or ``max``, ``scheduler`` is ``cosine`` or ``none``, and the cache
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
+
+Feature caches stay on the training device when they fit in available CUDA memory with 6 GiB reserved for decoder activations. Larger caches stay in host memory and transfer one batch at a time, preserving the configured precision.
+
+``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
+runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
+whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
+all of this in float32 at the cost of speed and memory. With cached frozen features it requires
+``cache_dtype: float32``. Whatever the precision, a training
+batch whose backbone features are not finite is skipped before the head runs, so head
+BatchNorm statistics stay finite, and counted as ``nonfinite_batches`` in the epoch record; an
+epoch that skips more than 5% of its batches fails. ``feature_standardize`` leaves such samples
+out of its statistics under the same limit. Non-finite features or logits during evaluation fail
+the run instead of scoring a constant prediction.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-``learning_rates`` and ``early_stopping`` are opt-in and need cached features. A non-empty ``learning_rates`` grid is searched on validation in place of ``learning_rate``. Early stopping requires ``scheduler: none`` and uses ``max_epochs`` instead of ``epochs``; see :doc:`methodology` for the rule. ``mixed_precision: false`` trains and evaluates the head in float32 instead of float16 autocast. ``batch_membership: fixed`` keeps the same cached mini-batches every epoch and only shuffles their order; it needs cached features.
+See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
+
+Set ``lora_rank`` and ``backbone_learning_rate`` to fine-tune with LoRA adapters; this requires the ``lora`` extra. ``lora_target_modules`` is a regular expression that fully matches the adapted ``nn.Linear`` module names in the same namespace as ``layers``. Presets that support LoRA define the targets. Adapter updates are scaled by ``lora_alpha / lora_rank``.
+
+``lora_last_blocks: k`` restricts adapters to the last ``k`` blocks. A block is the module path through its last numeric index, such as ``blocks.11`` or ``stages.3.blocks.26``. Earlier blocks stay frozen and skip the backward pass.
+
+``full_finetune: true`` trains every backbone weight at ``backbone_learning_rate``. Both fine-tuning modes keep pretrained dropout and normalization statistics in eval mode. Result rows record ``adaptation: lora`` or ``adaptation: full``. Without LoRA, keep ``lora_alpha`` at its default and leave ``lora_last_blocks`` unset; set ``backbone_learning_rate`` only for a trainable backbone.
+
+Fine-tuning reads images each epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` controls training batches. See :ref:`segmentation-setup-columns` for the recorded settings.
+
+``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. The setting is recorded in ``config_hash``.
+
+.. code-block:: yaml
+
+   segmentation:
+     head: upernet
+     lora_rank: 8
+     backbone_learning_rate: 1e-4
+
+``feature_standardize: true`` z-scores every hooked feature channel with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before the head (method suffix ``-std``). The statistics use every training position, from the feature cache or, with ``cache_features: false``, from one extra backbone pass over the training split. It requires a frozen backbone.
+
+``sweep_learning_rates`` (with ``head: patch_linear``, no neck, frozen backbone) trains one LayerNorm + linear ``patch_linear`` probe per (learning rate, weight decay) cell of ``sweep_learning_rates`` x ``sweep_weight_decays`` in one vectorised pass, each with its own AdamW group and a cosine decay to zero. Every head keeps its best validation epoch; the head with the highest best-epoch validation mIoU is restored and alone scored on test. ``learning_rate`` and ``weight_decay`` are ignored; the selected values are written to ``best_lr`` and the ``selected`` epoch-metrics event. The method gains ``-sweep<n>`` with ``n`` cells. Together they reproduce UniverSat's ``LP_eval.py`` segmentation probe:
+
+.. code-block:: yaml
+
+   segmentation:
+     head: patch_linear
+     layers: [blocks.11]
+     feature_standardize: true
+     sweep_learning_rates: [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 1e-1]
+     sweep_weight_decays: [0.0, 0.01, 0.1]
+     epochs: 50
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -256,6 +308,7 @@ Results and resume
      directory: results
      file: null
      resume: false
+     epoch_metrics: null
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
 
@@ -263,14 +316,14 @@ To keep every output from an image run outside the tracked reference results:
 
 .. code-block:: bash
 
-   torchgeo-bench run --config docs/examples/image-run.yaml \
+   geo-eval-harness run --config docs/examples/image-run.yaml \
      --output-dir outputs/my-run
 
 The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. An explicit file takes precedence over the directory, even when the file comes from YAML; clear ``output.file`` to ``null`` to use the directory instead. For image runs, the explicit file combines all selected measurement kinds in one CSV. Each CLI flag overrides its corresponding YAML field, regardless of flag order.
 
-When migrating older image YAML, change ``output.directory: results/models`` to ``output.directory: results`` and remove ``profile_directory`` and ``intrinsic_dim_directory``. Those fields and the old ``--results-dir``, ``--profile-dir``, and ``--intrinsic-dim-dir`` flags are no longer accepted.
+``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 
 ``--resume`` / ``--no-resume`` control skipping completed measurements.
 Resume compares method/config keys and metric completeness; additive profile
@@ -281,9 +334,9 @@ later evaluations run. See :doc:`results-format` for stored columns and keys.
 Model presets and custom models
 --------------------------------
 
-``torchgeo-bench models`` lists packaged presets and
-``torchgeo-bench models timm/resnet50`` displays one. Presets live under
-:file:`src/torchgeo_bench/conf/model/`, including ``timm/`` and ``torchgeo/``
+``geo-eval-harness models`` lists packaged presets and
+``geo-eval-harness models timm/resnet50`` displays one. Presets live under
+:file:`src/geo_eval_harness/conf/model/`, including ``timm/`` and ``torchgeo/``
 subdirectories. They are validated separately from run files:
 
 .. code-block:: yaml
@@ -335,10 +388,10 @@ Standalone profiling
 
 .. code-block:: console
 
-   $ torchgeo-bench profile --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu \
        --batch-size 8 --warmup 1 --measurements 5 > profile.json
-   $ torchgeo-bench profile --config docs/examples/profile.yaml --dry-run
-   $ torchgeo-bench profile --model rcf --dataset m-eurosat --output-dir outputs/profile
+   $ geo-eval-harness profile --config docs/examples/profile.yaml --dry-run
+   $ geo-eval-harness profile --model rcf --dataset m-eurosat --output-dir outputs/profile
 
 Its YAML uses singular ``dataset`` and top-level measurement settings:
 
@@ -382,8 +435,8 @@ the selected model is an offline baseline or already cached.
 
 .. code-block:: console
 
-   $ torchgeo-bench flops --config docs/examples/flops.yaml --dry-run
-   $ torchgeo-bench flops --model rcf --device cpu --band-configs rgb \
+   $ geo-eval-harness flops --config docs/examples/flops.yaml --dry-run
+   $ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
        --seg-heads --output results/my_compute_cost.csv
 
 Its YAML schema is independent of image runs:
@@ -417,21 +470,25 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-``--band-source`` selects the dataset metadata. ``--band-configs rgb s2``
-selects input stacks: ``s2`` means **all bands from the source**, which is
-twelve Sentinel-2 bands for the default CloudSen12 source.
+``--band-source`` selects the dataset metadata. ``--band-configs rgb all`` selects RGB or all source bands. ``s2`` also selects all source bands, including twelve Sentinel-2 bands for the default CloudSen12 source. Use ``all`` for SAR or other sensor inputs so the CSV labels the selection correctly.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and
 ``--probe-num-classes`` sets the classification output width.
 
-Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``,
-and ``patch_linear``; supplying the flag without values disables
-segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
+Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; supplying the flag without values disables segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
 ``--seg-num-classes``, ``--seg-layers``, and ``--temporal-pool`` configure
 segmentation accounting. YAML may include a ``segmentation.probe`` block
 with the image segmentation fields. Omitted probe layers inherit model
 and dataset defaults; explicit ``[]`` clears them.
+
+``segmentation.neck_policy: auto`` (``--seg-neck-policy auto``) inspects the configured feature maps to choose the ViT pyramid neck for one or four equal-resolution transformer maps, or the ``vit_fine`` neck for three equal-resolution maps followed by a finer map. Native feature pyramids retain their spatial scales. An explicit non-default ``probe.neck`` is preserved. The linear segmentation head also accepts the ViT neck.
+
+Segmentation rows count the complete backbone, neck, and decoder forward pass and time that same inference path in float32. ``gflops_head`` includes the neck; ``gflops_total`` includes the backbone, neck, and head. Rows record the actual hooked ``feature_shapes``, ``layers``, ``neck``, GPU name, precision, and timing batch size. ``n_tokens`` is omitted when the model defines patch size in metres instead of pixels. FLOP totals cover registered PyTorch operators, so unregistered operations can make them lower bounds.
+
+Resume identifies the resolved model, settings, hardware, and image size with ``config_hash``. Changing resolution, probe settings, timing, or GPU starts a distinct measurement.
+
+``python experiments/run_compute_cost_sweep.py --image-sizes 224 256 512 --heads linear upernet unet --device cuda:0 --output results/compute_sweep`` runs the current image-model catalog sequentially on one GPU. It uses batch size 1, five warmup passes, twenty timed passes, four output classes, and automatic neck selection. Wrapper resize settings and fixed encoder image grids, including Clay's positional grid, follow the requested image dimensions; the encoder's learned patch stride stays unchanged. Swin models use timm's dynamic window padding (``model.kwargs.dynamic_img_size: true``) to support grids that do not divide their pretrained attention windows. Panopticon uses the nearest multiple of its 14-pixel patch stride (224, 252, and 518 for the default sweep); CSV rows label those actual image sizes. EarthLoc is measured once at its native 320-pixel input because its learned spatial aggregation fixes that grid. TerraFM keeps the pretrained position tensor and uses its forward-time interpolation at the requested image size; wrapper resizing is disabled. Unsupported image grids remain missing cells with their errors in the logs. AnySat and UniverSat use their native sensor GSD, so increasing image size increases ground extent instead of inheriting dataset overrides that assume a fixed-tile resize. ``manifest.json`` lists the requested cells and benchmark names without matching configurations. ``coverage.json`` records measured and missing cells for every attempted model/band/size job. Models without declared spatial taps receive classification measurements only. A failed decoder does not prevent attempts for the other decoders.
 
 ``--timing-batch-size``, ``--n-warmup``, and ``--n-measure`` control timing;
 FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_cost.csv``, ``--output`` selects an exact CSV path, and ``--no-resume`` disables the default per-cell resume behavior.
@@ -448,9 +505,9 @@ and ``output`` sections. It does not accept image-run ``input`` or
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model sincos --dataset california_housing \
+   $ geo-eval-harness coord --model sincos --dataset california_housing \
        --methods linear --folds 2 --device cpu
-   $ torchgeo-bench coord --config docs/examples/coord-run.yaml --dry-run
+   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
 
 See :doc:`coordbench` for the full YAML, encoder targets, method selection,
 random/spatial/official splits, and coordinate CSV resume semantics.

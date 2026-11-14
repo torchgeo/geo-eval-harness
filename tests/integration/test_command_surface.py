@@ -10,7 +10,7 @@ from tests.support.cli import cli_output, run_module_cli, run_public_cli
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize("module", ["console", "torchgeo_bench", "torchgeo_bench.cli"])
+@pytest.mark.parametrize("module", ["console", "geo_eval_harness", "geo_eval_harness.cli"])
 def test_every_entrypoint_and_subcommand_has_help(tmp_path: Path, module: str) -> None:
     commands = ("run", "models", "datasets", "download", "profile", "flops", "coord")
     for arguments in (("--help",), *((command, "--help") for command in commands)):
@@ -27,7 +27,7 @@ def test_every_entrypoint_and_subcommand_has_help(tmp_path: Path, module: str) -
     ("arguments", "expected"),
     [
         (("models",), "timm/resnet18"),
-        (("models", "rcf"), "target: torchgeo_bench.models.RCFBench"),
+        (("models", "rcf"), "target: geo_eval_harness.models.RCFBench"),
         (("datasets",), "m-eurosat"),
         (("datasets", "caffe"), "task: segmentation"),
         (("run", "--config-help"), "schema_version"),
@@ -48,6 +48,11 @@ def test_public_catalogs_and_schema(
     [
         ((), 2, "required"),
         (("run", "--model", "rcf"), 2, "datasets"),
+        (
+            ("run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run", "unexpected=value"),
+            2,
+            "error:",
+        ),
         (("models", "missing-preset"), 1, "unknown model"),
         (("download", "missing-dataset"), 1, "Unknown dataset"),
         (("profile", "--model", "rcf"), 2, "dataset"),
@@ -90,23 +95,5 @@ def test_public_dry_run_is_reusable_yaml(tmp_path: Path) -> None:
     replay = run_public_cli("run", "--config", str(path), "--dry-run", cwd=tmp_path)
     assert replay.returncode == 0, cli_output(replay)
     assert yaml.safe_load(replay.stdout) == config
-    assert not (tmp_path / "data").exists()
-    assert not (tmp_path / "results").exists()
-
-
-@pytest.mark.parametrize("module", ["console", "torchgeo_bench", "torchgeo_bench.cli"])
-@pytest.mark.parametrize("command", ["run", "flops", "profile", "coord"])
-@pytest.mark.parametrize("override", ["model=rcf", "+model.features=8", "++model.pool=cls"])
-def test_all_entrypoints_reject_retired_overrides(
-    tmp_path: Path, module: str, command: str, override: str
-) -> None:
-    if module == "console":
-        result = run_public_cli(command, override, cwd=tmp_path)
-    else:
-        result = run_module_cli(module, command, override, cwd=tmp_path)
-    assert result.returncode == 2, cli_output(result)
-    assert "key=value and +key=value overrides have been retired" in result.stderr
-    assert "--config run.yaml" in result.stderr
-    assert "Traceback" not in result.stderr
     assert not (tmp_path / "data").exists()
     assert not (tmp_path / "results").exists()

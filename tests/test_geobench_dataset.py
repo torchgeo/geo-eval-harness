@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from geo_eval_harness.datasets import get_bench_dataset_class
 from tests.support.data import require_dataset_data
-from torchgeo_bench.datasets import get_bench_dataset_class
 
 pytestmark = pytest.mark.slow
 

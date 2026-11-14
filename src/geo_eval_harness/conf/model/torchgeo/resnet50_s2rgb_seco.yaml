@@ -1,0 +1,14 @@
+name: tgeo_resnet50_s2rgb_seco
+target: geo_eval_harness.models.TorchGeoResNetBench
+kwargs:
+  factory: resnet50
+  weights_class: ResNet50_Weights
+  weights_member: SENTINEL2_RGB_SECO
+  auto_resize: false
+  target_size: 224
+segmentation:
+  layers:
+    - layer4
+    - layer3
+    - layer2
+    - layer1

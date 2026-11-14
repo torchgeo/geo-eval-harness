@@ -1,0 +1,6 @@
+name: wide_resnet50_2
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: wide_resnet50_2
+  pretrained: true
+  global_pool: avg

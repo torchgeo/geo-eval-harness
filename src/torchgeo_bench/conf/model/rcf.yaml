@@ -1,9 +1,0 @@
-name: rcf
-target: torchgeo_bench.models.RCFBench
-seed_from_run: true
-supports_model_normalization: false
-kwargs:
-  features: 512
-  kernel_size: 3
-  mode: gaussian
-  stats_mode: mean

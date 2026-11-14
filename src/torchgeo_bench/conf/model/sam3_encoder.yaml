@@ -1,8 +1,0 @@
-name: sam3_encoder
-target: torchgeo_bench.models.SAM3Encoder
-segmentation:
-  layers:
-    - neck.fpn_layers.3
-    - neck.fpn_layers.2
-    - neck.fpn_layers.1
-    - neck.fpn_layers.0

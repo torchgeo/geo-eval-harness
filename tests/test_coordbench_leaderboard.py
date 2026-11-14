@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from torchgeo_bench.coordbench.leaderboard import _bench_scores, _leaderboard
+from geo_eval_harness.coordbench.leaderboard import _bench_scores, _leaderboard
 
 
 def test_ranks_use_floored_task_means_and_average_ties() -> None:
@@ -62,7 +62,7 @@ def test_leaderboard_program_filters_methods_and_reports_holdouts(
         [
             sys.executable,
             "-m",
-            "torchgeo_bench.coordbench.leaderboard",
+            "geo_eval_harness.coordbench.leaderboard",
             str(leaderboard_csv),
             "--method",
             method,

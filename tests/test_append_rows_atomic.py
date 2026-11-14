@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from torchgeo_bench.results import append_rows_atomic
+from geo_eval_harness.results import append_rows_atomic
 
 
 def _read_csv(path: str) -> list[list[str]]:

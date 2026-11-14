@@ -1,8 +1,0 @@
-name: tgeo_deo_swin_rgb
-target: torchgeo_bench.models.TorchGeoDEOBench
-kwargs:
-  mode: rgb
-  auto_resize: true
-  target_size: 224
-input:
-  normalization: model

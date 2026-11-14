@@ -1,11 +1,11 @@
-"""Unit tests for ``torchgeo_bench.models.rcf`` wrappers."""
+"""Unit tests for ``geo_eval_harness.models.rcf`` wrappers."""
 
 import pytest
 import torch
 from torch.utils.data import Dataset
 
+from geo_eval_harness.models.rcf import RCF, RCFBench
 from tests.support.models import bands as _bands
-from torchgeo_bench.models.rcf import RCF, RCFBench
 
 
 @pytest.mark.parametrize("stats_mode", ["mean", "stdev", "all"])

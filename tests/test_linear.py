@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness.linear import LogisticRegression
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.linear import LogisticRegression
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 

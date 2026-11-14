@@ -1,7 +1,0 @@
-name: handcrafted_level3
-target: torchgeo_bench.models.HandcraftedBench
-kwargs:
-  level: 3
-input:
-  bands: all
-  normalization: none

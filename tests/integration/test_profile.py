@@ -35,7 +35,7 @@ def test_profiles_are_numerical_and_reproduce_seeded_inputs(tmp_path: Path) -> N
     results = [
         run_public_cli(*arguments, "--seed", "7", cwd=tmp_path),
         run_cli(*arguments, "--seed", "7", cwd=tmp_path),
-        run_module_cli("torchgeo_bench.cli", *arguments, "--seed", "8", cwd=tmp_path),
+        run_module_cli("geo_eval_harness.cli", *arguments, "--seed", "8", cwd=tmp_path),
     ]
     records = []
     for result in results:

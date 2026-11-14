@@ -1,0 +1,5 @@
+name: satclip
+target: geo_eval_harness.coordbench.models.SatCLIPLocationEncoder
+track: coord
+kwargs:
+  repo: MVRL/satclip-loc-enc-vit16-l40

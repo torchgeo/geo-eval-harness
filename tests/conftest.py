@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for torchgeo-bench tests."""
+"""Pytest configuration and fixtures for geo-eval-harness tests."""
 
 import os
 from collections.abc import Iterator
@@ -45,6 +45,75 @@ def geobench_v2_root() -> str:
 @pytest.fixture
 def small_partition() -> str:
     return "0.01x_train"
+
+
+@pytest.fixture
+def small_openearthmap_sar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bound native raster size and official memberships for offline SAR workflows."""
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
+
+    monkeypatch.setattr(OpenEarthMapSAR, "split_sizes", {"train": 3, "val": 2, "test": 2})
+    monkeypatch.setattr(OpenEarthMapSAR, "raster_size", 16)
+
+
+@pytest.fixture
+def small_loveda(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Use 2/1/2 tiles; torchgeo requires both scene folders in each release."""
+    from geo_eval_harness.datasets.loveda import LoveDA
+
+    members = {
+        "train": "Train/Rural/0.png Train/Urban/2.png",
+        "val": "Train/Urban/3.png",
+        "test": "Val/Rural/4.png Val/Urban/5.png",
+    }
+    directory = tmp_path_factory.mktemp("loveda_splits")
+    for split, paths in members.items():
+        (directory / f"{split}.txt").write_text(paths)
+    monkeypatch.setattr(LoveDA, "splits_dir", directory)
+
+
+@pytest.fixture
+def small_levir_cd_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use 16 x 16 rasters cut into four 8 x 8 tiles, with 3/2/2 images per split."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    monkeypatch.setattr(LEVIRCDPost, "image_counts", {"train": 3, "val": 2, "test": 2})
+    monkeypatch.setattr(LEVIRCDPost, "split_sizes", {"train": 12, "val": 8, "test": 8})
+    monkeypatch.setattr(LEVIRCDPost, "raster_size", 16)
+    monkeypatch.setattr(LEVIRCDPost, "tile_size", 8)
+
+
+@pytest.fixture
+def small_sen1floods11(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shrink the official split sizes for offline Sen1Floods11 workflows."""
+    from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11Base
+
+    monkeypatch.setattr(Sen1Floods11Base, "split_sizes", {"train": 3, "val": 2, "test": 2})
+
+
+@pytest.fixture
+def small_bright_post_sar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install tiny BRIGHT memberships and raster size for offline workflows."""
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    ids = {
+        "train": ["a_1", "a_2", "b_1"],
+        "val": ["a_3", "b_2"],
+        "test": ["b_3", "c_1"],
+    }
+    monkeypatch.setattr(BRIGHTPostSAR, "split_ids", classmethod(lambda cls, split: ids[split]))
+    monkeypatch.setattr(BRIGHTPostSAR, "raster_size", 16)
+
+
+@pytest.fixture
+def small_oscd_post(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the four tiny ``OSCD_SHAPES`` cities and 8-pixel tiles."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    cities = {"train": ("alpha", "bravo"), "val": ("charlie",), "test": ("delta",)}
+    monkeypatch.setattr(OSCDPost, "split_cities", cities)
+    monkeypatch.setattr(OSCDPost, "split_sizes", {"train": 7, "val": 4, "test": 4})
+    monkeypatch.setattr(OSCDPost, "tile_size", 8)
 
 
 @pytest.fixture(scope="session", autouse=True)

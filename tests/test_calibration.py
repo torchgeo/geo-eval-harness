@@ -5,7 +5,7 @@ import pytest
 import torch
 from torchmetrics.classification import BinaryCalibrationError, MulticlassCalibrationError
 
-from torchgeo_bench.calibration import (
+from geo_eval_harness.calibration import (
     apply_temperature,
     compute_calibration_metrics,
     fit_temperature,

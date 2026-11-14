@@ -7,11 +7,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.main import dataset_metadata
-from torchgeo_bench.resume import resume_config_hash
+from geo_eval_harness.config.presets import merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.resume import resume_config_hash
 
 
 class _DictTensorDataset(Dataset):
@@ -69,8 +69,9 @@ def _synthetic_embeddings() -> list[tuple[np.ndarray, np.ndarray]]:
 
 
 def _hash_for(cfg: RunConfig, ds_name: str | None = None) -> str:
-    resolved, preset = resolve_run_config(cfg, ds_name or cfg.datasets[0])
-    return resume_config_hash(resolved, preset)
+    dataset = ds_name or cfg.datasets[0]
+    resolved, preset = resolve_run_config(cfg, dataset)
+    return resume_config_hash(resolved, preset, task=get_bench_dataset_class(dataset).task)
 
 
 def _resume_row(cfg: RunConfig, *, method: str, metric_name: str) -> dict[str, object]:
@@ -82,7 +83,7 @@ def _resume_row(cfg: RunConfig, *, method: str, metric_name: str) -> dict[str, o
             ds_name,
             get_bench_dataset_class(ds_name),
             preset,
-            resume_config_hash(resolved, preset),
+            resume_config_hash(resolved, preset, task=get_bench_dataset_class(ds_name).task),
         ),
         "method": method,
         "metric_name": metric_name,

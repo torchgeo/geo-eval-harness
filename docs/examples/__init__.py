@@ -1,1 +1,1 @@
-"""Runnable torchgeo-bench examples."""
+"""Runnable geo-eval-harness examples."""

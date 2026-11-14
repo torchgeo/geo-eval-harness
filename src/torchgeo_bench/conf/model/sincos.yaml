@@ -1,3 +1,0 @@
-name: sincos
-target: torchgeo_bench.coordbench.models.SinCosLocationEncoder
-track: coord

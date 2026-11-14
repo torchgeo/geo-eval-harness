@@ -1,8 +1,0 @@
-name: mind-small
-target: torchgeo_bench.coordbench.models.MINDLocationEncoder
-track: coord
-kwargs:
-  repo: isaaccorley/MIND
-  filename: mind_small.safetensors
-  feature: head
-  dim: 128

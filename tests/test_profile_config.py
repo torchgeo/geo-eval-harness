@@ -11,14 +11,13 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.commands._profile import profile
-from torchgeo_bench.commands.profile_arguments import add_profile_arguments, load_profile_config
-from torchgeo_bench.config import presets
-from torchgeo_bench.config.presets import ModelPreset, resolve_run_config
-from torchgeo_bench.config.profile import ProfileConfig, resolve_profile_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
+from geo_eval_harness.commands._profile import profile
+from geo_eval_harness.commands.profile_arguments import add_profile_arguments, load_profile_config
+from geo_eval_harness.config import presets
+from geo_eval_harness.config.presets import ModelPreset, resolve_run_config
+from geo_eval_harness.config.profile import ProfileConfig, resolve_profile_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
 
 
 @pytest.fixture
@@ -45,18 +44,6 @@ def test_profile_defaults_are_cpu_fixed_batch(parser: argparse.ArgumentParser) -
         "model": {"name": "rcf"},
         "dataset": "m-eurosat",
     }
-
-
-@pytest.mark.parametrize("argument", ["model=rcf", "+model.features=8", "++device=cpu"])
-def test_profile_old_overrides_report_migration(
-    argument: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["profile", argument])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "overrides have been retired" in message
-    assert "--config" in message
 
 
 def test_profile_explicit_flags_override_yaml(
@@ -202,6 +189,38 @@ def test_typed_preset_input_normalization_is_shared(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize(
+    ("dataset", "explicit", "expected"),
+    [
+        ("burn_scars", None, "model"),
+        ("loveda", None, "model"),
+        ("eurosat", None, "model"),
+        ("sen1floods11-s1", None, "dataset"),
+        ("kuro_siwo", None, "dataset"),
+        ("so2sat", None, "dataset"),
+        ("burn_scars", "dataset", "dataset"),
+    ],
+)
+def test_satlas_s2rgb_presets_default_to_model_normalization(
+    dataset: str, explicit: str | None, expected: str
+) -> None:
+    for name in (
+        "resnet50_s2rgb_satlas_si",
+        "resnet50_s2rgb_satlas_mi",
+        "resnet152_s2rgb_satlas_si",
+        "resnet152_s2rgb_satlas_mi",
+        "swinv2t_s2rgb_satlas_si",
+        "swinv2t_s2rgb_satlas_mi",
+        "swinv2b_s2rgb_satlas_si",
+        "swinv2b_s2rgb_satlas_mi",
+    ):
+        values: dict[str, Any] = {"model": {"name": f"torchgeo/{name}"}, "datasets": [dataset]}
+        if explicit is not None:
+            values["input"] = {"normalization": explicit}
+        effective, _ = resolve_run_config(RunConfig.model_validate(values), dataset)
+        assert effective.input.normalization == expected, name
+
+
+@pytest.mark.parametrize(
     "values",
     [
         {"schema_version": True},
@@ -318,13 +337,13 @@ def test_profile_dry_run_round_trip_is_lightweight(
     assert "count_flops: false" in output
     code = f"""
 import argparse, sys
-from torchgeo_bench.commands._profile import profile
-from torchgeo_bench.commands.profile_arguments import add_profile_arguments
+from geo_eval_harness.commands._profile import profile
+from geo_eval_harness.commands.profile_arguments import add_profile_arguments
 parser = argparse.ArgumentParser()
 add_profile_arguments(parser)
 profile(parser.parse_args({json.dumps(flags)}))
-assert not set(("torch", "torchgeo", "numpy", "omegaconf", "torchgeo_bench.main",
-                "torchgeo_bench.commands._profile_runtime")) & sys.modules.keys()
+assert not set(("torch", "torchgeo", "numpy", "omegaconf", "geo_eval_harness.main",
+                "geo_eval_harness.commands._profile_runtime")) & sys.modules.keys()
 """
     result = subprocess.run(
         [sys.executable, "-c", code], check=True, capture_output=True, text=True

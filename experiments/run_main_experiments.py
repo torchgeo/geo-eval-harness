@@ -11,9 +11,9 @@ import sys
 
 from _runner import Job, add_devices_argument, default_output, run_jobs
 
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.datasets import list_datasets
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets import list_datasets
 
 OUTPUT = default_output(__file__)
 

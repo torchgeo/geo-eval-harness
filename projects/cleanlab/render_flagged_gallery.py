@@ -22,7 +22,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from torchgeo_bench.datasets import get_bench_dataset_class, get_datasets
+from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 
 logger = logging.getLogger(__name__)
 

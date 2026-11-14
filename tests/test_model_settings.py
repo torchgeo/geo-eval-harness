@@ -8,11 +8,11 @@ from typing import Any, cast
 import pytest
 import torch
 
+from geo_eval_harness.config.presets import build_model, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.models.rcf import RCFBench, RCFModelSettings
+from geo_eval_harness.models.timm import TimmModelSettings, TimmPatchBenchModel
 from tests.support.models import bands as _bands
-from torchgeo_bench.config.presets import build_model, load_model_preset
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.models.rcf import RCFBench, RCFModelSettings
-from torchgeo_bench.models.timm import TimmModelSettings, TimmPatchBenchModel
 
 
 def test_timm_builder_matches_direct_constructor() -> None:
@@ -109,6 +109,7 @@ def test_model_config_rejects_unknown_fields() -> None:
         {"model_name": "resnet18", "input_normalization": "invalid"},
         {"model_name": "resnet18", "pretrained": 1},
         {"model_name": "resnet18", "auto_resize": 1},
+        {"model_name": "resnet18", "dynamic_img_size": 1},
         {"model_name": "resnet18", "target_size": "224"},
     ],
 )
@@ -149,3 +150,16 @@ def test_model_construction_rejects_unknown_fields() -> None:
 def test_rcf_config_rejects_invalid_values(kwargs: dict[str, object]) -> None:
     with pytest.raises(ValueError, match=r"must be|mode must|stats_mode"):
         cast(Any, RCFModelSettings)(**kwargs)
+
+
+def test_timm_swin_dynamic_grid_pads_partial_attention_windows() -> None:
+    config = TimmModelSettings(
+        model_name="swinv2_tiny_window8_256",
+        pretrained=False,
+        img_size=224,
+        dynamic_img_size=True,
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    with torch.inference_mode():
+        features = model(torch.rand(1, 3, 224, 224))
+    assert features.shape == (1, 768)

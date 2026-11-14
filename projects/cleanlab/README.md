@@ -1,6 +1,6 @@
 # Cleanlab dataset analysis
 
-Standalone label-quality analysis using frozen-model linear-probe probabilities from `torchgeo-bench`. Run all commands below from the repository root with Python 3.12 or newer.
+Standalone label-quality analysis using frozen-model linear-probe probabilities from `geo-eval-harness`. Run all commands below from the repository root with Python 3.12 or newer.
 
 ## Installation
 
@@ -11,7 +11,7 @@ python -m pip install -e .
 python -m pip install -r projects/cleanlab/requirements.txt
 ```
 
-Models that need optional dependencies still require their corresponding core extras, such as `torchgeo-bench[terratorch]`. Datasets use the usual `data/` locations; see the [repository README](../../README.md) for downloads.
+Models that need optional dependencies require the corresponding extra, such as `geo-eval-harness[olmoearth]`, or TerraTorch's separate [source installation](../../docs/user/installation.rst). Datasets use the usual `data/` locations; see the [repository README](../../README.md) for downloads.
 
 ## Workflow
 

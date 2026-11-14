@@ -43,7 +43,7 @@ def test_all_bands_e2e(tmp_path: Path) -> None:
     ]
     completed = run_cli(*cmd, cwd=Path.cwd(), timeout=600)
     assert completed.returncode == 0, (
-        f"torchgeo-bench exited {completed.returncode}\n"
+        f"geo-eval-harness exited {completed.returncode}\n"
         f"stdout:\n{completed.stdout}\n"
         f"stderr:\n{completed.stderr}"
     )

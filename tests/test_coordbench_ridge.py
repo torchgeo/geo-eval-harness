@@ -6,7 +6,7 @@ import torch
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 
-from torchgeo_bench.coordbench.probe import (
+from geo_eval_harness.coordbench.probe import (
     RidgeData,
     _cv_alpha_scores,
     linear_probe_score,
@@ -70,7 +70,7 @@ def test_fixed_alpha_skips_holdout_tuning(monkeypatch: pytest.MonkeyPatch) -> No
     def unexpected_cv(*args: object, **kwargs: object) -> None:
         pytest.fail("A fixed alpha must not trigger inner CV")
 
-    monkeypatch.setattr("torchgeo_bench.coordbench.probe._cv_alpha_scores", unexpected_cv)
+    monkeypatch.setattr("geo_eval_harness.coordbench.probe._cv_alpha_scores", unexpected_cv)
     features = np.arange(40, dtype=np.float32).reshape(20, 2)
     labels = features[:, 0] + 50
     score, folds = linear_probe_score(

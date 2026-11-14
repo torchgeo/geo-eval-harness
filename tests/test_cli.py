@@ -7,11 +7,11 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from torchgeo_bench import commands
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.presets import ModelPreset
-from torchgeo_bench.config.run import RunConfig
+from geo_eval_harness import commands
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import ModelPreset
+from geo_eval_harness.config.run import RunConfig
 
 
 @pytest.mark.parametrize("command", ["run", "profile", "flops", "coord"])
@@ -111,31 +111,6 @@ def test_repeated_flags_keep_their_order(
     assert config.runtime.device == "cpu"
 
 
-@pytest.mark.parametrize("command", ["run", "flops", "profile", "coord"])
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["model=rcf"],
-        ["+model.features=8"],
-        ["++model.pool=cls", "+model.gsd=1.0"],
-        ["typo.key=1"],
-        ["seed=1", "--device", "cpu", "seed=2"],
-        ["seed=1", "--device", "cpu", "--", "seed=2"],
-    ],
-)
-def test_old_override_grammar_reports_migration(
-    command: str, arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main([command, *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "key=value and +key=value overrides have been retired" in message
-    assert "--model rcf --dataset m-eurosat" in message
-    assert "--config run.yaml" in message
-    assert "Traceback" not in message
-
-
 @pytest.mark.parametrize(
     "argv",
     [
@@ -204,7 +179,7 @@ def test_run_model_help(capsys) -> None:
     cli_main(["models", "rcf"])
     preset = ModelPreset.model_validate(yaml.safe_load(capsys.readouterr().out))
     assert preset.name == "rcf"
-    assert preset.target == "torchgeo_bench.models.RCFBench"
+    assert preset.target == "geo_eval_harness.models.RCFBench"
     assert preset.track == "image"
 
 
@@ -261,7 +236,7 @@ def test_download_collection_propagates_unexpected_errors(
     def fail(*args: object, **kwargs: object) -> None:
         raise RuntimeError("unexpected download failure")
 
-    monkeypatch.setattr(f"torchgeo_bench.download.download_{collection}", fail)
+    monkeypatch.setattr(f"geo_eval_harness.download.download_{collection}", fail)
     with pytest.raises(RuntimeError, match="unexpected download failure"):
         cli_main(["download", collection])
 
@@ -272,7 +247,7 @@ def test_download_geobench_v1(monkeypatch) -> None:
     def _fake_download(path, datasets=None) -> None:
         calls.append((str(path), datasets))
 
-    monkeypatch.setattr("torchgeo_bench.download.download_geobench_v1", _fake_download)
+    monkeypatch.setattr("geo_eval_harness.download.download_geobench_v1", _fake_download)
     cli_main(["download", "geobench_v1"])
     assert calls == [("data", None)]
 
@@ -283,7 +258,7 @@ def test_download_geobench_v2_with_datasets(monkeypatch) -> None:
     def _fake_download(path, datasets=None) -> None:
         calls.append((str(path), datasets))
 
-    monkeypatch.setattr("torchgeo_bench.download.download_geobench_v2", _fake_download)
+    monkeypatch.setattr("geo_eval_harness.download.download_geobench_v2", _fake_download)
     cli_main(["download", "geobench_v2", "--datasets", "burn_scars,benv2"])
     assert calls == [("data", ["burn_scars", "benv2"])]
 
@@ -305,7 +280,7 @@ def test_download_named_datasets(monkeypatch, names: list[str]) -> None:
     def _fake_download(names, path) -> None:
         calls.append((names, str(path)))
 
-    monkeypatch.setattr("torchgeo_bench.download.download_datasets", _fake_download)
+    monkeypatch.setattr("geo_eval_harness.download.download_datasets", _fake_download)
     cli_main(["download", *names])
     assert calls == [(names, "data")]
 
@@ -320,7 +295,7 @@ def test_download_rejects_mixed_collection_targets(names: list[str]) -> None:
 def test_download_named_dataset_rejects_unknown_before_backend(monkeypatch, invalid: str) -> None:
     calls: list[object] = []
     monkeypatch.setattr(
-        "torchgeo_bench.download.snapshot_download", lambda *args, **kwargs: calls.append(args)
+        "geo_eval_harness.hub.snapshot_download", lambda *args, **kwargs: calls.append(args)
     )
     with pytest.raises(SystemExit, match="Unknown dataset"):
         cli_main(["download", "m-eurosat", invalid])
@@ -330,7 +305,7 @@ def test_download_named_dataset_rejects_unknown_before_backend(monkeypatch, inva
 def test_download_eurosat(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
-        "torchgeo_bench.download.download_eurosat", lambda path: calls.append(str(path))
+        "geo_eval_harness.download.download_eurosat", lambda path: calls.append(str(path))
     )
     cli_main(["download", "eurosat"])
     assert calls == ["data"]
@@ -344,7 +319,7 @@ def test_download_rejects_empty_dataset_list() -> None:
 def test_download_resisc45(monkeypatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(
-        "torchgeo_bench.download.download_resisc45", lambda path: calls.append(str(path))
+        "geo_eval_harness.download.download_resisc45", lambda path: calls.append(str(path))
     )
     cli_main(["download", "resisc45"])
     assert calls == ["data"]
@@ -352,7 +327,7 @@ def test_download_resisc45(monkeypatch) -> None:
 
 def test_download_ucmerced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[Path] = []
-    monkeypatch.setattr("torchgeo_bench.download.download_ucmerced", calls.append)
+    monkeypatch.setattr("geo_eval_harness.download.download_ucmerced", calls.append)
     cli_main(["download", "ucmerced", "--output-dir", str(tmp_path)])
     assert calls == [tmp_path]
 

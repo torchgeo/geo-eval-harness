@@ -1,11 +1,15 @@
-"""Tests for extract_features in torchgeo_bench.utils."""
+"""Tests for extract_features in geo_eval_harness.utils."""
 
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from torchgeo_bench.utils import extract_features
+from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+from geo_eval_harness.utils import extract_features
+from tests.support.models import DatedBenchModel
 
 
 class _IdentityModel(torch.nn.Module):
@@ -124,3 +128,37 @@ def test_3d_output_mean_pooled() -> None:
     X, _y = extract_features(_SeqModel(), loader, device="cpu", description=None)
     expected = torch.stack([sample["image"] for sample in loader.dataset]).mean(dim=(2, 3))
     np.testing.assert_allclose(X, expected.numpy(), rtol=1e-6)
+
+
+def _dated_loader() -> DataLoader:
+    samples = [
+        {
+            "image": torch.full((1, 2, 2), float(index + 1)),
+            "label": torch.tensor(index),
+            "mask": torch.full((2, 2), index),
+            "doy": torch.tensor(day),
+        }
+        for index, day in enumerate([260, 366])
+    ]
+    return DataLoader(samples, batch_size=2)
+
+
+def test_classification_preserves_aligned_batch_dates() -> None:
+    features, labels = extract_features(DatedBenchModel(), _dated_loader(), "cpu", description=None)
+    np.testing.assert_array_equal(features[:, 0], [261, 368])
+    np.testing.assert_array_equal(labels, [0, 1])
+
+
+def test_segmentation_preserves_dates_in_cache_training_and_validation() -> None:
+    model = DatedBenchModel()
+    probe = SegmentationProbe(model, ["spatial_features"], 2).eval()
+    cached = probe.extract_segmentation_features(_dated_loader(), cache_dtype=torch.float32)
+    torch.testing.assert_close(cached.layer_tensors[0][:, 0, 0, 0], torch.tensor([261.0, 368.0]))
+    config = SegmentationConfig(head="linear", layers=["spatial_features"])
+    _, solver = build_seg_probe_and_solver(model, 2, config, torch.device("cpu"))
+    observed = set()
+    model.spatial_features.register_forward_hook(
+        lambda module, args, output: observed.update(output[:, 0, 0, 0].tolist())
+    )
+    solver.fit(_dated_loader(), val_loader=_dated_loader(), epochs=1, verbose=False)
+    assert observed == {261.0, 368.0}

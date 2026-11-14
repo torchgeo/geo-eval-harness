@@ -1,0 +1,5 @@
+name: geoclip
+target: geo_eval_harness.coordbench.models.GeoCLIPLocationEncoder
+track: coord
+kwargs:
+  repo: MVRL/geoclip-location-encoder

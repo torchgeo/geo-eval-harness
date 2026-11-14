@@ -1,0 +1,13 @@
+name: convnext_large_dinov3
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: convnext_large.dinov3_lvd1689m
+  pretrained: true
+  global_pool: avg
+segmentation:
+  lora_target_modules: 'stages\.\d+\.blocks\.\d+\.mlp\.fc[12]'
+  layers:
+    - stages.3
+    - stages.2
+    - stages.1
+    - stages.0

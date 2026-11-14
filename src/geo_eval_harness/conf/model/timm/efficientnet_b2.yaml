@@ -1,0 +1,13 @@
+name: efficientnet_b2
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: efficientnet_b2
+  pretrained: true
+  global_pool: avg
+  auto_resize: true
+segmentation:
+  layers:
+    - blocks.6
+    - blocks.5
+    - blocks.3
+    - blocks.1

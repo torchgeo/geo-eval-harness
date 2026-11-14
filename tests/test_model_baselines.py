@@ -8,14 +8,14 @@ import pandas as pd
 import pytest
 import torch
 
+from geo_eval_harness.config.presets import NORMALIZATIONS
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.models._band_mapping import map_to_model_bands
+from geo_eval_harness.models.torchgeo_models import _CROMA_S2_12
+from geo_eval_harness.resume import _canonical_key_cell
 from scripts.update_baselines import baseline_metadata, filter_and_deduplicate
 from tests.support.cli import run_cli
 from tests.support.data import require_dataset_data
-from torchgeo_bench.config.presets import NORMALIZATIONS
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.models._band_mapping import map_to_model_bands
-from torchgeo_bench.models.torchgeo_models import _CROMA_S2_12
-from torchgeo_bench.resume import _canonical_key_cell
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "accuracy_baselines.csv"

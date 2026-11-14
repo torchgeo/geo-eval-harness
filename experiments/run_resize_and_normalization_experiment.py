@@ -14,9 +14,9 @@ from typing import Literal
 
 from _runner import Job, add_devices_argument, default_output, run_jobs
 
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import (
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import (
     ClassificationConfig,
     InputConfig,
     LinearConfig,

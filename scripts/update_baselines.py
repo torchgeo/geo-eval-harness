@@ -14,12 +14,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.main import dataset_metadata
-from torchgeo_bench.results import _dedup_results, _relabel_olmoearth_normalization
-from torchgeo_bench.resume import _canonical_key_cell
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.results import _dedup_results, _relabel_olmoearth_normalization
+from geo_eval_harness.resume import _canonical_key_cell
 
 logger = logging.getLogger(__name__)
 
@@ -31,22 +31,22 @@ TARGET_METHODS = {"knn5", "linear"}
 
 BASELINE_CASES: dict[str, dict[str, tuple[str, ...]]] = {
     "rcf": {
-        "all": ("m-eurosat", "m-pv4ger", "so2sat"),
-        "rgb": ("m-eurosat", "m-forestnet"),
+        "all": ("m-eurosat", "so2sat"),
+        "rgb": ("m-eurosat", "m-forestnet", "m-pv4ger"),
     },
     "imagestats": {
-        "all": ("m-eurosat", "m-pv4ger", "so2sat"),
-        "rgb": ("m-eurosat",),
+        "all": ("m-eurosat", "so2sat"),
+        "rgb": ("m-eurosat", "m-pv4ger"),
     },
     "timm/vit/vit_large_patch16_dinov3sat": {"rgb": ("m-eurosat", "m-pv4ger", "so2sat")},
     "torchgeo/croma_base": {"all": ("m-eurosat",)},
     "torchgeo/dofa_base": {"all": ("m-eurosat", "so2sat")},
-    "torchgeo/panopticon": {"all": ("m-eurosat", "m-pv4ger", "so2sat")},
+    "torchgeo/panopticon": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
     "torchgeo/scalemae_large_fmow": {"rgb": ("m-eurosat",)},
     "olmoearth_nano": {"rgb": ("m-pv4ger",)},
-    "terratorch/prithvi_eo_v2_300": {"all": ("m-eurosat", "m-pv4ger", "so2sat")},
-    "terratorch/terramind_v1_base": {"all": ("m-eurosat", "m-pv4ger", "so2sat")},
-    "terratorch/clay_v1_5": {"all": ("m-eurosat", "m-pv4ger", "so2sat")},
+    "terratorch/prithvi_eo_v2_300": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
+    "terratorch/terramind_v1_base": {"all": ("m-eurosat", "so2sat")},
+    "terratorch/clay_v1": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
     "torchgeo/swinv2b_s2rgb_satlas_mi": {"rgb": ("m-pv4ger", "so2sat")},
     "timm/mobilenetv3_small_100": {"rgb": ("m-eurosat", "m-forestnet")},
     "timm/resnet18": {"rgb": ("m-eurosat", "m-forestnet")},

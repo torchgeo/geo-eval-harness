@@ -12,13 +12,13 @@ import pandas as pd
 import pytest
 import yaml
 
+from geo_eval_harness.config.presets import merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import list_datasets
+from geo_eval_harness.datasets.loading import get_dataset_task
+from geo_eval_harness.resume import resume_config_hash
 from tests.support.cli import cli_output, run_cli
 from tests.support.data import write_classification_files
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import list_datasets
-from torchgeo_bench.datasets.loading import get_dataset_task
-from torchgeo_bench.resume import resume_config_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,7 +134,9 @@ def test_feature_manifest_uses_resolved_current_hashes(sweep, level):
         assert len(spec["feature_names"]) == spec["feature_dim"]
         job = sweep.build_jobs(level, [dataset])[0]
         effective, preset = resolve_run_config(job.config, dataset)
-        assert spec["config_hash"] == resume_config_hash(effective, preset)
+        assert spec["config_hash"] == resume_config_hash(
+            effective, preset, task=get_dataset_task(dataset)
+        )
         if level:
             assert sorted(
                 column for record in spec["feature_metadata"] for column in record["columns"]
@@ -184,11 +186,11 @@ def test_study_file_entrypoint_dry_run_uses_current_cli(tmp_path: Path) -> None:
         cwd=ROOT,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=300,
         check=False,
     )
     assert result.returncode == 0, cli_output(result)
-    assert "-m torchgeo_bench run --config" in result.stderr
+    assert "-m geo_eval_harness run --config" in result.stderr
     assert "--resume" in result.stderr
     assert "handcrafted_level3" in result.stderr
     assert "image_cli" not in result.stderr
@@ -235,7 +237,9 @@ def test_study_config_runs_real_cli_and_resumes(
     assert set(rows["metric_name"]) == {"accuracy"}
     assert rows["metric_value"].between(0.99, 1).all()
     effective, preset = resolve_run_config(config, "m-pv4ger")
-    assert set(rows["config_hash"]) == {resume_config_hash(effective, preset)}
+    assert set(rows["config_hash"]) == {
+        resume_config_hash(effective, preset, task=get_dataset_task("m-pv4ger"))
+    }
     before = output.read_bytes()
     resumed = run_cli(*arguments, cwd=tmp_path)
     assert resumed.returncode == 0, cli_output(resumed)

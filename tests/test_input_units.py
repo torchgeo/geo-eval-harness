@@ -1,13 +1,14 @@
-"""Tests for _input_units: detect_input_unit and convert_unit."""
+"""Tests for input unit detection and optical/SAR scale conversion."""
 
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models._input_units import (
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._input_units import (
     InputUnit,
     convert_unit,
     detect_input_unit,
+    linear_power_to_db,
 )
 
 
@@ -91,3 +92,28 @@ def test_convert_unit_unknown_dst_raises() -> None:
     x = torch.tensor([1.0])
     with pytest.raises(ValueError, match="unknown target unit"):
         convert_unit(x, InputUnit.S2_DN, "bogus")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_linear_power_to_db_values_floor_and_nonmutation(dtype: torch.dtype) -> None:
+    images = torch.tensor([-1.0, 0.0, 1e-8, 1e-6, 0.01, 0.1, 1.0, 10.0], dtype=dtype)
+    images = images.view(1, 2, 2, 2)
+    original = images.clone()
+
+    actual = linear_power_to_db(images)
+
+    expected = torch.tensor([-60.0, -60.0, -60.0, -60.0, -20.0, -10.0, 0.0, 10.0], dtype=dtype)
+    torch.testing.assert_close(actual, expected.view_as(images))
+    torch.testing.assert_close(images, original)
+    assert actual.device == images.device
+
+
+def test_linear_power_to_db_preserves_gradients() -> None:
+    images = torch.tensor([0.0, 0.1, 1.0], dtype=torch.float64, requires_grad=True)
+
+    linear_power_to_db(images).sum().backward()
+
+    expected = torch.tensor([0.0, 100.0, 10.0], dtype=images.dtype) / torch.log(
+        torch.tensor(10.0, dtype=images.dtype)
+    )
+    torch.testing.assert_close(images.grad, expected)

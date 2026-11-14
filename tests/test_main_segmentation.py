@@ -1,6 +1,7 @@
 """Offline tests for the segmentation runner."""
 
 import json
+import math
 from pathlib import Path
 from unittest import mock
 
@@ -9,11 +10,14 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from geo_eval_harness.config.presets import merge_settings
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import LoaderSplits, evaluate_segmentation, main, run_dataset
+from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.resume import ResumeState
+from geo_eval_harness.segmentation_probe import GPUTensorCache, SegmentationProbe
+from geo_eval_harness.segmentation_task import SegmentationSolver
 from tests.support.runner import _chainable_model_mock, _compose_cfg, _resume_row
-from torchgeo_bench.config.presets import merge_settings
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import main, run_dataset
-from torchgeo_bench.resume import ResumeState
 
 
 class _SegmentationDataset(Dataset):
@@ -73,9 +77,6 @@ def _mock_probe_and_solver():
     probe = mock.Mock()
     probe.channels_list = [16, 32]
     solver = mock.Mock()
-    solver.lr_history = []
-    solver.val_miou = solver.best_epoch = solver.stopped_epoch = None
-    solver.fit_seconds = 0.0
     return probe, solver
 
 
@@ -94,11 +95,11 @@ def test_dataset_eval_resolution_preserves_explicit_values_and_original_config(
         return []
 
     loaders = _synthetic_segmentation_loaders()
-    monkeypatch.setattr("torchgeo_bench.main.get_datasets", lambda **_kwargs: loaders)
+    monkeypatch.setattr("geo_eval_harness.main.get_datasets", lambda **_kwargs: loaders)
     monkeypatch.setattr(
-        "torchgeo_bench.main.instantiate_dataset_model", lambda *_args: _chainable_model_mock()
+        "geo_eval_harness.main.instantiate_dataset_model", lambda *_args: _chainable_model_mock()
     )
-    monkeypatch.setattr("torchgeo_bench.main.run_segmentation", capture_eval)
+    monkeypatch.setattr("geo_eval_harness.main.run_segmentation", capture_eval)
 
     assert list(run_dataset(cfg, "burn_scars", ResumeState(set(), {}))) == []
 
@@ -117,8 +118,8 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     )
     probe, solver = _mock_probe_and_solver()
     cache = mock.Mock()
-    probe.freeze_backbone = True
     probe.extract_segmentation_features.return_value = cache
+    solver.best_epoch, solver.best_val_miou = 4, 0.5
     solver.evaluate_cached.return_value = (
         {
             "mIoU": 0.42,
@@ -126,16 +127,18 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
             "precision": 0.6,
             "recall": 0.7,
             "f1": 0.65,
+            "boundary_IoU": 0.3,
+            "boundary_IoU_width": 1,
         },
         torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
     )
 
     with (
         mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
         ),
         mock.patch(
-            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
+            "geo_eval_harness.segmentation_task.build_seg_probe_and_solver",
             return_value=(probe, solver),
         ),
     ):
@@ -147,65 +150,14 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
         batch_size=3,
         epochs=cfg.segmentation.epochs,
         verbose=cfg.runtime.verbose,
-        early_stopping=None,
+        on_epoch=None,
     )
     df = pd.read_csv(out)
     assert df.loc[0, "best_batch_size"] == 3
-    assert json.loads(df.loc[0, "per_class_iou"]) == [0.0, 0.5]
-
-
-def test_cached_segmentation_selects_and_records_learning_rate(tmp_path: Path):
-    """A learning-rate grid is searched on validation and the chosen rate is recorded."""
-    out = tmp_path / "out.csv"
-    cfg = _cfg_for_segmentation(
-        out,
-        overrides={
-            "segmentation": {
-                "cache_features": True,
-                "learning_rates": [0.001, 0.01],
-                "scheduler": "none",
-                "early_stopping": {"enabled": True, "patience": 2},
-            }
-        },
-    )
-    probe, solver = _mock_probe_and_solver()
-    cache = mock.Mock()
-    probe.freeze_backbone = True
-    probe.extract_segmentation_features.return_value = cache
-    solver.select_learning_rate_cached.return_value = 0.01
-    solver.lr_history = [{"lr": 0.001, "val_miou": 0.3}, {"lr": 0.01, "val_miou": 0.4}]
-    solver.val_miou = 0.4
-    solver.evaluate_cached.return_value = (
-        {"mIoU": 0.42, "fw_IoU": 0.55, "precision": 0.6, "recall": 0.7, "f1": 0.65},
-        torch.tensor([[[0, 4], [0, 0]], [[0, 0], [0, 4]]]),
-    )
-
-    with (
-        mock.patch(
-            "torchgeo_bench.main.get_datasets", return_value=_synthetic_segmentation_loaders()
-        ),
-        mock.patch(
-            "torchgeo_bench.segmentation_task.build_seg_probe_and_solver",
-            return_value=(probe, solver),
-        ),
-    ):
-        main(cfg)
-
-    solver.fit_cached.assert_not_called()
-    solver.select_learning_rate_cached.assert_called_once_with(
-        cache,
-        cache,
-        [0.001, 0.01],
-        batch_size=cfg.segmentation.batch_size,
-        epochs=cfg.segmentation.epochs,
-        seed=cfg.runtime.seed,
-        verbose=cfg.runtime.verbose,
-        early_stopping=cfg.segmentation.early_stopping,
-    )
-    row = pd.read_csv(out).loc[0]
-    assert row["best_lr"] == 0.01
-    assert row["val_miou"] == 0.4
-    assert json.loads(row["lr_search"]) == solver.lr_history
+    assert df.loc[0, "best_val_epoch"] == 4
+    assert df.loc[0, "best_val_miou"] == 0.5
+    assert df.loc[0, "boundary_iou"] == 0.3
+    assert df.loc[0, "boundary_iou_width"] == 1
 
 
 def test_segmentation_resume_skips_complete_run(tmp_path: Path):
@@ -215,9 +167,9 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     model = _chainable_model_mock()
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data_mock,
-        mock.patch("torchgeo_bench.main.build_model", return_value=model) as instantiate_mock,
-        mock.patch("torchgeo_bench.segmentation_task.build_seg_probe_and_solver") as build_mock,
+        mock.patch("geo_eval_harness.main.get_datasets") as data_mock,
+        mock.patch("geo_eval_harness.main.build_model", return_value=model) as instantiate_mock,
+        mock.patch("geo_eval_harness.segmentation_task.build_seg_probe_and_solver") as build_mock,
     ):
         main(cfg)
 
@@ -226,3 +178,333 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     build_mock.assert_not_called()
     df = pd.read_csv(out)
     assert int((df["method"] == "seg-fpn").sum()) == 1
+
+
+_TINY_VIT = {
+    "name": "tiny-vit",
+    "target": "geo_eval_harness.models.TimmPatchBenchModel",
+    "kwargs": {"model_name": "vit_tiny_patch16_224", "pretrained": False, "auto_resize": True},
+}
+_TINY_VIT_LAYERS = ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]
+
+
+@pytest.mark.parametrize("cache_features", [True, False])
+def test_upernet_skips_a_final_training_batch_of_one(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, *, cache_features: bool
+):
+    """Pyramid pooling BatchNorm cannot train on one sample, so that batch is dropped."""
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "cache_features": cache_features,
+                "batch_size": 2,
+            },
+        },
+    )
+
+    with (
+        mock.patch(
+            "geo_eval_harness.main.get_datasets",
+            return_value=_synthetic_segmentation_loaders(n_train=9),
+        ),
+        caplog.at_level("INFO", logger="geo_eval_harness.segmentation_task"),
+    ):
+        main(cfg)
+
+    assert "Skipping a training batch of 1 samples" in caplog.text
+    df = pd.read_csv(out)
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
+
+
+def test_upernet_with_a_cached_batch_size_of_one_fails_without_a_result(tmp_path: Path):
+    """Every batch would be skipped, so the run must not record an untrained head's score."""
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "cache_features": True,
+                "batch_size": 1,
+            },
+        },
+    )
+
+    with (
+        mock.patch(
+            "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+        ),
+        pytest.raises(ValueError, match="below the UPerNetHead minimum of 2"),
+    ):
+        main(cfg)
+
+    assert not out.exists() or pd.read_csv(out).empty
+
+
+def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": {
+                "head": "upernet",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "lora_rank": 4,
+                "lora_target_modules": r"blocks\.\d+\.attn\.qkv",
+                "backbone_learning_rate": 1e-4,
+            },
+            "output": {"resume": True},
+        },
+    )
+
+    with mock.patch(
+        "geo_eval_harness.main.get_datasets", return_value=_synthetic_segmentation_loaders()
+    ):
+        main(cfg)
+    with mock.patch("geo_eval_harness.main.get_datasets") as data_mock:
+        main(cfg)
+
+    data_mock.assert_not_called()
+    df = pd.read_csv(out)
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert (df.loc[0, "adaptation"], df.loc[0, "decoder"]) == ("lora", "upernet")
+    assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("lora", [False, True], ids=["frozen-cached", "lora-uncached"])
+def test_epoch_metrics_stream_records_joined_to_the_result_row(tmp_path: Path, *, lora: bool):
+    out, curves = tmp_path / "out.csv", tmp_path / "curves" / "run.jsonl"
+    segmentation = {
+        "head": "upernet",
+        "layers": _TINY_VIT_LAYERS,
+        "epochs": 2,
+        "batch_size": 2,
+        "cache_features": not lora,
+    }
+    if lora:
+        segmentation |= {
+            "lora_rank": 4,
+            "lora_target_modules": r"blocks\.\d+\.attn\.qkv",
+            "backbone_learning_rate": 1e-4,
+        }
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "segmentation": segmentation,
+            "output": {"epoch_metrics": str(curves)},
+        },
+    )
+
+    with mock.patch(
+        "geo_eval_harness.main.get_datasets",
+        return_value=_synthetic_segmentation_loaders(n_train=9),
+    ):
+        main(cfg)
+
+    row = pd.read_csv(out).iloc[0]
+    lines = _read_jsonl(curves)
+    assert [line["event"] for line in lines] == ["epoch", "epoch", "selected"]
+    assert len({line["run_id"] for line in lines}) == 1
+    for line in lines:
+        assert line["config_hash"] == row["config_hash"]
+        assert line["method"] == row["method"]
+        assert (line["dataset"], line["name"], line["seed"]) == (
+            row["dataset"],
+            row["name"],
+            row["seed"],
+        )
+    epochs, selected = lines[:2], lines[2]
+    assert [epoch["epoch"] for epoch in epochs] == [1, 2]
+    for epoch in epochs:
+        assert math.isfinite(epoch["train_loss"])
+        assert math.isfinite(epoch["val_loss"])
+        assert 0.0 <= epoch["val_miou"] <= 1.0
+        assert 0.0 <= epoch["train_miou"] <= 1.0
+        # Nine samples at batch size two: four steps and one skipped batch of one.
+        assert (epoch["train_steps"], epoch["skipped_batches"]) == (4, 1)
+        assert epoch["peak_gpu_mem_mb"] is None
+        assert epoch["epoch_seconds"] >= 0.0
+    assert epochs[0]["head_lr"] == pytest.approx(1e-3)
+    assert epochs[1]["head_lr"] < epochs[0]["head_lr"]
+    if lora:
+        assert epochs[0]["backbone_lr"] == pytest.approx(1e-4)
+        assert epochs[1]["backbone_lr"] < epochs[0]["backbone_lr"]
+    else:
+        assert all(epoch["backbone_lr"] is None for epoch in epochs)
+    assert selected["best_epoch"] == row["best_val_epoch"]
+    assert selected["best_val_miou"] == pytest.approx(row["best_val_miou"])
+    assert selected["best_val_miou"] == max(epoch["val_miou"] for epoch in epochs)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_epoch_metrics_keep_epochs_of_a_failed_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+) -> None:
+    out, curves = tmp_path / "out.csv", tmp_path / "run.jsonl"
+    cfg = _cfg_for_segmentation(
+        out,
+        {
+            "segmentation": {
+                "cache_features": cached,
+                "epochs": 3,
+                "layers": ["0"],
+                "head": "linear",
+            },
+            "output": {"epoch_metrics": str(curves)},
+        },
+    )
+    monkeypatch.setattr(
+        "geo_eval_harness.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    monkeypatch.setattr("geo_eval_harness.main.instantiate_dataset_model", lambda *_args: backbone)
+    scores = iter([0.4, float("nan")])
+    monkeypatch.setattr(
+        SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": next(scores)}
+    )
+
+    with pytest.raises(ValueError, match="must be finite"):
+        main(cfg)
+
+    lines = _read_jsonl(curves)
+    assert [(line["event"], line["epoch"]) for line in lines] == [("epoch", 1), ("epoch", 2)]
+    assert lines[0]["val_miou"] == 0.4
+    assert math.isnan(lines[1]["val_miou"])
+    assert not out.exists()
+
+
+class _ChangingHead(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.bias = torch.nn.Parameter(torch.tensor(1.5))
+        self.register_buffer("batches", torch.tensor(0))
+
+    def forward(self, features: list[torch.Tensor], height: int, width: int) -> torch.Tensor:
+        if self.training:
+            self.batches.add_(1)
+        score = self.bias.expand(len(features[0]), height, width)
+        return torch.stack((score, -score), dim=1)
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_runner_test_metrics_and_bootstrap_use_selected_epoch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+) -> None:
+    cfg = _cfg_for_segmentation(
+        tmp_path / "out.csv",
+        {"segmentation": {"cache_features": cached, "epochs": 3, "batch_size": 2}},
+    )
+    images = torch.ones(2, 3, 8, 8)
+    train = DataLoader(_SegmentationDataset(images, torch.ones(2, 8, 8).long()), batch_size=2)
+    test = DataLoader(_SegmentationDataset(images, torch.zeros(2, 8, 8).long()), batch_size=2)
+    probe = SegmentationProbe(
+        torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1)), ["0"], 2, head_type="linear"
+    )
+    probe.head = _ChangingHead()
+    solver = SegmentationSolver(probe, 2, lr=1.0, lr_scheduler="none", device="cpu")
+    evaluate = solver._evaluate
+    test_data = test
+    if cached:
+        test_cache = probe.extract_segmentation_features(test, cache_dtype=torch.float32)
+        test_data = GPUTensorCache.from_cached(test_cache, device="cpu")
+    boundaries: list[tuple[dict[str, float], torch.Tensor]] = []
+
+    def controlled_validation(data, batch_size=64, *, collect_confusions=False):
+        if collect_confusions:
+            return evaluate(data, batch_size, collect_confusions=True)
+        result = evaluate(test_data, collect_confusions=True)
+        assert isinstance(result, tuple)
+        boundaries.append(result)
+        return {"mIoU": [0.9, 0.5, 0.2][len(boundaries) - 1]}
+
+    monkeypatch.setattr(solver, "_evaluate", controlled_validation)
+    monkeypatch.setattr(
+        "geo_eval_harness.segmentation_task.build_seg_probe_and_solver",
+        lambda *_args: (probe, solver),
+    )
+    with mock.patch("geo_eval_harness.main.bootstrap_miou", wraps=bootstrap_miou) as bootstrap:
+        metrics, *_ = evaluate_segmentation(probe.backbone, LoaderSplits(train, test, test), cfg, 2)
+
+    assert len(boundaries) == 3
+    assert boundaries[0][0]["mIoU"] == 1.0
+    assert boundaries[-1][0]["mIoU"] == 0.0
+    for name, value in boundaries[0][0].items():
+        assert metrics[name] == value
+    torch.testing.assert_close(bootstrap.call_args.args[0], boundaries[0][1], rtol=0, atol=0)
+    assert (metrics["ci_lower"], metrics["ci_upper"]) == bootstrap_miou(
+        boundaries[0][1], n_boot=cfg.classification.bootstrap_samples, seed=cfg.runtime.seed
+    )
+    assert solver.best_epoch == 1
+    assert probe.head.batches.item() == 1
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("validation", ["missing", "empty"])
+def test_runner_requires_validation_before_building_probe(
+    tmp_path: Path, validation: str, *, cached: bool
+) -> None:
+    cfg = _cfg_for_segmentation(tmp_path / "out.csv", {"segmentation": {"cache_features": cached}})
+    _, train, empty_val, test = _synthetic_segmentation_loaders(n_val=0)
+    loaders = LoaderSplits(train, None if validation == "missing" else empty_val, test)
+
+    with (
+        mock.patch("geo_eval_harness.segmentation_task.build_seg_probe_and_solver") as build,
+        pytest.raises(ValueError, match="require a non-empty validation loader"),
+    ):
+        evaluate_segmentation(mock.Mock(), loaders, cfg, num_classes=3)
+
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("validation", ["empty", "non-finite"])
+def test_runner_invalid_validation_does_not_write_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, validation: str, *, cached: bool
+) -> None:
+    out = tmp_path / "out.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        {
+            "segmentation": {
+                "cache_features": cached,
+                "epochs": 1,
+                "layers": ["0"],
+                "head": "linear",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "geo_eval_harness.main.get_datasets",
+        lambda **_kwargs: _synthetic_segmentation_loaders(n_val=0 if validation == "empty" else 4),
+    )
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    monkeypatch.setattr(
+        "geo_eval_harness.main.instantiate_dataset_model",
+        lambda *_args: backbone,
+    )
+    if validation == "non-finite":
+        monkeypatch.setattr(
+            SegmentationSolver, "_compute_metrics", lambda _self: {"mIoU": float("nan")}
+        )
+    with pytest.raises(ValueError, match=r"non-empty validation|must be finite"):
+        main(cfg)
+    assert not out.exists()

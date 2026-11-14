@@ -11,11 +11,11 @@ import pytest
 import torch
 from sklearn.metrics import average_precision_score
 
-import torchgeo_bench.knn as knn
+import geo_eval_harness.knn as knn
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.knn import KNNClassifier, resolve_knn_device
+from geo_eval_harness.utils import FeatureSplit, FeatureSplits
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.knn import KNNClassifier, resolve_knn_device
-from torchgeo_bench.utils import FeatureSplit, FeatureSplits
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 
@@ -139,7 +139,7 @@ class TestKNNClassifier:
 
 class TestBootstrapMAP:
     def test_bootstrap_map_basic(self):
-        from torchgeo_bench import bootstrap_map
+        from geo_eval_harness import bootstrap_map
 
         rng = np.random.default_rng(0)
         n, c = 100, 5
@@ -159,7 +159,7 @@ class TestBootstrapMAP:
         np.testing.assert_allclose([lo, hi], np.percentile(reference, [2.5, 97.5]))
 
     def test_perfect_scores(self):
-        from torchgeo_bench import bootstrap_map
+        from geo_eval_harness import bootstrap_map
 
         y_true = np.eye(5, dtype=np.float32)
         y_scores = np.eye(5, dtype=np.float32)
@@ -252,7 +252,7 @@ class TestResolveKNNDevice:
 
 class TestUnifiedEvaluateKNN:
     def test_single_label(self, singlelabel_data):
-        from torchgeo_bench import evaluate_knn
+        from geo_eval_harness import evaluate_knn
 
         d = singlelabel_data
         score, lo, hi, cal, _ = evaluate_knn(
@@ -278,7 +278,7 @@ class TestUnifiedEvaluateKNN:
             assert 0.0 <= v <= 1.0
 
     def test_multi_label(self, multilabel_data):
-        from torchgeo_bench import evaluate_knn
+        from geo_eval_harness import evaluate_knn
 
         d = multilabel_data
         score, lo, hi, cal, _ = evaluate_knn(
@@ -304,7 +304,7 @@ class TestUnifiedEvaluateKNN:
 
 class TestUnifiedEvaluateLogistic:
     def test_single_label(self, singlelabel_data):
-        from torchgeo_bench import evaluate_logistic
+        from geo_eval_harness import evaluate_logistic
 
         d = singlelabel_data
         score, lo, hi, best_c, cal, cal_ts = evaluate_logistic(
@@ -335,7 +335,7 @@ class TestUnifiedEvaluateLogistic:
         assert cal_ts["temperature"] > 0
 
     def test_multi_label(self, multilabel_data):
-        from torchgeo_bench import evaluate_logistic
+        from geo_eval_harness import evaluate_logistic
 
         d = multilabel_data
         score, lo, hi, best_c, cal, cal_ts = evaluate_logistic(

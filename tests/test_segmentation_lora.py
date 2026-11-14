@@ -1,0 +1,440 @@
+"""LoRA adapters train through segmentation probes while backbone weights stay frozen."""
+
+import re
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
+
+import pytest
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+from torchvision.models import swin_v2_t
+from torchvision.models.swin_transformer import ShiftedWindowAttentionV2
+
+from geo_eval_harness.config.catalog import list_model_configs
+from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.models.timm import TimmPatchBenchModel
+from geo_eval_harness.segmentation_lora import (
+    apply_lora,
+    has_lora_adapters,
+    lora_block_of,
+    merged_lora,
+)
+from geo_eval_harness.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_task import SegmentationSolver, build_seg_probe_and_solver
+from tests.support.models import bands
+
+VIT_TARGETS = r"blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
+SWIN_TARGETS = r"features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])"
+TIMM_SWIN_TARGETS = r"layers\.\d+\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
+
+
+def _assert_only_lora_trains(model: nn.Module, layers: list[str], images: torch.Tensor) -> None:
+    """Every adapter tensor must get a nonzero gradient and no base weight any gradient."""
+    probe = SegmentationProbe(model, layers, num_classes=3, freeze_backbone=False, head_type="fpn")
+    model.eval()
+    with torch.no_grad():
+        # A zero-initialised lora_B blocks the gradient of lora_A.
+        for name, param in model.named_parameters():
+            if "lora_B" in name:
+                param.normal_(0, 1e-3)
+    probe(images).sum().backward()
+
+    lora = {name: param for name, param in model.named_parameters() if "lora_" in name}
+    dead = [name for name, param in lora.items() if param.grad is None or not param.grad.any()]
+    base_with_grad = [
+        name
+        for name, param in model.named_parameters()
+        if "lora_" not in name and (param.requires_grad or param.grad is not None)
+    ]
+    assert lora
+    assert dead == []
+    assert base_with_grad == []
+
+
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin", "timm_swinv2"])
+def test_apply_lora_trains_every_adapter_and_no_base_weight(model_kind: str) -> None:
+    """Swin attention reads its weights functionally, so it needs the parametrization path."""
+    if model_kind == "timm_vit":
+        model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+        targets, layers, expected = VIT_TARGETS, ["blocks.11", "blocks.5"], 48
+    elif model_kind == "timm_swinv2":
+        # timm's Swin V2 attention reads qkv.weight through F.linear to add its q/v bias.
+        model = TimmPatchBenchModel(
+            bands(3), model_name="swinv2_tiny_window8_256", pretrained=False, auto_resize=True
+        )
+        # Untrained Swin V2 zero-initialises its residual post-norms, which blocks every gradient.
+        for module in model.modules():
+            if isinstance(module, nn.LayerNorm):
+                nn.init.ones_(module.weight)
+        targets, layers, expected = TIMM_SWIN_TARGETS, ["layers.3", "layers.1"], 48
+    else:
+        model = swin_v2_t()
+        targets, layers, expected = SWIN_TARGETS, ["features.7", "features.5"], 48
+
+    adapted = apply_lora(model, targets, rank=4, alpha=8.0)
+
+    assert len(adapted) == expected
+    _assert_only_lora_trains(model, layers, torch.randn(2, 3, 224, 224))
+
+
+@pytest.mark.parametrize(
+    ("name", "block"),
+    [
+        ("blocks.11.attn.qkv", "blocks.11"),
+        ("encoder_model.encoder.blocks.3.mlp.fc1", "encoder_model.encoder.blocks.3"),
+        ("stages.3.blocks.26.mlp.fc1", "stages.3.blocks.26"),
+        ("features.7.1.mlp.0", "features.7.1"),
+        ("encoder.11.attn.proj", "encoder.11"),
+        ("head.fc", None),
+    ],
+)
+def test_lora_block_of(name: str, block: str | None) -> None:
+    assert lora_block_of(name) == block
+
+
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin"])
+def test_apply_lora_last_blocks_adapts_only_the_deepest_blocks(model_kind: str) -> None:
+    if model_kind == "timm_vit":
+        model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+        targets, layers, last, blocks = (
+            VIT_TARGETS,
+            ["blocks.11", "blocks.9"],
+            6,
+            {f"blocks.{i}" for i in range(6, 12)},
+        )
+    else:
+        model = swin_v2_t()
+        # Swin-V2-T stages have 2, 2, 6, 2 blocks; the last 3 span two stages.
+        targets, layers, last, blocks = (
+            SWIN_TARGETS,
+            ["features.7", "features.5"],
+            3,
+            {
+                "features.5.5",
+                "features.7.0",
+                "features.7.1",
+            },
+        )
+
+    adapted = apply_lora(model, targets, rank=4, alpha=8.0, last_blocks=last)
+
+    assert {lora_block_of(name) for name in adapted} == blocks
+    assert len(adapted) == 4 * len(blocks)
+    _assert_only_lora_trains(model, layers, torch.randn(2, 3, 224, 224))
+
+
+def test_apply_lora_last_blocks_rejects_more_blocks_than_matched() -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    with pytest.raises(ValueError, match="exceeds the 12 matched blocks"):
+        apply_lora(model, VIT_TARGETS, rank=4, alpha=8.0, last_blocks=13)
+
+
+@pytest.mark.parametrize(
+    ("targets", "message"),
+    [(r"blocks\.\d+\.missing", "No backbone module matches"), (r"blocks\.0\.norm1", "nn.Linear")],
+)
+def test_apply_lora_rejects_missing_or_non_linear_targets(targets: str, message: str) -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    with pytest.raises(ValueError, match=message):
+        apply_lora(model, targets, rank=4, alpha=8.0)
+
+
+@pytest.mark.parametrize("model_kind", ["timm_vit", "torchvision_swin"])
+def test_apply_lora_names_the_extra_when_peft_is_missing(
+    monkeypatch: pytest.MonkeyPatch, model_kind: str
+) -> None:
+    """Swin attention adapters do not use PEFT, but every LoRA run requires the extra."""
+    monkeypatch.setitem(sys.modules, "peft", None)
+    if model_kind == "timm_vit":
+        model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+        targets = VIT_TARGETS
+    else:
+        model, targets = swin_v2_t(), r"features\.\d+\.\d+\.attn\.(qkv|proj)"
+    with pytest.raises(ImportError, match=re.escape("geo-eval-harness[lora]")):
+        apply_lora(model, targets, rank=4, alpha=8.0)
+
+
+_MULTISPECTRAL_INPUTS = {
+    "terratorch/terramind_v1_base": ("burn_scars", "all"),
+    "terratorch/terramind_v1_base_s1": ("sen1floods11-s1", "all"),
+    "terratorch/terramind_v1_large_s1": ("kuro_siwo", "all"),
+    "torchgeo/swinv2b_s2ms_satlas_si": ("m-eurosat", "all"),
+    "terrafm/base_s1": ("kuro_siwo", "all"),
+    "terrafm/base_s2": ("m-eurosat", "all"),
+    "terrafm/base_s2_l1c": ("m-eurosat", "all"),
+    "torchgeo/deo_s2": ("cloudsen12", "all"),
+    "torchgeo/croma_base": ("cloudsen12", "all"),
+    "torchgeo/croma_large": ("cloudsen12", "all"),
+    "universat_base_seg": ("burn_scars", "all"),
+    "smarties/base": ("m-eurosat", "all"),
+    "smarties/large": ("m-eurosat", "all"),
+}
+
+
+def _lora_presets() -> list[str]:
+    return [
+        name
+        for name in list_model_configs()
+        if load_model_preset(ModelConfig(name=name)).segmentation.lora_target_modules
+    ]
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("preset_name", _lora_presets())
+def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> None:
+    """Every preset's targets must adapt only layers that reach the segmentation features."""
+    preset = load_model_preset(ModelConfig(name=preset_name))
+    if preset.kwargs.get("pretrained") and preset.kwargs.get("checkpoint_path", "") is None:
+        pytest.skip(f"{preset_name} loads pretrained weights only from a local checkpoint_path")
+    dataset, band_selection = _MULTISPECTRAL_INPUTS.get(preset_name, ("fotw", "rgb"))
+    model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
+    model = build_model(preset, bands=model_bands, normalization=NORMALIZATIONS["dataset"])
+    segmentation = preset.segmentation
+    assert segmentation.lora_target_modules is not None
+
+    apply_lora(model, segmentation.lora_target_modules, rank=4, alpha=8.0)
+
+    images = torch.rand(2, len(model_bands), 224, 224)
+    _assert_only_lora_trains(model, list(segmentation.layers), images)
+
+
+@pytest.mark.parametrize(
+    "preset_name", ["terrafm/base_s1", "terrafm/base_s2", "terrafm/base_s2_l1c"]
+)
+def test_terrafm_preset_lora_targets_train(preset_name: str) -> None:
+    """TerraFM's pretrained weights need a local checkpoint, so check its targets untrained."""
+    preset = load_model_preset(ModelConfig(name=preset_name, kwargs={"pretrained": False}))
+    dataset, band_selection = _MULTISPECTRAL_INPUTS[preset_name]
+    model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
+    model = build_model(preset, bands=model_bands, normalization=NORMALIZATIONS["dataset"])
+    segmentation = preset.segmentation
+    assert segmentation.lora_target_modules is not None
+
+    adapted = apply_lora(model, segmentation.lora_target_modules, rank=4, alpha=8.0)
+
+    assert len(adapted) == 4 * 12
+    images = torch.rand(2, len(model_bands), 224, 224)
+    _assert_only_lora_trains(model, list(segmentation.layers), images)
+
+
+def test_solver_trains_lora_at_backbone_rate_with_backbone_in_eval_mode() -> None:
+    """Only adapters train, at their own rate; pretrained dropout and drop-path stay off."""
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"],
+        lora_rank=4,
+        lora_target_modules=VIT_TARGETS,
+        backbone_learning_rate=1e-4,
+        scheduler="none",
+    )
+    base = {n: p.detach().clone() for n, p in model.named_parameters()}
+    probe, solver = build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+    lora = [p for n, p in model.named_parameters() if "lora_" in n]
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 224, 224), torch.randint(0, 3, (4, 224, 224))),
+        batch_size=2,
+    )
+
+    solver.fit(loader, epochs=1, verbose=False)
+
+    head_group, backbone_group = solver.optimizer.param_groups
+    assert head_group["lr"] == config.learning_rate
+    assert backbone_group["lr"] == 1e-4
+    assert {id(p) for p in backbone_group["params"]} == {id(p) for p in lora}
+    assert {id(p) for p in head_group["params"]} == {id(p) for p in probe.head.parameters()}
+    assert all(torch.equal(p, base[n]) for n, p in model.named_parameters() if n in base)
+    training = {n for n, m in model.named_modules() if m.training}
+    assert training
+    assert all(".lora_" in n for n in training)
+    assert probe.head.training
+
+
+def test_solver_full_finetune_trains_every_backbone_weight_in_eval_mode() -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"],
+        full_finetune=True,
+        backbone_learning_rate=1e-4,
+        scheduler="none",
+    )
+    probe, solver = build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+    # The head reads blocks.11, so every parameter up to it receives a gradient.
+    used = [
+        p
+        for n, p in model.named_parameters()
+        if not n.startswith(("backbone.norm", "backbone.head", "backbone.fc_norm"))
+    ]
+    base = [p.detach().clone() for p in used]
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 224, 224), torch.randint(0, 3, (4, 224, 224))),
+        batch_size=2,
+    )
+
+    solver.fit(loader, epochs=1, verbose=False)
+
+    _, backbone_group = solver.optimizer.param_groups
+    assert backbone_group["lr"] == 1e-4
+    assert {id(p) for p in backbone_group["params"]} == {id(p) for p in model.parameters()}
+    assert all(not torch.equal(p, b) for p, b in zip(used, base, strict=True))
+    assert not any(m.training for m in model.modules())
+    assert probe.head.training
+    assert config.method == "seg-fpn"
+
+
+def test_full_finetune_rejects_a_backbone_that_stays_frozen() -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    # A wrapper that freezes itself and offers no enable_full_finetune().
+    model.requires_grad_(False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"], full_finetune=True, backbone_learning_rate=1e-4
+    )
+    with pytest.raises(ValueError, match="no trainable backbone parameter"):
+        build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+
+
+class _TinyAdapterBackbone(nn.Module):
+    def __init__(self, kind: str) -> None:
+        super().__init__()
+        self.embed = nn.Conv2d(3, 4, 1)
+        self.attn = (
+            ShiftedWindowAttentionV2(4, [2, 2], [0, 0], 1)
+            if kind == "torchvision_swin"
+            else nn.Linear(4, 4)
+        )
+        self.spatial = nn.Identity()
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        features = self.attn(self.embed(images).permute(0, 2, 3, 1))
+        return self.spatial(features.permute(0, 3, 1, 2))
+
+
+@pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])
+def test_has_lora_adapters_detects_both_adapter_kinds(model_kind: str) -> None:
+    backbone = _TinyAdapterBackbone(model_kind)
+    assert not has_lora_adapters(backbone)
+    apply_lora(
+        backbone, r"attn\.(qkv|proj)" if model_kind == "torchvision_swin" else "attn", 2, 4.0
+    )
+    assert has_lora_adapters(backbone)
+
+
+def test_solver_keeps_an_unfrozen_backbone_without_adapters_in_train_mode() -> None:
+    backbone = _TinyAdapterBackbone("peft")
+    probe = SegmentationProbe(
+        backbone, ["spatial"], num_classes=3, freeze_backbone=False, head_type="linear"
+    )
+    solver = SegmentationSolver(probe, 3, lr=0.1, lr_scheduler="none", device="cpu")
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 8, 8), torch.randint(0, 3, (2, 8, 8))),
+        batch_size=2,
+    )
+    modes: list[bool] = []
+    backbone.register_forward_pre_hook(lambda module, _args: modes.append(module.training))
+
+    solver.fit(loader, epochs=1, verbose=False)
+
+    assert modes == [True]
+
+
+@pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])
+def test_best_validation_restores_head_and_real_adapters_together(
+    model_kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    torch.manual_seed(7)
+    backbone = _TinyAdapterBackbone(model_kind)
+    targets = r"attn\.(qkv|proj)" if model_kind == "torchvision_swin" else "attn"
+    apply_lora(backbone, targets, rank=2, alpha=4.0)
+    frozen = {n: p.clone() for n, p in backbone.named_parameters() if not p.requires_grad}
+    probe = SegmentationProbe(
+        backbone, ["spatial"], num_classes=3, freeze_backbone=False, head_type="linear"
+    )
+    solver = SegmentationSolver(
+        probe, 3, lr=0.1, backbone_lr=0.01, lr_scheduler="none", device="cpu"
+    )
+    identities = {n: id(p) for n, p in probe.named_parameters()}
+    modules = {n: id(m) for n, m in probe.named_modules()}
+    states: list[dict[str, torch.Tensor]] = []
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 8, 8), torch.randint(0, 3, (2, 8, 8))),
+        batch_size=2,
+    )
+
+    def validation(_loader: DataLoader) -> dict[str, float]:
+        probe.eval()
+        states.append({n: t.clone() for n, t in probe.state_dict().items()})
+        return {"mIoU": [0.3, 0.8, 0.2][len(states) - 1]}
+
+    monkeypatch.setattr(solver, "evaluate", validation)
+    assert solver.fit(loader, loader, epochs=3, verbose=False) == 0.8
+    assert solver.best_epoch == 2
+    assert solver.val_history == [0.3, 0.8, 0.2]
+    assert {n: id(p) for n, p in probe.named_parameters()} == identities
+    assert {n: id(m) for n, m in probe.named_modules()} == modules
+    for name, value in probe.state_dict().items():
+        torch.testing.assert_close(value, states[1][name], rtol=0, atol=0)
+    assert any(
+        not torch.equal(states[1][n], states[2][n])
+        for n, _ in probe.head.named_parameters(prefix="head")
+    )
+    assert any(
+        not torch.equal(states[1][n], states[2][n])
+        for n, _ in probe.head.named_buffers(prefix="head")
+    )
+    assert all(
+        not torch.equal(states[1][n], states[2][n])
+        for n, p in backbone.named_parameters(prefix="backbone")
+        if p.requires_grad
+    )
+    for name, value in backbone.named_parameters():
+        if name in frozen:
+            torch.testing.assert_close(value, frozen[name], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("model_kind", ["peft", "torchvision_swin"])
+def test_merged_lora_preserves_outputs(model_kind: str) -> None:
+    torch.manual_seed(3)
+    backbone = _TinyAdapterBackbone(model_kind)
+    targets = r"attn\.(qkv|proj)" if model_kind == "torchvision_swin" else "attn"
+    apply_lora(backbone, targets, rank=2, alpha=4.0)
+    with torch.no_grad():
+        for name, param in backbone.named_parameters():
+            if "lora_B" in name:
+                param.normal_(0, 0.1)
+    backbone.eval()
+    images = torch.randn(2, 3, 8, 8)
+
+    with torch.no_grad():
+        reference = backbone(images)
+        with merged_lora(backbone):
+            torch.testing.assert_close(backbone(images), reference, rtol=1e-5, atol=1e-6)
+        torch.testing.assert_close(backbone(images), reference, rtol=1e-5, atol=1e-6)
+
+
+def test_solver_evaluates_lora_inside_merged_lora(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = TimmPatchBenchModel(bands(3), model_name="vit_tiny_patch16_224", pretrained=False)
+    config = SegmentationConfig(
+        layers=["blocks.11", "blocks.5"],
+        lora_rank=4,
+        lora_target_modules=VIT_TARGETS,
+        backbone_learning_rate=1e-4,
+    )
+    _probe, solver = build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+    merged: list[nn.Module] = []
+
+    @contextmanager
+    def spy(backbone: nn.Module) -> Iterator[None]:
+        merged.append(backbone)
+        yield
+
+    monkeypatch.setattr("geo_eval_harness.segmentation_task.merged_lora", spy)
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 224, 224), torch.randint(0, 3, (2, 224, 224))),
+        batch_size=2,
+    )
+    solver.evaluate(loader)
+
+    assert merged == [model]

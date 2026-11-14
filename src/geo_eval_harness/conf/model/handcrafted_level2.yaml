@@ -1,0 +1,7 @@
+name: handcrafted_level2
+target: geo_eval_harness.models.HandcraftedBench
+kwargs:
+  level: 2
+input:
+  bands: all
+  normalization: none

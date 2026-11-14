@@ -26,7 +26,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from torchgeo_bench.datasets import get_datasets
+from geo_eval_harness.datasets import get_datasets
 
 logger = logging.getLogger(__name__)
 
