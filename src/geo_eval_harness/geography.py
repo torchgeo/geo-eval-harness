@@ -49,7 +49,7 @@ from .datasets.loading import download_command
 
 logger = logging.getLogger(__name__)
 
-STORE_DIR = Path(__file__).resolve().parents[2] / "docs" / "_static" / "_dataset_geography"
+STORE_DIR = Path(__file__).resolve().parent / "_static" / "_dataset_geography"
 INDEX_NAME = "index.json"
 
 Status = Literal["extracted", "no_geo", "not_downloaded"]
@@ -623,7 +623,7 @@ def build_index(store_dir: Path | None = None) -> dict:
 
 
 def load_geography(name: str, store_dir: Path | None = None) -> GeoRecord:
-    """Load one dataset's record from the committed store.
+    """Load one dataset's record from the packaged store.
 
     Raises:
         FileNotFoundError: If the dataset has no record yet.

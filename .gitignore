@@ -121,7 +121,7 @@ data/
 !**/band_stats.json
 !**/normalizer.json
 !docs/_static/_results_snapshots/*.json
-!docs/_static/_dataset_geography/*.json
+!src/geo_eval_harness/_static/_dataset_geography/*.json
 
 # Logs
 *.log
