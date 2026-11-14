@@ -198,6 +198,20 @@ def test_build_seg_solver_uses_criterion_ignore_index(mock_backbone):
     assert solver.ignore_index == 7
 
 
+@pytest.mark.parametrize("ignore_index", [0, NUM_CLASSES - 1])
+def test_build_seg_solver_rejects_ignore_index_that_is_a_class_id(
+    mock_backbone, ignore_index: int
+) -> None:
+    config = SegmentationConfig(layers=["layer1"], head="linear", ignore_index=ignore_index)
+    with pytest.raises(ValueError, match="ignore_index"):
+        build_seg_probe_and_solver(
+            mock_backbone,
+            num_classes=NUM_CLASSES,
+            config=config,
+            device=torch.device("cpu"),
+        )
+
+
 def test_probe_dry_run_exception_handling():
     """Backbone failures during shape inference must remain visible."""
 
