@@ -24,17 +24,28 @@ class DynamicEarthNet(_V2Dataset):
         BandSpec("planet", "g", "g", mean=929.265, std=805.98, min=17, max=10039),
         BandSpec("planet", "r", "r", mean=1031.28, std=1072.23, min=9, max=10057),
         BandSpec("planet", "nir", "nir", mean=2605.98, std=1182.39, min=14, max=9998),
-        BandSpec("s2", "b01", "B01", mean=1142.08, std=1588.17, min=0, max=15535, wavelength_um=0.443),
-        BandSpec("s2", "b02", "B02", mean=1399.03, std=1516.62, min=1, max=15621, wavelength_um=0.49),
-        BandSpec("s2", "b03", "B03", mean=1429.55, std=1606.99, min=1, max=15541, wavelength_um=0.56),
-        BandSpec("s2", "b04", "B04", mean=2782.08, std=1497.91, min=0, max=15434, wavelength_um=0.665),
+        # The files store B02, B03, B04, B08, B05, B06, B07, B8A, B11, B12, B01, B09, which upstream
+        # labels B01..B12; source names are upstream's labels for those channels.
+        BandSpec("s2", "b02", "B01", mean=1142.08, std=1588.17, min=0, max=15535, wavelength_um=0.49),
+        BandSpec("s2", "b03", "B02", mean=1399.03, std=1516.62, min=1, max=15621, wavelength_um=0.56),
+        BandSpec("s2", "b04", "B03", mean=1429.55, std=1606.99, min=1, max=15541, wavelength_um=0.665),
+        BandSpec("s2", "b08", "B04", mean=2782.08, std=1497.91, min=0, max=15434, wavelength_um=0.842),
         BandSpec("s2", "b05", "B05", mean=1799.14, std=1601.56, min=1, max=16588, wavelength_um=0.705),
         BandSpec("s2", "b06", "B06", mean=2486.87, std=1470.5, min=1, max=16479, wavelength_um=0.74),
         BandSpec("s2", "b07", "B07", mean=2749.07, std=1499.74, min=1, max=16621, wavelength_um=0.783),
-        BandSpec("s2", "b08", "B08", mean=2899.32, std=1506.38, min=1, max=16560, wavelength_um=0.842),
-        BandSpec("s2", "b8a", "B8A", mean=2369.53, std=1487.68, min=1, max=11401, wavelength_um=0.865),
-        BandSpec("s2", "b10", "B10", mean=1732.49, std=1393.75, min=1, max=15547, wavelength_um=1.375),
-        BandSpec("s2", "b11", "B11", mean=1049.82, std=1654.71, min=0, max=15633, wavelength_um=1.61),
-        BandSpec("s2", "b12", "B12", mean=3192, std=2299.15, min=0, max=16726, wavelength_um=2.19),
+        BandSpec("s2", "b8a", "B08", mean=2899.32, std=1506.38, min=1, max=16560, wavelength_um=0.865),
+        BandSpec("s2", "b11", "B8A", mean=2369.53, std=1487.68, min=1, max=11401, wavelength_um=1.61),
+        BandSpec("s2", "b12", "B10", mean=1732.49, std=1393.75, min=1, max=15547, wavelength_um=2.19),
+        BandSpec("s2", "b01", "B11", mean=1049.82, std=1654.71, min=0, max=15633, wavelength_um=0.443),
+        BandSpec("s2", "b09", "B12", mean=3192, std=2299.15, min=0, max=16726, wavelength_um=0.945),
     ]
     # fmt: on
+
+    def build_band_order(self, bands: tuple[str, ...] | None) -> object:
+        """Group the selection by sensor, rejecting selections the upstream loader cannot serve."""
+        if all(spec.sensor != "planet" for spec in self.select_band_specs(bands)):
+            raise ValueError(
+                "dynamic_earthnet needs at least one Planet band (b, g, r, nir); "
+                "the upstream loader cannot return Sentinel-2 bands alone."
+            )
+        return super().build_band_order(bands)

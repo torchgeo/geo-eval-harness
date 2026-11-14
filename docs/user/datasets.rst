@@ -239,7 +239,7 @@ CLI name             #cls   bands notes                                        C
 ``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
 ``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
-``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
+``dynamic_earthnet`` 7      16    Planet + Sentinel-2; needs a Planet band     :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
 ``fotw``             3      4     Fields of the World; unknown (3) ignored     :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
 ``kuro_siwo``        4      3     SAR ``vv`` / ``vh`` + DEM (no RGB triplet)   :class:`~geo_eval_harness.datasets.KuroSiwo`
