@@ -36,7 +36,7 @@ data/                      # Datasets always live here (relative to CWD, untrack
   ├── geobenchv2/          # GeoBench V2
   └── eurosat/             # torchgeo EuroSAT
 docs/                      # Documentation sources, including runnable examples/
-experiments/               # Runnable benchmark studies, their analysis, and the shared GPU runners
+experiments/               # Runnable benchmark studies, their analysis, and the shared GPU runner
 projects/                  # Standalone sub-projects (currently cleanlab)
 results/                   # Benchmark result CSVs
 scripts/                   # Maintenance, dataset preparation, diagnostics, and results generation
@@ -47,7 +47,7 @@ pyproject.toml             # Project config, dependencies, tool settings
 
 ### Where scripts belong
 
-`experiments/` holds runnable benchmark studies and the analysis specific to them, along with the GPU job runners they share (`_runner.py` for the classification studies, `_seg_sweep_common.py` for the segmentation sweeps). A study imports its runner as a plain sibling module (`from _runner import ...`) and is invoked as a file, for example `python experiments/run_main_experiments.py --devices 0 1`.
+`experiments/` holds runnable benchmark studies and the analysis specific to them, along with the GPU job runner they share (`_runner.py`). A study imports its runner as a plain sibling module (`from _runner import ...`) and is invoked as a file, for example `python experiments/run_main_experiments.py --devices 0 1`.
 
 `scripts/` holds everything that maintains the repository rather than producing benchmark numbers: dataset preparation, diagnostics, and results generation. These are standalone entry points run as `python scripts/<name>.py`. One-time result-format migrations live in `scripts/migrations/` so they are not mistaken for tools that are still run regularly.
 
