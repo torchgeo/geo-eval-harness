@@ -121,7 +121,7 @@ html_context = {
     "doc_path": "docs",
 }
 
-html_static_path = ["_static"]
+html_static_path = ["_static", os.path.join(os.path.dirname(geo_eval_harness.__file__), "_static")]
 html_css_files = ["custom.css"]
 
 

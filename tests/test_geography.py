@@ -65,8 +65,7 @@ def test_openearthmap_sar_geography_skips_missing_tags_and_reprojects(
 
 @pytest.fixture(scope="module")
 def store() -> dict[str, GeoRecord]:
-    if not STORE_DIR.is_dir():
-        pytest.skip(f"geography store not generated at {STORE_DIR}")
+    assert STORE_DIR.is_dir()
     return list_geography()
 
 

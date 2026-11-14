@@ -239,14 +239,14 @@ Add the geographic metadata
 ---------------------------
 
 Every registered dataset carries a record in the committed geographic store
-under :file:`docs/_static/_dataset_geography/`, which drives the spatial
-coverage map.  Generate yours:
+under :file:`src/geo_eval_harness/_static/_dataset_geography/`, which drives the spatial
+coverage map. The store is included in the installed package and read by ``geo_eval_harness.geography.load_geography()`` without downloading imagery. Generate yours:
 
 .. code-block:: console
 
    $ uv run python scripts/extract_dataset_geography.py --dataset my_dataset
 
-Commit the resulting :file:`docs/_static/_dataset_geography/my_dataset.json`
+Commit the resulting :file:`src/geo_eval_harness/_static/_dataset_geography/my_dataset.json`
 together with the regenerated :file:`index.json`.
 
 :file:`tests/test_geography.py` fails when a registered dataset has no record,
