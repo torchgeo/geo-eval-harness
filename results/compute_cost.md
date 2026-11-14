@@ -2,6 +2,8 @@
 
 The sweep adds 2,708 validated measurements (1,860 segmentation) to `compute_cost.csv`, preserving all 508 historical rows. Those rows retain their original field values and are labeled `measurement_variant=legacy_unverified`; validation in this report applies to the new identified measurements. It covers all 143 model names with checked-in benchmark results, including all 83 segmentation model names. `compute_cost_coverage.csv` lists every requested model, band selection, image size, and head, including unsupported combinations. `compute_cost_provenance.json` records checksums, hardware, backend versions, source archives, and the measurement window.
 
+Clay v1 Base uses the canonical `tt_clay_v1_base` / `tt_clay_v1_base_cls` result names and `terratorch/clay_v1` / `terratorch/clay_v1_cls` presets. Its saved measurements, configuration hashes, and source fingerprints retain the original run values; the identifier correction is recorded in the provenance JSON. Clay v1.5 is a separate checkpoint.
+
 ## Protocol
 
 Each GPU runs one model at a time on an NVIDIA RTX PRO 6000 Blackwell Server Edition with 96 GB of memory (`g7e.12xlarge`, two GPUs). Measurements use synthetic float32 inputs, batch size 1, five warmup passes, and twenty synchronized timed passes. Throughput excludes dataset reads and host-to-device transfers. The segmentation output has four classes. Classification rows include a ten-class linear probe in FLOPs; their throughput measures the backbone embedding forward. Segmentation rows count and time the complete backbone, neck, and decoder forward at the same resolution. `gflops_head` includes the neck. Parameters describe the architecture; decoder weights are initialized for profiling rather than trained.

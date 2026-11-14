@@ -27,7 +27,7 @@
     "unsupported_bands": 156,
     "unsupported_modality": 24
   },
-  "combined_data_sha256": "05482973d0a00e0a6b671f8690c10b773ffb2ca139c047b5fa0b9186459b7d22",
+  "combined_data_sha256": "aad750f665c8ec5073a521455698806145b259aa9f625227897a10ebc3a06f03",
   "combined_rows": 3216,
   "data_sha256": "da95509a4a277a5a0e11f87c94a8fc79c42aead34331b29bddbfec5f519a1232",
   "flops_convention": "One multiply-add is two operations; registered PyTorch operators only; coverage unverified.",
@@ -67,6 +67,18 @@
     "runtime_only": true
   },
   "postprocessing": {
+    "clay_v1_identifiers": {
+      "changed_compute_rows": 60,
+      "input_combined_sha256": "05482973d0a00e0a6b671f8690c10b773ffb2ca139c047b5fa0b9186459b7d22",
+      "mapping": {
+        "terratorch/clay_v1_5": "terratorch/clay_v1",
+        "terratorch/clay_v1_5_cls": "terratorch/clay_v1_cls",
+        "tt_clay_v1_5_base": "tt_clay_v1_base",
+        "tt_clay_v1_5_base_cls": "tt_clay_v1_base_cls"
+      },
+      "metrics_and_run_hashes_modified": false,
+      "output_combined_sha256": "aad750f665c8ec5073a521455698806145b259aa9f625227897a10ebc3a06f03"
+    },
     "historical_measurement_variant": "legacy_unverified",
     "measured_metrics_modified": false,
     "measurement_variant_column": "labels catalog settings versus AnySat 80 m S2 classification reference",

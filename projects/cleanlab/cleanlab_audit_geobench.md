@@ -29,12 +29,12 @@ Outputs are saved as:
 |---|---|---:|---|---|
 | m-eurosat | tgeo_panopticon | 0.969 | rgb | model_native |
 | m-bigearthnet | tt_terramind_v1_large | 0.751 (mAP) | all | bandspec_zscore |
-| m-brick-kiln | tt_clay_v1_5_base | 0.975 | rgb | minmax |
+| m-brick-kiln | tt_clay_v1_base | 0.975 | rgb | minmax |
 | m-pv4ger | tgeo_panopticon | 0.968 | rgb | bandspec_zscore |
 | m-so2sat | tt_terramind_v1_base | 0.741 | all | bandspec_zscore |
 | m-forestnet | tt_terramind_v1_large | 0.571 | all | minmax_zscore |
 | benv2 | tt_terramind_v1_large | 0.846 (mAP) | all | bandspec_zscore |
-| treesatai | tt_clay_v1_5_base | 0.674 (mAP) | all | bandspec_zscore |
+| treesatai | tt_clay_v1_base | 0.674 (mAP) | all | bandspec_zscore |
 | so2sat (V2) | tt_terramind_v1_base | 0.741 | all | bandspec_zscore |
 | forestnet (V2) | tgeo_dofa_large | 0.566 | all | bandspec_zscore |
 | eurosat-spatial | tgeo_dofa_large | 0.965 | rgb | bandspec_zscore |
