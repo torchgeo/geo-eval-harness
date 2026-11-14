@@ -8,7 +8,7 @@ def _measurement_times(frame: pd.DataFrame) -> pd.Series:
     return pd.to_datetime(values, utc=True, format="mixed", errors="raise")
 
 
-def _latest_hardware_cohort(frame: pd.DataFrame) -> pd.DataFrame:
+def _largest_hardware_cohort(frame: pd.DataFrame) -> pd.DataFrame:
     columns = ["gpu_name", "precision", "timing_batch_size"]
     missing = set(columns) - set(frame.columns)
     if missing:
@@ -16,21 +16,25 @@ def _latest_hardware_cohort(frame: pd.DataFrame) -> pd.DataFrame:
     frame = frame[frame.gpu_name.fillna("").ne("")]
     if frame.empty:
         return frame
-    times = _measurement_times(frame)
-    latest = frame[times.eq(times.max())] if times.notna().any() else frame
-    cohorts = latest[columns].drop_duplicates()
-    if len(cohorts) != 1:
-        raise ValueError("Latest compute measurements have conflicting hardware cohorts")
-    cohort = cohorts.iloc[0]
+    cohorts = (
+        frame.assign(measured=_measurement_times(frame))
+        .groupby(columns, dropna=False)
+        .agg(models=("name", "nunique"), newest=("measured", "max"))
+        .sort_values(["models", "newest"], na_position="first")
+    )
+    if len(cohorts) > 1 and cohorts.iloc[-1].equals(cohorts.iloc[-2]):
+        raise ValueError("Compute measurements have conflicting hardware cohorts")
+    cohort = pd.Series(cohorts.index[-1], index=columns)
     return frame[frame[columns].eq(cohort).all(axis=1)]
 
 
 def classification_compute_reference(raw: pd.DataFrame) -> pd.DataFrame:
     """Select 224-pixel classification measurements from one GPU/precision/batch cohort.
 
-    Identified measurements take precedence over rows without provenance. The newest
-    hardware cohort is used, followed by the latest measurement per model and band choice.
-    Equal-time conflicts remain visible for callers to reject.
+    Identified measurements take precedence over rows without provenance. The hardware
+    cohort covering the most models is used, the newest among equally large cohorts,
+    followed by the latest measurement per model and band choice. Equal-time conflicts
+    remain visible for callers to reject.
     """
     required = {"name", "band_config", "task", "head_type", "image_size"}
     missing = required - set(raw.columns)
@@ -46,7 +50,7 @@ def classification_compute_reference(raw: pd.DataFrame) -> pd.DataFrame:
     if "config_hash" in frame:
         identified = frame.config_hash.fillna("").ne("")
         if identified.any():
-            frame = _latest_hardware_cohort(frame[identified])
+            frame = _largest_hardware_cohort(frame[identified])
     if frame.empty:
         return frame
     times = _measurement_times(frame)
