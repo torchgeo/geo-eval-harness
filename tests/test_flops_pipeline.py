@@ -214,6 +214,26 @@ def test_seg_head_gflops_is_positive_and_deterministic(head_type):
     assert first == second
 
 
+class _BilinearUpsampler(nn.Module):
+    """Stand-in with AnyUp's call signature."""
+
+    def forward(
+        self, guidance: torch.Tensor, features: torch.Tensor, output_size: tuple[int, int]
+    ) -> torch.Tensor:
+        return nn.functional.interpolate(features, size=output_size, mode="bilinear")
+
+
+def test_seg_head_gflops_counts_an_anyup_head(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("geo_eval_harness.models.anyup.load_anyup", _BilinearUpsampler)
+    settings = SegmentationConfig.model_validate(
+        {"layers": _TAP_LAYERS, "head": "upernet", "upsampler": "anyup", "cache_features": False}
+    )
+    probe = _build_seg_probe(_TapModel().eval(), 4, settings).eval()
+
+    assert _seg_head_gflops(probe, 12, 224, CPU) > 0
+    assert probe._anyup.guidance is None
+
+
 def test_finer_taps_make_a_more_expensive_head():
     """Halving feature stride gives the head four times as many pixels at the same class count."""
     coarse = _TapModel(tap_stride=16).eval()
