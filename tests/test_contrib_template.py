@@ -65,6 +65,7 @@ def test_copied_template_default_forward(
     torch.testing.assert_close(model._forward_patch_features(normalized), expected)
     torch.testing.assert_close(model.forward_patch_features(images), expected)
     torch.testing.assert_close(model(images), expected)
+    assert model(images.requires_grad_()).requires_grad
 
 
 @pytest.mark.parametrize(

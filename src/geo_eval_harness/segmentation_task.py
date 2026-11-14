@@ -555,7 +555,7 @@ class SegmentationSolver:
         batches smaller than the head's ``min_train_batch_size`` are skipped. A ``batch_size``
         below that minimum, or an epoch without any usable batch, raises ``ValueError``.
 
-        Keep the full cache on the training device to avoid per-batch transfers and stacking.
+        Caches that fit stay on the training device; host caches transfer one batch at a time.
         Pass a ``GPUTensorCache`` as ``train_cache`` or ``val_cache`` to reuse it across calls.
 
         Args:
@@ -596,7 +596,7 @@ class SegmentationSolver:
 
             desc = f"Epoch {epoch + 1}/{epochs}"
             batches = tqdm(
-                gpu_train.shuffled_batches(batch_size),
+                self._cached_batches(gpu_train, batch_size, shuffle=True),
                 total=num_batches,
                 desc=desc,
                 disable=not verbose,
@@ -645,7 +645,7 @@ class SegmentationSolver:
     ) -> SegMetrics | tuple[SegMetrics, torch.Tensor]:
         """Evaluate segmentation metrics from cached backbone features.
 
-        Transfer the cache once as a :class:`GPUTensorCache` to avoid per-batch copies.
+        Caches that exceed available CUDA memory transfer from CPU one batch at a time.
 
         Args:
             cache: Pre-extracted features (output of
@@ -714,12 +714,27 @@ class SegmentationSolver:
                 )
             yield logits, masks
 
+    def _cached_batches(
+        self, cache: GPUTensorCache, batch_size: int, *, shuffle: bool = False
+    ) -> Iterator[tuple[list[torch.Tensor], torch.Tensor]]:
+        batches = (
+            cache.shuffled_batches(batch_size, shuffle_device=self.device)
+            if shuffle
+            else cache.ordered_batches(batch_size)
+        )
+        dtype = None if self.use_amp else torch.float32
+        for features, masks in batches:
+            yield (
+                [feature.to(self.device, dtype=dtype, non_blocking=True) for feature in features],
+                masks.to(self.device, non_blocking=True),
+            )
+
     def _raw_evaluation_batches(
         self, data: DataLoader | GPUTensorCache, batch_size: int
     ) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
         if isinstance(data, GPUTensorCache):
             input_hw = (data.masks.shape[-2], data.masks.shape[-1])
-            for features, masks in data.ordered_batches(batch_size):
+            for features, masks in self._cached_batches(data, batch_size):
                 check_finite_features(features)
                 with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
                     logits = self.model.head(features, *input_hw)

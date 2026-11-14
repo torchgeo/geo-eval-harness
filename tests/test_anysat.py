@@ -132,7 +132,7 @@ def test_local_repo_loads_from_disk(fake_hub: dict[str, Any], tmp_path: Path) ->
 def test_weights_are_hash_checked(fake_hub: dict[str, Any], tmp_path: Path) -> None:
     path = tmp_path / "AnySat.pth"
     torch.save({"state_dict": {}}, path)
-    with pytest.raises(RuntimeError, match="sha256"):
+    with pytest.raises(ValueError, match="SHA-256"):
         AnySatBenchModel(_S2, weights_path=str(path), normalization="identity")
     AnySatBenchModel(_S2, weights_path=str(path), weights_sha256=None, normalization="identity")
 

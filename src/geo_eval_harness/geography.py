@@ -392,6 +392,26 @@ def extract_geotiffs(paths: list[Path]) -> dict | None:
     }
 
 
+def _extract_infrabench(directory: Path) -> dict:
+    """Read tile-centre coordinates from the Infra-Bench cell manifests."""
+    from .datasets.infrabench_cls import CELL_GLOB
+
+    records = [
+        record
+        for path in sorted(directory.glob(f"{CELL_GLOB}/manifest.json"))
+        for record in json.loads(path.read_text(encoding="utf-8"))["records"]
+    ]
+    lon = np.array([record["lon"] for record in records], dtype=float)
+    lat = np.array([record["lat"] for record in records], dtype=float)
+    valid = np.isfinite(lon) & np.isfinite(lat)
+    return {
+        "lon": lon[valid],
+        "lat": lat[valid],
+        "place": np.full(int(valid.sum()), None, dtype=object),
+        "version": "manifest",
+    }
+
+
 def _natural_earth_countries() -> str:
     """Locate the Natural Earth admin-0 shapefile, downloading if needed."""
     import cartopy.io.shapereader as shpreader
@@ -506,6 +526,9 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
+    elif name == "infrabench-cls":
+        data = _extract_infrabench(directory)
+        reason = "manifests have no lon/lat coordinates"
     elif name == "planteur" and (directory / "metadata.csv").is_file():
         data = _extract_planteur(directory / "metadata.csv")
         reason = "metadata has no lon/lat columns"
