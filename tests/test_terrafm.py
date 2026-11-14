@@ -247,10 +247,22 @@ def test_model_native_converts_linear_power_s1_to_db(vh_unit: str) -> None:
     power = torch.full((1, 2, 224, 224), 0.01)
     if vh_unit == "db":
         power[:, 1] = -20.0
+    original = power.clone()
+    power.requires_grad_()
     out = model._prepare_input(model.normalize_inputs(power))
     mean, std = torch.tensor(TERRAFM_MEAN_S1), torch.tensor(TERRAFM_STD_S1)
     expected = ((-20.0 - (mean - 2 * std)) / (4 * std)).view(1, -1, 1, 1).expand_as(out)
     assert torch.allclose(out, expected, atol=1e-5)
+    torch.testing.assert_close(power, original, rtol=0, atol=0)
+    grad = torch.autograd.grad(out.sum(), power)[0]
+    expected_grad = torch.ones_like(power)
+    for channel, band in enumerate(bands):
+        if band.unit == "linear_power":
+            expected_grad[:, channel] = 10.0 / (
+                original[:, channel] * torch.log(torch.tensor(10.0))
+            )
+    expected_grad /= 4 * std.view(1, -1, 1, 1)
+    torch.testing.assert_close(grad, expected_grad)
 
 
 def test_model_native_dataset_stats_maps_mean_plus_minus_two_std_to_unit_range() -> None:
