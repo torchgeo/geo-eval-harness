@@ -21,6 +21,7 @@ Models
 * TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
 * TerraFM's model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
+* ``torchgeo/resnet50_s2_all_moco`` defaults to all bands and feeds its 13 Sentinel-2 bands by name, zero-filling B10 for L2A datasets and rejecting band selections that lack any other band.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
