@@ -57,8 +57,9 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     state: dict[str, Any] = {"normalizer_inputs": {}, "loads": []}
 
     class _Normalizer:
-        def __init__(self, *, std_multiplier: float) -> None:
+        def __init__(self, *, std_multiplier: float, model_type: str) -> None:
             self.std_multiplier = std_multiplier
+            state["model_type"] = model_type
 
         def normalize(self, modality: str, values: np.ndarray) -> np.ndarray:
             state["normalizer_inputs"][modality] = values.copy()
@@ -138,9 +139,8 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
         before["s2"][..., [0, 2]], np.broadcast_to([2000, 3000], (1, 4, 4, 2, 2))
     )
     np.testing.assert_allclose(before["sar"], np.broadcast_to([10, 20], (1, 4, 4, 2, 2)))
+    assert np.isnan(before["s2"][..., [1, *range(3, 12)]]).all()
     torch.testing.assert_close(sample.sentinel2_l2a[..., 0], torch.full((1, 4, 4, 2), 2.0))
-    torch.testing.assert_close(sample.sentinel2_l2a[..., 10], sample.sentinel2_l2a[..., 0])
-    torch.testing.assert_close(sample.sentinel2_l2a[..., 4], sample.sentinel2_l2a[..., 2])
     assert sample.sentinel2_l2a_mask.shape == (1, 4, 4, 2, 3)
     assert sample.sentinel1_mask.shape == (1, 4, 4, 2, 1)
     assert torch.count_nonzero(sample.sentinel2_l2a_mask) == 0
@@ -192,9 +192,10 @@ def test_sar_dataset_units() -> None:
     assert {b.unit for b in BENV2.bands if b.sensor == "s1"} == {"db"}
 
 
+@requires_olmoearth
 @pytest.mark.parametrize("normalization", ["auto", False])
 def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
-    tiny_olmoearth: dict[str, Any], *, normalization: str | bool
+    weight_free_olmoearth: None, *, normalization: str | bool
 ) -> None:
     bands = [
         BandSpec("landsat", name, name, 80, 20, 0, 255)
@@ -206,9 +207,9 @@ def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     images = torch.tensor([0.0, 40.0, 80.0, 120.0, 160.0, 200.0]).view(1, 6, 1, 1)
     group = model._sensor_groups[0]
     actual = model.normalize_sensor_group(images, group)
-    expected = np.array([0, -0.5, -0.5, 0, 0.5, 1, 1.5, 2, 2, 2, 2])
+    # B8 and B1 copy B3 and B2, B9 copies B6; the thermal bands have no neighbour.
+    expected = np.array([0, -0.5, -0.5, 0, 0.5, 1, 1.5, 2, 1.5, 0, 0])
     np.testing.assert_allclose(actual, expected.reshape(1, 1, 1, 1, 11))
-    assert tiny_olmoearth["normalizer_inputs"] == {}
 
 
 def test_tokens_to_grid_averages_each_location_over_modalities_and_band_sets(
@@ -268,13 +269,13 @@ def test_v1_3_embedding_source(
 
 
 @pytest.mark.parametrize(
-    ("version", "missing_bands", "zeroed"),
-    [("v1_3", None, True), ("v1_3", "impute", False), ("v1", None, False)],
+    ("version", "missing_bands", "model_type"),
+    [("v1_3", None, "v1.1"), ("v1_3", "impute", "v1"), ("v1", None, "v1")],
 )
-def test_missing_bands_are_zeroed_after_pretrained_normalization(
-    tiny_olmoearth: dict[str, Any], version: str, missing_bands: str | None, *, zeroed: bool
+def test_missing_bands_reach_the_upstream_normalizer_as_nan(
+    tiny_olmoearth: dict[str, Any], version: str, missing_bands: str | None, model_type: str
 ) -> None:
-    """Band dropout showed v1.3 dropped bands as 0, not as the normalized zero-padding."""
+    """Upstream's ``Normalizer`` fills NaN channels according to its ``model_type``."""
     model = OlmoEarthBenchModel(
         _rgb_bands(),
         model_size="base" if version == "v1_3" else "nano",
@@ -286,15 +287,44 @@ def test_missing_bands_are_zeroed_after_pretrained_normalization(
     actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), group)
     present = actual[..., [0, 1, 2]]
     np.testing.assert_allclose(present.ravel(), [1.5, 0.5, -0.5])
-    missing = actual[..., group["missing_dst"]]
-    if zeroed:
-        assert group["missing_dst"] == list(range(3, 12))
-        assert not missing.any()
-    else:
-        # B05 and B01 copy red and blue; channels without a source keep the padded value.
-        np.testing.assert_allclose(actual[..., 4], actual[..., 2])
-        np.testing.assert_allclose(actual[..., 10], actual[..., 0])
-        assert missing.all()
+    assert np.isnan(actual[..., 3:]).all()
+    assert tiny_olmoearth["model_type"] == model_type
+
+
+class _WeightFreeEncoder(torch.nn.Module):
+    collapse_and_combine_hwtc = None
+
+
+@pytest.fixture
+def weight_free_olmoearth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the installed package's preprocessing without loading a checkpoint."""
+    import olmoearth_pretrain_minimal
+
+    monkeypatch.setattr(
+        olmoearth_pretrain_minimal,
+        "load_model_from_id",
+        lambda *_args, **_kwargs: SimpleNamespace(encoder=_WeightFreeEncoder()),
+    )
+
+
+@requires_olmoearth
+@pytest.mark.parametrize("version", ["v1", "v1_2"])
+def test_missing_bands_are_filled_as_upstream_does_for_the_version(
+    weight_free_olmoearth: None, version: str
+) -> None:
+    """Upstream copies the nearest present band for v1 and zeroes missing bands for v1.1+."""
+    from olmoearth_pretrain_minimal import Normalizer
+    from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
+
+    model = OlmoEarthBenchModel(
+        _rgb_bands(), model_size="nano", version=version, normalization="identity"
+    )
+    actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), model._sensor_groups[0])
+    padded = np.full((1, 1, 1, 1, 12), np.nan)
+    padded[..., :3] = 1500.0
+    reference = Normalizer(std_multiplier=2.0, model_type=version.replace("_", "."))
+    np.testing.assert_allclose(actual, reference.normalize(Modality.SENTINEL2_L2A, padded))
+    assert actual[..., 3:].any() == (version == "v1")
 
 
 def test_rejects_pooler_embeddings_without_attention_pooler(

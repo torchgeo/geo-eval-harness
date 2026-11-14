@@ -79,17 +79,6 @@ _MODALITY_INFO: dict[str, dict] = {
             "swir_cirrus": None,
             "b10": None,
         },
-        # Match helios' configs.py imputations using the nearest available spectral band.
-        # Pairs are (src, dst) OlmoEarth channel indices.
-        # GeoBench forestnet provides B02/B03/B04/B8A/B11/B12.
-        "imputes": [
-            (7, 3),  # B08 NIR        <- B8A (0.842 -> 0.865)
-            (2, 4),  # B05 RedEdge1   <- B04 red (0.705 -> 0.665)
-            (2, 5),  # B06 RedEdge2   <- B04 red (0.74 -> 0.665)
-            (7, 6),  # B07 RedEdge3   <- B8A (0.783 -> 0.865)
-            (0, 10),  # B01 Coastal   <- B02 blue (0.443 -> 0.49)
-            (7, 11),  # B09 WaterVap  <- B8A (0.945 -> 0.865)
-        ],
     },
     "landsat": {
         "modality_name": "LANDSAT",
@@ -127,16 +116,6 @@ _MODALITY_INFO: dict[str, dict] = {
             "thermal_2": 10,
             "b11": 10,
         },
-        # Match helios' m-forestnet imputations (configs.py and its B8->Green band-name mapping).
-        # Pairs are (src, dst) OlmoEarth LANDSAT indices.
-        # m-forestnet provides B2/B3/B4/B5/B6/B7 (blue/green/red/nir/swir1/swir2).
-        "imputes": [
-            (3, 0),  # B8  Panchromatic <- B3 green (helios band-name map)
-            (2, 1),  # B1  Coastal      <- B2 blue
-            (7, 8),  # B9  Cirrus       <- B7 swir2
-            (7, 9),  # B10 TIRS-1       <- B7 swir2
-            (7, 10),  # B11 TIRS-2      <- B7 swir2 (helios B11->Tirs1->swir2)
-        ],
     },
     # Sentinel-1 uses vv (0) and vh (1): BandSet(["vv", "vh"], 16), is_multitemporal=True.
     # m-so2sat's SAR variants share these slots; the last band per polarization wins.
@@ -163,7 +142,7 @@ _MODALITY_INFO: dict[str, dict] = {
         },
     },
     # NAIP / aerial: no dedicated OlmoEarth modality, route RGB through
-    # the S2 path with non-RGB positions zero-filled.
+    # the S2 path with non-RGB positions missing.
     "aerial": {
         "modality_name": "SENTINEL2_L2A",
         "sample_field": "sentinel2_l2a",
@@ -215,10 +194,9 @@ _VERSION_SIZES: dict[str, frozenset[str]] = {
 # detached low-dim student readout of them.
 _ATTENTION_POOLER_VERSIONS: frozenset[str] = frozenset({"v1_3"})
 
-# Versions that zero missing bands after normalization by default, matching how band
-# dropout presented dropped bands in pretraining. v1.1 and v1.2 also used band dropout
-# but keep neighbour imputation so their published results stay reproducible.
-_ZERO_MISSING_BANDS_VERSIONS: frozenset[str] = frozenset({"v1_3"})
+# Versions pretrained with band dropout, which presented dropped bands as 0 after
+# normalization. v1 was not, so its missing bands copy the nearest present band.
+_ZERO_MISSING_BANDS_VERSIONS: frozenset[str] = frozenset({"v1_1", "v1_2", "v1_3"})
 
 EmbeddingSource = Literal["patch_tokens", "location_tokens", "student"]
 MissingBands = Literal["impute", "zero"]
@@ -255,22 +233,6 @@ def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -
     input_unit: InputUnit | None = (
         None if sensor in _PASSTHROUGH_SENSORS else _detect_band_group_unit(group_bands)
     )
-    # Imputation only borrows bands present in the original input.
-    filled = set(dst_indices)
-    impute_ops: list[tuple[int, int]] = []
-    for src_dst, tgt_dst in info.get("imputes", []):
-        if tgt_dst in filled:
-            continue  # real band present — never overwrite it
-        if src_dst not in filled:
-            logger.warning(
-                "OlmoEarth %s: cannot impute channel %d (source channel %d "
-                "is also missing); leaving it zero-filled.",
-                sensor,
-                tgt_dst,
-                src_dst,
-            )
-            continue
-        impute_ops.append((src_dst, tgt_dst))
     return {
         "sensor": sensor,
         "modality_name": info["modality_name"],
@@ -280,8 +242,6 @@ def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -
         "src_indices": src_indices,
         "dst_indices": dst_indices,
         "input_unit": input_unit,
-        "impute_ops": impute_ops,
-        "missing_dst": [i for i in range(info["channels"]) if i not in filled],
         # Dataset statistics stay in source order; normalization precedes band mapping.
         "src_means": [b.mean for b in group_bands],
         "src_stds": [b.std for b in group_bands],
@@ -347,19 +307,19 @@ class OlmoEarthBenchModel(BenchModel):
     * ``"s2"`` -> ``Modality.SENTINEL2_L2A`` (12 channels, 3 band-sets)
     * ``"landsat"`` -> ``Modality.LANDSAT`` (11 channels, 2 band-sets)
     * ``"sar"`` / ``"s1"`` -> ``Modality.SENTINEL1`` (2 channels, 1 band-set)
-    * ``"aerial"`` / ``"naip"`` -> S2 path with RGB zero-fill
+    * ``"aerial"`` / ``"naip"`` -> S2 path with the other channels missing
 
     Mixed-sensor inputs (e.g. ``["s2", "sar"]``) are handled by
     building separate tensor branches and populating multiple
     ``MaskedOlmoEarthSample`` fields simultaneously.
 
-    Missing channels borrow an available spectral neighbor, matching helios' imputations.
-    Copying after normalization preserves source-band statistics instead of a fabricated value.
-
-    A channel with no available source remains zero-filled.
-    With ``missing_bands="zero"`` every missing channel is instead set to 0 after
-    normalization, the value band dropout used for dropped bands during pretraining.
-    Masks stay all-visible so ``pool_spatially`` can produce embeddings.
+    Missing channels are filled as upstream's ``Normalizer`` fills them for each version.
+    With ``missing_bands="impute"`` a missing band copies the raw value of the present band
+    nearest in wavelength and is normalized with its own statistics; a band without such a
+    neighbour is set to 0 after normalization. Under dataset statistics the copy carries the
+    source band's normalized value. With ``missing_bands="zero"`` every missing channel is
+    set to 0 after normalization, the value band dropout used for dropped bands during
+    pretraining. Masks stay all-visible so ``pool_spatially`` can produce embeddings.
 
     ``normalize_inputs`` is identity; this wrapper normalizes internally per sensor group.
     With ``norm_from_pretrained="auto"``, S2 values are converted to S2 DN.
@@ -434,10 +394,10 @@ class OlmoEarthBenchModel(BenchModel):
             ``None`` (default) selects ``"location_tokens"`` for v1.3, the
             representation AI2's evals probe, and ``"patch_tokens"`` otherwise.
         missing_bands: How channels absent from the input are filled:
-            ``"impute"`` copies a spectral neighbour (helios' v1 recipe);
+            ``"impute"`` copies the nearest present band (upstream's v1 recipe);
             ``"zero"`` sets them to 0 after normalization, as band dropout did
-            in v1.1+ pretraining.  ``None`` (default) selects ``"zero"`` for
-            v1.3 and ``"impute"`` otherwise.
+            in v1.1+ pretraining.  ``None`` (default) selects ``"impute"`` for
+            v1 and ``"zero"`` otherwise.
     """
 
     def __init__(  # noqa: PLR0913 - public YAML options
@@ -516,7 +476,11 @@ class OlmoEarthBenchModel(BenchModel):
         # Preserve segmentation tap paths while retaining only the inference encoder.
         self.encoder_model: Any = torch.nn.Module()
         self.encoder_model.add_module("encoder", cast(torch.nn.Module, pretrained.encoder))
-        self.normalizer = Normalizer(std_multiplier=std_multiplier)
+        # Upstream fills NaN channels: "v1" copies the nearest present band, "v1.1" zeroes them.
+        self.normalizer = Normalizer(
+            std_multiplier=std_multiplier,
+            model_type="v1" if self.missing_bands == "impute" else "v1.1",
+        )
         self._token_layout: list[tuple[int, ...]] = []
         self._record_token_layout()
 
@@ -575,10 +539,12 @@ class OlmoEarthBenchModel(BenchModel):
     ) -> torch.Tensor:
         """Place each input channel at its OlmoEarth modality position.
 
-        Returns ``(B, target_channels, H, W)`` with zeros for missing bands.
+        Returns ``(B, target_channels, H, W)`` with NaN for missing bands.
         """
         B, _, H, W = g_images.shape
-        out = torch.zeros(B, target_channels, H, W, device=g_images.device, dtype=g_images.dtype)
+        out = torch.full(
+            (B, target_channels, H, W), torch.nan, device=g_images.device, dtype=g_images.dtype
+        )
         for local_idx, dst_idx in enumerate(dst_indices):
             out[:, dst_idx] = g_images[:, local_idx]
         return out
@@ -661,13 +627,14 @@ class OlmoEarthBenchModel(BenchModel):
             )
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)
+            missing = np.isnan(g_nhwtc)
+            if self.missing_bands == "impute":
+                from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.data.missing_bands import (
+                    copy_nearest_bands,
+                )
 
-        # Fill after normalization: zeros match band dropout; copies keep source statistics.
-        if self.missing_bands == "zero":
-            g_nhwtc[..., group["missing_dst"]] = 0.0
-        else:
-            for src_dst, tgt_dst in group["impute_ops"]:
-                g_nhwtc[..., tgt_dst] = g_nhwtc[..., src_dst]
+                g_nhwtc, missing = copy_nearest_bands(group["modality"].name, g_nhwtc, missing)
+            g_nhwtc = np.where(missing, 0.0, g_nhwtc)
 
         return g_nhwtc
 
