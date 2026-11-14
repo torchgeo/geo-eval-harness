@@ -315,6 +315,18 @@ class TestKuroSiwoLive:
         )
 
 
+def test_so2sat_sar_names_select_stored_polarizations() -> None:
+    """So2Sat Sentinel-1 files store VH, then VV."""
+    from geobench_v2.datasets import GeoBenchSo2Sat
+
+    bench = get_bench_dataset_class("so2sat")()
+    stored = torch.arange(2.0)[:, None, None]
+    selected = object.__new__(GeoBenchSo2Sat).rearrange_bands(
+        {"s1": stored}, bench.build_band_order(("vh", "vv"))
+    )
+    assert selected["image_s1"].flatten().tolist() == [0, 1]
+
+
 class MockPASTIS:
     """Stand-in for ``geobench_v2.datasets.GeoBenchPASTIS``.
 

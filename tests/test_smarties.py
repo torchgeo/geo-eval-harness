@@ -264,7 +264,7 @@ def _single_sensor_selections() -> list[tuple[str, list[str]]]:
 _DATASET_NORMALIZATION_ONLY = {
     ("flair2", "red,green,blue,nir"),
     ("treesatai", "red,green,blue,nir"),
-    ("so2sat", "vv,vh"),
+    ("so2sat", "vh,vv"),
 }
 
 
