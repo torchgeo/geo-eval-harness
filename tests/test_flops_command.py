@@ -213,6 +213,8 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
                 "fpn",
                 "dpt",
                 "patch_linear",
+                "upernet",
+                "unet",
                 "--seg-band-configs",
                 "s2",
                 "--seg-num-classes",
@@ -242,7 +244,7 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
     assert config.input.band_source == "so2sat"
     assert config.classification.head == "mlp"
     assert config.classification.num_classes == 19
-    assert len(config.segmentation.heads) == 5
+    assert len(config.segmentation.heads) == 7
     assert config.segmentation.num_classes == 6
     assert config.segmentation.probe.layers == ["four", "three", "two", "one"]
     assert config.segmentation.probe.temporal_pool == "max"

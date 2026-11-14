@@ -58,6 +58,21 @@ OlmoEarth
 
 .. autoclass:: OlmoEarthBenchModel
 
+AnySat
+^^^^^^
+
+.. autoclass:: AnySatBenchModel
+
+THOR
+^^^^
+
+.. autoclass:: ThorBenchModel
+
+SMARTIES
+^^^^^^^^
+
+.. autoclass:: SmartiesBench
+
 SAM 3
 ^^^^^
 

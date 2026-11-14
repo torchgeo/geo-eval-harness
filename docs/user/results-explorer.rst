@@ -22,20 +22,14 @@ archived JSON snapshots with
 It covers classification (``knn5`` / ``linear``), segmentation (``seg-<head>``
 rows with their setup columns, reported as mIoU; see
 :ref:`segmentation-setup-columns`), intrinsic dimension, and the cost/throughput
-measurements.  Segmentation rows without setup columns (the legacy
-``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt`` grids) are left
-out of every snapshot, archived ones included.  The segmentation method menus are
+measurements.  New snapshots leave out segmentation rows without setup columns
+(the legacy ``seg-linear`` / ``seg-conv_block`` / ``seg-fpn`` / ``seg-dpt``
+grids); archived snapshots keep them.  The segmentation method menus are
 ``seg-<head>`` split by ``adaptation`` (frozen, LoRA, full fine-tuning).  ``compute_cost.csv`` is a
 wide table that the script melts into the long ``method="profile"`` rows the
 page expects.
 
-The page inlines its data as one compact payload: each distinct row is stored
-once across all snapshots, every column is dictionary-encoded, and the page
-expands it in the browser.  New dated snapshots in
-``docs/_static/_results_snapshots`` use the same packed form; older snapshots
-stay as plain lists of rows.  The script refuses to write a page or snapshot
-over 50 MB, half of GitHub's 100 MB file limit, so a results PR that would
-outgrow it fails its own ``Results explorer`` check.
+The HTML stores repeated rows and column values once, then expands them in the browser. The generator limits the HTML and snapshot files to 50 MB each.
 
 The page is regenerated automatically: whenever a results CSV lands on
 ``main``, the ``Results explorer`` GitHub Actions workflow reruns the script
@@ -46,10 +40,4 @@ instead of requiring it to be committed.
 
 .. note::
 
-   Cost is measured per (model, band config, task, head) at a fixed 224px
-   input and carries no dataset, so the Compute & efficiency figure joins it
-   to accuracy on ``(name, bands)``: a frozen backbone costs the same
-   whichever dataset is probed.  Runs configured with an explicit band list
-   rather than ``rgb`` or ``all`` have no matching measurement and are absent
-   from that figure.  ``compute_cost.csv`` records throughput and memory but
-   no power draw, so the CO2 panel is hidden until energy data returns.
+   The table preserves compute measurements for every image size and segmentation head. The Compute & efficiency figure uses 224-pixel classification inputs and matches their accuracy rows by model and band selection. Identified measurements take precedence over rows without provenance; comparisons use the newest single GPU/precision/batch cohort and its latest measurement per model and band choice. Explicit band lists have no matching measurement. GPU names come from the saved measurements; dollar estimates are disabled when the price table has no matching GPU. ``compute_cost.csv`` records throughput and memory but no power draw, so CO2 estimates require separate energy measurements.

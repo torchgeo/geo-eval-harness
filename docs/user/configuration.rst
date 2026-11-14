@@ -155,6 +155,7 @@ Classification
      knn_k: 5
      knn_device: null
      bootstrap_samples: 200
+     feature_standardize: false
      linear:
        c_log10_start: -6.0
        c_log10_stop: 4.0
@@ -178,6 +179,8 @@ on train plus validation. ``--refit-train-val`` /
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.
+
+``feature_standardize: true`` z-scores every embedding dimension with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before KNN and the linear probe. Results are written under the methods ``knn<k>-std`` and ``linear-std``. Intrinsic-dimension and spectrum measurements use the unscaled embeddings.
 
 Segmentation
 ^^^^^^^^^^^^
@@ -209,6 +212,7 @@ Segmentation
      backbone_learning_rate: null
      full_finetune: false
      feature_standardize: false
+     gradient_checkpointing: false
      sweep_learning_rates: []
      sweep_weight_decays: [0.0]
 
@@ -241,6 +245,8 @@ Segmentation confidence intervals use ``classification.bootstrap_samples``.
 See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
 Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such rows record ``lora_last_blocks``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (``adaptation: full`` in the result row), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with ``adaptation: lora`` (see :ref:`segmentation-setup-columns`).
+
+``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. Unset, it leaves hashes unchanged; set, it is part of ``config_hash``.
 
 .. code-block:: yaml
 
@@ -464,21 +470,25 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-``--band-source`` selects the dataset metadata. ``--band-configs rgb s2``
-selects input stacks: ``s2`` means **all bands from the source**, which is
-twelve Sentinel-2 bands for the default CloudSen12 source.
+``--band-source`` selects the dataset metadata. ``--band-configs rgb all`` selects RGB or all source bands. ``s2`` also selects all source bands, including twelve Sentinel-2 bands for the default CloudSen12 source. Use ``all`` for SAR or other sensor inputs so the CSV labels the selection correctly.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and
 ``--probe-num-classes`` sets the classification output width.
 
-Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``,
-and ``patch_linear``; supplying the flag without values disables
-segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
+Use ``--seg-heads`` with any of ``linear``, ``conv_block``, ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; supplying the flag without values disables segmentation. ``--seg-band-configs`` likewise accepts an empty selection.
 ``--seg-num-classes``, ``--seg-layers``, and ``--temporal-pool`` configure
 segmentation accounting. YAML may include a ``segmentation.probe`` block
 with the image segmentation fields. Omitted probe layers inherit model
 and dataset defaults; explicit ``[]`` clears them.
+
+``segmentation.neck_policy: auto`` (``--seg-neck-policy auto``) inspects the configured feature maps to choose the ViT pyramid neck for one or four equal-resolution transformer maps, or the ``vit_fine`` neck for three equal-resolution maps followed by a finer map. Native feature pyramids retain their spatial scales. An explicit non-default ``probe.neck`` is preserved. The linear segmentation head also accepts the ViT neck.
+
+Segmentation rows count the complete backbone, neck, and decoder forward pass and time that same inference path in float32. ``gflops_head`` includes the neck; ``gflops_total`` includes the backbone, neck, and head. Rows record the actual hooked ``feature_shapes``, ``layers``, ``neck``, GPU name, precision, and timing batch size. ``n_tokens`` is omitted when the model defines patch size in metres instead of pixels. FLOP totals cover registered PyTorch operators, so unregistered operations can make them lower bounds.
+
+Resume identifies the resolved model, settings, hardware, and image size with ``config_hash``. Changing resolution, probe settings, timing, or GPU starts a distinct measurement.
+
+``python experiments/run_compute_cost_sweep.py --image-sizes 224 256 512 --heads linear upernet unet --device cuda:0 --output results/compute_sweep`` runs the current image-model catalog sequentially on one GPU. It uses batch size 1, five warmup passes, twenty timed passes, four output classes, and automatic neck selection. Wrapper resize settings and fixed encoder image grids, including Clay's positional grid, follow the requested image dimensions; the encoder's learned patch stride stays unchanged. Swin models use timm's dynamic window padding (``model.kwargs.dynamic_img_size: true``) to support grids that do not divide their pretrained attention windows. Panopticon uses the nearest multiple of its 14-pixel patch stride (224, 252, and 518 for the default sweep); CSV rows label those actual image sizes. EarthLoc is measured once at its native 320-pixel input because its learned spatial aggregation fixes that grid. TerraFM keeps the pretrained position tensor and uses its forward-time interpolation at the requested image size; wrapper resizing is disabled. Unsupported image grids remain missing cells with their errors in the logs. AnySat and UniverSat use their native sensor GSD, so increasing image size increases ground extent instead of inheriting dataset overrides that assume a fixed-tile resize. ``manifest.json`` lists the requested cells and benchmark names without matching configurations. ``coverage.json`` records measured and missing cells for every attempted model/band/size job. Models without declared spatial taps receive classification measurements only. A failed decoder does not prevent attempts for the other decoders.
 
 ``--timing-batch-size``, ``--n-warmup``, and ``--n-measure`` control timing;
 FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_cost.csv``, ``--output`` selects an exact CSV path, and ``--no-resume`` disables the default per-cell resume behavior.

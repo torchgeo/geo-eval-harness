@@ -259,7 +259,7 @@ def test_pack_rows_round_trips_duplicates_absent_keys_and_number_types() -> None
     assert packed["snapshots"] == [["new", [0, 3, 0, 1]], ["old", [0, 1, 3, 1]]]
 
 
-def test_archived_legacy_segmentation_rows_are_left_out(
+def test_archived_segmentation_rows_are_preserved(
     explorer_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     archived = [
@@ -275,10 +275,9 @@ def test_archived_legacy_segmentation_rows_are_left_out(
 
     text = explorer.HTML_PATH.read_text()
     rows = explorer.unpack_rows(_constant(text, "DATA_PACKED"))
-    assert not any(explorer.is_legacy_segmentation_row(r) for r in rows)
     old = [r.get("name") for r in rows if r["snapshot"] == "2020-01-01"]
-    assert old == ["old", "setup", None]
-    assert {"label": "2020-01-01", "rows": 3} in _constant(text, "SNAPSHOTS")
+    assert old == ["old", "legacy", "setup", None]
+    assert {"label": "2020-01-01", "rows": 4} in _constant(text, "SNAPSHOTS")
 
 
 def test_size_guard_refuses_to_write_an_oversized_page(
@@ -320,5 +319,51 @@ def test_page_unpack_rows_matches_python(tmp_path: Path) -> None:
         match.group()
         + f"\nprocess.stdout.write(JSON.stringify(unpackRows({json.dumps(packed)})));\n"
     )
-    out = subprocess.run([node, str(script)], capture_output=True, text=True, check=True)
+    out = subprocess.run(
+        [node, str(script)], capture_output=True, text=True, encoding="utf-8", check=True
+    )
     assert json.loads(out.stdout) == explorer.unpack_rows(packed)
+
+
+def test_efficiency_reference_preserves_other_sizes_and_heads_in_the_table(
+    explorer_root: Path,
+) -> None:
+    shared = {
+        "model": "example.Model",
+        "name": "model",
+        "band_config": "rgb",
+        "n_channels": 3,
+        "image_size": 224,
+        "feature_dim": 32,
+        "task": "classification",
+        "head_type": "",
+        "gflops_backbone": 10,
+        "throughput_samples_per_sec": 50,
+        "config_hash": "measured",
+        "gpu_name": "RTX",
+        "precision": "float32",
+        "timing_batch_size": 1,
+        "measured_at": "2026-11-12T12:00:00Z",
+    }
+    _write_csv(
+        explorer.COMPUTE_COST_CSV,
+        [
+            shared,
+            {
+                **shared,
+                "image_size": 512,
+                "gpu_name": "H100",
+                "measured_at": "2026-11-13T12:00:00Z",
+            },
+            {**shared, "task": "segmentation", "head_type": "unet", "gflops_backbone": 100},
+        ],
+    )
+    profiles = [row for row in explorer._load_csv_rows("test") if row["method"] == "profile"]
+    assert {row["image_size"] for row in profiles} == {224, 512}
+    assert {row["head_type"] for row in profiles} == {None, "unet"}
+    selected = [row for row in profiles if row["efficiency_reference"]]
+    assert len(selected) == 2
+    assert all(row["image_size"] == 224 and row["task"] == "classification" for row in selected)
+    assert all(
+        row["gpu_name"] == "RTX" and row["profile_precision"] == "float32" for row in selected
+    )

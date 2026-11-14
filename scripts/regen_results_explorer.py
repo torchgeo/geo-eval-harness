@@ -19,6 +19,9 @@ import re
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
+from geo_eval_harness.compute_cost import classification_compute_reference
 from geo_eval_harness.results import SETUP_COLS, format_setup_value, load_results
 
 logger = logging.getLogger(__name__)
@@ -56,9 +59,7 @@ COMPUTE_COST_METRICS = (
     "reserved_gpu_mem_gb",
     "n_tokens",
 )
-# The results CSVs call the multispectral run "all"; compute_cost measures it as
-# the 12-band S2 stack.  Pair them so the efficiency join lands -- n_channels
-# rides along on the row so a dataset whose "all" is not 12 bands stays visible.
+# The s2 band selection denotes all source bands; result rows use all.
 BAND_CONFIG_ALIASES = {"s2": "all"}
 
 # Cloud pricing and grid carbon intensity: page-owned reference data that lives
@@ -105,6 +106,13 @@ COLUMNS = [
     "task",
     "head_type",
     "n_channels",
+    "gpu_name",
+    "profile_precision",
+    "timing_batch_size",
+    "config_hash",
+    "source_hash",
+    "measured_at",
+    "efficiency_reference",
     *SETUP_COLS,
     "best_val_epoch",
     "best_val_miou",
@@ -132,24 +140,27 @@ NUMERIC = {
     "recall",
     "f1",
     "n_channels",
+    "timing_batch_size",
     "best_val_epoch",
     "best_val_miou",
 }
-BOOL = {"merge_val"}
+BOOL = {"merge_val", "efficiency_reference"}
 
 
 def _iter_compute_cost_rows():
     """Melt ``results/compute_cost.csv`` into long ``method="profile"`` rows.
 
-    Cost is measured per (model, band config, task, head) at a fixed 224px
-    input -- it carries no ``dataset``, because a frozen backbone costs the
-    same whichever dataset is probed.  The explorer joins these to accuracy on
-    (name, bands) for that reason.
+    Preserve every measured image size and head in the table. Mark the comparable
+    224-pixel classification cohort for the efficiency figure's accuracy joins.
     """
     if not COMPUTE_COST_CSV.exists():
         return
     with COMPUTE_COST_CSV.open() as fh:
-        for r in csv.DictReader(fh):
+        records = list(csv.DictReader(fh))
+        if not records:
+            return
+        selected = set(classification_compute_reference(pd.DataFrame(records)).index)
+        for index, r in enumerate(records):
             bands = BAND_CONFIG_ALIASES.get(r["band_config"], r["band_config"])
             for metric in COMPUTE_COST_METRICS:
                 if not r.get(metric):
@@ -167,6 +178,13 @@ def _iter_compute_cost_rows():
                     "feature_dim": r["feature_dim"],
                     "task": r["task"],
                     "head_type": r["head_type"],
+                    "gpu_name": r.get("gpu_name"),
+                    "profile_precision": r.get("precision"),
+                    "timing_batch_size": r.get("timing_batch_size"),
+                    "config_hash": r.get("config_hash"),
+                    "source_hash": r.get("source_hash"),
+                    "measured_at": r.get("measured_at"),
+                    "efficiency_reference": index in selected,
                 }
 
 
@@ -181,13 +199,6 @@ def _iter_result_rows():
 def is_segmentation_row(row: dict) -> bool:
     """Return whether a row is a segmentation measurement with setup columns."""
     return str(row.get("method") or "").startswith(SEG_METHOD_PREFIX) and bool(
-        row.get("adaptation")
-    )
-
-
-def is_legacy_segmentation_row(row: dict) -> bool:
-    """Return whether a row is a ``seg-*`` measurement without setup columns."""
-    return str(row.get("method") or "").startswith(SEG_METHOD_PREFIX) and not bool(
         row.get("adaptation")
     )
 
@@ -381,27 +392,17 @@ def main() -> None:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     today_rows = _load_csv_rows(args.label)
     snapshot_path = SNAPSHOT_DIR / f"{args.label}.json"
-    snapshot_text = _dumps_compact(pack_rows({args.label: today_rows}))
+    snapshot_text = _dumps_compact(today_rows)
     _check_size(snapshot_path, snapshot_text)
     snapshot_path.write_text(snapshot_text)
 
     snapshots: dict[str, list[dict]] = {}
-    n_legacy_seg = 0
     for path in sorted(SNAPSHOT_DIR.glob("*.json")):
         label = path.stem
-        rows = []
-        for r in _read_snapshot(path):
-            # Archived snapshots predate the setup columns; their legacy
-            # seg-linear/conv_block/fpn/dpt grids are retired from display.
-            if is_legacy_segmentation_row(r):
-                n_legacy_seg += 1
-                continue
-            # The filename defines the snapshot, even if rows contain an old label.
-            r["snapshot"] = label
-            rows.append(r)
+        rows = _read_snapshot(path)
+        for row in rows:
+            row["snapshot"] = label
         snapshots[label] = rows
-    if n_legacy_seg:
-        logger.info("Left out %d legacy segmentation rows without setup columns", n_legacy_seg)
 
     ordered_labels = sorted(snapshots, key=_snapshot_label_sort_key, reverse=True)
     latest_label = ordered_labels[0]

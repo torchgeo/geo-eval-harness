@@ -6,3 +6,38 @@ kwargs:
   output_grid: null
   input_res: null
   normalize: false
+# input_res is the GSD of the pixels the model sees: images are resized to 224 px first, so it is
+# native GSD x native tile size / 224 (the UniverSat authors' guidance on #549); every sensor of a
+# multi-sensor input shares it. These values assume the default image_size of 224. Patch sizes
+# follow UniverSat's GeoBench classification recipes in metres (S2 10 m, Landsat 30 m, VHR 4-8 m;
+# https://github.com/gastruc/UniverSat/tree/d4e8712/configs/dataset/geobench_dataset), as pixel
+# counts that divide 224, kept to 4-16 px (56x56 to 14x14 tokens): BigEarthNet (21 m) and ForestNet
+# (89 m) stay coarser than the recipe. AID (0.5-8 m) and RESISC45 (0.2-30 m) mix resolutions; both
+# assume 1 m.
+dataset_overrides:
+  eurosat:  # S2 10 m, 64 px
+    kwargs: {input_res: 2.8571, patch_px: 4}
+  eurosat-spatial:
+    kwargs: {input_res: 2.8571, patch_px: 4}
+  m-eurosat:
+    kwargs: {input_res: 2.8571, patch_px: 4}
+  m-bigearthnet:  # S2 10 m, 120 px
+    kwargs: {input_res: 5.3571, patch_px: 4}
+  benv2:  # S1 + S2 10 m, 120 px
+    kwargs: {input_res: 5.3571, patch_px: 4}
+  so2sat:  # S1 + S2 10 m, 32 px
+    kwargs: {input_res: 1.4286, patch_px: 7}
+  m-so2sat:
+    kwargs: {input_res: 1.4286, patch_px: 7}
+  forestnet:  # Landsat-8 15 m, 332 px
+    kwargs: {modality: l8forestnet, input_res: 22.2321, patch_px: 4}
+  m-forestnet:
+    kwargs: {modality: l8forestnet, input_res: 22.2321, patch_px: 4}
+  treesatai:  # aerial 0.2 m, 304 px (S1/S2 cover the same 60 m)
+    kwargs: {input_res: 0.2714, patch_px: 16}
+  ucmerced:  # aerial 0.3048 m, 256 px
+    kwargs: {input_res: 0.3483, patch_px: 16}
+  aid:  # aerial ~1 m, 600 px
+    kwargs: {input_res: 2.6786, patch_px: 4}
+  resisc45:  # aerial ~1 m, 256 px
+    kwargs: {input_res: 1.1429, patch_px: 4}

@@ -185,30 +185,6 @@ changed.
 ``scripts/migrations/migrate_setup_columns.py`` rewrites CSVs with the current header and
 empty cells for the new columns.
 
-To use the published segmentation results, load them with ``load_results`` (it applies the
-de-duplication above), keep rows with an ``adaptation``, pick a setup, and average the seeds:
-
-.. code-block:: python
-
-   import pandas as pd
-
-   from geo_eval_harness.results import load_results
-
-   df = load_results("results/models")
-   seg = df[df["method"].str.startswith("seg-") & df["adaptation"].notna()]
-   # One setup: frozen backbone, UPerNet, 20 epochs, head LR 1e-3.
-   frozen = seg[
-       (seg["adaptation"] == "frozen")
-       & (seg["decoder"] == "upernet")
-       & (pd.to_numeric(seg["epochs"]) == 20)
-       & (pd.to_numeric(seg["head_lr"]) == 1e-3)
-   ]
-   keys = ["name", "dataset", "neck", "upsampler", "bands", "partition"]
-   table = frozen.groupby(keys)["metric_value"].agg(["mean", "std", "count"])
-
-``count`` is the number of seeds. The leaderboard's canonical setup per dataset is
-``SEG_PROTOCOL`` in ``scripts/regen_leaderboard.py``; other setups are variants.
-
 .. _segmentation-epoch-metrics:
 
 Per-epoch segmentation metrics
