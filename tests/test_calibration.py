@@ -160,6 +160,23 @@ def test_temperature_underconfident_singlelabel():
     assert t < 1.0
 
 
+@pytest.mark.parametrize("scale", [0.03, 0.2, 50.0])
+def test_temperature_minimizes_negative_log_likelihood(scale: float) -> None:
+    rng = np.random.default_rng(0)
+    base = rng.standard_normal((3000, 10))
+    targets = torch.from_numpy((base + rng.standard_normal(base.shape)).argmax(axis=1))
+    logits = torch.from_numpy(base * scale)
+
+    def nll(log_t: float) -> float:
+        return torch.nn.functional.cross_entropy(logits / np.exp(log_t), targets).item()
+
+    grid = np.linspace(-8.0, 8.0, 3201)
+    reference = grid[np.argmin([nll(log_t) for log_t in grid])]
+    fitted = np.log(fit_temperature(logits.numpy(), targets.numpy(), multi_label=False))
+    assert fitted == pytest.approx(reference, abs=0.01)
+    assert nll(fitted) <= nll(0.0)
+
+
 def test_temperature_scaling_reduces_ece():
     """Fit and evaluate temperature on the same split for this calibration check."""
     rng = np.random.default_rng(0)
