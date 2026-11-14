@@ -392,7 +392,7 @@ def main() -> None:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     today_rows = _load_csv_rows(args.label)
     snapshot_path = SNAPSHOT_DIR / f"{args.label}.json"
-    snapshot_text = _dumps_compact(today_rows)
+    snapshot_text = _dumps_compact(pack_rows({args.label: today_rows}))
     _check_size(snapshot_path, snapshot_text)
     snapshot_path.write_text(snapshot_text)
 

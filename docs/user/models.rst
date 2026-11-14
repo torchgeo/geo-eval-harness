@@ -51,7 +51,9 @@ For PyTorch builds that dispatch eager attention through Triton, the fleet image
 Clay v1 Base
 ^^^^^^^^^^^^
 
-``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` use the 92.1M-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy``, with mean-patch and CLS-token pooling respectively.
+``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` load TerraTorch's ``timm_clay_v1_base`` backbone, the 92,102,144-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy`` (``v1/clay-v1-base.ckpt``). Mean-patch and CLS-token pooling use the same weights. The Clay v1.5 checkpoint is a separate, larger encoder.
+
+Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching. Use ``python scripts/migrations/migrate_clay_v1.py`` to relabel a separate results checkout.
 
 Clay v1.5 Large
 ^^^^^^^^^^^^^^^
