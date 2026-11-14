@@ -50,6 +50,7 @@ Datasets
 * GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
+* So2Sat maps its stored Sentinel-1 channels in VH, VV order.
 * CaFFe and ``bright-post-sar-rgb`` expose grayscale SAR as three identical RGB channels for RGB model inputs.
 * AID, NWPU-RESISC45, and UC Merced provide RGB scene classification with fixed splits and training-split statistics.
 * PLANTEUR provides crop-type segmentation with monthly Sentinel-1/2 inputs and five leave-one-island-out folds.

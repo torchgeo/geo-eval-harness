@@ -52,7 +52,7 @@ class So2Sat(_V2Dataset):
         BandSpec("s2", "b8a", "B8A", mean=0.2073, std=0.094, min=0.0001, max=2.8001, wavelength_um=0.865),
         BandSpec("s2", "b11", "B11", mean=0.1768, std=0.1024, min=0.0001, max=2.8, wavelength_um=1.61),
         BandSpec("s2", "b12", "B12", mean=0.1285, std=0.0923, min=0.0001, max=2.8, wavelength_um=2.19),
-        BandSpec("s1", "vv", "VV", mean=0, std=0.2156, min=-107.636, max=45.3088),
-        BandSpec("s1", "vh", "VH", mean=0, std=0.5442, min=-107.636, max=108.199),
+        BandSpec("s1", "vh", "VV", mean=0, std=0.2156, min=-107.636, max=45.3088),
+        BandSpec("s1", "vv", "VH", mean=0, std=0.5442, min=-107.636, max=108.199),
     ]
     # fmt: on
