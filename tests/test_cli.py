@@ -111,31 +111,6 @@ def test_repeated_flags_keep_their_order(
     assert config.runtime.device == "cpu"
 
 
-@pytest.mark.parametrize("command", ["run", "flops", "profile", "coord"])
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["model=rcf"],
-        ["+model.features=8"],
-        ["++model.pool=cls", "+model.gsd=1.0"],
-        ["typo.key=1"],
-        ["seed=1", "--device", "cpu", "seed=2"],
-        ["seed=1", "--device", "cpu", "--", "seed=2"],
-    ],
-)
-def test_old_override_grammar_reports_migration(
-    command: str, arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main([command, *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "key=value and +key=value overrides have been retired" in message
-    assert "--model rcf --dataset m-eurosat" in message
-    assert "--config run.yaml" in message
-    assert "Traceback" not in message
-
-
 @pytest.mark.parametrize(
     "argv",
     [

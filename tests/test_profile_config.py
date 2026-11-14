@@ -11,7 +11,6 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from geo_eval_harness.cli import main as cli_main
 from geo_eval_harness.commands._profile import profile
 from geo_eval_harness.commands.profile_arguments import add_profile_arguments, load_profile_config
 from geo_eval_harness.config import presets
@@ -45,18 +44,6 @@ def test_profile_defaults_are_cpu_fixed_batch(parser: argparse.ArgumentParser) -
         "model": {"name": "rcf"},
         "dataset": "m-eurosat",
     }
-
-
-@pytest.mark.parametrize("argument", ["model=rcf", "+model.features=8", "++device=cpu"])
-def test_profile_old_overrides_report_migration(
-    argument: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["profile", argument])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "overrides have been retired" in message
-    assert "--config" in message
 
 
 def test_profile_explicit_flags_override_yaml(

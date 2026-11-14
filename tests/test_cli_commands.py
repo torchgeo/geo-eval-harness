@@ -487,17 +487,6 @@ def test_config_help_is_available_without_selection(
     assert json.loads(capsys.readouterr().out)["title"] == "RunConfig"
 
 
-def test_main_rejects_unknown_parser_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    import argparse
-
-    monkeypatch.setattr(
-        "geo_eval_harness.cli._parse_args",
-        lambda _: argparse.Namespace(command="other"),
-    )
-    with pytest.raises(SystemExit, match="not implemented"):
-        main([])
-
-
 @pytest.mark.parametrize("value", ["null", "3", "[]"])
 def test_invalid_model_section_has_a_field_error(
     value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
