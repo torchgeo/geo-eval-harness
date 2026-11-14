@@ -64,6 +64,7 @@ Datasets
 * Dynamic EarthNet maps its stored Sentinel-2 channels in B02, B03, B04, B08, B05, B06, B07, B8A, B11, B12, B01, B09 order. Selections need at least one Planet band.
 * PLANTEUR provides crop-type segmentation with monthly Sentinel-1/2 inputs and five leave-one-island-out folds.
 * SpaceNet2 and SpaceNet7 use binary building masks. BENV2 maps its stored Sentinel-1 channels in VH, VV order.
+* Burn Scars has two classes, background and burn scar; no-data pixels are ignored in loss and metrics.
 * TreeSatAI maps its stored aerial channels in NIR, green, blue, red order, so ``bands: rgb`` selects the stored red, green, and blue channels.
 * Classification datasets declare class names in label-index order.
 * Band-statistics tools support excluding ignored segmentation pixels; geography extraction and coverage checks include the registered datasets.

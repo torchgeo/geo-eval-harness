@@ -179,14 +179,17 @@ def test_sample_cache_does_not_change_the_config_hash() -> None:
 
 
 @pytest.mark.parametrize("mode", ["none", "host", "disk"])
-def test_run_wraps_every_segmentation_split_in_the_sample_cache(tmp_path, mode: str) -> None:
+def test_run_wraps_every_segmentation_split_in_the_sample_cache(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
     from geo_eval_harness.config.run import RunConfig
+    from geo_eval_harness.datasets.caffe import CaFFe
     from geo_eval_harness.main import LoaderSplits, _cache_segmentation_loaders
 
     config = RunConfig.model_validate(
         {
             "model": {"name": "rcf"},
-            "datasets": ["m-eurosat"],
+            "datasets": ["caffe"],
             "runtime": {
                 "device": "cpu",
                 "workers": 0,
@@ -199,13 +202,20 @@ def test_run_wraps_every_segmentation_split_in_the_sample_cache(tmp_path, mode: 
         *(DataLoader(ToySegmentation(n), batch_size=4, num_workers=0) for n in (9, 5, 6))
     )
 
-    cached = _cache_segmentation_loaders(config, "toy", loaders)
+    cached = _cache_segmentation_loaders(config, "caffe", loaders)
 
     for split in ("train", "val", "test"):
         loader, served = getattr(loaders, split), getattr(cached, split)
         assert (served is loader) == (mode == "none")
         assert [b["image"].tolist() for b in served] == [b["image"].tolist() for b in loader]
     assert any(tmp_path.iterdir()) == (mode == "disk")
+
+    monkeypatch.setattr(CaFFe, "num_classes", 5)
+    for loader in (loaders.train, loaders.val, loaders.test):
+        loader.dataset.masks[1] = 4
+    refreshed = _cache_segmentation_loaders(config, "caffe", loaders)
+    for loader in (refreshed.train, refreshed.val, refreshed.test):
+        assert torch.all(next(iter(loader))["mask"][1] == 4)
 
 
 def test_lock_left_by_an_exited_build_is_removed(tmp_path) -> None:
