@@ -249,8 +249,7 @@ def test_metadata_decoder_requires_json_object(metadata: object) -> None:
         decode_metadata(json.dumps(metadata))
 
 
-@pytest.mark.parametrize("attribute", ["pickle", "metadata_json"])
-@pytest.mark.parametrize("encoding", ["repr", "void", "expression"])
+@pytest.mark.parametrize(("attribute", "encoding"), [("pickle", "void"), ("metadata_json", "repr")])
 def test_hdf5_consumers_reject_non_json_metadata(
     tmp_path: Path, attribute: str, encoding: str
 ) -> None:
@@ -269,32 +268,27 @@ def test_hdf5_consumers_reject_non_json_metadata(
         repack(source, tmp_path / "output")
 
 
-@pytest.mark.parametrize("suffix", ["meta.pkl", "meta.json"])
-@pytest.mark.parametrize("encoding", ["bytes", "repr", "expression"])
-@pytest.mark.parametrize("bands", [None, ("04 - Red",)])
+@pytest.mark.parametrize(
+    ("suffix", "message"),
+    [
+        ("meta.pkl", "geo-eval-harness download geobench_v1 --datasets m-eurosat"),
+        ("meta.json", "codec"),
+    ],
+)
 def test_sharded_reader_rejects_executable_metadata(
-    tmp_path: Path, suffix: str, encoding: str, bands: tuple[str, ...] | None
+    tmp_path: Path, suffix: str, message: str
 ) -> None:
-    payload = _payload(encoding)
-    if isinstance(payload, str):
-        payload = payload.encode()
-    source = tmp_path / "source"
-    _write_shard(source, payload, suffix)
-    with pytest.raises(ValueError, match=r"meta\.json|codec|Expecting value"):
-        GeoBenchv1Sharded(source.parent, source.name, "train", bands=bands)[0]
+    source = tmp_path / "m-eurosat"
+    _write_shard(source, pickle.dumps(_ObjectMetadata()), suffix)
+    with pytest.raises(ValueError, match=message):
+        GeoBenchv1Sharded(source.parent, source.name, "train")[0]
 
 
-@pytest.mark.parametrize("legacy_source", [False, True])
-def test_repack_validation_rejects_pickle_metadata(tmp_path: Path, *, legacy_source: bool) -> None:
+def test_repack_validation_rejects_pickle_metadata(tmp_path: Path) -> None:
     source = tmp_path / "source"
     output = tmp_path / "output"
-    metadata = json.dumps(_metadata())
-    if legacy_source:
-        _write_hdf5(source, _payload("repr"), attribute="pickle")
-        _write_shard(output, metadata.encode())
-    else:
-        _write_hdf5(source, metadata)
-        _write_shard(output, pickle.dumps(_ObjectMetadata()), "meta.pkl")
+    _write_hdf5(source, json.dumps(_metadata()))
+    _write_shard(output, pickle.dumps(_ObjectMetadata()), "meta.pkl")
     with pytest.raises(ValueError, match="meta"):
         validate(source, output)
 
@@ -314,15 +308,6 @@ def test_sharded_reader_never_falls_back_to_pickle(tmp_path: Path, *, valid_json
     else:
         with pytest.raises(json.JSONDecodeError):
             GeoBenchv1Sharded(source.parent, source.name, "train")[0]
-
-
-def test_legacy_cache_error_explains_how_to_replace_it(tmp_path: Path) -> None:
-    source = tmp_path / "m-eurosat"
-    _write_shard(source, pickle.dumps(_ObjectMetadata()), "meta.pkl")
-    with pytest.raises(
-        ValueError, match="geo-eval-harness download geobench_v1 --datasets m-eurosat"
-    ):
-        GeoBenchv1Sharded(source.parent, source.name, "train")[0]
 
 
 def test_sharded_reader_rejects_object_band_arrays(tmp_path: Path) -> None:

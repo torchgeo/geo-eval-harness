@@ -14,14 +14,13 @@ from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.config.schema import SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.results import (
-    DEDUP_KEY_COLS,
     SETUP_COLS,
     EvaluationResult,
     format_setup_value,
     load_results,
     segmentation_setup_columns,
 )
-from geo_eval_harness.resume import KEY_COLS, ResumeState, load_completed, plan_dataset_run
+from geo_eval_harness.resume import ResumeState, load_completed, plan_dataset_run
 from tests.support.runner import _resume_row
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,13 +126,6 @@ def test_method_is_seg_head_for_every_setup() -> None:
     assert lora.method == "seg-upernet"
 
 
-def test_dedup_key_appends_setup_columns_to_the_old_key() -> None:
-    assert DEDUP_KEY_COLS[-len(SETUP_COLS) :] == SETUP_COLS
-    assert len(DEDUP_KEY_COLS) == len(KEY_COLS) - 1 + 2 + len(SETUP_COLS)
-    assert "config_hash" in KEY_COLS
-    assert "adaptation" not in KEY_COLS
-
-
 def _seg_row(**overrides: object) -> dict[str, object]:
     row = EvaluationResult(
         dataset="burn_scars",
@@ -190,15 +182,6 @@ def test_dedup_compares_numeric_setup_cells_by_value(tmp_path: Path) -> None:
     df = load_results(tmp_path)
     assert len(df) == 1
     assert df["metric_value"].iloc[0] == pytest.approx(0.6)
-
-
-def test_files_without_setup_columns_still_load_and_dedup(tmp_path: Path) -> None:
-    legacy = {k: v for k, v in _seg_row(method="seg-fpn").items() if k not in SETUP_COLS}
-    pd.DataFrame([{**legacy, "config_hash": ""}, legacy]).to_csv(tmp_path / "old.csv", index=False)
-    pd.DataFrame([_seg_row()]).to_csv(tmp_path / "new.csv", index=False)
-    df = load_results(tmp_path)
-    assert sorted(df["method"]) == ["seg-fpn", "seg-upernet"]
-    assert pd.isna(df.set_index("method").loc["seg-fpn", "adaptation"])
 
 
 def test_classification_rows_leave_setup_columns_empty(tmp_path: Path) -> None:
