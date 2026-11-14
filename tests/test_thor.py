@@ -12,8 +12,10 @@ import pytest
 import torch
 
 from geo_eval_harness.config.catalog import list_model_configs
-from geo_eval_harness.config.presets import load_model_preset
+from geo_eval_harness.config.presets import build_model, load_model_preset, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import ThorBenchModel, thor
 from geo_eval_harness.models._thor_encoder import alibi_slopes
@@ -91,6 +93,32 @@ def test_ground_cover_rounds_to_whole_patches_of_every_group(
     assert model.ground_cover(64) == cover
     with torch.no_grad():
         assert model(torch.randn(2, len(names), 64, 64)).shape == (2, width)
+
+
+@pytest.mark.parametrize("image_size", [224, None])
+def test_presets_keep_the_native_ground_extent_of_resized_tiles(
+    image_size: int | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(THOR_VARIANTS, "base", TINY)
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "thor/base", "kwargs": {"pretrained": False}},
+            "datasets": ["eurosat"],
+            "input": {"bands": "all", "image_size": image_size},
+        }
+    )
+    _, preset = resolve_run_config(config, "eurosat")
+    bands = get_bench_dataset_class("eurosat").resolve_band_specs("all")
+    model = build_model(preset, bands=bands)
+    side = image_size or 64
+    groups = model._group_inputs(torch.randn(1, len(bands), side, side))
+    assert model.ground_cover(side) == 640
+    assert [next(iter(group.bands.values())).shape[-1] for group in groups] == [64, 32]
+
+
+def test_resized_tiles_need_a_declared_native_size() -> None:
+    with pytest.raises(ValueError, match="native_size"):
+        _model(_bands(["b02"]), image_size=224)
 
 
 def test_mean_merge_keeps_the_token_width() -> None:

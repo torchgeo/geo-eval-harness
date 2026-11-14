@@ -159,14 +159,20 @@ class ThorBenchModel(BenchModel):
         bands: Ordered ``BandSpec`` list describing the input channels.
         variant: ``tiny``, ``small``, ``base`` or ``large``.
         patch_size: Patch size in pixels, applied to every group at its own GSD.
-        input_gsd: GSD (m/px) of the pixels the wrapper receives.
+        input_gsd: GSD (m/px) of the tiles at their native size.
+        native_size: Native tile side in pixels. A run that resizes inputs needs it, so that the
+            ground extent stays ``native_size * input_gsd``; ``None`` takes the received side.
         merge: ``concat`` or ``mean`` over band groups.
         ignore_bands: Canonical band names to drop, e.g. ``cirrus`` (S2 B10 is not in THOR).
         max_tokens: Largest token count accepted; raise ``patch_size`` for larger tiles.
         pretrained: Load the pinned weights.
         weights_path: Local checkpoint to load instead of downloading (still hash-checked).
         normalization: Input-normalization strategy (dataset z-score, as THOR's own fine-tuning).
+        image_size: The run's resolved ``input.image_size``; ``None`` keeps tiles at native size.
     """
+
+    #: The resolved input size tells the wrapper whether its tiles arrive resized.
+    wants_resolved_image_size = True
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -175,12 +181,14 @@ class ThorBenchModel(BenchModel):
         variant: Literal["tiny", "small", "base", "large"] = "base",
         patch_size: int = 4,
         input_gsd: float = 10.0,
+        native_size: int | None = None,
         merge: Literal["concat", "mean"] = "concat",
         ignore_bands: Sequence[str] = (),
         max_tokens: int = 4096,
         pretrained: bool = True,
         weights_path: str | None = None,
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
+        image_size: int | None = None,
         **kwargs: object,
     ) -> None:
         if variant not in THOR_VARIANTS:
@@ -189,11 +197,17 @@ class ThorBenchModel(BenchModel):
             raise ValueError(f"THOR merge must be 'concat' or 'mean', got {merge!r}.")
         if patch_size < 1 or input_gsd <= 0:
             raise ValueError("THOR patch_size and input_gsd must be positive.")
+        if image_size is not None and native_size is None:
+            raise ValueError(
+                f"THOR needs the tiles' native size to keep their ground extent when inputs are "
+                f"resized to {image_size} px: set model.kwargs.native_size, or use --image-size none."
+            )
         super().__init__(bands=bands, normalization=normalization, **kwargs)
         self.groups = route_bands(self.bands, ignore_bands)
         self.variant = variant
         self.patch_size = patch_size
         self.input_gsd = input_gsd
+        self.native_size = native_size
         self.merge = merge
         self.max_tokens = max_tokens
         spec = THOR_VARIANTS[variant]
@@ -204,9 +218,13 @@ class ThorBenchModel(BenchModel):
         self._logged_sides: set[int] = set()
 
     def ground_cover(self, side: int) -> int:
-        """Tile extent (m) rounded to whole patches of every group, from a side in pixels."""
+        """Tile extent (m) rounded to whole patches of every group.
+
+        The extent is ``native_size * input_gsd``; without a declared native size, ``side`` (the
+        received side in pixels) is the native one.
+        """
         unit = math.lcm(*(self.patch_size * THOR_GROUP_GSD[g] for g, _ in self.groups))
-        return max(1, round(side * self.input_gsd / unit)) * unit
+        return max(1, round((self.native_size or side) * self.input_gsd / unit)) * unit
 
     def _group_inputs(self, images: torch.Tensor) -> list[GroupInput]:
         side = images.shape[-1]
@@ -225,7 +243,7 @@ class ThorBenchModel(BenchModel):
             logger.info(
                 "THOR %s: %d px at %.4g m -> %d m ground cover, patch %d px, token grids %s",
                 self.variant,
-                side,
+                self.native_size or side,
                 self.input_gsd,
                 cover,
                 self.patch_size,
