@@ -14,6 +14,7 @@ from geo_eval_harness.errors import UnsupportedNormalizationError
 
 from .run import RunConfig
 from .schema import (
+    Adaptation,
     ClassificationConfig,
     InputConfig,
     ModelConfig,
@@ -104,7 +105,7 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     }
     effective = RunConfig.model_validate(merge_settings(defaults, config.model_dump_yaml()))
     segmentation = effective.segmentation
-    if segmentation.lora_rank is not None and segmentation.lora_target_modules is None:
+    if segmentation.adaptation is Adaptation.LORA and segmentation.lora_target_modules is None:
         raise ValueError(
             f"segmentation.lora_rank requires segmentation.lora_target_modules; "
             f"{preset.name!r} does not define LoRA target modules"
