@@ -232,6 +232,13 @@ class MockKuroSiwo:
         return sample
 
 
+def test_forestnet_declares_the_landsat_bands_of_m_forestnet() -> None:
+    """GeoBench V2 ForestNet repackages the m-forestnet Landsat-8 chips."""
+    v1, v2 = get_bench_dataset_class("m-forestnet"), get_bench_dataset_class("forestnet")
+    assert [(b.sensor, b.name) for b in v2.bands] == [(b.sensor, b.name) for b in v1.bands]
+    assert v2.rgb_bands == v1.rgb_bands
+
+
 class TestKuroSiwoCanonicalization:
     @pytest.fixture
     def mocked_kuro_siwo(self) -> Iterator[MagicMock]:

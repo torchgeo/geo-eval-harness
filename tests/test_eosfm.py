@@ -288,7 +288,7 @@ def test_expression_channels_are_computed() -> None:
         ("aid", "rgb", "red"),
         ("benv2", "all", "nir"),
         ("eurosat", "all", "nir"),
-        ("forestnet", "all", "nir_narrow"),
+        ("forestnet", "all", "nir"),
         ("m-bigearthnet", "all", "nir"),
         ("m-eurosat", "rgb", "red"),
         ("m-forestnet", "all", "nir"),

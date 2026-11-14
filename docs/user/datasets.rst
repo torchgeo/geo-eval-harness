@@ -200,7 +200,7 @@ GeoBench V2 — classification
 CLI name           #cls   bands multilabel   sensor                                 Class
 ================== ====== ===== ============ ====================================== =====================================
 ``benv2``          19     14    **yes**      Sentinel-1 + Sentinel-2 (multi-modal)  :class:`~geo_eval_harness.datasets.BENV2`
-``forestnet``      12     6     no           Sentinel-2                             :class:`~geo_eval_harness.datasets.Forestnet`
+``forestnet``      12     6     no           Landsat-8                              :class:`~geo_eval_harness.datasets.Forestnet`
 ``so2sat``         17     12    no           Sentinel-1 + Sentinel-2                :class:`~geo_eval_harness.datasets.So2Sat`
 ``treesatai``      13     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
 ================== ====== ===== ============ ====================================== =====================================
@@ -223,8 +223,8 @@ before running a benchmark, for example with
    * ``m-so2sat`` (V1) — 18-band stack including LCZ context.
      ``so2sat`` (V2) — 10 S2 + 2 S1 bands stored at reflectance scale.
    * ``m-forestnet`` (V1) — Landsat-8 6-band uint8.
-     ``forestnet`` (V2) — Sentinel-2 6-band uint8 with a different split
-     than V1 despite the same channel count.
+     ``forestnet`` (V2) — the same Landsat-8 chips and split, repackaged
+     by GeoBench V2; the only pair here with identical data.
 
    The leaderboard prefixes panel titles with ``GeoBench V1`` /
    ``GeoBench V2`` so V1 and V2 results are never compared on the same

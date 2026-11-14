@@ -48,7 +48,7 @@ ABLATION_PREFIXES = (
 LANDSAT_SUB_SUFFIX = "_landsat_as_s2"
 # Datasets whose bands are declared ``landsat``; the substitution rows of any
 # other dataset are dropped.
-LANDSAT_DATASETS = frozenset({"m-forestnet"})
+LANDSAT_DATASETS = frozenset({"m-forestnet", "forestnet"})
 
 # Datasets excluded from the leaderboard only (all_results.csv is untouched).
 DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln", "oscd-post"})

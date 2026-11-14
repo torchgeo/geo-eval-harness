@@ -184,9 +184,9 @@ def test_rgb_does_not_borrow_nir_and_unknown_nonoptical_is_not_invented():
 
 
 def test_narrow_nir_and_landsat_without_wavelength_metadata():
-    forestnet = HandcraftedBench(get_bench_dataset_class("forestnet").bands, level=1)
+    burn_scars = HandcraftedBench(get_bench_dataset_class("burn_scars").bands, level=1)
     ndvi = next(
-        record for record in forestnet.feature_metadata if record["name"] == "s2.index.ndvi"
+        record for record in burn_scars.feature_metadata if record["name"] == "s2.index.ndvi"
     )
     nir = ndvi["sources"][0]
     assert nir["canonical_name"] == "nir_narrow"
