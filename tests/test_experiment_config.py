@@ -1,155 +1,17 @@
 """Behavioral coverage for experiment scripts using the library config API."""
 
 import importlib
-import json
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 import torch
-import yaml
 
-from geo_eval_harness.config.presets import ModelPreset, load_model_preset, resolve_run_config
+from geo_eval_harness.config.presets import resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.config.schema import ModelConfig
-from geo_eval_harness.models._normalization import UnsupportedNormalizationError
-from scripts import (
-    audit_model_native,
-    introspect_seg_layers,
-    tune_dataloader,
-)
+from geo_eval_harness.datasets import get_bench_dataset_class
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-@pytest.mark.parametrize("script", [audit_model_native, introspect_seg_layers])
-def test_analysis_scripts_preserve_requested_rgb_order(script: ModuleType) -> None:
-    bands = script.band_specs("m-eurosat", "rgb")
-    assert [band.name for band in bands] == ["red", "green", "blue"]
-
-
-def test_tuner_builds_packaged_model_config() -> None:
-    bands = audit_model_native.band_specs("m-eurosat", "rgb")
-    model = tune_dataloader._build_model("rcf", bands)
-    features = model(torch.zeros(1, 3, 16, 16))
-    preset = load_model_preset(ModelConfig(name="rcf"))
-    assert features.shape == (1, preset.kwargs["features"])
-    assert torch.isfinite(features).all()
-
-
-@pytest.mark.parametrize(
-    "error",
-    [
-        UnsupportedNormalizationError("no pretraining pipeline"),
-        ValueError("invalid model_native configuration"),
-    ],
-)
-def test_native_audit_only_classifies_unsupported_normalization(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
-) -> None:
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    (model_dir / "rcf.yaml").write_text("target: geo_eval_harness.models.RCFBench\nname: rcf\n")
-    output = tmp_path / "audit.json"
-    monkeypatch.setattr("geo_eval_harness.config.catalog.CONF_DIR", tmp_path)
-    monkeypatch.setattr("sys.argv", ["audit_model_native.py", "--out", str(output)])
-
-    def fail(config: object, **kwargs: object) -> None:
-        raise error
-
-    monkeypatch.setattr(audit_model_native, "build_model", fail)
-    if isinstance(error, UnsupportedNormalizationError):
-        audit_model_native.main()
-        assert json.loads(output.read_text())["rcf"]["model_native"] == "unsupported"
-    else:
-        with pytest.raises(ValueError, match="invalid model_native configuration"):
-            audit_model_native.main()
-        assert not output.exists()
-
-
-@pytest.mark.parametrize(
-    ("error", "message"),
-    [
-        (RuntimeError("loader failed"), "loader failed"),
-        (torch.cuda.OutOfMemoryError("device full"), "No dataloader configuration"),
-    ],
-)
-def test_dataloader_tuning_does_not_report_failed_sweeps_as_success(
-    monkeypatch: pytest.MonkeyPatch, error: RuntimeError, message: str
-) -> None:
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "tune_dataloader.py",
-            "--model",
-            "rcf",
-            "--device",
-            "cpu",
-            "--batch-sizes",
-            "1",
-            "--num-workers",
-            "0",
-        ],
-    )
-    monkeypatch.setattr(tune_dataloader, "_build_dataset", lambda *args: [])
-    monkeypatch.setattr(tune_dataloader, "_build_model", lambda *args: torch.nn.Identity())
-
-    def fail(*args: object) -> None:
-        raise error
-
-    monkeypatch.setattr(tune_dataloader, "_bench", fail)
-    with pytest.raises(RuntimeError, match=message):
-        tune_dataloader.main()
-
-
-def test_segmentation_introspection_handles_transformer_tokens() -> None:
-    class _TokenBackbone(torch.nn.Module):
-        num_prefix_tokens = 1
-
-        def __init__(self) -> None:
-            super().__init__()
-            self.blocks = torch.nn.ModuleList([torch.nn.Identity()])
-
-        def forward(self, images: torch.Tensor) -> torch.Tensor:
-            tokens = images.flatten(2).transpose(1, 2)
-            prefix = torch.zeros_like(tokens[:, :1])
-            return self.blocks[0](torch.cat([prefix, tokens], dim=1))
-
-    assert introspect_seg_layers.measure(_TokenBackbone(), size=8) == {"blocks.0": (8, 8)}
-
-
-def test_tuner_preserves_dataset_overrides_and_empirical_dataset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    (model_dir / "rcf.yaml").write_text(
-        yaml.safe_dump(
-            {
-                "name": "rcf",
-                "target": "geo_eval_harness.models.RCFBench",
-                "seed_from_run": True,
-                "kwargs": {"mode": "empirical", "features": 512},
-                "dataset_overrides": {"m-eurosat": {"kwargs": {"features": 8}}},
-            }
-        )
-    )
-    monkeypatch.setattr("geo_eval_harness.config.catalog.CONF_DIR", tmp_path)
-    bands = audit_model_native.band_specs("m-eurosat", "rgb")
-    dataset = torch.utils.data.TensorDataset(torch.zeros(1, 3, 8, 8))
-
-    def build(preset: ModelPreset, **kwargs: object) -> torch.nn.Module:
-        assert preset.kwargs["features"] == 8
-        assert preset.kwargs["seed"] == 0
-        assert kwargs["dataset"] is dataset
-        assert kwargs["bands"] == bands
-        assert kwargs["normalization"] == "bandspec_zscore"
-        return torch.nn.Identity()
-
-    monkeypatch.setattr(tune_dataloader, "build_model", build)
-    assert isinstance(
-        tune_dataloader._build_model("rcf", bands, "m-eurosat", dataset), torch.nn.Identity
-    )
 
 
 @pytest.mark.parametrize(
@@ -161,7 +23,7 @@ def test_inprocess_experiments_use_typed_constructors(
 ) -> None:
     monkeypatch.syspath_prepend(str(ROOT / "experiments"))
     script = importlib.import_module(f"experiments.{filename}")
-    bands = audit_model_native.band_specs("m-eurosat", "rgb")
+    bands = get_bench_dataset_class("m-eurosat").resolve_band_specs("rgb")
     for name, selection in script.MODEL_CONFIGS.items():
         _, preset = resolve_run_config(
             RunConfig(model=selection, datasets=["m-eurosat"]), "m-eurosat"
