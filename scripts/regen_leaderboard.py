@@ -48,7 +48,21 @@ DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln", "oscd-post"})
 
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
-RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "open_cities", "resisc45", "ucmerced"})
+RGB_ONLY_DATASETS = frozenset(
+    {
+        "aid",
+        "bright-post-sar-rgb",
+        "caffe",
+        "hotosm_buildings",
+        "levir-cd-post",
+        "loveda",
+        "m-pv4ger",
+        "open_cities",
+        "resisc45",
+        "spacenet7",
+        "ucmerced",
+    }
+)
 # An explicit band list made only of these names (``red,green,blue``) is RGB too.
 RGB_BAND_NAMES = frozenset({"red", "green", "blue"})
 

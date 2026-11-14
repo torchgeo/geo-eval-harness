@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from geo_eval_harness.datasets import get_bench_dataset_class, list_datasets
 from scripts import regen_leaderboard as rl
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -124,6 +125,15 @@ def test_rgb_only_datasets_are_never_multispectral() -> None:
     raw = pd.DataFrame([_row("native_full", "resisc45", "linear", "all", 0.5, "bandspec_zscore")])
     out = rl.harmonize(raw)
     assert set(out["bandclass"]) == {"RGB"}
+
+
+def test_rgb_only_datasets_match_the_registry() -> None:
+    rgb_only = {
+        name
+        for name in list_datasets()
+        if {band.name for band in get_bench_dataset_class(name).bands} <= rl.RGB_BAND_NAMES
+    }
+    assert rgb_only == rl.RGB_ONLY_DATASETS
 
 
 def test_terramind_alias_applies_during_harmonization() -> None:
