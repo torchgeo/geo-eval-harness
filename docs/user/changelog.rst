@@ -26,6 +26,7 @@ Models
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
+* timm models built with ``global_pool: ""`` average channels-last feature maps over their spatial axes and exclude register tokens from the patch average; ``use_cls_token`` is rejected for backbones without a class token.
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
 * timm ViT and DeiT models keep their pretrained final normalization when patch tokens are pooled, so ``global_pool: avg`` averages the normalized patch tokens.
@@ -54,6 +55,7 @@ Datasets
 
 * Infra-Bench CLS provides 13-class Sentinel-1/2 infrastructure classification with spatial splits.
 * GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
+* ``geo-eval-harness download`` accepts every registered dataset name; names that share another dataset's files download that dataset.
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
 * So2Sat maps its stored Sentinel-1 channels in VH, VV order.

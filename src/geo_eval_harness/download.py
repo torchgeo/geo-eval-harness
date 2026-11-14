@@ -53,6 +53,7 @@ from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets
 from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
 from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
 from geo_eval_harness.datasets.infrabench_cls import SPLIT_FILE
+from geo_eval_harness.datasets.loading import download_name
 from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
 from geo_eval_harness.hub import fetch_pinned, load_checksums, sha256_file, verify_checksums
 
@@ -122,10 +123,10 @@ DOWNLOADABLE_DATASETS: tuple[str, ...] = (
 
 
 def _validate_names(names: list[str]) -> list[str]:
-    """Validate and deduplicate names before creating download roots."""
+    """Map names to their downloads, validating and deduplicating before creating roots."""
     if not names:
         raise ValueError("datasets must contain at least one dataset name")
-    unique = list(dict.fromkeys(names))
+    unique = list(dict.fromkeys(download_name(name) for name in names))
     unknown = sorted(set(unique) - set(DOWNLOADABLE_DATASETS))
     if unknown:
         raise ValueError(
@@ -608,7 +609,7 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
     """Download individually named benchmark datasets.
 
     Args:
-        names: Dataset names from :data:`DOWNLOADABLE_DATASETS`.
+        names: Registered dataset names; those sharing files resolve to one download.
         output_dir: Benchmark data root.
 
     Raises:
