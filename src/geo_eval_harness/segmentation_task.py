@@ -19,7 +19,8 @@ from torchmetrics.classification import (
 from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
-from .config.schema import SegmentationConfig
+from .config.schema import Adaptation, SegmentationConfig
+from .segmentation_checkpointing import enable_gradient_checkpointing
 from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
     MAX_NONFINITE_FRACTION,
@@ -278,7 +279,12 @@ class SegmentationSolver:
             )
 
     def _train_step(
-        self, images: torch.Tensor, masks: torch.Tensor, tracker: "_EpochTracker"
+        self,
+        images: torch.Tensor,
+        masks: torch.Tensor,
+        tracker: "_EpochTracker",
+        *,
+        doy: torch.Tensor | None = None,
     ) -> None:
         """Take one optimizer step, or count and skip a batch whose backbone features overflowed.
 
@@ -287,7 +293,7 @@ class SegmentationSolver:
         self.optimizer.zero_grad()
         with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
             try:
-                logits = self.model(images)
+                logits = self.model(images, doy=doy)
             except NonFiniteFeaturesError:  # allow-except: skip the batch before the head
                 tracker.nonfinite += 1
                 return
@@ -491,7 +497,12 @@ class SegmentationSolver:
                     tracker.skipped += 1
                     continue
 
-                self._train_step(images, masks, tracker)
+                self._train_step(
+                    images,
+                    masks,
+                    tracker,
+                    doy=batch.get("doy") if isinstance(batch, dict) else None,
+                )
 
             self._check_nonfinite(tracker)
             self._require_training_step(epoch + 1, tracker.steps)
@@ -726,7 +737,9 @@ class SegmentationSolver:
                 masks = masks.squeeze(1)
             masks = masks.long()
             with torch.autocast(device_type=self.device_type, enabled=self.use_amp):
-                logits = self.model(images)
+                logits = self.model(
+                    images, doy=batch.get("doy") if isinstance(batch, dict) else None
+                )
             yield logits, masks
 
     @torch.no_grad()
@@ -989,7 +1002,9 @@ def build_seg_probe_and_solver(
             "Segmentation evaluation requires segmentation.layers to name "
             "spatial backbone layers. Refusing to probe the global backbone output."
         )
-    if config.lora_rank is not None:
+    adaptation = config.adaptation
+    if adaptation is Adaptation.LORA:
+        assert config.lora_rank is not None
         assert config.lora_target_modules is not None
         apply_lora(
             model,
@@ -998,7 +1013,7 @@ def build_seg_probe_and_solver(
             config.lora_alpha,
             last_blocks=config.lora_last_blocks,
         )
-    if config.full_finetune:
+    if adaptation is Adaptation.FULL:
         # Some wrappers freeze their backbone at construction; full fine-tuning has to undo that.
         enable = getattr(model, "enable_full_finetune", None)
         if callable(enable):
@@ -1008,6 +1023,11 @@ def build_seg_probe_and_solver(
                 f"full_finetune: {type(model).__name__} has no trainable backbone parameter; "
                 "its wrapper freezes the backbone and does not define enable_full_finetune()."
             )
+    if config.gradient_checkpointing:
+        if config.lora_rank is None and not config.full_finetune:
+            logger.info("gradient_checkpointing has no effect on a frozen backbone; skipped.")
+        else:
+            enable_gradient_checkpointing(model)
     probe = SegmentationProbe(
         backbone=model,
         layer_names=layer_names,
@@ -1017,7 +1037,7 @@ def build_seg_probe_and_solver(
         neck_norm=config.neck_norm,
         upsampler=config.upsampler,
         head_dropout=config.head_dropout,
-        freeze_backbone=config.lora_rank is None and not config.full_finetune,
+        freeze_backbone=adaptation is Adaptation.FROZEN,
         temporal_pool=config.temporal_pool,
         sweep_heads=len(config.sweep_grid),
         feature_standardize=config.feature_standardize,
@@ -1050,5 +1070,5 @@ def build_seg_probe_and_solver(
         early_stopping_patience=config.early_stopping_patience,
         amp=config.amp == "fp16",
     )
-    solver.backbone_eval_mode = config.full_finetune
+    solver.backbone_eval_mode = adaptation is Adaptation.FULL
     return probe, solver

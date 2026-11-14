@@ -5,6 +5,7 @@
 
 import pathlib
 import re
+from enum import StrEnum
 from typing import Annotated, Any, Literal
 
 import yaml
@@ -236,6 +237,21 @@ class ClassificationConfig(StrictModel):
     linear: LinearConfig = Field(default_factory=LinearConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     bootstrap_samples: StrictInt = Field(default=200, gt=0)
+    feature_standardize: StrictBool = False
+
+    @property
+    def knn_method(self) -> str:
+        """Return ``knn<k>``, with ``-std`` when features are standardized."""
+        return f"knn{self.knn_k}{self._method_suffix}"
+
+    @property
+    def linear_method(self) -> str:
+        """Return ``linear``, with ``-std`` when features are standardized."""
+        return f"linear{self._method_suffix}"
+
+    @property
+    def _method_suffix(self) -> str:
+        return "-std" if self.feature_standardize else ""
 
     @model_validator(mode="after")
     def validate_calibration(self) -> "ClassificationConfig":
@@ -248,14 +264,22 @@ class ClassificationConfig(StrictModel):
 
 
 #: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
-NECK_HEADS = frozenset({"fpn", "upernet", "unet"})
+NECK_HEADS = frozenset({"linear", "fpn", "upernet", "unet"})
+
+
+class Adaptation(StrEnum):
+    """How a segmentation run trains the backbone."""
+
+    FROZEN = "frozen"
+    LORA = "lora"
+    FULL = "full"
 
 
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
     head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
-    neck: Literal["none", "vit"] = "none"
+    neck: Literal["none", "vit", "vit_fine"] = "none"
     neck_norm: Literal["layernorm", "none"] = "layernorm"
     upsampler: Literal["none", "anyup"] = "none"
     weight_decay: StrictFloat = Field(default=0.0, ge=0)
@@ -278,6 +302,7 @@ class SegmentationConfig(StrictModel):
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
     full_finetune: StrictBool = False
     feature_standardize: StrictBool = False
+    gradient_checkpointing: StrictBool = False
     sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
     sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
         default_factory=lambda: [0.0]
@@ -288,10 +313,24 @@ class SegmentationConfig(StrictModel):
         """Return the (learning rate, weight decay) cells of the probe sweep, or ``[]``."""
         return [(lr, wd) for lr in self.sweep_learning_rates for wd in self.sweep_weight_decays]
 
+    @property
+    def adaptation(self) -> Adaptation:
+        """Return whether the backbone is frozen, LoRA-adapted, or fully fine-tuned."""
+        if self.full_finetune:
+            return Adaptation.FULL
+        if self.lora_rank is not None:
+            return Adaptation.LORA
+        return Adaptation.FROZEN
+
+    @property
+    def uses_feature_cache(self) -> bool:
+        """Return whether the head trains on cached features, which needs a frozen backbone."""
+        return self.cache_features and self.adaptation is Adaptation.FROZEN
+
     @model_validator(mode="after")
     def validate_probe_protocol(self) -> "SegmentationConfig":
         """Restrict the linear-probe sweep and feature standardization to frozen probes."""
-        frozen = self.lora_rank is None and not self.full_finetune
+        frozen = self.adaptation is Adaptation.FROZEN
         if self.feature_standardize and (not frozen or self.upsampler != "none"):
             raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
         if not self.sweep_learning_rates:
@@ -311,8 +350,7 @@ class SegmentationConfig(StrictModel):
     @model_validator(mode="after")
     def validate_precision(self) -> "SegmentationConfig":
         """Reject ``amp: off`` with a float16 feature cache, which would still overflow."""
-        frozen = self.lora_rank is None and not self.full_finetune
-        if self.amp == "off" and frozen and self.cache_features and self.cache_dtype == "float16":
+        if self.amp == "off" and self.uses_feature_cache and self.cache_dtype == "float16":
             raise ValueError(
                 "amp 'off' with cached frozen features requires cache_dtype 'float32'; a float16 "
                 "cache still overflows"
@@ -342,8 +380,10 @@ class SegmentationConfig(StrictModel):
     @model_validator(mode="after")
     def validate_neck(self) -> "SegmentationConfig":
         """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
-        if self.neck == "vit" and self.head not in NECK_HEADS:
-            raise ValueError(f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {self.head!r}")
+        if self.neck != "none" and self.head not in NECK_HEADS:
+            raise ValueError(
+                f"neck {self.neck!r} requires head in {sorted(NECK_HEADS)}, got {self.head!r}"
+            )
         if self.head_dropout and self.head != "upernet":
             raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
         if self.upsampler == "anyup" and self.head != "upernet":
@@ -354,24 +394,17 @@ class SegmentationConfig(StrictModel):
 
     @property
     def method(self) -> str:
-        """Return ``seg-<head>``, plus ``-vitneck`` with the ViT neck and ``-lora`` with LoRA.
+        """Return ``seg-<head>``.
 
-        Full fine-tuning appends ``-full`` instead of ``-lora``; LoRA restricted to the last ``k``
-        blocks appends ``-last<k>``. The AnyUp upsampler adds ``-anyup`` after the neck. Feature
-        standardization appends ``-std`` and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
+        Linear-probe settings have no setup columns yet: feature standardization appends ``-std``
+        and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
         """
-        neck = "" if self.neck == "none" else f"-{self.neck}neck"
-        if self.upsampler != "none":
-            neck += f"-{self.upsampler}"
-        lora = "" if self.lora_rank is None else "-lora"
-        if self.full_finetune:
-            lora = "-full"
-        if self.lora_last_blocks is not None:
-            lora += f"-last{self.lora_last_blocks}"
         probe = "-std" if self.feature_standardize else ""
         if self.sweep_grid:
             probe += f"-sweep{len(self.sweep_grid)}"
-        return f"seg-{self.head}{neck}{lora}{probe}"
+        return f"seg-{self.head}{probe}"
 
 
 class RuntimeConfig(StrictModel):

@@ -502,6 +502,43 @@ def test_resume_reruns_when_evaluation_config_changes(tmp_path: Path):
     knn_mock.assert_called_once()
 
 
+def test_feature_standardize_scales_probe_features_and_has_its_own_resume_key(tmp_path: Path):
+    out = tmp_path / "out.csv"
+    knn_only = {"methods": ["knn"]}
+    raw_cfg = _compose_cfg(out, overrides={"classification": knn_only})
+    cfg = _compose_cfg(
+        out,
+        overrides={
+            "output": {"resume": True},
+            "classification": knn_only | {"feature_standardize": True},
+        },
+    )
+    pd.DataFrame([_resume_row(raw_cfg, method="knn5", metric_name="accuracy")]).to_csv(
+        out, index=False
+    )
+
+    for _ in range(2):
+        with (
+            mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()),
+            mock.patch("geo_eval_harness.main.embed_split", side_effect=_synthetic_embeddings()),
+            mock.patch(
+                "geo_eval_harness.main.evaluate_knn",
+                return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
+            ) as knn_mock,
+        ):
+            main(cfg)
+        if knn_mock.called:
+            train, test = knn_mock.call_args.args[:2]
+
+    knn_mock.assert_not_called()
+    raw_train, _, raw_test = _synthetic_embeddings()
+    mean, std = raw_train[0].mean(axis=0), raw_train[0].std(axis=0)
+    assert train.features.mean(axis=0) == pytest.approx(0, abs=1e-5)
+    assert train.features.std(axis=0) == pytest.approx(1, abs=1e-4)
+    assert test.features == pytest.approx((raw_test[0] - mean) / std, abs=1e-4)
+    assert list(pd.read_csv(out)["method"]) == ["knn5", "knn5-std"]
+
+
 @pytest.mark.parametrize(
     "error", [FileNotFoundError("missing dataset"), DatasetNotFoundError("missing")]
 )

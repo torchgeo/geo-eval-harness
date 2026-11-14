@@ -4,6 +4,8 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
+import pandas as pd
 import pytest
 import torch
 from torch.utils.data import DataLoader
@@ -337,6 +339,10 @@ class MockPASTIS:
         self.transforms = transforms
         self.return_stacked_image = return_stacked_image
         self.h, self.w = 16, 16
+        self.data_df = MagicMock()
+        self.data_df.read.return_value = pd.DataFrame(
+            {"tortilla:id": ["s2"], "dates": [np.array([20180917, 20191012])]}
+        )
 
     def __len__(self):
         return 4
@@ -374,6 +380,7 @@ class TestPASTISSampleConstruction:
         sample = bench.get_dataset("train", bands=bands)[0]
         assert "image" in sample
         assert sample["image"].shape == (expected_channels, 16, 16)
+        assert sample["doy"].item() == 260
         assert not [k for k in sample if k.startswith("image_")]
         assert mocked_pastis.called
 

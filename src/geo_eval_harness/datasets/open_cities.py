@@ -6,6 +6,9 @@ them to train/val/test by 500 m geographic block. Masks are rasterised once, on 
 native grid, into one sparse GeoTIFF per scene. Chips are read by window; nothing is resampled.
 """
 
+import gzip
+import hashlib
+import io
 import logging
 import os
 from collections.abc import Callable
@@ -39,6 +42,10 @@ IGNORE_INDEX = 255
 ALPHA_MIN = 128
 BLACK_MAX = 10
 INDEX_FILE = "open_cities_index.csv.gz"
+TRAIN_SUBSET_FILE = "open_cities_train_10k.csv.gz"
+TRAIN_SUBSET_SHA256 = "d12855359efefa7e91a6be36a655a3ac0075dc6f8281840fa18d6c80e62c7ed0"
+FULL_SPLIT_SIZES = {"train": 76818, "val": 11236, "test": 22408}
+PARTITIONS = ("default", "full")
 CITY_NAME: dict[str, str] = {
     "acc": "Accra",
     "dar": "Dar es Salaam",
@@ -60,6 +67,26 @@ def load_index() -> pd.DataFrame:
     path = resources.files(__package__).joinpath(INDEX_FILE)
     with path.open("rb") as stream:
         return pd.read_csv(stream, comment="#", compression="gzip")
+
+
+def train_subset_rows(index: pd.DataFrame) -> list[int]:
+    """Return the fixed 10k train rows, verifying the manifest and indexed chip identities."""
+    raw = gzip.decompress(resources.files(__package__).joinpath(TRAIN_SUBSET_FILE).read_bytes())
+    if hashlib.sha256(raw).hexdigest() != TRAIN_SUBSET_SHA256:
+        raise ValueError(f"Packaged {TRAIN_SUBSET_FILE} does not match its recorded checksum.")
+    subset = pd.read_csv(io.BytesIO(raw))
+    rows = subset.row.tolist()
+    if (
+        len(index) != FULL_SPLIT_SIZES["train"]
+        or len(rows) != 10000
+        or rows != sorted(set(rows))
+        or rows[0] < 0
+        or rows[-1] >= len(index)
+    ):
+        raise ValueError(f"{TRAIN_SUBSET_FILE} must contain 10,000 sorted, distinct train rows.")
+    if index.iloc[rows].chip_id.tolist() != subset.chip_id.tolist():
+        raise ValueError(f"{TRAIN_SUBSET_FILE} chip identities do not match {INDEX_FILE}.")
+    return rows
 
 
 def load_labels(path: Path, crs: CRS) -> np.ndarray:
@@ -217,6 +244,9 @@ class OpenCities(BenchDataset):
     and ``401175`` are stored in UTM 36N, so their ground pixels are not square.
     Source: https://source.coop/open-cities/ai-challenge. Labels ODbL 1.0; imagery
     CC BY 4.0 or ODbL depending on the scene.
+
+    ``default`` trains on a fixed 10,000-chip seed-0 subset; ``full`` uses all 76,818
+    training chips. Validation and test always use the complete indexed splits.
     """
 
     name = "open_cities"
@@ -224,8 +254,8 @@ class OpenCities(BenchDataset):
     num_classes = 2
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
-    split_sizes: ClassVar[dict[str, int]] = {"train": 76818, "val": 11236, "test": 22408}
-    supports_partitions = False
+    split_sizes: ClassVar[dict[str, int]] = {"train": 10000, "val": 11236, "test": 22408}
+    supports_partitions = True
 
     # Train-split statistics from scripts/compute_band_statistics.py --ignore-index 255.
     # fmt: off
@@ -250,14 +280,18 @@ class OpenCities(BenchDataset):
         transform: Callable[[dict], dict] | None = None,
     ) -> Dataset:
         """Return the split with ``image`` (float32 CHW, 0-255) and ``mask`` (int64 HW)."""
-        del partition
         if split not in self.split_sizes:
             raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
+        if partition not in PARTITIONS:
+            raise ValueError(f"Unknown Open Cities partition {partition!r}. Expected {PARTITIONS}.")
         specs = self.select_band_specs(bands)
         indices = [self.bands.index(spec) for spec in specs]
         index = load_index()
+        rows = index[index.split == split].reset_index(drop=True)
+        if split == "train" and partition == "default":
+            rows = rows.iloc[train_subset_rows(rows)].reset_index(drop=True)
         return _OpenCitiesSplit(
             self.data_root(),
-            index[index.split == split].reset_index(drop=True),
+            rows,
             select_bands(indices, len(self.bands), transform),
         )

@@ -4,6 +4,9 @@ name: Results explorer
 # committed.  Left to humans it drifts: the page on main quoted May's numbers
 # for three months of merged results.  This keeps it in lockstep by opening a
 # PR a maintainer can merge -- main is protected, so CI never pushes to it.
+#
+# The leaderboard page (docs/_static/ranking_explorer.html) is refreshed in the
+# same PR.  Interim: this goes away once the leaderboard is built at deploy time.
 
 on:
   push:
@@ -17,6 +20,8 @@ on:
       - "results/intrinsic_dim/**"
       - "results/compute_cost.csv"
       - "scripts/regen_results_explorer.py"
+      - "scripts/regen_leaderboard.py"
+      - "scripts/ranking_explorer.template.html"
       - "src/geo_eval_harness/results.py"
       - "src/geo_eval_harness/resume.py"
   pull_request:
@@ -30,6 +35,8 @@ on:
       - "results/intrinsic_dim/**"
       - "results/compute_cost.csv"
       - "scripts/regen_results_explorer.py"
+      - "scripts/regen_leaderboard.py"
+      - "scripts/ranking_explorer.template.html"
       - "src/geo_eval_harness/results.py"
       - "src/geo_eval_harness/resume.py"
   workflow_dispatch:
@@ -42,7 +49,7 @@ concurrency:
 
 jobs:
   regenerate:
-    name: Regenerate results explorer
+    name: Regenerate results explorer and leaderboard
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -58,11 +65,20 @@ jobs:
         with:
           enable-cache: true
 
+      # The dev extra carries evaluma, the leaderboard's ranking backend.
       - name: Install dependencies
-        run: uv sync --frozen
+        run: uv sync --frozen --extra dev
 
-      - name: Regenerate
-        run: uv run --frozen python scripts/regen_results_explorer.py
+      - name: Regenerate results explorer
+        run: uv run --frozen --extra dev python scripts/regen_results_explorer.py
+
+      # Bootstrap intervals are only needed for the published leaderboard.
+      - name: Regenerate leaderboard
+        env:
+          OPENBLAS_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+          BOOTSTRAP: ${{ github.event_name == 'pull_request' && '0' || '1000' }}
+        run: uv run --frozen --extra dev python scripts/regen_leaderboard.py --bootstrap "$BOOTSTRAP"
 
       - name: Show what changed
         run: git --no-pager diff --stat
@@ -75,7 +91,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: results-explorer
-          path: docs/_static/results-explorer.html
+          path: |
+            docs/_static/results-explorer.html
+            docs/_static/ranking_explorer.html
           retention-days: 14
 
       # Requires Settings -> Actions -> General -> "Allow GitHub Actions to
@@ -93,16 +111,11 @@ jobs:
           add-paths: |
             docs/_static/results-explorer.html
             docs/_static/_results_snapshots
-          commit-message: "chore(docs): refresh results explorer from results/*.csv"
-          title: "chore(docs): refresh results explorer"
+            docs/_static/ranking_explorer.html
+          commit-message: "chore(docs): refresh results explorer and leaderboard from results/*.csv"
+          title: "chore(docs): refresh results explorer and leaderboard"
           body: |
-            Regenerated `docs/_static/results-explorer.html` from the results
-            CSVs on `main` via `scripts/regen_results_explorer.py`.
-
-            Opened automatically because a results CSV changed. The diff is the
-            re-inlined data plus the masthead, both derived from the CSVs — the
-            page ships with no hand-written numbers, so this needs a read of the
-            summary line rather than of the 40 MB payload.
+            Updated the results explorer and leaderboard from the benchmark CSVs on main.
 
             Triggered by ${{ github.sha }}.
           labels: automation

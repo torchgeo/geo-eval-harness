@@ -39,6 +39,17 @@ class BenchModel(nn.Module, ABC):
     #: Skip the unused strategy normalizer and its ``expected_input_unit`` validation.
     handles_own_normalization: bool = False
 
+    #: ``"nhwc"`` when hooked 4D stage maps are channels-last (Swin), ``"nchw"`` when they are
+    #: channels-first at any grid size; ``None`` lets the segmentation probe infer the layout.
+    feature_layout: str | None = None
+
+    #: Square input size of a backbone built for one fixed size; the segmentation probe's
+    #: channel dry run uses it instead of 224.
+    probe_input_size: int | None = None
+
+    #: Unit of a wrapper's patch_size; physical patches do not imply a fixed pixel grid.
+    patch_size_unit: str = "pixels"
+
     def __init__(
         self,
         bands: list[BandSpec],
@@ -104,3 +115,19 @@ class BenchModel(nn.Module, ABC):
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         """Alias for :meth:`forward_patch_features`."""
         return self.forward_patch_features(images)
+
+    def forward_batch(
+        self, images: torch.Tensor, *, doy: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Forward images, ignoring date metadata for date-independent models."""
+        del doy
+        return self(images)
+
+
+def forward_model_batch(
+    model: nn.Module, images: torch.Tensor, *, doy: torch.Tensor | None = None
+) -> torch.Tensor:
+    """Preserve optional dates without changing raw torch model interfaces."""
+    if isinstance(model, BenchModel):
+        return model.forward_batch(images, doy=doy)
+    return model(images)

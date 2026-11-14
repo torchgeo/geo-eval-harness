@@ -12,17 +12,23 @@ Model code loads via ``torch.hub`` and weights from the HuggingFace Hub
 
 import functools
 import logging
-from collections import defaultdict
 from collections.abc import Callable
 from typing import Any, ClassVar, Protocol, Self, cast
 
 import torch
 import torch.nn.functional as F
-from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import S2_WAVELENGTHS_UM, canonical_band_name
+from ._hub_helpers import (
+    check_hub_namespace,
+    group_by_sensor,
+    hub_source,
+    install_checkpointing,
+    parameters_train,
+    run_in_chunks,
+)
 from ._normalization import NormalizationStrategy
 from .interface import BenchModel
 
@@ -48,6 +54,7 @@ _SENSOR_TO_MODALITY: dict[str, str] = {
     "aerial": "aerial",
     "spot": "spot",
     "landsat": "l8",
+    "hls": "hls",
 }
 
 # Physical resolution (m/px) and sub-patch factor per UniverSat modality,
@@ -57,19 +64,29 @@ _MODALITY_INPUT_RES: dict[str, float] = {
     "s1": 10.0,
     "naip": 1.25,
     "aerial": 0.2,
+    "aerialflair": 0.2,
     "spot": 1.0,
     "l8": 10.0,
+    "l8forestnet": 10.0,
     "l7": 30.0,
+    "hls": 30.0,
+    "alos": 30.0,
 }
 _MODALITY_SUBPATCH: dict[str, int] = {
     "s2": 1,
     "s1": 1,
     "naip": 10,
     "aerial": 10,
+    "aerialflair": 8,
     "spot": 10,
     "l8": 1,
+    "l8forestnet": 1,
     "l7": 1,
+    "hls": 1,
+    "alos": 1,
 }
+# Modalities whose channels are named by polarisation codes rather than wavelengths.
+_SAR_MODALITIES = frozenset({"s1", "alos"})
 
 
 def _patch_pixels(patch_size: float, input_res: float) -> int:
@@ -119,6 +136,10 @@ def _resolve_subpatch(modality: str, patch_pixels: int, override: int | None) ->
 # chunks of at most this many pixel x band values; the trunk still sees the
 # full batch.
 UPE_PIXEL_BUDGET = 2**20
+# Past the spectral step the UPE's spatial attention scales with pixels, not
+# bands: one-band 224 px CaFFe at batch 16 needed a single 4.9 GiB RoPE tensor
+# with 8 px patches. Every chunk is also capped at this many pixels.
+UPE_PIXEL_CAP = 2**18
 # When the UPE trains, each checkpointed chunk rebuilds its whole per-pixel
 # graph in backward. Past the spectral step that graph scales with pixels, not
 # bands, so few-band inputs (S1, S2 RGBN) got large chunks and OOMed in full
@@ -156,7 +177,7 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     mask_in: object = None,
     dataset: str = "",
 ) -> tuple[Any, ...]:
-    """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET``.
+    """Run ``UPE_forward`` in sample chunks bounded by ``UPE_PIXEL_BUDGET`` and ``UPE_PIXEL_CAP``.
 
     Masked (pretraining) and dataset-projector calls bypass chunking. When the
     UPE itself trains (full fine-tuning), chunks are further capped at
@@ -165,28 +186,24 @@ def _chunked_upe_forward(  # noqa: PLR0913 - mirrors upstream UPE_forward
     """
     batch = x[modalities[0]].shape[0]
     per_sample = sum(x[m][0].numel() for m in modalities)
-    chunk = max(1, UPE_PIXEL_BUDGET // max(per_sample, 1))
-    needs_grad = torch.is_grad_enabled() and any(p.requires_grad for p in params())
+    # Pixels (x timesteps) per sample, without the band axis (dim -3).
+    pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
+    chunk = max(1, min(UPE_PIXEL_BUDGET // max(per_sample, 1), UPE_PIXEL_CAP // max(pixels, 1)))
+    needs_grad = parameters_train(params())
     if needs_grad:
-        # Pixels (x timesteps) per sample, without the band axis (dim -3).
-        pixels = sum(x[m][0].numel() // x[m].shape[-3] for m in modalities)
         chunk = min(chunk, max(1, UPE_GRAD_PIXEL_BUDGET // max(pixels, 1)))
     if mask_in is not None or dataset or batch <= chunk:
         return upe_forward(
             x, modalities, wavelengths, input_res, scale, subpatches, mask_in, dataset
         )
 
-    outs = []
-    for start in range(0, batch, chunk):
-        part = {
-            k: v[start : start + chunk] if isinstance(v, torch.Tensor) else v for k, v in x.items()
-        }
-        args = (part, modalities, wavelengths, input_res, scale, subpatches, None, dataset)
-        if needs_grad:
-            outs.append(checkpoint(upe_forward, *args, use_reentrant=False))
-        else:
-            outs.append(upe_forward(*args))
-    return _merge_upe_chunks(outs)
+    def chunk_args(start: int, stop: int) -> tuple[Any, ...]:
+        part = {k: v[start:stop] if isinstance(v, torch.Tensor) else v for k, v in x.items()}
+        return (part, modalities, wavelengths, input_res, scale, subpatches, None, dataset)
+
+    return run_in_chunks(
+        upe_forward, chunk_args, batch, chunk, checkpointed=needs_grad, merge=_merge_upe_chunks
+    )
 
 
 def _install_upe_chunking(encoder: object) -> None:
@@ -214,54 +231,49 @@ def _install_block_checkpointing(encoder: object) -> int:
     if not isinstance(blocks, torch.nn.ModuleList):
         raise TypeError("UniverSat gradient checkpointing needs model.model.blocks (a ModuleList).")
     for block in blocks:
-        forward = block.forward
-
-        def checkpointed(
-            *args: Any,
-            _forward: Callable[..., Any] = forward,
-            _block: torch.nn.Module = block,
-            **kwargs: Any,
-        ) -> Any:
-            if torch.is_grad_enabled() and any(p.requires_grad for p in _block.parameters()):
-                return checkpoint(_forward, *args, use_reentrant=False, **kwargs)
-            return _forward(*args, **kwargs)
-
-        object.__setattr__(block, "forward", checkpointed)
+        install_checkpointing(block)
     return len(blocks)
 
 
-# SAR bands are sensor codes (not wavelengths) in UniverSat's s1 modality.
+# SAR bands are polarisation codes (not wavelengths) in UniverSat's SAR modalities; the patch
+# encoder holds one learned embedding per code, shared across modalities.
+_SAR_CODES = ("VV", "VH", "Ratio_VV_VH", "HH", "HV", "Ratio_HH_HV")
+
+
 def _sar_code(name: str) -> str:
     n = name.lower()
+    if "hh_hv" in n or "hv_hh" in n or ("ratio" in n and ("hh" in n or "hv" in n)):
+        return "Ratio_HH_HV"
     if "ratio" in n or "vv_vh" in n or "vh_vv" in n:
         return "Ratio_VV_VH"
-    if "vv" in n:
-        return "VV"
-    if "vh" in n:
-        return "VH"
-    raise ValueError(f"Cannot map SAR band {name!r} to a UniverSat s1 code (VV/VH/Ratio_VV_VH).")
+    for code in ("VV", "VH", "HH", "HV"):
+        if code.lower() in n:
+            return code
+    raise ValueError(f"Cannot map SAR band {name!r} to a UniverSat SAR code {list(_SAR_CODES)}.")
 
 
 def _build_sensor_groups(
     bands: list[BandSpec],
     modality: str | None = None,
     input_res: float | None = None,
+    wavelengths: list[float | str] | None = None,
 ) -> list[dict]:
     """Group channels by sensor and resolve each group's UniverSat modality.
 
     Returns one dict per sensor (first-seen order) with keys ``modality``,
     ``indices`` (channel positions in ``bands``), ``wavelengths`` (floats, or
-    s1 sensor codes), ``input_res``, and ``subpatch``. ``modality`` / ``input_res``
-    overrides apply only when the input has a single sensor.
+    SAR polarisation codes), ``input_res``, and ``subpatch``. ``modality`` and
+    ``wavelengths`` overrides need a single-sensor input. ``input_res`` applies to every
+    sensor: all channels share the resized pixel grid, so they share one GSD.
     """
-    sensor_to_indices: dict[str, list[int]] = defaultdict(list)
-    order: list[str] = []
-    for i, b in enumerate(bands):
-        s = b.sensor.lower()
-        if s not in sensor_to_indices:
-            order.append(s)
-        sensor_to_indices[s].append(i)
+    sensor_to_indices = group_by_sensor(bands)
+    order = list(sensor_to_indices)
     single_sensor = len(order) == 1
+    if wavelengths is not None and (not single_sensor or len(wavelengths) != len(bands)):
+        raise ValueError(
+            f"UniverSat wavelengths override needs a single-sensor input with one entry per "
+            f"channel; got {len(wavelengths)} entries for {len(bands)} channels from {order}."
+        )
 
     groups: list[dict] = []
     seen: set[str] = set()
@@ -280,37 +292,45 @@ def _build_sensor_groups(
         seen.add(mod)
         indices = sensor_to_indices[sensor]
         group_bands = [bands[i] for i in indices]
-        if mod == "s1":
-            wavelengths: list[float | str] = [_sar_code(b.name) for b in group_bands]
-        else:
-            # Bands without wavelength_um fall back to the Sentinel-2 centre of their canonical
-            # name (red/green/blue/nir/...), as DOFA and Panopticon do.
-            band_wavelengths = [
-                b.wavelength_um
-                if b.wavelength_um is not None
-                else S2_WAVELENGTHS_UM.get(canonical_band_name(b.name))
-                for b in group_bands
-            ]
-            if any(w is None for w in band_wavelengths):
-                missing = [
-                    b.name for b, w in zip(group_bands, band_wavelengths, strict=True) if w is None
-                ]
-                raise ValueError(
-                    f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
-                    f"have wavelength_um=None and no standard band name."
-                )
-            wavelengths = [w for w in band_wavelengths if w is not None]
-        res = input_res if (input_res is not None and single_sensor) else _MODALITY_INPUT_RES[mod]
+        res = input_res if input_res is not None else _MODALITY_INPUT_RES[mod]
         groups.append(
             {
                 "modality": mod,
                 "indices": indices,
-                "wavelengths": wavelengths,
+                "wavelengths": _group_wavelengths(group_bands, mod, wavelengths),
                 "input_res": res,
                 "subpatch": _MODALITY_SUBPATCH.get(mod, 1),
             }
         )
     return groups
+
+
+def _group_wavelengths(
+    bands: list[BandSpec], modality: str, override: list[float | str] | None
+) -> list[float | str]:
+    """Return one wavelength (µm) or SAR code per band of a sensor group."""
+    if override is not None:
+        unknown = [w for w in override if isinstance(w, str) and w not in _SAR_CODES]
+        if unknown:
+            raise ValueError(f"Unknown UniverSat channel codes {unknown}; use {_SAR_CODES}.")
+        return list(override)
+    if modality in _SAR_MODALITIES:
+        return [_sar_code(b.name) for b in bands]
+    # Bands without wavelength_um fall back to the Sentinel-2 centre of their canonical
+    # name (red/green/blue/nir/...), as DOFA and Panopticon do.
+    band_wavelengths = [
+        b.wavelength_um
+        if b.wavelength_um is not None
+        else S2_WAVELENGTHS_UM.get(canonical_band_name(b.name))
+        for b in bands
+    ]
+    missing = [b.name for b, w in zip(bands, band_wavelengths, strict=True) if w is None]
+    if missing:
+        raise ValueError(
+            f"UniverSat needs a wavelength per channel; BandSpecs {missing} "
+            f"have wavelength_um=None and no standard band name."
+        )
+    return [w for w in band_wavelengths if w is not None]
 
 
 class UniverSatEncoder(Protocol):
@@ -356,10 +376,15 @@ class UniverSatBenchModel(BenchModel):
         patch_px: Patch size in input pixels. When set it replaces ``patch_size``
             with ``patch_px`` times the first sensor's ``input_res`` (metres), so
             a ``H x W`` input gives an ``H/patch_px`` latent grid regardless of
-            sensor, and ``output_grid`` defaults to that grid. Segmentation presets
-            use 16 (14x14 tokens at 224 px, as ViT-B/16).
-        input_res: Override the physical resolution (m/px), single-sensor only;
-            ``None`` uses the registry value per modality.
+            sensor, and ``output_grid`` defaults to that grid. The segmentation preset sets it per
+            dataset to UniverSat's own recipes (patch size in metres per sensor).
+        input_res: Physical resolution (m/px) of the pixels the model sees, for every sensor
+            (all channels share the resized pixel grid); ``None`` uses the registry value per
+            modality.
+        wavelengths: Override the per-channel spectral identity, single-sensor only: one
+            centre wavelength (µm) or SAR polarisation code (``VV``, ``VH``, ``HH``, ``HV``,
+            ``Ratio_VV_VH``, ``Ratio_HH_HV``) per input channel. ``None`` derives them from
+            the band specs (wavelengths, or codes from SAR band names).
         subpatch: Sub-patch factor (pixels per sub-patch side) for every sensor, or a
             ``{modality: factor}`` mapping. It must divide each patch. ``None`` (default)
             uses the registry factor when it divides the patch, else the largest divisor
@@ -369,6 +394,8 @@ class UniverSatBenchModel(BenchModel):
             ``W // output_px`` per call, so the final encoder tokens (after UniverSat's
             bilinear resampling and sub-patch cross-attention) form a dense grid; 1 gives
             one token per pixel, as in UniverSat's PangaeaBench linear probe.
+        output_scale: Output token grid as a multiple of the patch grid; 4 turns a 14x14 patch
+            grid into 56x56 output tokens. Exclusive with ``output_px`` and ``output_grid``.
         normalize: If True, L2-normalize the output embeddings.
         gradient_checkpointing: Recompute trunk-block activations in backward (exact; for full
             fine-tuning, whose stored activations exceed 32 GB on some datasets).
@@ -381,6 +408,8 @@ class UniverSatBenchModel(BenchModel):
     # Output embedding dimension of the released Base model.
     embed_dim: ClassVar[int] = 768
 
+    patch_size_unit = "meters"
+
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
         bands: list[BandSpec],
@@ -389,9 +418,11 @@ class UniverSatBenchModel(BenchModel):
         patch_size: float = 10.0,
         output_grid: int | None = None,
         input_res: float | None = None,
+        wavelengths: list[float | str] | None = None,
         patch_px: int | None = None,
         subpatch: int | dict[str, int] | None = None,
         output_px: int | None = None,
+        output_scale: int | None = None,
         normalize: bool = False,
         gradient_checkpointing: bool = False,
         repo: str = UNIVERSAT_REPO,
@@ -402,7 +433,9 @@ class UniverSatBenchModel(BenchModel):
     ) -> None:
         super().__init__(bands=bands, normalization=normalization, **_kwargs)
 
-        self._groups = _build_sensor_groups(self.bands, modality=modality, input_res=input_res)
+        self._groups = _build_sensor_groups(
+            self.bands, modality=modality, input_res=input_res, wavelengths=wavelengths
+        )
 
         self.patch_px = patch_px
         self.patch_size = patch_px * self._groups[0]["input_res"] if patch_px else patch_size
@@ -418,25 +451,28 @@ class UniverSatBenchModel(BenchModel):
             raise ValueError(
                 f"patch_px={patch_px} resolves to {self._groups[0]['patch_pixels']} px in UniverSat."
             )
+        if output_scale is not None and (output_scale < 1 or output_px or output_grid):
+            raise ValueError(
+                "UniverSat output_scale must be >= 1 and excludes output_px and output_grid."
+            )
         self.output_px = output_px
+        self.output_scale = output_scale
         self.output_grid = output_grid
         self.do_normalize = normalize
 
-        source = f"{repo}:{repo_ref}" if repo_ref else repo
+        check_hub_namespace("UniverSat")
+        source, hub_kwargs = hub_source(repo, repo_ref)
         # The hub entrypoint forwards ``revision`` to ``PyTorchModelHubMixin.from_pretrained``.
         revision = {"revision": weights_revision} if weights_revision else {}
         # Single-pass extraction does not amortize torch.compile's max-autotune warmup.
         # Varying dataset shapes can also exhaust its recompile limit.
-        # torch.hub's fork check only accepts a commit that is a branch or tag head,
-        # so the pinned commit fails once upstream main moves past it.
         self.model = cast(
             UniverSatEncoder,
             torch.hub.load(
                 source,
                 "from_pretrained",
-                trust_repo=True,
-                skip_validation=True,
                 compile=False,
+                **hub_kwargs,
                 **revision,
             ),
         ).eval()
@@ -469,6 +505,8 @@ class UniverSatBenchModel(BenchModel):
         output_grid = self.output_grid
         if self.output_px:
             output_grid = images.shape[-1] // self.output_px
+        elif self.output_scale:
+            output_grid = images.shape[-1] // self._groups[0]["patch_pixels"] * self.output_scale
         elif output_grid is None and self.patch_px:
             output_grid = images.shape[-1] // self.patch_px
         if not self._warned_remainder:

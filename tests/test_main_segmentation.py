@@ -118,7 +118,6 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     )
     probe, solver = _mock_probe_and_solver()
     cache = mock.Mock()
-    probe.freeze_backbone = True
     probe.extract_segmentation_features.return_value = cache
     solver.best_epoch, solver.best_val_miou = 4, 0.5
     solver.evaluate_cached.return_value = (
@@ -279,7 +278,8 @@ def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
 
     data_mock.assert_not_called()
     df = pd.read_csv(out)
-    assert df["method"].tolist() == ["seg-upernet-lora"]
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert (df.loc[0, "adaptation"], df.loc[0, "decoder"]) == ("lora", "upernet")
     assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
 
 
