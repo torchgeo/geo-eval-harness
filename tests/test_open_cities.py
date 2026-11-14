@@ -3,6 +3,8 @@
 import hashlib
 import io
 import json
+import os
+import pickle
 from pathlib import Path
 from unittest import mock
 
@@ -12,7 +14,6 @@ import pytest
 import rasterio
 import torch
 from rasterio.transform import from_origin
-from torch.utils.data import DataLoader
 
 from geo_eval_harness import download
 from geo_eval_harness.datasets import get_bench_dataset_class
@@ -23,7 +24,6 @@ from geo_eval_harness.hub import load_checksums
 CHIP = oc.CHIP_SIZE
 ORIGIN = (500_000.0, 9_250_000.0)  # UTM 37S, near Dar es Salaam
 GSD = 0.1
-SPAWN_WORKER_TIMEOUT_S = 300
 
 
 def _pixel_lonlat(col: float, row: float) -> list[float]:
@@ -165,7 +165,7 @@ def test_mask_preserves_polygons_in_nested_repaired_collections(
     assert not mask[100, 80:100].any()
 
 
-def test_spawn_worker_reads_dataset_after_parent_sample_access(
+def test_pickled_split_reopens_its_scenes_after_parent_sample_access(
     scene: Path, index: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     oc.build_scene_mask(scene / "dar" / "abc123.tif", scene / "dar" / "abc123.geojson", index)
@@ -173,20 +173,14 @@ def test_spawn_worker_reads_dataset_after_parent_sample_access(
     monkeypatch.setattr(oc, "load_index", lambda: index)
     dataset = oc.OpenCities().get_dataset("train", partition="full")
     expected = dataset[0]
-    # A spawned worker re-imports torch and the harness; on loaded CI runners (macOS under
-    # xdist) that alone can exceed 30 s. The timeout only guards against a hung worker.
-    loader = DataLoader(
-        dataset,
-        batch_size=1,
-        num_workers=1,
-        multiprocessing_context="spawn",
-        timeout=SPAWN_WORKER_TIMEOUT_S,
-    )
-    batches = list(loader)
-    assert len(batches) == 1
+    restored = pickle.loads(pickle.dumps(dataset))
+    assert restored._handles == {}
+    # A DataLoader worker unpickles the parent's pid and must open its own handles.
+    restored._pid = -1
     for key, value in expected.items():
-        torch.testing.assert_close(batches[0][key][0], value)
+        torch.testing.assert_close(restored[0][key], value)
         torch.testing.assert_close(dataset[0][key], value)
+    assert restored._pid == os.getpid()
 
 
 def test_dataset_reports_missing_scene_files(

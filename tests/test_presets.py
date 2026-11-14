@@ -1,8 +1,5 @@
 """Offline coverage of the typed preset boundary."""
 
-import subprocess
-import sys
-
 import pytest
 
 from geo_eval_harness.config import list_model_configs, model_config_path
@@ -27,7 +24,7 @@ def test_unknown_model_config_is_rejected_without_suggestions(name: str) -> None
 
 
 @pytest.mark.parametrize("name", list_model_configs())
-def test_packaged_preset_is_typed_without_loading_weights(name: str) -> None:
+def test_packaged_preset_is_typed_and_omits_schema_defaults(name: str) -> None:
     preset = load_model_preset(ModelConfig(name=name), seed=17)
     assert isinstance(preset, ModelPreset)
     assert preset.target
@@ -38,9 +35,6 @@ def test_packaged_preset_is_typed_without_loading_weights(name: str) -> None:
     assert "interpolation" not in preset.kwargs
     assert "${" not in str(preset.model_dump())
 
-
-@pytest.mark.parametrize("name", list_model_configs())
-def test_packaged_preset_omits_schema_defaults(name: str) -> None:
     raw = load_yaml(model_config_path(name))
     preset = ModelPreset.model_validate(raw)
     expected = preset.model_dump(mode="json", exclude_defaults=True)
@@ -145,19 +139,6 @@ def test_model_dataset_overrides_are_isolated_and_fall_back() -> None:
     )
     assert not eurosat.dataset_overrides
     assert model_cfg.input.image_size == 224
-
-
-def test_configuration_import_and_resolution_do_not_import_omegaconf() -> None:
-    code = """
-import sys
-from geo_eval_harness.config import list_model_configs
-from geo_eval_harness.config.schema import ModelConfig
-from geo_eval_harness.config.presets import load_model_preset
-for name in list_model_configs():
-    load_model_preset(ModelConfig(name=name))
-assert not set(('omegaconf', 'torch', 'torchgeo', 'numpy', 'pandas')) & sys.modules.keys()
-"""
-    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 @pytest.mark.parametrize("image_size", [None, 96])

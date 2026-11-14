@@ -1,7 +1,5 @@
 """Tests for model accuracy baselines."""
 
-import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -13,11 +11,10 @@ from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.models._band_mapping import map_to_model_bands
 from geo_eval_harness.models.torchgeo_models import _CROMA_S2_12
 from geo_eval_harness.resume import _canonical_key_cell
-from scripts.update_baselines import baseline_metadata, filter_and_deduplicate
+from scripts.update_baselines import baseline_metadata, filter_and_deduplicate, main
 from tests.support.cli import run_cli
 from tests.support.data import require_dataset_data
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "accuracy_baselines.csv"
 
 _TOL = 0.02
@@ -95,19 +92,7 @@ def test_update_baselines_requires_comparable_results() -> None:
 
 def test_accuracy_fixture_matches_stored_results(tmp_path: Path) -> None:
     out = tmp_path / "out.csv"
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_REPO_ROOT / "scripts" / "update_baselines.py"),
-            "--output",
-            str(out),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=tmp_path,
-        timeout=120,
-    )
-    assert result.returncode == 0, f"Script failed:\n{result.stderr}"
+    main(["--output", str(out)])
     pd.testing.assert_frame_equal(pd.read_csv(out), _fixture_df, check_exact=True)
 
 
