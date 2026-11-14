@@ -10,7 +10,7 @@ Reference implementations (canonical first):
 
 import logging
 from collections import defaultdict
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -512,7 +512,10 @@ class OlmoEarthBenchModel(BenchModel):
         self.min_image_size = min_image_size
 
         model_id = getattr(ModelID, f"OLMOEARTH_{version.upper()}_{model_size.upper()}")
-        self.encoder_model: Any = load_model_from_id(model_id, load_weights=True)
+        pretrained = load_model_from_id(model_id, load_weights=True)
+        # Preserve segmentation tap paths while retaining only the inference encoder.
+        self.encoder_model: Any = torch.nn.Module()
+        self.encoder_model.add_module("encoder", cast(torch.nn.Module, pretrained.encoder))
         self.normalizer = Normalizer(std_multiplier=std_multiplier)
         self._token_layout: list[tuple[int, ...]] = []
         self._record_token_layout()
