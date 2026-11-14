@@ -197,9 +197,12 @@ def test_regeneration_preserves_references_history_and_current_rows(
 
 
 def test_generated_json_preserves_backslashes_and_unicode() -> None:
-    rows = [{"name": "model\\north", "dataset": "tile_\u5317", "snapshot": "example"}]
-    meta = [{"label": "example", "rows": 1}]
-    rendered = explorer._replace_snapshot_data(HTML, {"example": rows}, meta, "example")
+    label = '</script><script>alert("snapshot")</script>'
+    rows = [{"name": "model\\north</script>", "dataset": "tile_\u5317", "snapshot": label}]
+    meta = [{"label": label, "rows": 1}]
+    rendered = explorer._replace_snapshot_data(HTML, {label: rows}, meta, label)
+    assert rendered.count("</script>") == 1
+    assert _constant(rendered, "DEFAULT_SNAPSHOT") == label
     assert explorer.unpack_rows(_constant(rendered, "DATA_PACKED")) == rows
     assert _constant(rendered, "GPU_PRICES") == _constant(HTML, "GPU_PRICES")
     assert _constant(rendered, "CARBON_INTENSITY") == _constant(HTML, "CARBON_INTENSITY")

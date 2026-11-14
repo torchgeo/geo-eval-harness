@@ -282,6 +282,11 @@
       return RANKINGS[state.task][state.probe][state.bandclass][state.aggregation];
     }
 
+    function escapeHTML(value) {
+      const entities = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
+      return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
+    }
+
     // Pinned to en-US so the separators never flip with the reader's locale: a
     // German-formatted "1.813,931" reads as 1.8 million to everyone else.
     function formatNumber(value, digits = 3) {
@@ -378,8 +383,8 @@
         ...(partial ? [{title: "Datasets", field: "n_tasks", width: 84, hozAlign: "right", sorter: "number",
           headerTooltip: "Datasets this model is ranked on"}] : []),
         ...datasetNames.map(dataset => ({
-          title: datasetMeta[dataset]?.label || dataset,
-          headerTooltip: `${dataset} — ${datasetMeta[dataset]?.metric || "score"}`,
+          title: escapeHTML(datasetMeta[dataset]?.label || dataset),
+          headerTooltip: `${escapeHTML(dataset)} — ${escapeHTML(datasetMeta[dataset]?.metric || "score")}`,
           field: `per_task.${dataset}`, width: 84, hozAlign: "right",
           sorter: "number", headerSortStartingDir: "desc",
           formatter(cell) {
@@ -428,7 +433,7 @@
         return;
       }
       if (!excluded.length) { target.textContent = "All observed models have complete quality coverage for this view."; return; }
-      const items = excluded.map(row => `<li>${row.display || row.model} (${row.n_tasks} datasets)</li>`).join("");
+      const items = excluded.map(row => `<li>${escapeHTML(row.display || row.model)} (${formatNumber(row.n_tasks, 0)} datasets)</li>`).join("");
       target.innerHTML = `<strong>Excluded models: incomplete quality coverage.</strong><ul>${items}</ul>`;
     }
 
@@ -636,8 +641,8 @@
       const positionedPoints = points.map((row, index) => ({row, index, x: xScale(Number(row.gflops_backbone)), y: yScale(Number(row.overall))}));
       positionedPoints.forEach(({row, x, y}) => {
         const point = svgElement("circle", {cx: x, cy: y, r: 5.5, class: `scatter-point ${state.hoveredModel === row.model ? "hovered" : ""}`, "data-model": row.model, tabindex: "0"});
-        const tooltip = `<strong>${row.display}</strong><br>${formatNumber(row.gflops_backbone)} GFLOPs<br>${data.overall_meta.label}: ${formatOverall(row.overall, data.overall_meta)}`;
-        point.appendChild(svgElement("title", {}, tooltip.replace(/<[^>]+>/g, " ")));
+        const tooltip = `<strong>${escapeHTML(row.display)}</strong><br>${formatNumber(row.gflops_backbone)} GFLOPs<br>${escapeHTML(data.overall_meta.label)}: ${formatOverall(row.overall, data.overall_meta)}`;
+        point.appendChild(svgElement("title", {}, `${row.display} — ${formatNumber(row.gflops_backbone)} GFLOPs; ${data.overall_meta.label}: ${formatOverall(row.overall, data.overall_meta)}`));
         point.addEventListener("mouseenter", event => { setHoveredModel(row.model); showTooltip("scatter-tooltip", event, tooltip); });
         point.addEventListener("mousemove", event => showTooltip("scatter-tooltip", event, tooltip));
         point.addEventListener("mouseleave", () => { setHoveredModel(null); hideTooltip("scatter-tooltip"); });
