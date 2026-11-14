@@ -73,6 +73,11 @@ SMARTIES
 
 .. autoclass:: SmartiesBench
 
+EoS-FM
+^^^^^^
+
+.. autoclass:: EoSFMBenchModel
+
 SAM 3
 ^^^^^
 

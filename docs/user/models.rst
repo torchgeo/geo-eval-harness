@@ -494,6 +494,58 @@ THOR embeds each band with its own patch kernel at the band's native GSD and ave
 
 Classification embeddings average each group's final tokens and concatenate the groups (``merge: concat``, THOR's default in its PANGAEA experiments), so their width grows with the number of band groups. For segmentation, hook ``taps.<i>``: it receives block ``i``'s tokens as ``[B, C, h, w]``, with each group upsampled to the finest grid and merged the same way. THOR's pretraining statistics are not offered as model normalization, because its own fine-tuning configs z-score with dataset statistics.
 
+EoS-FM
+^^^^^^
+
+:class:`~geo_eval_harness.models.EoSFMBenchModel` wraps EoS-FM (`Adorni et al., ECCV 2026
+<https://arxiv.org/abs/2511.21523>`_), an ensemble of 22 ConvNeXtV2-Atto specialists (75M
+parameters), each trained with supervision on one remote-sensing dataset.  Each checkpoint entry
+stores the names of the bands its specialist was trained on: R,G,B or Sentinel-2 B4,B3,B2 for
+most, NIR,R,G for three, VV,VH composites with expressions such as ``VV-VH`` for the SAR
+specialists, 13 Sentinel-2 bands for three (one with a cloud band, ``CLD``) and Sentinel-1 plus
+Sentinel-2 for one.  The weights come from a pinned commit of `pierreadorni/eos-fm
+<https://huggingface.co/pierreadorni/eos-fm>`_ and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model eosfm --dataset m-eurosat --bands all
+
+The embedding concatenates the average-pooled last stage (320 channels) of every specialist, in
+checkpoint order: 7040 features for any input.  Each specialist gets one input built from its
+training bands, in its training order, with the band adaptation of upstream's encoder
+(``SmartBandAdapter``, pierreadorni/EoS-FM@d61a5ef).  Each training band takes the first input
+band that
+
+1. has the same name; otherwise
+2. has the same centre wavelength (Sentinel-2 B4 for R); otherwise
+3. is the optical band with the nearest centre wavelength (B11 for a missing B10, R for NIR on
+   RGB input); otherwise
+4. is the next band of a fallback pool: SAR bands for a SAR band, optical bands for an optical
+   one, all bands if that pool is empty.  The pool position advances with every fallback of the
+   same specialist, so SAR specialists on RGB input get R,G and R-G.
+
+As upstream, optical bands come before SAR bands.  The wrapper translates band names into
+upstream's vocabulary: Sentinel-2 bands into B1 to B12 and B8A, other red, green, blue, NIR and
+SWIR bands into R, G, B, NIR, SWIR1 and SWIR2, and VV, VH, HH and HV unchanged.  Other bands keep
+their name and have no wavelength, so specialists reach them only through the fallback; for
+example, So2Sat's complex and Lee-filtered SAR channels are not used by the SAR specialists.
+Elevation bands (``kuro_siwo`` and ``flair2`` ``all``) are not passed to the specialists.  On the
+released weights the per-level features equal upstream ``EosFM`` (raw features, no fusion)
+exactly for every benchmark band set checked.
+
+All specialists share one input normalization (``bandspec_zscore``): each dataset is
+standardized with its own band statistics, as the authors recommend; the training statistics
+stored in the checkpoint are not applied, as upstream.  Upstream's optional feature BatchNorm,
+projection and fusion are not in the checkpoint, so the wrapper returns raw features.  The
+first release (``c161e886``) had 21 specialists, two of which produced features of up to 1e4;
+this release does not.
+
+The EuroSAT and BigEarthNet specialists were trained on the labels of EuroSAT and BigEarthNet
+v2, so results on ``eurosat``, ``eurosat-spatial``, ``m-eurosat``, ``benv2`` and
+``m-bigearthnet`` are not out-of-distribution.  The Kenya crop-type specialist is trained on a
+dataset that is not in the benchmark.  The code is licensed CC BY-NC-SA 4.0 and the
+weights CC BY-SA 4.0, as stated on GitHub and Hugging Face respectively.
+
 Adding a new model
 ------------------
 
