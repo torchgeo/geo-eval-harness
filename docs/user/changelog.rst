@@ -26,6 +26,7 @@ Models
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
+* CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 
 Evaluation and results
 ^^^^^^^^^^^^^^^^^^^^^^
