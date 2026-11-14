@@ -51,7 +51,7 @@ INFRABENCH_REVISION = "2b10e1eb8aadc9c46eb2f3c19582995d5ca541b7"
 INFRABENCH_ZIP = "infra-bench-cls-dataset-v2.zip"
 INFRABENCH_SPLIT_URL = (
     "https://raw.githubusercontent.com/justing0909/infra-bench-cls/"
-    "1eef7fd2c31479f6c60fdf94a03b35a4ba012e96/data/spatial_split/asset_id_to_split_v1.parquet"
+    "9846823b891350f910cb972820542156930d27dc/data/spatial_split/asset_id_to_split_v1.parquet"
 )
 INFRABENCH_SPLIT_SHA256 = "46b554a419d4f13cda221b18e26168e54bdb4266eca7e1846ec78dbbecf625fd"
 
