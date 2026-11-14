@@ -1103,7 +1103,7 @@ def inline_into_html(html_text: str, blocks: dict[str, object]) -> str:
     """Replace empty ``const NAME = …;`` anchors with compact JSON payloads."""
     text = html_text
     for name, obj in blocks.items():
-        payload = json.dumps(obj, separators=(",", ":"), allow_nan=False)
+        payload = json.dumps(obj, separators=(",", ":"), allow_nan=False).replace("<", "\\u003c")
         pattern = re.compile(rf"const {name} = .*?;", re.DOTALL)
         if not pattern.search(text):
             raise SystemExit(f"Could not locate `const {name} = …;` in HTML.")

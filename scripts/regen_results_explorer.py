@@ -371,7 +371,9 @@ def _replace_snapshot_data(
             "Could not locate GPU_PRICES/CARBON_INTENSITY in "
             f"{HTML_PATH.name}; the efficiency figure needs both."
         )
-    new_block = "\n".join([js_columns, js_numeric, js_snaps, js_default, js_data, carried.group()])
+    new_block = "\n".join(
+        [js_columns, js_numeric, js_snaps, js_default, js_data, carried.group()]
+    ).replace("<", "\\u003c")
     if not pattern.search(text):
         raise SystemExit("Could not locate COLUMNS/NUMERIC_COLS/DATA block in HTML.")
     return pattern.sub(lambda _: new_block, text, count=1)

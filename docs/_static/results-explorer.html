@@ -601,6 +601,11 @@ function _snapView() {
 FILTER_KEYS.forEach(k => filterState[k] = new Set(uniqSorted(_snapView().map(r => r[k]))));
 let nameQuery = "";
 
+function escapeHTML(value) {
+  const entities = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
+  return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
+}
+
 function buildCheckboxFilter(containerId, key, sourceRows) {
   const rows = sourceRows || DATA;
   const values = uniqSorted(rows.map(r => r[key]));
@@ -611,8 +616,8 @@ function buildCheckboxFilter(containerId, key, sourceRows) {
     const display = key === "model" ? shortModel(v) : v;
     const row = document.createElement("div");
     row.className = "check-row";
-    row.innerHTML = `<input type="checkbox" id="${id}" data-key="${key}" data-value="${String(v)}" checked>
-                     <label for="${id}" title="${v}">${display}</label>`;
+    row.innerHTML = `<input type="checkbox" id="${id}" data-key="${key}" data-value="${escapeHTML(v)}" checked>
+                     <label for="${id}" title="${escapeHTML(v)}">${escapeHTML(display)}</label>`;
     container.appendChild(row);
   });
   if (container._scopedHandler) {
@@ -1045,8 +1050,8 @@ const TABLE_COLS = COLUMNS.map(c => {
     };
     def.hozAlign = "right";
   }
-  if (c === "model") def.formatter = cell => shortModel(cell.getValue());
-  if (c === "name") def.formatter = cell => backboneName(cell.getValue());
+  if (c === "model") def.formatter = cell => escapeHTML(shortModel(cell.getValue()));
+  if (c === "name") def.formatter = cell => escapeHTML(backboneName(cell.getValue()));
   return def;
 });
 
@@ -1111,7 +1116,7 @@ function updateLede(data) {
     },
   ];
   findings.innerHTML = cards.map(c =>
-    `<div class="card"><span class="num">${c.num}</span><div class="label">${c.label}</div><div class="detail">${c.detail}</div></div>`
+    `<div class="card"><span class="num">${escapeHTML(c.num)}</span><div class="label">${escapeHTML(c.label)}</div><div class="detail">${escapeHTML(c.detail)}</div></div>`
   ).join("");
 }
 

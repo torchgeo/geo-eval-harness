@@ -345,9 +345,10 @@ def test_inline_replaces_only_the_three_template_anchors() -> None:
     blocks = {
         "RANKINGS": {"classification": {}},
         "SENSITIVITY": {"views": []},
-        "DEFAULT_SLICE": {"task": "classification"},
+        "DEFAULT_SLICE": {"task": "</script><script>alert(1)</script>"},
     }
     output = rl.inline_into_html(stub, blocks)
+    assert output.count("</script>") == 1
     for name, expected in blocks.items():
         match = re.search(rf"const {name} = (.*?);", output)
         assert match is not None
