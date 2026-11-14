@@ -54,7 +54,7 @@ from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_
 from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
 from geo_eval_harness.datasets.infrabench_cls import SPLIT_FILE
 from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
-from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
+from geo_eval_harness.hub import fetch_pinned, load_checksums, sha256_file, verify_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -547,13 +547,6 @@ def download_openearthmap_sar(output_dir: Path) -> None:
 SEN1FLOODS11_URL = "https://storage.googleapis.com/sen1floods11/v1.1"
 
 
-def _sha256(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
 def download_sen1floods11(output_dir: Path) -> None:
     """Fetch the checksum-listed split CSVs and hand-labelled chips, skipping verified files."""
     from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
@@ -563,7 +556,7 @@ def download_sen1floods11(output_dir: Path) -> None:
     def fetch(item: tuple[str, str]) -> None:
         name, digest = item
         path = target / name
-        if _sha256(path) == digest:
+        if path.is_file() and sha256_file(path) == digest:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(f"{path.name}.part")
@@ -572,7 +565,7 @@ def download_sen1floods11(output_dir: Path) -> None:
             partial.open("wb") as out,
         ):
             shutil.copyfileobj(response, out)
-        if _sha256(partial) != digest:
+        if sha256_file(partial) != digest:
             partial.unlink()
             raise ValueError(f"Sen1Floods11 SHA-256 mismatch for {SEN1FLOODS11_URL}/{name}. Retry.")
         partial.replace(path)

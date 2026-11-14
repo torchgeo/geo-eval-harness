@@ -7,6 +7,7 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
+from geo_eval_harness import hub
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
 from geo_eval_harness.config import list_model_configs
 from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
@@ -201,7 +202,7 @@ def test_download_verifies_pinned_revision_and_sha256(
         calls.append((repo, filename, revision))
         return str(path)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
+    monkeypatch.setattr(hub, "hf_hub_download", fake_download)
     digest = hashlib.sha256(b"weights").hexdigest()
     monkeypatch.setitem(smarties.SMARTIES_WEIGHTS, "base", ("org/repo", "abc123", digest))
     assert SmartiesBench._download_checkpoint("base") == path
