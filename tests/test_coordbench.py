@@ -20,7 +20,7 @@ from geo_eval_harness.coordbench import (
     spatial_fold_ids,
 )
 from geo_eval_harness.coordbench import datasets as cb_datasets
-from geo_eval_harness.coordbench.config import CoordConfig
+from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
 from geo_eval_harness.coordbench.run import _instantiate_encoder
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
@@ -480,6 +480,14 @@ def test_custom_encoder_preserves_ordinary_nested_kwargs() -> None:
     assert isinstance(encoder, FixtureEncoder)
     assert encoder.payload == payload
     assert encoder.device == "cpu"
+
+
+@pytest.mark.parametrize("model", ["climplicit", "geoclip", "satclip", "sinr"])
+def test_rshf_encoders_name_the_missing_extra(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
+    monkeypatch.setattr("geo_eval_harness.coordbench.models.find_spec", lambda name: None)
+    cfg = CoordConfig.model_validate({"model": {"name": model}})
+    with pytest.raises(ImportError, match=r"pip install 'geo-eval-harness\[coordbench\]'"):
+        _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
 
 
 def test_rejects_non_location_custom_target() -> None:
