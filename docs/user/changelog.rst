@@ -51,6 +51,7 @@ Datasets
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
 * CaFFe and ``bright-post-sar-rgb`` expose grayscale SAR as three identical RGB channels for RGB model inputs.
 * AID, NWPU-RESISC45, and UC Merced provide RGB scene classification with fixed splits and training-split statistics.
+* Dynamic EarthNet maps its stored Sentinel-2 channels in B02, B03, B04, B08, B05, B06, B07, B8A, B11, B12, B01, B09 order. Selections need at least one Planet band.
 * PLANTEUR provides crop-type segmentation with monthly Sentinel-1/2 inputs and five leave-one-island-out folds.
 * SpaceNet2 and SpaceNet7 use binary building masks. BENV2 maps its stored Sentinel-1 channels in VH, VV order.
 * Classification datasets declare class names in label-index order.
