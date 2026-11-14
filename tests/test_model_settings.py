@@ -183,3 +183,35 @@ def test_timm_vit_dynamic_grid_pads_partial_patches() -> None:
     assert features.shape == (1, 192)
     assert patches.shape == (1, 65, 192)
     torch.testing.assert_close(features, expected)
+
+
+def test_timm_unpooled_channels_last_backbone_pools_spatial_axes() -> None:
+    config = TimmModelSettings(
+        model_name="swin_tiny_patch4_window7_224", pretrained=False, global_pool=""
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    with torch.inference_mode():
+        features = model(torch.rand(1, 3, 224, 224))
+    assert features.shape == (1, 768)
+
+
+def test_timm_unpooled_tokens_average_patches_without_register_tokens() -> None:
+    config = TimmModelSettings(
+        model_name="vit_little_patch16_reg4_gap_256", pretrained=False, global_pool=""
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    inputs = torch.rand(1, 3, 256, 256)
+    with torch.inference_mode():
+        tokens = model.backbone(inputs)
+        features = model(inputs)
+    assert tokens.shape[1] == 4 + 16 * 16
+    torch.testing.assert_close(features, tokens[:, 4:].mean(dim=1))
+
+
+@pytest.mark.parametrize(
+    "model_name", ["swin_tiny_patch4_window7_224", "vit_little_patch16_reg4_gap_256"]
+)
+def test_timm_rejects_cls_token_for_backbones_without_one(model_name: str) -> None:
+    config = TimmModelSettings(model_name=model_name, pretrained=False, use_cls_token=True)
+    with pytest.raises(ValueError, match="has no class token"):
+        config.build(_bands(3))
