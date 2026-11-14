@@ -109,3 +109,8 @@ torchgeo wrappers
    :no-show-inheritance:
 
 .. autoclass:: UCMerced
+
+Other datasets
+--------------
+
+.. autoclass:: InfraBenchCLS

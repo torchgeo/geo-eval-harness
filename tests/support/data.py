@@ -42,6 +42,8 @@ def require_dataset_data(name: str) -> None:
         "oscd-post",
     ):
         paths = [Path("data") / name]
+    elif name == "infrabench-cls":
+        paths = [Path("data/infrabench_cls")]
     elif name.startswith("sen1floods11"):
         paths = [Path("data/sen1floods11")]
     elif name.startswith("planteur"):

@@ -7,6 +7,7 @@ Targets:
 - ``eurosat`` — torchgeo's EuroSAT downloader, into ``<output>/eurosat``.
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
+- ``infrabench-cls``: pinned, verified Sentinel-1/2 tiles and spatial splits.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
@@ -51,6 +52,7 @@ from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
 from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
 from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
+from geo_eval_harness.datasets.infrabench_cls import SPLIT_FILE
 from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
 from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
@@ -63,6 +65,15 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
+
+INFRABENCH_REPO = "jmguthrie/infrabench-cls"
+INFRABENCH_REVISION = "2b10e1eb8aadc9c46eb2f3c19582995d5ca541b7"
+INFRABENCH_ZIP = "infra-bench-cls-dataset-v2.zip"
+INFRABENCH_SPLIT_URL = (
+    "https://raw.githubusercontent.com/justing0909/infra-bench-cls/"
+    "9846823b891350f910cb972820542156930d27dc/data/spatial_split/asset_id_to_split_v1.parquet"
+)
+INFRABENCH_SPLIT_SHA256 = "46b554a419d4f13cda221b18e26168e54bdb4266eca7e1846ec78dbbecf625fd"
 
 BRIGHT_REPO = "Kullervo/BRIGHT"
 BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
@@ -97,6 +108,7 @@ TORCHGEO_DATASETS: tuple[str, ...] = (
 )
 DIRECT_DATASETS: tuple[str, ...] = (
     "aid",
+    "infrabench-cls",
     "hotosm_buildings",
     "openearthmap-sar",
     "open_cities",
@@ -212,6 +224,31 @@ def download_aid(output_dir: Path) -> None:
     with zipfile.ZipFile(target / "AID.zip") as archive:
         archive.extractall(target)
     logger.info("AID download complete.")
+
+
+def download_infrabench_cls(output_dir: Path) -> None:
+    """Download Infra-Bench CLS into ``output_dir/infrabench_cls``.
+
+    Extract the 28 benchmark cells and skip the uncapped substation archives.
+    """
+    target = Path(output_dir) / "infrabench_cls"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading %s@%s -> %s", INFRABENCH_REPO, INFRABENCH_REVISION, target)
+    fetch_pinned(
+        INFRABENCH_REPO,
+        INFRABENCH_REVISION,
+        target,
+        load_checksums("infrabench_cls.sha256"),
+        allow_patterns=[INFRABENCH_ZIP],
+    )
+    urllib.request.urlretrieve(INFRABENCH_SPLIT_URL, target / SPLIT_FILE)
+    verify_checksums(target, {SPLIT_FILE: INFRABENCH_SPLIT_SHA256})
+    with zipfile.ZipFile(target / INFRABENCH_ZIP) as archive:
+        cells = [n for n in archive.namelist() if n.endswith("_v1_1k.zip")]
+        for name in cells:
+            with archive.open(name) as stream, zipfile.ZipFile(stream) as cell:
+                cell.extractall(target)
+    logger.info("Infra-Bench CLS download complete (%d cells).", len(cells))
 
 
 def download_hotosm_buildings(output_dir: Path) -> None:

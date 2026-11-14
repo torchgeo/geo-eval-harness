@@ -47,6 +47,7 @@ __all__ = [
     "FieldsOfTheWorld",
     "Forestnet",
     "HOTOSMBuildings",
+    "InfraBenchCLS",
     "KuroSiwo",
     "LEVIRCDPost",
     "LoveDA",

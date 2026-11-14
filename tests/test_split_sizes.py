@@ -16,6 +16,7 @@ from tests.support.data import require_dataset_data
 # OSCD post counts 256-pixel tiles of its fixed city splits.
 # PLANTEUR uses the official splits/443.json and splits/loio.json patch lists.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
+    "infrabench-cls": {"train": 13087, "val": 2856, "test": 2813},
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},
     "m-so2sat": {"train": 19992, "val": 986, "test": 986},

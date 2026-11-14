@@ -270,6 +270,7 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
         "geobench_v1.sha256",
         "geobench_v2.sha256",
         "hotosm_buildings.sha256",
+        "infrabench_cls.sha256",
         "planteur.sha256",
     ],
 )
