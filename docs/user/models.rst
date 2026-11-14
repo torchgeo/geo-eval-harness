@@ -294,6 +294,8 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
+Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size.
+
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
 
