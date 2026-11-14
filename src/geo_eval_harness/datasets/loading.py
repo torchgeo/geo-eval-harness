@@ -62,6 +62,12 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "bright-post-sar": ("bright_post_sar", "BRIGHTPostSAR", "segmentation"),
     "oscd-post": ("oscd_post", "OSCDPost", "segmentation"),
     "bright-post-sar-rgb": ("bright_post_sar", "BRIGHTPostSARRGB", "segmentation"),
+    "planteur": ("planteur", "PLANTEUR", "segmentation"),
+    "planteur_loio_guadeloupe": ("planteur", "PLANTEURLOIOGuadeloupe", "segmentation"),
+    "planteur_loio_martinique": ("planteur", "PLANTEURLOIOMartinique", "segmentation"),
+    "planteur_loio_guyane": ("planteur", "PLANTEURLOIOGuyane", "segmentation"),
+    "planteur_loio_reunion": ("planteur", "PLANTEURLOIOReunion", "segmentation"),
+    "planteur_loio_mayotte": ("planteur", "PLANTEURLOIOMayotte", "segmentation"),
 }
 
 
@@ -110,6 +116,8 @@ def download_command(name: str) -> str:
         name = "bright-post-sar"
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
+    if name.startswith("planteur"):
+        return "geo-eval-harness download planteur"
     if name in {
         "eurosat",
         "eurosat-spatial",
@@ -237,7 +245,7 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         bands: ``"rgb"`` (use the dataset's ``rgb_bands``), ``"all"`` /
             ``None`` (load all bands), or an explicit iterable of band names.
         time_steps: Number of acquisition dates per sample.  Only accepted by
-            multi-temporal wrappers (PASTIS); ``None`` keeps each dataset's
+            multi-temporal wrappers (PASTIS, PLANTEUR); ``None`` keeps each dataset's
             own default.
 
     Returns:
