@@ -272,7 +272,7 @@ def measure_profile(  # noqa: PLR0913 - profiling inputs and timing
     *,
     doy: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
-    """Return historical metrics, including the always-enabled FLOP count."""
+    """Return timing, memory, parameter, and FLOP measurements."""
     result = profile_inference(
         model,
         sample_batch,
