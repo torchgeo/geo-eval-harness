@@ -184,7 +184,7 @@ def load_results(
         paths = sorted(directory.glob("*.csv"))
     frames = []
     for path in paths:
-        frame = pd.read_csv(path)
+        frame = pd.read_csv(path, dtype={"config_hash": str})
         if not frame.empty:
             frames.append(frame)
     if not frames:
@@ -458,7 +458,7 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
                 f.write(buf.getvalue())
             else:
                 f.seek(0)
-                existing_df = pd.read_csv(f)
+                existing_df = pd.read_csv(f, dtype={"config_hash": str})
                 if list(existing_df.columns) == list(df_local.columns):
                     df_local.to_csv(buf, header=False, index=False)
                     f.seek(0, os.SEEK_END)
