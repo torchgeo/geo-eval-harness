@@ -8,7 +8,6 @@ kwargs:
   target_size: 320
 segmentation:
   layers:
-    - backbone.layer4
     - backbone.layer3
     - backbone.layer2
     - backbone.layer1

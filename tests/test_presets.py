@@ -81,6 +81,18 @@ def test_deo_normalization_defaults_and_explicit_override(
         assert "normalization" not in preset.kwargs
 
 
+def test_earthloc_segmentation_layers_are_distinct_resnet_stages() -> None:
+    """torchgeo replaces EarthLoc's ``layer4`` with an identity that repeats ``layer3``."""
+    from torch import nn
+    from torchgeo.models import EarthLoc
+
+    preset = load_model_preset(ModelConfig(name="torchgeo/earthloc_s2_resnet50"))
+    model = EarthLoc()
+    stages = [model.get_submodule(layer) for layer in preset.segmentation.layers]
+    assert stages
+    assert not any(isinstance(stage, nn.Identity) for stage in stages)
+
+
 def test_preset_layers_do_not_override_an_explicit_empty_selection() -> None:
     omitted = RunConfig(model=ModelConfig(name="timm/resnet50"), datasets=["caffe"])
     explicit = RunConfig.model_validate(
