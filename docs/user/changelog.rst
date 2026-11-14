@@ -55,6 +55,7 @@ Datasets
 
 * Infra-Bench CLS provides 13-class Sentinel-1/2 infrastructure classification with spatial splits.
 * GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
+* ``geo-eval-harness download`` accepts every registered dataset name; names that share another dataset's files download that dataset.
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
 * So2Sat maps its stored Sentinel-1 channels in VH, VV order.
