@@ -19,6 +19,7 @@ from typing import Any, ClassVar, Literal, cast
 import numpy as np
 import torch
 import torch.nn as nn
+from einops import rearrange
 from timm.models.vision_transformer import Block
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
@@ -467,10 +468,13 @@ class SmartiesBench(BenchModel):
         Equivalent to upstream's per-band loop: ``12 * mean_c(W_c @ patch_c + b_c)``, with each
         16x16 patch flattened row-major.
         """
-        batch, channels, height, width = images.shape
-        p = SMARTIES_PATCH_SIZE
-        patches = images.reshape(batch, channels, height // p, p, width // p, p)
-        patches = patches.permute(0, 2, 4, 1, 3, 5).reshape(batch, -1, channels, p * p)
+        channels = images.shape[1]
+        patches = rearrange(
+            images,
+            "batch channel (height ph) (width pw) -> batch (height width) channel (ph pw)",
+            ph=SMARTIES_PATCH_SIZE,
+            pw=SMARTIES_PATCH_SIZE,
+        )
         layers = self.spectrum_projection.layers(self.plan.projections)
         weight = torch.stack([layer.weight for layer in layers])
         bias = torch.stack([layer.bias for layer in layers]).mean(dim=0)

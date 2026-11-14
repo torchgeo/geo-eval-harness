@@ -1006,6 +1006,7 @@ name = "geo-eval-harness"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [
+    { name = "einops" },
     { name = "faissknn" },
     { name = "faissknn", extra = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'" },
     { name = "faissknn", extra = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -1096,6 +1097,7 @@ olmoearth = [
 
 [package.metadata]
 requires-dist = [
+    { name = "einops", specifier = ">=0.8" },
     { name = "evaluma", marker = "extra == 'dev'", specifier = ">=0.3" },
     { name = "faissknn", extras = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'", specifier = ">=0.4" },
     { name = "faissknn", extras = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=0.4" },

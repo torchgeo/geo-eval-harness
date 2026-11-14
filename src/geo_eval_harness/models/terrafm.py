@@ -13,6 +13,7 @@ from typing import Any, ClassVar, Literal
 
 import torch
 import torch.nn as nn
+from einops import rearrange
 
 from geo_eval_harness.bands import BandSpec
 
@@ -121,11 +122,14 @@ class _TerraFMAttention(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Attend over ``(B, N, D)`` tokens."""
-        batch, tokens, dim = x.shape
-        qkv = self.qkv(x).reshape(batch, tokens, 3, self.num_heads, dim // self.num_heads)
-        q, k, v = qkv.permute(2, 0, 3, 1, 4).unbind(0)
+        q, k, v = rearrange(
+            self.qkv(x),
+            "batch token (qkv head dim) -> qkv batch head token dim",
+            qkv=3,
+            head=self.num_heads,
+        ).unbind(0)
         attn = ((q @ k.transpose(-2, -1)) * self.scale).softmax(dim=-1)
-        return self.proj((attn @ v).transpose(1, 2).reshape(batch, tokens, dim))
+        return self.proj(rearrange(attn @ v, "batch head token dim -> batch token (head dim)"))
 
 
 class _TerraFMMlp(nn.Module):
