@@ -159,6 +159,21 @@ class GeoBenchv2(Dataset):
         return self._inner[index]
 
 
+class _TimeFirstDataset(Dataset):
+    """Return upstream ``(C, T, H, W)`` time series as ``(T, C, H, W)``."""
+
+    def __init__(self, dataset: GeoBenchv2) -> None:
+        self.dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> dict:
+        sample = self.dataset[index]
+        sample["image"] = sample["image"].movedim(0, 1)
+        return sample
+
+
 class _V2Dataset(BenchDataset):
     """Base class for every GeoBench V2 wrapper.
 
@@ -210,7 +225,7 @@ class _V2Dataset(BenchDataset):
         """Return raw sensor values for a split.
 
         Use ``nn.Identity`` upstream; ``BenchModel`` owns per-channel normalization.
-        ``time_steps`` requests a time series and needs :attr:`multi_temporal`.
+        ``time_steps`` requests a ``(T, C, H, W)`` time series and needs :attr:`multi_temporal`.
         """
         del partition
         band_order = self.build_band_order(bands)
@@ -226,9 +241,10 @@ class _V2Dataset(BenchDataset):
             if not self.multi_temporal:
                 raise ValueError(f"{self.name} is not multi-temporal; drop time_steps.")
             kwargs["num_time_steps"] = int(time_steps)
-            kwargs["temporal_output_format"] = "TCHW"
+            # Upstream joins sensors on the first axis, which must therefore be channels.
+            kwargs["temporal_output_format"] = "CTHW"
 
-        return GeoBenchv2(
+        dataset = GeoBenchv2(
             root=self.data_root(),
             dataset_name=self.name,
             split=split,
@@ -236,6 +252,7 @@ class _V2Dataset(BenchDataset):
             transforms=_ChainedTransform(self.canonicalize_sample, transform),
             **kwargs,
         )
+        return dataset if time_steps in (None, 1) else _TimeFirstDataset(dataset)
 
 
 class _OffsetMaskV2Dataset(_V2Dataset):

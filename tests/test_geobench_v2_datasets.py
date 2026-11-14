@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -318,9 +319,12 @@ class TestKuroSiwoLive:
 class MockPASTIS:
     """Stand-in for ``geobench_v2.datasets.GeoBenchPASTIS``.
 
-    Mirrors the real upstream loader: per-sensor ``image_<sensor>`` keys, folded
-    into a single stacked ``image`` only when ``return_stacked_image`` is set.
+    Mirrors the real upstream loader: per-sensor ``image_<sensor>`` keys with a leading time
+    axis for time series, transformed, moved to ``(C, T, H, W)`` for ``CTHW``, and then joined
+    on the first axis into a single ``image`` only when ``return_stacked_image`` is set.
     """
+
+    sensor_values: ClassVar[dict[str, float]] = {"s2": 1.0, "s1_asc": 2.0, "s1_desc": 3.0}
 
     def __init__(
         self,
@@ -332,12 +336,14 @@ class MockPASTIS:
         return_stacked_image=False,
         **kwargs,
     ):
-        del kwargs
         self.root = root
         self.split = split
         self.band_order = band_order or {}
         self.transforms = transforms
         self.return_stacked_image = return_stacked_image
+        steps = kwargs.get("num_time_steps", 1)
+        self.time = () if steps == 1 else (steps,)
+        self.channels_first = kwargs.get("temporal_output_format", "CTHW") == "CTHW"
         self.h, self.w = 16, 16
         self.data_df = MagicMock()
         self.data_df.read.return_value = pd.DataFrame(
@@ -351,13 +357,18 @@ class MockPASTIS:
         del idx
         sample: dict[str, torch.Tensor] = {"mask": torch.zeros(self.h, self.w, dtype=torch.long)}
         for sensor, bands in self.band_order.items():
-            sample[f"image_{sensor}"] = torch.ones(len(bands), self.h, self.w)
+            sample[f"image_{sensor}"] = torch.full(
+                (*self.time, len(bands), self.h, self.w), self.sensor_values[sensor]
+            )
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+        if self.time and self.channels_first:
+            for sensor in self.band_order:
+                sample[f"image_{sensor}"] = sample[f"image_{sensor}"].permute(1, 0, 2, 3)
         if self.return_stacked_image:
             sample["image"] = torch.cat(
                 [sample.pop(f"image_{sensor}") for sensor in self.band_order], 0
             )
-        if self.transforms is not None:
-            sample = self.transforms(sample)
         return sample
 
 
@@ -402,7 +413,16 @@ class TestPASTISSampleConstruction:
         PASTIS().get_dataset("train", bands=("b04", "b03", "b02"), time_steps=4)
         kwargs = mocked_pastis.call_args.kwargs
         assert kwargs["num_time_steps"] == 4
-        assert kwargs["temporal_output_format"] == "TCHW"
+        assert kwargs["temporal_output_format"] == "CTHW"
+
+    def test_time_series_joins_sensors_on_the_channel_axis(self, mocked_pastis):
+        del mocked_pastis
+        bands = ("vv_desc", "b04", "b03", "vv_asc")
+        image = PASTIS().get_dataset("train", bands=bands, time_steps=4)[0]["image"]
+        assert image.shape == (4, 4, 16, 16)
+        torch.testing.assert_close(
+            image[:, :, 0, 0], torch.tensor([3.0, 1.0, 1.0, 2.0]).expand(4, 4)
+        )
 
     def test_time_steps_rejected_when_not_multi_temporal(self):
         with pytest.raises(ValueError, match="not multi-temporal"):
