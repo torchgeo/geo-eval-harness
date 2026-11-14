@@ -270,6 +270,7 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
         "geobench_v1.sha256",
         "geobench_v2.sha256",
         "hotosm_buildings.sha256",
+        "planteur.sha256",
     ],
 )
 def test_checksum_manifests_are_well_formed(manifest: str) -> None:
@@ -429,7 +430,7 @@ def test_download_datasets_validates_every_name_before_dispatch(
 
 
 @pytest.mark.parametrize(
-    "name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings", "open_cities"]
+    "name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings", "open_cities", "planteur"]
 )
 def test_download_datasets_deduplicates_names(tmp_path: Path, name: str) -> None:
     with mock.patch(f"geo_eval_harness.download.download_{name}") as download:

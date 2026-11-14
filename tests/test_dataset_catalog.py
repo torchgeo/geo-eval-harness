@@ -145,6 +145,15 @@ def test_folder_class_names_follow_loaded_label_order(name: str) -> None:
     assert bench.class_names == tuple(bench().get_dataset("test").classes)
 
 
+def test_m_eurosat_band_labels_match_raw_eurosat_statistics() -> None:
+    """GeoBench's shifted HDF5 keys must map to the bands their pixel statistics show."""
+    subset = get_bench_dataset_class("m-eurosat").bands
+    raw = get_bench_dataset_class("eurosat").bands
+    assert [(b.name, b.wavelength_um) for b in subset] == [(b.name, b.wavelength_um) for b in raw]
+    for subset_band, raw_band in zip(subset, raw, strict=True):
+        assert subset_band.mean == pytest.approx(raw_band.mean, rel=0.1), subset_band.name
+
+
 def test_unknown_dataset_task_raises() -> None:
     with pytest.raises(KeyError, match="unregistered-dataset"):
         get_dataset_task("unregistered-dataset")

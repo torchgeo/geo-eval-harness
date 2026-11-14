@@ -80,6 +80,11 @@ turn those defaults into explicit overrides.
    :members:
    :no-show-inheritance:
 
+.. autoclass:: Adaptation
+   :members:
+   :undoc-members:
+   :no-show-inheritance:
+
 .. autofunction:: load_yaml
 
 Preset resolution and construction
