@@ -52,7 +52,6 @@ class NewModel(BenchModel):
             pretrained,
         )
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         """Return embeddings ``(B, K)`` from already-normalized inputs.
 
