@@ -134,7 +134,7 @@ feature selection, random initialization, image gradients or training state.
 
 The sweep script selects classification datasets from the current catalog, including AID. ``--dataset all`` also includes segmentation tasks, which this patch-feature baseline does not support.
 
-The checked-in result CSVs preserve the original study's measurements and hashes for 13 classification protocols; they contain no AID measurements and were not regenerated on the current runner. New runs use the current configuration and resume hashes. Use ``--output-dir results/handcrafted-current`` for a separate sweep.
+The checked-in result CSVs hold a sweep of the current runner on all 15 classification protocols, next to the original study's rows on 13 protocols under their older configuration hashes. Resume and the summaries select only rows that match the current configuration. Use ``--output-dir results/handcrafted-current`` for a separate sweep.
 
 Levels are cumulative and their feature vectors are strict prefixes:
 
