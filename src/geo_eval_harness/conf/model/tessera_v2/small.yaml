@@ -1,0 +1,30 @@
+name: tessera_v2/small
+target: geo_eval_harness.models.TesseraBenchModel
+supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw]
+kwargs:
+  variant: small
+  embedding_dim: 128
+  batch_pixels: 1024
+  fallback_doy: 183
+  protocol: s2-snapshot-v1
+  weights_revision: 9e1a725f1ac1a3a8ab93fd85b08633754cacb508
+  source_revision: e368539f7c4711e5f16fdd09801573830e34baf9
+input:
+  bands: all
+  normalization: model
+  image_size: null
+segmentation:
+  head: linear
+  cache_features: false
+  layers: [spatial_features]
+  lora_target_modules: 's2_backbone\.transformer_encoder\.layers\.\d+\.linear[12]'
+dataset_overrides:
+  benv2:
+    input:
+      bands: [b04, b02, b03, b08, b8a, b05, b06, b07, b11, b12]
+  treesatai:
+    input:
+      bands: [b04, b02, b03, b08, b8a, b05, b06, b07, b11, b12]
+  pastis:
+    input:
+      bands: [b04, b02, b03, b08, b8a, b05, b06, b07, b11, b12]

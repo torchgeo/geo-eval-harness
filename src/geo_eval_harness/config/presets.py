@@ -8,8 +8,9 @@ import importlib
 from copy import deepcopy
 from typing import Any, Literal
 
-from pydantic import Field, StrictBool
+from pydantic import Field, StrictBool, StrictStr
 
+from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.errors import UnsupportedNormalizationError
 
 from .run import RunConfig
@@ -60,6 +61,7 @@ class ModelPreset(PresetDefaults):
     track: Literal["image", "coord"] = "image"
     seed_from_run: bool = False
     supports_model_normalization: StrictBool | None = None
+    supported_datasets: list[StrictStr] | None = Field(default=None, min_length=1)
     dataset_overrides: dict[str, PresetDefaults] = Field(default_factory=dict)
 
     def validate_normalization(self, normalization: str) -> None:
@@ -71,6 +73,11 @@ class ModelPreset(PresetDefaults):
 
     def for_dataset(self, dataset: str) -> "ModelPreset":
         """Apply a dataset override without mutating the shared preset."""
+        if self.supported_datasets is not None and dataset not in self.supported_datasets:
+            raise BandCompatibilityError(
+                f"{self.name!r} does not support dataset {dataset!r}; "
+                f"verified datasets: {self.supported_datasets}."
+            )
         values = self.model_dump(exclude_unset=True)
         values.pop("dataset_overrides", None)
         override = self.dataset_overrides.get(dataset)
@@ -120,7 +127,7 @@ def build_model(preset: ModelPreset, **runtime_options: Any) -> Any:
     module, _, symbol = preset.target.rpartition(".")
     constructor = getattr(importlib.import_module(module), symbol)
     if getattr(constructor, "wants_resolved_image_size", False):
-        options.setdefault("image_size", preset.input.image_size)
+        options["image_size"] = preset.input.image_size
     validated = getattr(constructor, "validated_settings", None)
     if validated is not None:
         bands = options.pop("bands")

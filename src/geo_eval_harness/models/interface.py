@@ -39,8 +39,8 @@ class BenchModel(nn.Module, ABC):
     #: Skip the unused strategy normalizer and its ``expected_input_unit`` validation.
     handles_own_normalization: bool = False
 
-    #: ``"nhwc"`` when hooked 4D stage maps are channels-last (Swin); ``None`` lets the
-    #: segmentation probe infer the layout from the shape.
+    #: ``"nhwc"`` when hooked 4D stage maps are channels-last (Swin), ``"nchw"`` when they are
+    #: channels-first at any grid size; ``None`` lets the segmentation probe infer the layout.
     feature_layout: str | None = None
 
     #: Square input size of a backbone built for one fixed size; the segmentation probe's

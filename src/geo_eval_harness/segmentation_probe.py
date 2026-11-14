@@ -389,6 +389,7 @@ class SegmentationProbe(nn.Module):
         self, x: torch.Tensor, doy: torch.Tensor | None = None
     ) -> list[torch.Tensor]:
         """Run the backbone on images or a time series and return the hooked feature maps."""
+        self._validate_temporal_input(x)
         steps = 0
         if x.ndim == 5:
             batch, steps = x.shape[0], x.shape[1]
@@ -546,16 +547,23 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Backbones that declare NHWC stage maps skip the shape guess, which fails once the grid
+        # Backbones that declare their 4D layout skip the shape guess, which fails once the grid
         # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
         # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
-            if getattr(self.backbone, "feature_layout", None) == "nhwc":
+            layout = getattr(self.backbone, "feature_layout", None)
+            if layout == "nhwc":
                 return feat.permute(0, 3, 1, 2).contiguous()
+            if layout == "nchw":
+                return feat
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()
         return feat
+
+    def _validate_temporal_input(self, images: torch.Tensor) -> None:
+        if images.ndim == 5 and getattr(self.backbone, "snapshot_only", False):
+            raise ValueError("This backbone supports snapshots only; drop input.time_steps.")
 
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
         """Reshape token features into a spatial grid, accounting for prefix tokens.
@@ -626,6 +634,7 @@ class SegmentationProbe(nn.Module):
                 else:
                     images, masks = batch[0].to(device), batch[1]
 
+                self._validate_temporal_input(images)
                 steps = 0
                 if images.ndim == 5:
                     steps = images.shape[1]
@@ -668,6 +677,7 @@ class SegmentationProbe(nn.Module):
             Logits tensor of shape ``(B, num_classes, H, W)``.
         """
         input_h, input_w = x.shape[-2:]
+        self._validate_temporal_input(x)
         steps = 0
         if x.ndim == 5:
             batch, steps = x.shape[0], x.shape[1]
