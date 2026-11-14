@@ -23,8 +23,13 @@ def _csv(path: Path) -> int:
     original = path.read_bytes()
     reader = csv.reader(io.StringIO(original.decode()))
     rows = list(reader)
+    if not rows or "name" not in rows[0]:
+        return 0
+    name_column = rows[0].index("name")
     changed = 0
-    for row in rows:
+    for row in rows[1:]:
+        if row[name_column] not in IDENTIFIERS:
+            continue
         updated = [IDENTIFIERS.get(cell, cell) for cell in row]
         changed += updated != row
         row[:] = updated
@@ -38,6 +43,10 @@ def _csv(path: Path) -> int:
 
 def _snapshot(path: Path) -> bool:
     original = path.read_text()
+    if "tt_clay_v1_5_base" not in original:
+        return False
+    if "tt_clay_v1_5_large" in original:
+        raise ValueError(f"Regenerate mixed Clay v1/v1.5 snapshot from migrated CSVs: {path}")
     updated = original
     replacements = dict(IDENTIFIERS)
     for old, new in IDENTIFIERS.items():

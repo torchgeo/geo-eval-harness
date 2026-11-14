@@ -24,6 +24,7 @@ def test_migration_preserves_measurements_and_hashes(tmp_path: Path) -> None:
     cost.write_text(
         "name,model_preset,params_backbone_m,config_hash\n"
         "tt_clay_v1_5_base,terratorch/clay_v1_5,92.102144,original-profile\n"
+        "tt_clay_v1_5_large,terratorch/clay_v1_5,311.442944,v15-profile\n"
     )
     snapshot = tmp_path / "docs/_static/_results_snapshots/example.json"
     snapshot.parent.mkdir(parents=True)
@@ -39,6 +40,9 @@ def test_migration_preserves_measurements_and_hashes(tmp_path: Path) -> None:
     assert after[2] == before[2]
     assert cost.read_text().splitlines()[1] == (
         "tt_clay_v1_base,terratorch/clay_v1,92.102144,original-profile"
+    )
+    assert cost.read_text().splitlines()[2] == (
+        "tt_clay_v1_5_large,terratorch/clay_v1_5,311.442944,v15-profile"
     )
     assert json.loads(snapshot.read_text()) == {"tt_clay_v1_base": {"params": 92.102144}}
     assert migrate(tmp_path) == {}
