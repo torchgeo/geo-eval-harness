@@ -237,13 +237,16 @@ def test_model_native_scales_with_the_stems_pretraining_stats(level: str) -> Non
     assert torch.allclose(out, (image.flip(1) - (mean - 2 * std)) / (4 * std), atol=1e-5)
 
 
-def test_model_native_converts_linear_power_s1_to_db() -> None:
+@pytest.mark.parametrize("vh_unit", ["linear_power", "db"])
+def test_model_native_converts_linear_power_s1_to_db(vh_unit: str) -> None:
     bands = [
-        BandSpec("sar", n, n.upper(), mean=0.1, std=0.1, min=0, max=1, unit="linear_power")
-        for n in TERRAFM_S1_2
+        BandSpec("sar", n, n.upper(), mean=0.1, std=0.1, min=0, max=1, unit=unit)
+        for n, unit in zip(TERRAFM_S1_2, ["linear_power", vh_unit], strict=True)
     ]
     model = TerraFMBench(bands=bands, modality="s1", pretrained=False, normalization="model_native")
     power = torch.full((1, 2, 224, 224), 0.01)
+    if vh_unit == "db":
+        power[:, 1] = -20.0
     out = model._prepare_input(model.normalize_inputs(power))
     mean, std = torch.tensor(TERRAFM_MEAN_S1), torch.tensor(TERRAFM_STD_S1)
     expected = ((-20.0 - (mean - 2 * std)) / (4 * std)).view(1, -1, 1, 1).expand_as(out)
