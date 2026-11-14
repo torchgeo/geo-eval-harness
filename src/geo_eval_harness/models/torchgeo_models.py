@@ -486,6 +486,7 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
 
     #: Scale-MAE builds a fixed positional grid, so it needs the resolved input size.
     wants_resolved_image_size = True
+    wants_native_image_size = True
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,

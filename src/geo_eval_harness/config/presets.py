@@ -120,14 +120,19 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     return effective, preset.model_copy(update={"input": effective.input})
 
 
-def build_model(preset: ModelPreset, **runtime_options: Any) -> Any:
+def build_model(
+    preset: ModelPreset, *, native_image_size: int | None = None, **runtime_options: Any
+) -> Any:
     """Construct one model; nested target-like kwargs remain ordinary mappings."""
     options = {**preset.kwargs, **runtime_options}
     preset.validate_normalization(options.get("normalization", NORMALIZATIONS["dataset"]))
     module, _, symbol = preset.target.rpartition(".")
     constructor = getattr(importlib.import_module(module), symbol)
     if getattr(constructor, "wants_resolved_image_size", False):
-        options["image_size"] = preset.input.image_size
+        image_size = preset.input.image_size
+        if image_size is None and getattr(constructor, "wants_native_image_size", False):
+            image_size = native_image_size
+        options["image_size"] = image_size
     validated = getattr(constructor, "validated_settings", None)
     if validated is not None:
         bands = options.pop("bands")
