@@ -73,10 +73,21 @@ SMARTIES
 
 .. autoclass:: SmartiesBench
 
+EoS-FM
+^^^^^^
+
+.. autoclass:: EoSFMBenchModel
+
 SAM 3
 ^^^^^
 
 .. autoclass:: SAM3Encoder
+
+Tessera V2
+^^^^^^^^^^
+
+.. autoclass:: TesseraBenchModel
+   :members: forward_batch
 
 Segmentation heads
 ------------------
