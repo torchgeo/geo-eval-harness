@@ -118,7 +118,12 @@ urls.Repository = "https://github.com/torchgeo/geo-eval-harness"
 scripts.geo-eval-harness = "geo_eval_harness.cli:main"
 
 [tool.uv]
-build-backend.source-exclude = [ "/docs/_build" ]
+build-backend.source-exclude = [
+  "/docs/_build",
+  "/docs/_static",
+  "/docs/interesting-findings.md",
+  "/docs/plans",
+]
 build-backend.source-include = [ "docs/**" ]
 
 [tool.ruff]
