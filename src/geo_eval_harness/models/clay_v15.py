@@ -8,6 +8,8 @@ from torch import nn
 
 from geo_eval_harness.hub import fetch_pinned_file
 
+from ._optional import TERRATORCH_INSTALL, require_package
+
 CLAY_V15_REPO = "made-with-clay/Clay"
 CLAY_V15_REVISION = "70200ebcccdf67bf2a0cb9984c77ddee26c10ed2"
 CLAY_V15_FILE = "v1.5/clay-v1.5.ckpt"
@@ -15,6 +17,7 @@ CLAY_V15_SHA256 = "21432069250b9b3f9a65ffd0071c5ad56b793247285ab0604edf7f531d479
 
 
 def _build_encoder() -> nn.Module:
+    require_package("terratorch", TERRATORCH_INSTALL)
     from terratorch.models.backbones.clay_v15.model import Encoder
 
     return cast(
