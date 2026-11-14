@@ -286,7 +286,7 @@ def test_build_model_skips_explicit_band_incompatibility(monkeypatch, caplog):
     [
         KeyError("missing constructor option"),
         ValueError("input channels configuration is invalid"),
-        ValueError("Could not find weights for 'tt_clay_v1_5'"),
+        ValueError("Could not find weights for 'tt_clay_v1'"),
         OSError("[Errno 122] Disk quota exceeded"),
         RuntimeError("CUDA error: out of memory"),
     ],

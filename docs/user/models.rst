@@ -18,7 +18,9 @@ options live in ``kwargs``, separate from input and evaluation defaults.
 Clay v1 Base
 ^^^^^^^^^^^^
 
-The ``terratorch/clay_v1_5`` and ``terratorch/clay_v1_5_cls`` selectors load TerraTorch's ``timm_clay_v1_base`` backbone, a 92,102,144-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy`` (``v1/clay-v1-base.ckpt``). These selectors do not load Clay v1.5. The `Clay v1.5 specification <https://github.com/Clay-foundation/model/blob/main/docs/release-notes/specification.md>`_ describes a larger, 311M-parameter encoder and quotes 632M for its full pretraining model, including the decoder and DINOv2 teacher. Its parameter count and version must be kept separate from the Base checkpoint's benchmark results.
+``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` load TerraTorch's ``timm_clay_v1_base`` backbone, the 92,102,144-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy`` (``v1/clay-v1-base.ckpt``). Mean-patch and CLS-token pooling use the same weights. The Clay v1.5 checkpoint is a separate, larger encoder.
+
+Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching. Use ``python scripts/migrations/migrate_clay_v1.py`` to relabel a separate results checkout.
 
 TerraFM
 ^^^^^^^

@@ -126,7 +126,7 @@ assert "omegaconf" not in sys.modules
         ("rcf", ["--bands", "B99"], 2),
         ("rcf", ["--normalization", "model"], 2),
         ("olmoearth_nano", ["--normalization", "model"], 0),
-        ("terratorch/clay_v1_5", ["--bands", "red,green,blue"], 0),
+        ("terratorch/clay_v1", ["--bands", "red,green,blue"], 0),
     ],
 )
 def test_run_metadata_validation_loads_no_models_or_samples(

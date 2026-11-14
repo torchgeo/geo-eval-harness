@@ -13,7 +13,7 @@ per finding; nothing on this page is a benchmark result — those live in
 
 While running intrinsic-dimension probes on `eurosat-spatial`, TwoNN returned
 `nan` for 12 of 34 (model, bands) combos. All 12 were Prithvi-EO (v1/v2 100,
-v2 300, v2 300_tl, v2 600) or Clay-v1.5; the other backbones (Terramind,
+v2 300, v2 300_tl, v2 600) or Clay v1 Base; the other backbones (Terramind,
 CROMA, DOFA, ScaleMAE, the timm baselines) were fine.
 
 Diagnostic dump from a representative failing run:
@@ -90,7 +90,7 @@ different story: **CLS-token linear-probe accuracy beats mean-pool by
 | `tt_prithvi_eo_v2_300_tl` | **+0.051** |
 | `tt_prithvi_eo_v1_100` | **+0.050** |
 | `tt_prithvi_eo_v2_100_tl` | **+0.021** |
-| `tt_clay_v1_5_base` | -0.002 |
+| `tt_clay_v1_base` | -0.002 |
 | `tgeo_scalemae_large_fmow` | -0.006 |
 
 Implication: the previous EuroSAT-only observation was real but
