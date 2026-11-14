@@ -46,7 +46,7 @@ BASELINE_CASES: dict[str, dict[str, tuple[str, ...]]] = {
     "olmoearth_nano": {"rgb": ("m-pv4ger",)},
     "terratorch/prithvi_eo_v2_300": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
     "terratorch/terramind_v1_base": {"all": ("m-eurosat", "so2sat")},
-    "terratorch/clay_v1_5": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
+    "terratorch/clay_v1": {"all": ("m-eurosat", "so2sat"), "rgb": ("m-pv4ger",)},
     "torchgeo/swinv2b_s2rgb_satlas_mi": {"rgb": ("m-pv4ger", "so2sat")},
     "timm/mobilenetv3_small_100": {"rgb": ("m-eurosat", "m-forestnet")},
     "timm/resnet18": {"rgb": ("m-eurosat", "m-forestnet")},

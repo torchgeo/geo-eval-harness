@@ -47,6 +47,11 @@ Feature caching defaults to false because a full-resolution cache requires rough
 
 For PyTorch builds that dispatch eager attention through Triton, the fleet image also needs a working C compiler, assembler, development headers, and CUDA driver linker configuration. Check these prerequisites with an AMP pilot for every student rather than assuming that a working FP32 run establishes mixed-precision readiness.
 
+Clay v1 Base
+^^^^^^^^^^^^
+
+``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` use the 92.1M-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy``, with mean-patch and CLS-token pooling respectively.
+
 TerraFM
 ^^^^^^^
 
