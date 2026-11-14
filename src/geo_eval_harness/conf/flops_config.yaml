@@ -18,7 +18,8 @@ classification:
   num_classes: 10
 
 segmentation:
-  heads: [fpn, dpt]  # Also linear, conv_block, patch_linear; [] disables this sweep.
+  # Deprecated head-only sweep (fpn, dpt, linear, conv_block, patch_linear); use seg-flops.
+  heads: []
   band_configs: [rgb, s2]
   num_classes: 4
   # Set probe.layers explicitly to override a preset; [] disables segmentation.

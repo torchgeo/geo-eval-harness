@@ -13,6 +13,7 @@ from .commands.coord_arguments import add_coord_arguments
 from .commands.flops_arguments import add_flops_arguments
 from .commands.profile_arguments import add_profile_arguments
 from .commands.run_arguments import add_run_arguments
+from .commands.seg_flops_arguments import add_seg_flops_arguments
 from .config import list_model_configs
 from .datasets import get_dataset_task, list_datasets
 
@@ -58,6 +59,10 @@ def _setup_parser() -> argparse.ArgumentParser:
     add_profile_arguments(profile)
     flops = subcommands.add_parser("flops", help="Measure synthetic compute cost")
     add_flops_arguments(flops)
+    seg_flops = subcommands.add_parser(
+        "seg-flops", help="Measure segmentation compute per cell (synthetic inputs)"
+    )
+    add_seg_flops_arguments(seg_flops)
 
     # Coordinate benchmarks
     coord = subcommands.add_parser("coord", help="Run coordinate encoder benchmarks")
@@ -106,6 +111,8 @@ def main(argv: list[str] | None = None) -> None:
         commands.profile(args)
     elif args.command == "flops":
         commands.flops(args)
+    elif args.command == "seg-flops":
+        commands.seg_flops(args)
     elif args.command == "coord":
         commands.coord(args)
     else:

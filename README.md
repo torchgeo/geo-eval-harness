@@ -119,8 +119,17 @@ geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu \
   --batch-size 8 --warmup 1 --measurements 5 > profile.json
 
 geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
-  --seg-heads --output results/my_compute_cost.csv
+  --output results/my_compute_cost.csv
 ```
+
+Segmentation compute (backbone, neck, decoder and upsampler per resolved run setting, plus the
+training step per adaptation) has its own command and table, `results/compute_cost_segmentation.csv`:
+
+```bash
+geo-eval-harness seg-flops --config docs/examples/seg-flops.yaml --device cuda
+```
+
+See the [segmentation compute guide](docs/user/segmentation-compute.md).
 
 `run`, `flops`, `coord`, and `profile` share `--output-dir` for a common output root and `--output` for an exact file path that takes precedence. Image runs retain their `models/`, `profiles/`, and `intrinsic_dim/` subdirectories. Standalone profiling writes `profile.json` beneath an explicit output root.
 

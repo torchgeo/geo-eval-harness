@@ -9,5 +9,7 @@ from ._flops import flops as flops
 from ._flops_runtime import run_flops as run_flops
 from ._profile import profile as profile
 from ._run import run as run
+from ._seg_flops import seg_flops as seg_flops
+from ._seg_flops_runtime import run_seg_flops as run_seg_flops
 
 __all__: tuple[str, ...]

@@ -1,0 +1,39 @@
+# Segmentation compute: per-sample FLOPs and parameters of whole probes on synthetic inputs.
+# Flags override this YAML. See docs/user/segmentation-compute.md.
+schema_version: 1
+cells:
+  # A cell is a dataset plus a partial run config, resolved exactly as `run` resolves it.
+  - dataset: loveda
+    label: convnext-upernet-lora
+    run:
+      model: {name: timm/convnext_large_dinov3}
+      input: {image_size: 224, bands: rgb}
+      segmentation: {head: upernet, lora_rank: 8, backbone_learning_rate: 5.0e-4}
+  - dataset: burn_scars
+    label: vit-unet-neck-full
+    run:
+      model: {name: timm/vit/vit_base_patch16_224}
+      segmentation: {head: unet, neck: vit, full_finetune: true, backbone_learning_rate: 1.0e-5}
+manifest: null  # or cells.jsonl / cells.yaml, appended to `cells`
+
+canonical:
+  models: []  # e.g. [timm/resnet50]; measured on band_source shapes for each arm
+  arms: [upernet, unet, upernet+vit, unet+vit, upernet+anyup]
+  band_source: cloudsen12
+  band_configs: [rgb, s2]
+  image_size: 224
+
+measure:
+  kinds: [inference, train_unit, canonical]
+  train_batch_size: 2
+
+runtime:
+  device: cuda
+  seed: 0
+  verbose: true
+  fail_fast: false
+
+output:
+  directory: results  # writes results/compute_cost_segmentation.csv
+  file: null
+  resume: true
