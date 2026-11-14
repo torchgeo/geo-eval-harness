@@ -150,7 +150,7 @@ Future sweeps include ImageStats as level 0 and every classification protocol in
 
 Results go to separate `results/models/handcrafted_level*.csv` files and `imagestats_handcrafted_control.csv`. Feature lists and completion status are saved under `outputs/handcrafted/`. Resume skips matching completed rows; a missing linear or KNN result is still reported as a failure. Summaries, including `--report-only`, select only rows matching the current configuration and requested devices, so historical hashes are not mixed into new comparisons.
 
-The checked-in CSVs are unchanged historical measurements on 13 protocols from the original handcrafted study, not measurements of the current runner; they contain no AID results. Their recorded numbers and configuration hashes are preserved. Current runs use the current configuration hash and do not treat these historical rows as completed work. Use `--output-dir results/handcrafted-current` to keep a new sweep separate.
+The checked-in CSVs hold a sweep of the current runner on all 15 classification protocols, next to the original study's rows on 13 protocols under their older configuration hashes. Resume and the summaries select only rows that match the current configuration, so the older rows are not mixed into new comparisons. Use `--output-dir results/handcrafted-current` to keep a new sweep separate.
 
 Use `--levels 1 2`, `--datasets eurosat resisc45`, or `--dry-run` for a smaller run. The extractor also works through the normal CLI:
 
