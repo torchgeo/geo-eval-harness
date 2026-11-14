@@ -64,10 +64,10 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["normalizer_inputs"][modality] = values.copy()
             return values / 1000 - np.arange(values.shape[-1])
 
-    class _FlexiEncoder:
+    class _FlexiEncoder(torch.nn.Module):
         supported_modality_names: ClassVar[list[str]] = ["sentinel2_l2a", "sentinel1"]
 
-        def __call__(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
+        def forward(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
             pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
