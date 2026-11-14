@@ -52,7 +52,7 @@ dependencies = [
   "pillow>=13",
   # Required for CoordBench's Parquet files.
   "pyarrow>=14",
-  "pydantic>=2",
+  "pydantic>=2.10",
   "pyyaml>=6",
   "rasterio>=1.3",
   # Loads MIND's location-model weights.
