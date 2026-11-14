@@ -34,9 +34,13 @@ COMPUTE_PATH = ROOT / "results" / "compute_cost.csv"
 TEMPLATE_PATH = ROOT / "scripts" / "ranking_explorer.template.html"
 HTML_PATH = ROOT / "docs" / "_static" / "ranking_explorer.html"
 
-# Rows whose ``name`` contains any of these are single-dataset / experimental
+# Rows whose ``name`` starts with any of these are single-dataset / experimental
 # OlmoEarth ablations, not benchmark entries.
-ABLATION_TAGS = ("_lsat_", "_naip_", "_sar_")
+ABLATION_PREFIXES = (
+    "olmoearth_v1_nano_lsat_",
+    "olmoearth_v1_nano_naip_",
+    "olmoearth_v1_nano_sar_",
+)
 
 # ``<base>_landsat_as_s2`` rows feed a Landsat dataset's bands through the
 # S2-pretrained model.  They are folded back onto the base model and win a
@@ -450,10 +454,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~off_modality].copy()
     name = df["name"].astype(str)
 
-    ablation = pd.Series(False, index=df.index)
-    for tag in ABLATION_TAGS:
-        ablation |= name.str.contains(tag, regex=False)
-    df = df[~ablation].copy()
+    df = df[~name.str.startswith(ABLATION_PREFIXES)].copy()
 
     df = df[df["metric_name"].isin(METRIC_MAP)].copy()
     df["metric"] = df["metric_name"].map(METRIC_MAP)
