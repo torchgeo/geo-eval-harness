@@ -260,14 +260,17 @@ class FeatureStandardizer(nn.Module):
         out = []
         for index, feat in enumerate(features):
             mean, std = self.stats(index)
-            out.append((feat.float() - mean[:, None, None]) / std[:, None, None])
+            standardized = feat.float() - mean[:, None, None]
+            out.append(standardized.div_(std[:, None, None]))
         return out
 
 
 def feature_moments(features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Return per-channel float64 sums and squared sums of ``(B, C, H, W)`` features."""
-    flat = features.double().transpose(0, 1).reshape(features.shape[1], -1)
-    return flat.sum(dim=1), (flat * flat).sum(dim=1), flat.shape[1]
+    values = features.to(dtype=torch.float64, copy=True)
+    total = values.sum(dim=(0, 2, 3))
+    sq_total = values.square_().sum(dim=(0, 2, 3))
+    return total, sq_total, features.shape[0] * features.shape[2] * features.shape[3]
 
 
 class StandardizedHead(nn.Module):
