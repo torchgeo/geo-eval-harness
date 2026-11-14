@@ -275,7 +275,10 @@ def _open_disk(
 
 
 class CachedSamples(Dataset):
-    """Serve ``{"image", "mask"}`` samples from cached arrays or tensors."""
+    """Serve ``{"image", "mask"}`` samples from cached arrays or tensors.
+
+    Images and masks independently accept NumPy arrays or Torch tensors.
+    """
 
     def __init__(
         self,
@@ -298,7 +301,9 @@ class CachedSamples(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         image, mask = self.images[index], self.masks[index]
         if isinstance(image, np.ndarray):
-            image, mask = torch.from_numpy(np.array(image)), torch.from_numpy(np.array(mask))
+            image = torch.from_numpy(np.array(image))
+        if isinstance(mask, np.ndarray):
+            mask = torch.from_numpy(np.array(mask))
         sample = {"image": image, "mask": mask.long()}
         if self.doys is not None:
             sample["doy"] = self.doys[index]
