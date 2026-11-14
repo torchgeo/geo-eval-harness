@@ -1,4 +1,4 @@
-"""Fixed-grid ViTs (timm ViT-B/16, DOFA, Panopticon) built for non-224 input sizes."""
+"""Fixed-grid ViTs (timm ViT-B/16, DOFA, Panopticon, Scale-MAE) built for non-224 input sizes."""
 
 from collections.abc import Callable
 
@@ -12,7 +12,11 @@ from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import torchgeo_models
 from geo_eval_harness.models.interface import BenchModel
 from geo_eval_harness.models.timm import TimmPatchBenchModel
-from geo_eval_harness.models.torchgeo_models import TorchGeoDOFABench, TorchGeoPanopticonBench
+from geo_eval_harness.models.torchgeo_models import (
+    TorchGeoDOFABench,
+    TorchGeoPanopticonBench,
+    TorchGeoScaleMAEBench,
+)
 from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 
 _LORA = r"blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])"
@@ -227,6 +231,34 @@ def test_panopticon_rejects_inputs_the_patch_grid_would_crop(unweighted: None) -
     net = TorchGeoPanopticonBench(_rgb_bands(), img_size=252, auto_resize=False)
     with pytest.raises(ValueError, match="built for 252x252"):
         net(torch.rand(1, 3, 256, 256))
+
+
+# --- Scale-MAE --------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tiny_scalemae(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build torchgeo's Scale-MAE at a small width; its patch embedding rejects other sizes."""
+    from torchgeo.models import ScaleMAE
+
+    def _build(weights: None, **kwargs: object) -> nn.Module:
+        del weights
+        return ScaleMAE(patch_size=16, embed_dim=32, depth=1, num_heads=2, **kwargs)
+
+    monkeypatch.setattr(torchgeo_models, "_resolve_torchgeo_weights", lambda *_: None)
+    monkeypatch.setattr(torchgeo_models, "_resolve_torchgeo_factory", lambda _name: _build)
+
+
+def test_scalemae_probe_dry_run_uses_the_built_grid(tiny_scalemae: None) -> None:
+    del tiny_scalemae
+    net = TorchGeoScaleMAEBench(_rgb_bands(), image_size=448)
+    _probe_step(net, ["blocks.0"], 448, 28, train=False)
+
+
+def test_scalemae_rejects_sizes_the_patch_grid_would_crop(tiny_scalemae: None) -> None:
+    del tiny_scalemae
+    with pytest.raises(ValueError, match=r"patch size 16.*112 and 128"):
+        TorchGeoScaleMAEBench(_rgb_bands(), image_size=120)
 
 
 # --- timm ViT-B/16 ----------------------------------------------------------------------------

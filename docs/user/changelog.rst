@@ -20,6 +20,7 @@ Models
 * Clay v1 Base and Clay v1.5 Large presets provide mean-patch and CLS-token embeddings.
 * TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
+* Scale-MAE segmentation probes run at the constructed input size, and input sizes that are not multiples of 16 are rejected.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.

@@ -474,12 +474,17 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
         return self.backbone(images)
 
 
+_SCALEMAE_PATCH_SIZE = 16
+
+
 class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
     """Wrapper for torchgeo ScaleMAE-Large.
 
     ``forward_features()`` returns ``(B, N+1, D)`` tokens; ``pool`` selects
     between CLS and mean-pooled post-normalization patch tokens. ``res`` is the
     scale supplied to Scale-MAE's resolution-conditioned positional embedding.
+    ``image_size`` must be a multiple of 16 because the stride-16 patch embedding
+    would otherwise drop the trailing pixels.
     """
 
     weights_input_unit = "uint8_div255"
@@ -513,6 +518,13 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
             raise ValueError("Scale-MAE pool must be 'cls' or 'mean'.")
 
         image_size = image_size or target_size or 224
+        _validate_fixed_img_size(
+            "Scale-MAE",
+            image_size,
+            _SCALEMAE_PATCH_SIZE,
+            auto_resize=auto_resize,
+            target_size=image_size,
+        )
         super().__init__(
             bands=bands,
             factory=factory,
@@ -524,6 +536,7 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
             **_kwargs,
         )
         self.image_size = image_size
+        self.probe_input_size = image_size
         self.res = float(res)
         self.pool = pool
 
