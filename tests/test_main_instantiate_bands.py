@@ -12,6 +12,7 @@ from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.main import instantiate_dataset_model
 from geo_eval_harness.models.interface import BenchModel
 from tests.support.runner import _DictTensorDataset, _synthetic_loaders
+from tests.support.torchgeo_models import install_tiny_scalemae_factory
 
 
 def test_empirical_rcf_receives_run_seed_and_actual_dataset(monkeypatch) -> None:
@@ -103,3 +104,23 @@ def test_band_spec_count_must_match_tensor_channels() -> None:
             config, preset, get_bench_dataset_class("m-eurosat")(), dataset, torch.device("cpu")
         )
     build.assert_not_called()
+
+
+def test_scalemae_uses_native_dataset_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = install_tiny_scalemae_factory(monkeypatch)
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "torchgeo/scalemae_large_fmow"},
+            "datasets": ["m-eurosat"],
+            "input": {"image_size": None, "normalization": "none"},
+        }
+    )
+    config, preset = resolve_run_config(config, "m-eurosat")
+    images = torch.ones(2, 3, 64, 64)
+    dataset = _DictTensorDataset(images, torch.zeros(2))
+    model = instantiate_dataset_model(
+        config, preset, get_bench_dataset_class("m-eurosat")(), dataset, torch.device("cpu")
+    )
+    assert calls[0][0]["img_size"] == 64
+    assert model(images).shape == (2, 8)
+    assert config.input.image_size is None

@@ -8,29 +8,51 @@ Targets:
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
+- ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
 - ``hotosm_buildings`` — pinned ``hotosm/vhr-building-segmentation`` parquet, converted
   into compact per-split files under ``<output>/hotosm_buildings``.
+- ``openearthmap-sar``: verified DFC2025 SAR images and labels.
+- ``open_cities`` — Open Cities AI Challenge tier-1 scenes from source.coop, plus native-grid
+  masks built from the labels, into ``<output>/open_cities``.
+- ``loveda`` — torchgeo's LoveDA downloader (labelled Train and Val only), into
+  ``<output>/loveda``.
+- ``sen1floods11-s1`` / ``sen1floods11-s2``: the 431 hand-labelled Sen1Floods11 v1.1 chips of the
+  official train/valid/test splits (S1, S2 and labels, shared by both ids), into
+  ``<output>/sen1floods11``.
+- ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
+  ``<output>/bright-post-sar``.
+- ``oscd-post`` — torchgeo's OSCD downloader, into ``<output>/oscd-post``.
+- ``planteur`` — pinned ``allenai/planteur-benchmark`` monthly mosaics and labels, stacked
+  into per-split arrays under ``<output>/planteur``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
 Use ``--datasets`` to select a GeoBench subset.
 """
 
+import hashlib
 import logging
 import shutil
+import urllib.request
 import zipfile
-from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
+from urllib.request import urlopen
 
-from torchgeo.datasets import RESISC45, EuroSAT, EuroSATSpatial, UCMerced
+import numpy as np
+import pandas as pd
+import rasterio
+from rasterio.windows import Window
+from torchgeo.datasets import LEVIRCD, OSCD, RESISC45, EuroSAT, EuroSATSpatial, LoveDA, UCMerced
 
+from geo_eval_harness.datasets import open_cities
 from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
-from geo_eval_harness.datasets.hotosm_buildings import (
-    UPSTREAM_SPLITS,
-    HOTOSMBuildings,
-    convert_hotosm_split,
-)
-from geo_eval_harness.hub import fetch_pinned, load_checksums
+from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
+from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
+from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
+from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +64,19 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
+BRIGHT_REPO = "Kullervo/BRIGHT"
+BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
+PLANTEUR_REPO = "allenai/planteur-benchmark"
+PLANTEUR_REVISION = "51b74a91424e7dc9ea1fe0042390353658af8185"
+PLANTEUR_FILES = [
+    "DATA_S2_MONTHLY/*",
+    "DATA_S1_MONTHLY/*",
+    "ANNOTATIONS/*",
+    "splits/443.json",
+    "splits/loio.json",
+    "metadata.geojson",
+]
+
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
 V1_DATASETS: tuple[str, ...] = (
@@ -52,10 +87,25 @@ V1_DATASETS: tuple[str, ...] = (
     "m-brick-kiln",
     "m-bigearthnet",
 )
-TORCHGEO_DATASETS: tuple[str, ...] = ("eurosat", "resisc45", "ucmerced")
-DIRECT_DATASETS: tuple[str, ...] = ("aid", "hotosm_buildings")
+TORCHGEO_DATASETS: tuple[str, ...] = (
+    "eurosat",
+    "resisc45",
+    "ucmerced",
+    "loveda",
+    "levir-cd-post",
+    "oscd-post",
+)
+DIRECT_DATASETS: tuple[str, ...] = (
+    "aid",
+    "hotosm_buildings",
+    "openearthmap-sar",
+    "open_cities",
+    "bright-post-sar",
+    "planteur",
+)
+SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
-    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS
+    V1_DATASETS + DEFAULT_V2_DATASETS + TORCHGEO_DATASETS + DIRECT_DATASETS + SEN1FLOODS11_DATASETS
 )
 
 
@@ -183,11 +233,111 @@ def download_hotosm_buildings(output_dir: Path) -> None:
         rows = convert_hotosm_split(
             (upstream / "data").glob(f"{prefix}-*.parquet"),
             target / f"{split}.parquet",
-            expected_rows=HOTOSMBuildings.split_sizes[split],
+            expected_rows=HOTOSM_FILE_ROWS[split],
         )
         logger.info("Converted HOTOSM buildings %s split (%d rows).", split, rows)
     shutil.rmtree(upstream)
     logger.info("HOTOSM buildings download complete.")
+
+
+def fetch_open_cities_file(relative: str, root: Path) -> Path:
+    """Download one upstream ``<city>/<scene>.tif|.geojson`` into ``root``, resuming partial files.
+
+    Existing complete files are not downloaded again.
+    """
+    dst = root / relative
+    if dst.is_file():
+        return dst
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + ".part")
+    offset = part.stat().st_size if part.exists() else 0
+    headers = {"User-Agent": open_cities.USER_AGENT}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    request = urllib.request.Request(open_cities.upstream_url(relative), headers=headers)
+    with urllib.request.urlopen(request) as response:
+        # A server that ignores the range answers 200 with the whole file.
+        mode = "ab" if response.status == 206 else "wb"
+        with part.open(mode) as stream:
+            shutil.copyfileobj(response, stream, length=1 << 20)
+    part.replace(dst)
+    return dst
+
+
+def _check_open_cities_masks(root: Path, index: pd.DataFrame, tolerance: float = 0.002) -> None:
+    """Compare each split's building fraction in the written masks with the index."""
+    fractions = np.zeros(len(index))
+    scenes = index.city.str.cat(index.scene, sep="/")
+    for scene, rows in index.groupby(scenes).groups.items():
+        with rasterio.open(root / f"{scene}_mask.tif") as mask:
+            for i in rows:
+                chip = mask.read(
+                    1,
+                    window=Window(
+                        index.col_off[i],
+                        index.row_off[i],
+                        open_cities.CHIP_SIZE,
+                        open_cities.CHIP_SIZE,
+                    ),
+                )
+                fractions[i] = (chip == 1).mean()
+    for split, measured in index.assign(measured=fractions).groupby("split"):
+        delta = abs(measured.measured.mean() - measured.building_frac.mean())
+        if delta > tolerance:
+            raise ValueError(
+                f"Open Cities {split}: mask building fraction differs from the index by {delta:.4f}. "
+                f"Remove the *_mask.tif files under {root} and retry the download."
+            )
+        logger.info("Open Cities %s masks match the index (|delta| = %.4f).", split, delta)
+
+
+def download_open_cities(output_dir: Path, workers: int = 4) -> None:
+    """Download the tier-1 Open Cities scenes and build their masks in ``output_dir/open_cities``.
+
+    Imagery (about 34 GB) is kept byte-identical and verified against the packaged
+    checksums. Masks are rasterised on each scene's native grid for the indexed chips only.
+    """
+    target = Path(output_dir) / "open_cities"
+    checksums = load_checksums("open_cities.sha256")
+    logger.info("Downloading %d Open Cities files -> %s", len(checksums), target)
+
+    def fetch(item: tuple[str, str]) -> None:
+        fetch_open_cities_file(item[0], target)
+        verify_checksums(target, {item[0]: item[1]})
+
+    with ThreadPoolExecutor(workers) as pool:
+        list(pool.map(fetch, checksums.items()))
+
+    index = open_cities.load_index()
+
+    def build(scene: tuple[str, str]) -> None:
+        city, name = scene
+        rows = index[(index.city == city) & (index.scene == name)]
+        open_cities.build_scene_mask(
+            target / city / f"{name}.tif", target / city / f"{name}.geojson", rows
+        )
+        logger.info("Built mask for %s/%s (%d chips).", city, name, len(rows))
+
+    with ThreadPoolExecutor(workers) as pool:
+        list(pool.map(build, index[["city", "scene"]].drop_duplicates().itertuples(index=False)))
+    _check_open_cities_masks(target, index)
+    logger.info("Open Cities download complete.")
+
+
+def download_planteur(output_dir: Path) -> None:
+    """Download the pinned PLANTEUR monthly mosaics and stack them into ``output_dir/planteur``.
+
+    The 8,250 per-patch upstream arrays (17 GB) are deleted once the stacked splits match
+    ``checksums/planteur.sha256``.
+    """
+    target = Path(output_dir) / "planteur"
+    upstream = target / "upstream"
+    logger.info("Downloading %s@%s -> %s", PLANTEUR_REPO, PLANTEUR_REVISION, upstream)
+    fetch_pinned(PLANTEUR_REPO, PLANTEUR_REVISION, upstream, {}, allow_patterns=PLANTEUR_FILES)
+    convert_planteur(upstream, target, expected_sizes=PLANTEUR.split_sizes)
+    verify_checksums(target, load_checksums("planteur.sha256"))
+    shutil.rmtree(upstream)
+    logger.info("PLANTEUR download complete.")
 
 
 def download_ucmerced(output_dir: Path) -> None:
@@ -198,6 +348,230 @@ def download_ucmerced(output_dir: Path) -> None:
     for split in ("train", "val", "test"):
         UCMerced(root=str(target), split=split, download=True, checksum=True)
     logger.info("UCMerced download complete.")
+
+
+def download_loveda(output_dir: Path) -> None:
+    """Download torchgeo's labelled LoveDA Train and Val releases into ``output_dir/loveda``.
+
+    The unlabelled Test release is not downloaded; benchmark splits are checked at the end.
+    """
+    from geo_eval_harness.datasets.loveda import LoveDA as BenchLoveDA
+
+    target = Path(output_dir) / "loveda"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LoveDA -> %s", target)
+    for split in ("train", "val"):
+        LoveDA(root=str(target), split=split, download=True, checksum=True)
+    for split in BenchLoveDA.split_sizes:
+        BenchLoveDA.load_split(target, split)
+    logger.info("LoveDA download complete.")
+
+
+def download_levir_cd_post(output_dir: Path) -> None:
+    """Download torchgeo's MD5-verified LEVIR-CD archives into ``output_dir/levir-cd-post``."""
+    from geo_eval_harness.datasets.levir_cd_post import LEVIRCDPost
+
+    target = Path(output_dir) / "levir-cd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo LEVIR-CD -> %s", target)
+    LEVIRCD(root=str(target), download=True, checksum=True)
+    for split in LEVIRCDPost.image_counts:
+        LEVIRCDPost.split_paths(target, split)
+    logger.info("LEVIR-CD download complete.")
+
+
+def download_oscd_post(output_dir: Path) -> None:
+    """Download verified OSCD archives into ``output_dir/oscd-post`` and check the tile splits."""
+    from geo_eval_harness.datasets.oscd_post import OSCDPost
+
+    target = Path(output_dir) / "oscd-post"
+    target.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading torchgeo OSCD -> %s", target)
+    for split in ("train", "test"):
+        OSCD(root=str(target), split=split, download=True, checksum=True)
+    for split in OSCDPost.split_sizes:
+        OSCDPost.split_tiles(target, split)
+    logger.info("OSCD download complete.")
+
+
+@dataclass(frozen=True)
+class SARArchive:
+    """Immutable Zenodo artifact and the benchmark directories it supplies."""
+
+    url: str
+    size: int
+    md5: str
+    prefixes: tuple[str, ...]
+
+    @property
+    def filename(self) -> str:
+        """Return the record's ZIP basename."""
+        return self.url.rsplit("/", 1)[1]
+
+
+SAR_ARCHIVES = (
+    SARArchive(
+        "https://zenodo.org/records/14622048/files/dfc25_track1_trainval.zip",
+        8864311171,
+        "100772c6daf81fd09bb869ccd6f9f5d7",
+        ("train/sar_images", "train/labels", "val/sar_images"),
+    ),
+    SARArchive(
+        "https://zenodo.org/records/14948851/files/dfc25_track1_test.zip",
+        403551447,
+        "bc52f9c4c3b5e3db775cde84371fbc14",
+        ("test/sar_images",),
+    ),
+    SARArchive(
+        "https://zenodo.org/records/14950559/files/dfc25_track1_val_labels.zip",
+        8615257,
+        "7bbb7f90bc6d448fc7fa779d62e5cc73",
+        ("val/labels",),
+    ),
+    SARArchive(
+        "https://zenodo.org/records/14950559/files/dfc25_track1_test_labels.zip",
+        17842327,
+        "29558d6198855e9e8ff8db31d3b6fa8b",
+        ("test/labels",),
+    ),
+)
+
+
+def _verify_sar_archive(path: Path, artifact: SARArchive) -> None:
+    with path.open("rb") as stream:
+        actual = hashlib.file_digest(stream, "md5").hexdigest()
+    if actual != artifact.md5 or path.stat().st_size != artifact.size:
+        raise ValueError(
+            f"OpenEarthMap-SAR checksum/size mismatch: {path}; expected "
+            f"md5:{artifact.md5}, {artifact.size} bytes; got md5:{actual}, "
+            f"{path.stat().st_size} bytes. Remove this file and retry."
+        )
+
+
+def _extract_sar_archive(path: Path, target: Path, prefixes: tuple[str, ...]) -> None:
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
+
+    expected = {
+        f"{prefix}/{name}"
+        for prefix in prefixes
+        for name in OpenEarthMapSAR.split_filenames(prefix.split("/")[0])
+    }
+    with zipfile.ZipFile(path) as archive:
+        selected: dict[str, zipfile.ZipInfo] = {}
+        for member in archive.infolist():
+            name = member.filename
+            parts = PurePosixPath(name).parts
+            if "\\" in name or ":" in name or name.startswith("/") or ".." in parts:
+                raise ValueError(f"Unsafe ZIP member in {path}: {name}")
+            if name in expected:
+                if name in selected:
+                    raise ValueError(f"Duplicate ZIP member in {path}: {name}")
+                selected[name] = member
+            elif any(name.startswith(f"{prefix}/") for prefix in prefixes) and PurePosixPath(
+                name
+            ).suffix.lower() in {".tif", ".tiff"}:
+                raise ValueError(f"Unexpected TIFF in {path}: {name}")
+        if selected.keys() != expected:
+            raise ValueError(f"Missing ZIP members in {path}: {min(expected - selected.keys())}")
+        logger.info("Extracting %d SAR/label TIFFs from %s", len(selected), path)
+        for name, member in selected.items():
+            destination = target / name
+            if not destination.resolve().is_relative_to(target.resolve()):
+                raise ValueError(f"ZIP destination escapes {target}: {destination}")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with archive.open(member) as source, destination.open("wb") as output:
+                shutil.copyfileobj(source, output)
+
+
+def download_openearthmap_sar(output_dir: Path) -> None:
+    """Install all four checksum-verified releases, repairing from retained ZIPs."""
+    from geo_eval_harness.datasets.openearthmap_sar import OpenEarthMapSAR
+
+    target = Path(output_dir) / "openearthmap-sar"
+    target.mkdir(parents=True, exist_ok=True)
+    for artifact in SAR_ARCHIVES:
+        path = target / artifact.filename
+        if not path.exists():
+            partial = path.with_suffix(".zip.part")
+            logger.info("Downloading %s -> %s (%d bytes)", artifact.url, path, artifact.size)
+            with urlopen(artifact.url, timeout=120) as response, partial.open("wb") as output:
+                shutil.copyfileobj(response, output, length=1024 * 1024)
+            _verify_sar_archive(partial, artifact)
+            partial.replace(path)
+        else:
+            logger.info("Verifying cached archive %s", path)
+            _verify_sar_archive(path, artifact)
+        _extract_sar_archive(path, target, artifact.prefixes)
+    for split in OpenEarthMapSAR.split_sizes:
+        OpenEarthMapSAR.split_paths(target, split)
+    logger.info("OpenEarthMap-SAR download complete.")
+
+
+SEN1FLOODS11_URL = "https://storage.googleapis.com/sen1floods11/v1.1"
+
+
+def _sha256(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def download_sen1floods11(output_dir: Path) -> None:
+    """Fetch the checksum-listed split CSVs and hand-labelled chips, skipping verified files."""
+    from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
+
+    target = Path(output_dir) / "sen1floods11"
+
+    def fetch(item: tuple[str, str]) -> None:
+        name, digest = item
+        path = target / name
+        if _sha256(path) == digest:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(f"{path.name}.part")
+        with (
+            urlopen(f"{SEN1FLOODS11_URL}/{name}", timeout=120) as response,
+            partial.open("wb") as out,
+        ):
+            shutil.copyfileobj(response, out)
+        if _sha256(partial) != digest:
+            partial.unlink()
+            raise ValueError(f"Sen1Floods11 SHA-256 mismatch for {SEN1FLOODS11_URL}/{name}. Retry.")
+        partial.replace(path)
+
+    logger.info("Downloading Sen1Floods11 %s -> %s", SEN1FLOODS11_URL, target)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(fetch, load_checksums("sen1floods11.sha256").items()))
+    for split in Sen1Floods11S1.split_sizes:
+        Sen1Floods11S1.split_chips(target, split)
+    logger.info("Sen1Floods11 download complete.")
+
+
+def download_bright_post_sar(output_dir: Path) -> None:
+    """Install BRIGHT post-event SAR and damage masks from the pinned, verified ZIPs.
+
+    The ZIPs (3.3 GB) are kept, so a rerun reverifies them and only re-extracts missing or
+    truncated TIFFs.
+    """
+    from geo_eval_harness.datasets.bright_post_sar import BRIGHTPostSAR
+
+    target = Path(output_dir) / "bright-post-sar"
+    target.mkdir(parents=True, exist_ok=True)
+    checksums = load_checksums("bright_post_sar.sha256")
+    logger.info("Downloading %s@%s -> %s", BRIGHT_REPO, BRIGHT_REVISION, target)
+    fetch_pinned(BRIGHT_REPO, BRIGHT_REVISION, target, checksums, allow_patterns=list(checksums))
+    for name in checksums:
+        with zipfile.ZipFile(target / name) as archive:
+            for member in archive.infolist():
+                path = target / member.filename
+                if member.filename.endswith(".tif") and not (
+                    path.is_file() and path.stat().st_size == member.file_size
+                ):
+                    archive.extract(member, target)
+    for split in BRIGHTPostSAR.split_sizes:
+        BRIGHTPostSAR.split_paths(target, split)
+    logger.info("BRIGHT post-event SAR download complete.")
 
 
 def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None:
@@ -217,13 +591,9 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
         download_geobench_v1(output_dir, datasets=[name])
     if v2:
         download_geobench_v2(output_dir, datasets=v2)
-    if "eurosat" in selected:
-        download_eurosat(output_dir)
-    if "resisc45" in selected:
-        download_resisc45(output_dir)
-    if "aid" in selected:
-        download_aid(output_dir)
-    if "ucmerced" in selected:
-        download_ucmerced(output_dir)
-    if "hotosm_buildings" in selected:
-        download_hotosm_buildings(output_dir)
+    for name in TORCHGEO_DATASETS + DIRECT_DATASETS:
+        if name in selected:
+            # Look up by name at call time so tests can monkeypatch individual downloaders.
+            globals()[f"download_{name.replace('-', '_')}"](output_dir)
+    if any(name in SEN1FLOODS11_DATASETS for name in selected):
+        download_sen1floods11(output_dir)

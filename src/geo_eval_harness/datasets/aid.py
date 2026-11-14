@@ -25,6 +25,38 @@ class AID(BenchDataset):
     name = "aid"
     task = "classification"
     num_classes = 30
+    class_names: ClassVar[tuple[str, ...]] = (
+        "Airport",
+        "BareLand",
+        "BaseballField",
+        "Beach",
+        "Bridge",
+        "Center",
+        "Church",
+        "Commercial",
+        "DenseResidential",
+        "Desert",
+        "Farmland",
+        "Forest",
+        "Industrial",
+        "Meadow",
+        "MediumResidential",
+        "Mountain",
+        "Park",
+        "Parking",
+        "Playground",
+        "Pond",
+        "Port",
+        "RailwayStation",
+        "Resort",
+        "River",
+        "School",
+        "SparseResidential",
+        "Square",
+        "Stadium",
+        "StorageTanks",
+        "Viaduct",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 6000, "val": 2000, "test": 2000}

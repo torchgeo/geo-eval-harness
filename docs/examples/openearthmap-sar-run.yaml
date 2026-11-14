@@ -1,0 +1,23 @@
+model:
+  name: timm/resnet18
+  kwargs:
+    pretrained: false
+datasets: [openearthmap-sar]
+input:
+  bands: [sar]
+  normalization: dataset
+  image_size: 256
+runtime:
+  device: cpu
+  batch_size: 4
+  workers: 0
+  seed: 7
+segmentation:
+  head: linear
+  layers: [layer1]
+  epochs: 1
+  batch_size: 4
+  ignore_index: 255
+  cache_features: false
+output:
+  directory: results

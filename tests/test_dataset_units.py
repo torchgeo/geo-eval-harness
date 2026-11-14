@@ -33,6 +33,12 @@ class TestFOTWCanonicalize:
         assert "image_a" not in result
         assert "image_b" not in result
 
+    def test_unknown_label_is_ignored(self) -> None:
+        mask = torch.tensor([[0, 1, 2, 3], [3, 2, 1, 0]])
+        result = FOTW().canonicalize_sample({"image": torch.zeros(3, 2, 4), "mask": mask})
+        torch.testing.assert_close(result["mask"], torch.tensor([[0, 1, 2, 255], [255, 2, 1, 0]]))
+        assert FOTW.num_classes == 3
+
 
 @pytest.mark.parametrize("dataset_cls", [SpaceNet2, SpaceNet7])
 class TestSpaceNetCanonicalize:

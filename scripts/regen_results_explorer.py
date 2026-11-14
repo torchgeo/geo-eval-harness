@@ -19,7 +19,10 @@ import re
 from datetime import date
 from pathlib import Path
 
-from geo_eval_harness.results import load_results
+import pandas as pd
+
+from geo_eval_harness.compute_cost import classification_compute_reference
+from geo_eval_harness.results import SETUP_COLS, format_setup_value, load_results
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +35,12 @@ INTRINSIC_DIM_RESULTS_DIR = ROOT / "results" / "intrinsic_dim"
 COMPUTE_COST_CSV = ROOT / "results" / "compute_cost.csv"
 HTML_PATH = ROOT / "docs" / "_static" / "results-explorer.html"
 SNAPSHOT_DIR = ROOT / "docs" / "_static" / "_results_snapshots"
-SEG_METHODS = ("seg-linear", "seg-conv_block", "seg-fpn", "seg-dpt")
+# Segmentation rows are ``seg-<decoder>`` with their setup in the SETUP_COLS
+# columns.  Rows without ``adaptation`` predate those columns (the legacy
+# seg-linear/conv_block/fpn/dpt grids) and are left out of new snapshots.
+SEG_METHOD_PREFIX = "seg-"
 ACCURACY_METHODS = ("knn5", "linear")
-ALLOWED_METHODS = (*ACCURACY_METHODS, *SEG_METHODS, "profile", "intrinsic_dim")
+ALLOWED_METHODS = (*ACCURACY_METHODS, "profile", "intrinsic_dim")
 
 # compute_cost.csv is wide -- one row per measured config, one column per
 # quantity.  The explorer wants the long ``method="profile"`` rows that
@@ -53,14 +59,18 @@ COMPUTE_COST_METRICS = (
     "reserved_gpu_mem_gb",
     "n_tokens",
 )
-# The results CSVs call the multispectral run "all"; compute_cost measures it as
-# the 12-band S2 stack.  Pair them so the efficiency join lands -- n_channels
-# rides along on the row so a dataset whose "all" is not 12 bands stays visible.
+# The s2 band selection denotes all source bands; result rows use all.
 BAND_CONFIG_ALIASES = {"s2": "all"}
 
 # Cloud pricing and grid carbon intensity: page-owned reference data that lives
 # inside the replaced <script> span and must survive regeneration.
 REFERENCE_DATA_RE = r"const GPU_PRICES = \[.*?\];\s*const CARBON_INTENSITY = \[.*?\];"
+
+# GitHub rejects pushes of files over 100 MB; the page inlined every snapshot as
+# an array of objects and crossed that at 108 MB.  Fail the regeneration well
+# before the push does, so a results PR that would overflow the page fails in
+# its own CI instead of on main.
+MAX_ARTIFACT_BYTES = 50_000_000
 
 COLUMNS = [
     "dataset",
@@ -96,6 +106,16 @@ COLUMNS = [
     "task",
     "head_type",
     "n_channels",
+    "gpu_name",
+    "profile_precision",
+    "timing_batch_size",
+    "config_hash",
+    "source_hash",
+    "measured_at",
+    "efficiency_reference",
+    *SETUP_COLS,
+    "best_val_epoch",
+    "best_val_miou",
     "snapshot",
 ]
 NUMERIC = {
@@ -120,22 +140,27 @@ NUMERIC = {
     "recall",
     "f1",
     "n_channels",
+    "timing_batch_size",
+    "best_val_epoch",
+    "best_val_miou",
 }
-BOOL = {"merge_val"}
+BOOL = {"merge_val", "efficiency_reference"}
 
 
 def _iter_compute_cost_rows():
     """Melt ``results/compute_cost.csv`` into long ``method="profile"`` rows.
 
-    Cost is measured per (model, band config, task, head) at a fixed 224px
-    input -- it carries no ``dataset``, because a frozen backbone costs the
-    same whichever dataset is probed.  The explorer joins these to accuracy on
-    (name, bands) for that reason.
+    Preserve every measured image size and head in the table. Mark the comparable
+    224-pixel classification cohort for the efficiency figure's accuracy joins.
     """
     if not COMPUTE_COST_CSV.exists():
         return
     with COMPUTE_COST_CSV.open() as fh:
-        for r in csv.DictReader(fh):
+        records = list(csv.DictReader(fh))
+        if not records:
+            return
+        selected = set(classification_compute_reference(pd.DataFrame(records)).index)
+        for index, r in enumerate(records):
             bands = BAND_CONFIG_ALIASES.get(r["band_config"], r["band_config"])
             for metric in COMPUTE_COST_METRICS:
                 if not r.get(metric):
@@ -153,6 +178,13 @@ def _iter_compute_cost_rows():
                     "feature_dim": r["feature_dim"],
                     "task": r["task"],
                     "head_type": r["head_type"],
+                    "gpu_name": r.get("gpu_name"),
+                    "profile_precision": r.get("precision"),
+                    "timing_batch_size": r.get("timing_batch_size"),
+                    "config_hash": r.get("config_hash"),
+                    "source_hash": r.get("source_hash"),
+                    "measured_at": r.get("measured_at"),
+                    "efficiency_reference": index in selected,
                 }
 
 
@@ -164,10 +196,17 @@ def _iter_result_rows():
     yield from _iter_compute_cost_rows()
 
 
+def is_segmentation_row(row: dict) -> bool:
+    """Return whether a row is a segmentation measurement with setup columns."""
+    return str(row.get("method") or "").startswith(SEG_METHOD_PREFIX) and bool(
+        row.get("adaptation")
+    )
+
+
 def _load_csv_rows(label: str) -> list[dict]:
     rows = []
     for r in _iter_result_rows():
-        if r["method"] not in ALLOWED_METHODS:
+        if r["method"] not in ALLOWED_METHODS and not is_segmentation_row(r):
             continue
         if r.get("metric_value") is None or r["metric_value"] == "":
             continue
@@ -180,6 +219,9 @@ def _load_csv_rows(label: str) -> list[dict]:
                 row[k] = None
             elif k in NUMERIC:
                 row[k] = float(v)
+            elif k in SETUP_COLS:
+                # Setup cells are tokens in their CSV spelling (``20``, ``0.0005``).
+                row[k] = format_setup_value(v)
             elif k in BOOL:
                 row[k] = str(v).lower() in ("true", "1")
             else:
@@ -187,6 +229,94 @@ def _load_csv_rows(label: str) -> list[dict]:
         row["snapshot"] = label
         rows.append(row)
     return rows
+
+
+def _value_key(value: object) -> str:
+    # JSON spelling keeps 2048 and 2048.0 (and True and 1) distinct.
+    return json.dumps(value, sort_keys=True)
+
+
+def pack_rows(snapshots: dict[str, list[dict]]) -> dict:
+    """Pack snapshot rows into a compact, column-oriented payload.
+
+    Identical rows (ignoring ``snapshot``) are stored once, each column is
+    dictionary-encoded (index ``-1`` marks a key the row does not have), and each
+    snapshot lists its rows as ``[start, length]`` runs of unique-row indices in
+    its original order.  :func:`unpack_rows` and the page's ``unpackRows`` invert
+    this exactly.  Repeated keys and repeated snapshots dominated the old
+    array-of-objects payload; this keeps the page an order of magnitude smaller
+    and makes a new snapshot of mostly unchanged rows nearly free.
+    """
+    columns = [c for c in COLUMNS if c != "snapshot"]
+    extra = {k for rows in snapshots.values() for r in rows for k in r}
+    columns += sorted(extra - set(columns) - {"snapshot"})
+
+    unique: dict[str, int] = {}
+    cells: list[list] = [[] for _ in columns]
+    runs_by_label = []
+    for label, rows in snapshots.items():
+        runs: list[int] = []
+        for r in rows:
+            key = _value_key({k: v for k, v in r.items() if k != "snapshot"})
+            idx = unique.get(key)
+            if idx is None:
+                idx = unique[key] = len(unique)
+                for col, values in zip(columns, cells, strict=True):
+                    values.append((col in r, r.get(col)))
+            if runs and runs[-2] + runs[-1] == idx:
+                runs[-1] += 1
+            else:
+                runs += [idx, 1]
+        runs_by_label.append([label, runs])
+
+    dicts, indices = [], []
+    for values in cells:
+        lookup: dict[str, int] = {}
+        dictionary, index = [], []
+        for present, value in values:
+            if not present:
+                index.append(-1)
+                continue
+            key = _value_key(value)
+            if key not in lookup:
+                lookup[key] = len(dictionary)
+                dictionary.append(value)
+            index.append(lookup[key])
+        dicts.append(dictionary)
+        indices.append(index)
+    return {"columns": columns, "dicts": dicts, "index": indices, "snapshots": runs_by_label}
+
+
+def unpack_rows(packed: dict) -> list[dict]:
+    """Invert :func:`pack_rows` (mirrors the page's ``unpackRows``)."""
+    out = []
+    columns = list(zip(packed["columns"], packed["dicts"], packed["index"], strict=True))
+    for label, runs in packed["snapshots"]:
+        for start, length in zip(runs[::2], runs[1::2], strict=True):
+            for i in range(start, start + length):
+                row = {c: d[idx[i]] for c, d, idx in columns if idx[i] >= 0}
+                row["snapshot"] = label
+                out.append(row)
+    return out
+
+
+def _read_snapshot(path: Path) -> list[dict]:
+    """Read a snapshot file in the packed form or the legacy list-of-rows form."""
+    data = json.loads(path.read_text())
+    return unpack_rows(data) if isinstance(data, dict) else data
+
+
+def _dumps_compact(obj: object) -> str:
+    return json.dumps(obj, separators=(",", ":"))
+
+
+def _check_size(path: Path, payload: str) -> None:
+    size = len(payload.encode("utf-8"))
+    if size > MAX_ARTIFACT_BYTES:
+        raise SystemExit(
+            f"{path.name} would be {size / 1e6:.1f} MB, over the "
+            f"{MAX_ARTIFACT_BYTES / 1e6:.0f} MB guard (GitHub rejects files over 100 MB)."
+        )
 
 
 def _snapshot_label_sort_key(label: str) -> tuple:
@@ -208,19 +338,30 @@ def _sub_once(pattern: str, repl: str, text: str) -> str:
 
 
 def _replace_snapshot_data(
-    text: str, rows: list[dict], snapshot_meta: list[dict], latest_label: str
+    text: str, snapshots: dict[str, list[dict]], snapshot_meta: list[dict], latest_label: str
 ) -> str:
-    """Replace generated rows while preserving page-owned cost reference data."""
+    """Replace generated rows while preserving page-owned cost reference data.
+
+    ``snapshots`` maps each label to its rows, in display order.
+    """
+    if "function unpackRows(" not in text:
+        raise SystemExit(f"{HTML_PATH.name} has no unpackRows(); it cannot read DATA_PACKED.")
     js_columns = "const COLUMNS = " + json.dumps(COLUMNS) + ";"
     js_numeric = "const NUMERIC_COLS = " + json.dumps(sorted(NUMERIC)) + ";"
     js_snaps = "const SNAPSHOTS = " + json.dumps(snapshot_meta) + ";"
     js_default = "const DEFAULT_SNAPSHOT = " + json.dumps(latest_label) + ";"
-    js_data = "const DATA = " + json.dumps(rows, separators=(",", ":")) + ";"
+    js_data = (
+        "const DATA_PACKED = "
+        + _dumps_compact(pack_rows(snapshots))
+        + ";\nconst DATA = unpackRows(DATA_PACKED);"
+    )
 
+    # Accept the legacy ``const DATA = [...]`` page so the first run migrates it.
     pattern = re.compile(
         r"const COLUMNS = \[.*?\];\s*const NUMERIC_COLS = \[.*?\];"
         r"(?:\s*const SNAPSHOTS = \[.*?\];)?(?:\s*const DEFAULT_SNAPSHOT = \"[^\"]*\";)?"
-        r"\s*const DATA = \[.*?\];"
+        r"\s*(?:const DATA = \[.*?\];|const DATA_PACKED = [^\n]*;\s*"
+        r"const DATA = unpackRows\(DATA_PACKED\);)"
         r"(?:\s*const GPU_PRICES = \[.*?\];)?(?:\s*const CARBON_INTENSITY = \[.*?\];)?",
         re.DOTALL,
     )
@@ -230,7 +371,9 @@ def _replace_snapshot_data(
             "Could not locate GPU_PRICES/CARBON_INTENSITY in "
             f"{HTML_PATH.name}; the efficiency figure needs both."
         )
-    new_block = "\n".join([js_columns, js_numeric, js_snaps, js_default, js_data, carried.group()])
+    new_block = "\n".join(
+        [js_columns, js_numeric, js_snaps, js_default, js_data, carried.group()]
+    ).replace("<", "\\u003c")
     if not pattern.search(text):
         raise SystemExit("Could not locate COLUMNS/NUMERIC_COLS/DATA block in HTML.")
     return pattern.sub(lambda _: new_block, text, count=1)
@@ -251,25 +394,26 @@ def main() -> None:
     SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
     today_rows = _load_csv_rows(args.label)
     snapshot_path = SNAPSHOT_DIR / f"{args.label}.json"
-    snapshot_path.write_text(json.dumps(today_rows, separators=(",", ":")))
+    snapshot_text = _dumps_compact(pack_rows({args.label: today_rows}))
+    _check_size(snapshot_path, snapshot_text)
+    snapshot_path.write_text(snapshot_text)
 
     snapshots: dict[str, list[dict]] = {}
     for path in sorted(SNAPSHOT_DIR.glob("*.json")):
         label = path.stem
-        rows = json.loads(path.read_text())
-        for r in rows:
-            # The filename defines the snapshot, even if rows contain an old label.
-            r["snapshot"] = label
+        rows = _read_snapshot(path)
+        for row in rows:
+            row["snapshot"] = label
         snapshots[label] = rows
 
     ordered_labels = sorted(snapshots, key=_snapshot_label_sort_key, reverse=True)
     latest_label = ordered_labels[0]
     latest_rows = snapshots[latest_label]
-    flat_rows = [r for label in ordered_labels for r in snapshots[label]]
+    ordered = {label: snapshots[label] for label in ordered_labels}
     snapshot_meta = [{"label": label, "rows": len(snapshots[label])} for label in ordered_labels]
 
     accuracy_rows = [r for r in latest_rows if r["method"] in ACCURACY_METHODS]
-    seg_rows = [r for r in latest_rows if r["method"] in SEG_METHODS]
+    seg_rows = [r for r in latest_rows if is_segmentation_row(r)]
     n_models = len({r["name"] for r in accuracy_rows if r["name"]}) or len(
         {r["name"] for r in latest_rows if r["name"]}
     )
@@ -278,16 +422,18 @@ def main() -> None:
     n_datasets = len({r["dataset"] for r in accuracy_rows if r["dataset"]})
     n_seg_datasets = len({r["dataset"] for r in seg_rows if r["dataset"]})
     n_seg_models = len({r["name"] for r in seg_rows if r["name"]})
+    n_seg_decoders = len({r["method"] for r in seg_rows})
     best = max(accuracy_rows or latest_rows, key=lambda r: r["metric_value"] or 0)
 
     text = _replace_snapshot_data(
-        HTML_PATH.read_text(encoding="utf-8"), flat_rows, snapshot_meta, latest_label
+        HTML_PATH.read_text(encoding="utf-8"), ordered, snapshot_meta, latest_label
     )
 
     seg_sentence = (
         f" A further {len(seg_rows):,} segmentation measurements cover "
-        f"{n_seg_models} backbones on {n_seg_datasets} datasets (mIoU, four "
-        f"decoder heads)."
+        f"{n_seg_models} backbones on {n_seg_datasets} datasets (mIoU, "
+        f"{n_seg_decoders} decoder head{'s' if n_seg_decoders != 1 else ''}; frozen, "
+        f"LoRA and fully fine-tuned backbones)."
         if seg_rows
         else ""
     )
@@ -335,6 +481,7 @@ def main() -> None:
         text,
     )
 
+    _check_size(HTML_PATH, text)
     HTML_PATH.write_text(text, encoding="utf-8")
     logger.info(
         "Wrote %s: %d snapshots, latest=%s (%d rows, %d models, %d datasets) — best %.4f (%s on %s)",

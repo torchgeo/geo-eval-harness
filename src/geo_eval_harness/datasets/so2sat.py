@@ -17,6 +17,25 @@ class So2Sat(_V2Dataset):
     name = "so2sat"
     task = "classification"
     num_classes = 17
+    class_names: ClassVar[tuple[str, ...]] = (
+        "Compact high-rise",
+        "Compact middle-rise",
+        "Compact low-rise",
+        "Open high-rise",
+        "Open middle-rise",
+        "Open low-rise",
+        "Lightweight low-rise",
+        "Large low-rise",
+        "Sparsely built",
+        "Heavy industry",
+        "Dense Trees",
+        "Scattered trees",
+        "Bush, scrub",
+        "Low plants",
+        "Bare rock or paved",
+        "Bare soil or sand",
+        "Water",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["b04", "b03", "b02"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 19992, "val": 986, "test": 986}

@@ -26,7 +26,7 @@ def add_flops_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--band-source", default=argparse.SUPPRESS)
     parser.add_argument(
-        "--band-configs", choices=("rgb", "s2"), nargs="+", default=argparse.SUPPRESS
+        "--band-configs", choices=("rgb", "s2", "all"), nargs="+", default=argparse.SUPPRESS
     )
     parser.add_argument("--image-size", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
@@ -38,15 +38,18 @@ def add_flops_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--probe-num-classes", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
         "--seg-heads",
-        choices=("linear", "conv_block", "fpn", "dpt", "patch_linear"),
+        choices=("linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"),
         nargs="*",
         default=argparse.SUPPRESS,
         help="Segmentation heads; supply without values to disable",
     )
     parser.add_argument(
-        "--seg-band-configs", choices=("rgb", "s2"), nargs="*", default=argparse.SUPPRESS
+        "--seg-band-configs", choices=("rgb", "s2", "all"), nargs="*", default=argparse.SUPPRESS
     )
     parser.add_argument("--seg-num-classes", type=int, default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--seg-neck-policy", choices=("preset", "auto"), default=argparse.SUPPRESS
+    )
     parser.add_argument(
         "--seg-layers", nargs="*", default=argparse.SUPPRESS, help="Coarse-to-fine backbone layers"
     )

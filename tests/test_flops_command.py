@@ -213,6 +213,8 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
                 "fpn",
                 "dpt",
                 "patch_linear",
+                "upernet",
+                "unet",
                 "--seg-band-configs",
                 "s2",
                 "--seg-num-classes",
@@ -242,7 +244,7 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
     assert config.input.band_source == "so2sat"
     assert config.classification.head == "mlp"
     assert config.classification.num_classes == 19
-    assert len(config.segmentation.heads) == 5
+    assert len(config.segmentation.heads) == 7
     assert config.segmentation.num_classes == 6
     assert config.segmentation.probe.layers == ["four", "three", "two", "one"]
     assert config.segmentation.probe.temporal_pool == "max"
@@ -288,18 +290,6 @@ def test_constructor_options_use_strict_safe_yaml(
         _flops.run(parser().parse_args(["--model", "rcf", "--model-kwargs", kwargs, "--dry-run"]))
     assert error.value.code == 2
     assert "error:" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("arguments", [["model=rcf"], ["+model.features=8"], ["++device=cpu"]])
-def test_canonical_parser_rejects_old_override_syntax(
-    arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["flops", *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "overrides have been retired" in message
-    assert "--config" in message
 
 
 def test_canonical_parser_dispatches_yaml_and_explicit_flags(

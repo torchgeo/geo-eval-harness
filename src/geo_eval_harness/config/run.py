@@ -9,6 +9,7 @@ from .schema import (
     ClassificationConfig,
     InputConfig,
     ModelConfig,
+    OutputPath,
     OutputPaths,
     RuntimeConfig,
     SchemaVersion,
@@ -22,6 +23,8 @@ class OutputConfig(OutputPaths):
     """Result storage settings."""
 
     resume: StrictBool = False
+    # JSON Lines file for per-epoch segmentation records; output-only, so not in the resume hash.
+    epoch_metrics: OutputPath | None = None
 
 
 class CPUThroughputConfig(StrictModel):

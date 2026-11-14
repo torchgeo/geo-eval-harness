@@ -8,12 +8,14 @@ import importlib
 from copy import deepcopy
 from typing import Any, Literal
 
-from pydantic import Field, StrictBool
+from pydantic import Field, StrictBool, StrictStr
 
+from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.errors import UnsupportedNormalizationError
 
 from .run import RunConfig
 from .schema import (
+    Adaptation,
     ClassificationConfig,
     InputConfig,
     ModelConfig,
@@ -59,6 +61,7 @@ class ModelPreset(PresetDefaults):
     track: Literal["image", "coord"] = "image"
     seed_from_run: bool = False
     supports_model_normalization: StrictBool | None = None
+    supported_datasets: list[StrictStr] | None = Field(default=None, min_length=1)
     dataset_overrides: dict[str, PresetDefaults] = Field(default_factory=dict)
 
     def validate_normalization(self, normalization: str) -> None:
@@ -70,6 +73,11 @@ class ModelPreset(PresetDefaults):
 
     def for_dataset(self, dataset: str) -> "ModelPreset":
         """Apply a dataset override without mutating the shared preset."""
+        if self.supported_datasets is not None and dataset not in self.supported_datasets:
+            raise BandCompatibilityError(
+                f"{self.name!r} does not support dataset {dataset!r}; "
+                f"verified datasets: {self.supported_datasets}."
+            )
         values = self.model_dump(exclude_unset=True)
         values.pop("dataset_overrides", None)
         override = self.dataset_overrides.get(dataset)
@@ -104,7 +112,7 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     }
     effective = RunConfig.model_validate(merge_settings(defaults, config.model_dump_yaml()))
     segmentation = effective.segmentation
-    if segmentation.lora_rank is not None and segmentation.lora_target_modules is None:
+    if segmentation.adaptation is Adaptation.LORA and segmentation.lora_target_modules is None:
         raise ValueError(
             f"segmentation.lora_rank requires segmentation.lora_target_modules; "
             f"{preset.name!r} does not define LoRA target modules"
@@ -112,14 +120,19 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     return effective, preset.model_copy(update={"input": effective.input})
 
 
-def build_model(preset: ModelPreset, **runtime_options: Any) -> Any:
+def build_model(
+    preset: ModelPreset, *, native_image_size: int | None = None, **runtime_options: Any
+) -> Any:
     """Construct one model; nested target-like kwargs remain ordinary mappings."""
     options = {**preset.kwargs, **runtime_options}
     preset.validate_normalization(options.get("normalization", NORMALIZATIONS["dataset"]))
     module, _, symbol = preset.target.rpartition(".")
     constructor = getattr(importlib.import_module(module), symbol)
     if getattr(constructor, "wants_resolved_image_size", False):
-        options.setdefault("image_size", preset.input.image_size)
+        image_size = preset.input.image_size
+        if image_size is None and getattr(constructor, "wants_native_image_size", False):
+            image_size = native_image_size
+        options["image_size"] = image_size
     validated = getattr(constructor, "validated_settings", None)
     if validated is not None:
         bands = options.pop("bands")

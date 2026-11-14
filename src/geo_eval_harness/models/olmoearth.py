@@ -10,7 +10,7 @@ Reference implementations (canonical first):
 
 import logging
 from collections import defaultdict
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._input_units import InputUnit, _detect_band_group_unit, to_s2_dn
+from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -203,6 +203,26 @@ _PASSTHROUGH_SENSORS: frozenset[str] = frozenset({"sar", "s1"})
 # GeoBench's uint8 Landsat scale does not match the pretrained DN statistics.
 _DATASET_STATS_SENSORS: frozenset[str] = frozenset({"landsat"})
 
+# Released checkpoints per version; e.g. Large exists only for v1 and v1.3 ships Base only.
+_VERSION_SIZES: dict[str, frozenset[str]] = {
+    "v1": frozenset({"nano", "tiny", "base", "large"}),
+    "v1_1": frozenset({"nano", "tiny", "base"}),
+    "v1_2": frozenset({"nano", "tiny", "small", "base"}),
+    "v1_3": frozenset({"base"}),
+}
+
+# Checkpoints whose encoder ends in an AttentionPooler that emits location tokens and a
+# detached low-dim student readout of them.
+_ATTENTION_POOLER_VERSIONS: frozenset[str] = frozenset({"v1_3"})
+
+# Versions that zero missing bands after normalization by default, matching how band
+# dropout presented dropped bands in pretraining. v1.1 and v1.2 also used band dropout
+# but keep neighbour imputation so their published results stay reproducible.
+_ZERO_MISSING_BANDS_VERSIONS: frozenset[str] = frozenset({"v1_3"})
+
+EmbeddingSource = Literal["patch_tokens", "location_tokens", "student"]
+MissingBands = Literal["impute", "zero"]
+
 
 def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -> dict[str, Any]:
     """Resolve the channel layout and normalization metadata for one sensor."""
@@ -261,6 +281,7 @@ def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -
         "dst_indices": dst_indices,
         "input_unit": input_unit,
         "impute_ops": impute_ops,
+        "missing_dst": [i for i in range(info["channels"]) if i not in filled],
         # Dataset statistics stay in source order; normalization precedes band mapping.
         "src_means": [b.mean for b in group_bands],
         "src_stds": [b.std for b in group_bands],
@@ -286,6 +307,35 @@ def _build_sensor_groups(bands: list[BandSpec]) -> list[dict[str, Any]]:
     return result
 
 
+def _resolve_version_options(
+    version: str,
+    model_size: str,
+    embedding: EmbeddingSource | None,
+    missing_bands: MissingBands | None,
+) -> tuple[EmbeddingSource, MissingBands]:
+    """Validate the checkpoint choice and resolve version-dependent defaults."""
+    if version not in _VERSION_SIZES:
+        raise ValueError(
+            f"Unknown OlmoEarth version {version!r}; use one of {sorted(_VERSION_SIZES)}."
+        )
+    if model_size not in _VERSION_SIZES[version]:
+        raise ValueError(
+            f"OlmoEarth {version} has no {model_size!r} checkpoint; "
+            f"available sizes: {sorted(_VERSION_SIZES[version])}."
+        )
+    has_pooler = version in _ATTENTION_POOLER_VERSIONS
+    if embedding is None:
+        embedding = "location_tokens" if has_pooler else "patch_tokens"
+    if embedding != "patch_tokens" and not has_pooler:
+        raise ValueError(
+            f"embedding={embedding!r} needs an AttentionPooler checkpoint "
+            f"({sorted(_ATTENTION_POOLER_VERSIONS)}); OlmoEarth {version} only has patch tokens."
+        )
+    if missing_bands is None:
+        missing_bands = "zero" if version in _ZERO_MISSING_BANDS_VERSIONS else "impute"
+    return embedding, missing_bands
+
+
 class OlmoEarthBenchModel(BenchModel):
     """BenchModel wrapper for OlmoEarth geospatial foundation models.
 
@@ -307,6 +357,8 @@ class OlmoEarthBenchModel(BenchModel):
     Copying after normalization preserves source-band statistics instead of a fabricated value.
 
     A channel with no available source remains zero-filled.
+    With ``missing_bands="zero"`` every missing channel is instead set to 0 after
+    normalization, the value band dropout used for dropped bands during pretraining.
     Masks stay all-visible so ``pool_spatially`` can produce embeddings.
 
     ``normalize_inputs`` is identity; this wrapper normalizes internally per sensor group.
@@ -323,11 +375,14 @@ class OlmoEarthBenchModel(BenchModel):
         bands: Ordered ``BandSpec`` list describing the input channels.
         model_size: One of ``"nano"``, ``"tiny"``, ``"small"``, ``"base"``,
             ``"large"``.  ``"large"`` is only available for ``version="v1"``;
-            ``"small"`` is only available for ``version="v1_2"``.
-        version: Model version — ``"v1"`` (default), ``"v1_1"`` or
-            ``"v1_2"``.  v1.1 ships Nano/Tiny/Base with improved accuracy and
+            ``"small"`` is only available for ``version="v1_2"``; ``"v1_3"``
+            ships ``"base"`` only.
+        version: Model version — ``"v1"`` (default), ``"v1_1"``, ``"v1_2"``
+            or ``"v1_3"``.  v1.1 ships Nano/Tiny/Base with improved accuracy and
             ~25% more parameters.  v1.2 ships Nano/Tiny/Small/Base (RoPE
-            position encoding); no Large variant for v1.1/v1.2.
+            position encoding); no Large variant for v1.1/v1.2.  v1.3 ships
+            Base with an AttentionPooler that reads the encoder tokens into a
+            768-d location-token grid plus a detached 128-d student readout.
         patch_size: Patch size for the encoder (default 4).
         input_res: Input resolution in meters.  ``None`` (default) lets
             the wrapper auto-detect from the primary sensor GSD.
@@ -337,9 +392,12 @@ class OlmoEarthBenchModel(BenchModel):
             identical slots; use only for explicit multi-timestep ablations.
         std_multiplier: Std multiplier passed to ``Normalizer``.
         normalize: If True, L2-normalize output embeddings.
-        sar_log_scale: If True, convert SAR values to dB via
-            ``10·log10(max(v, 1e-6))`` before feeding OlmoEarth's S1
-            normalizer, which was trained on std⁰ dB values.
+        sar_log_scale: Convert SAR to dB via ``10·log10(max(v, 1e-6))``
+            before OlmoEarth's S1 normalizer, which expects σ⁰ in dB
+            (min-max over -50..0 dB). ``None`` (default) converts exactly
+            when every SAR band declares ``BandSpec.unit == "linear_power"``
+            (e.g. Kuro Siwo); linear values would otherwise all normalize to
+            ~0.77-0.79. ``True``/``False`` force it.
         landsat_scale_factor: Optional multiplier applied to Landsat
             values *after* the standard uint8→DN conversion.  Use to
             compensate for mis-matched scales between GeoBench's uint8
@@ -369,6 +427,17 @@ class OlmoEarthBenchModel(BenchModel):
             to ``min_image_size x min_image_size`` via bilinear interpolation.
             Useful for datasets with small native images (e.g. m-so2sat at
             32 px) where the patch grid would otherwise be too sparse.
+        embedding: Which encoder output is mean-pooled into the image
+            embedding: ``"patch_tokens"`` (the transformer's patch tokens),
+            ``"location_tokens"`` (the AttentionPooler grid) or ``"student"``
+            (its 128-d student readout).  The latter two require ``"v1_3"``.
+            ``None`` (default) selects ``"location_tokens"`` for v1.3, the
+            representation AI2's evals probe, and ``"patch_tokens"`` otherwise.
+        missing_bands: How channels absent from the input are filled:
+            ``"impute"`` copies a spectral neighbour (helios' v1 recipe);
+            ``"zero"`` sets them to 0 after normalization, as band dropout did
+            in v1.1+ pretraining.  ``None`` (default) selects ``"zero"`` for
+            v1.3 and ``"impute"`` otherwise.
     """
 
     def __init__(  # noqa: PLR0913 - public YAML options
@@ -376,20 +445,25 @@ class OlmoEarthBenchModel(BenchModel):
         bands: list[BandSpec],
         *,
         model_size: Literal["nano", "tiny", "small", "base", "large"] = "base",
-        version: Literal["v1", "v1_1", "v1_2"] = "v1",
+        version: Literal["v1", "v1_1", "v1_2", "v1_3"] = "v1",
         patch_size: int = 4,
         input_res: int | None = None,
         time_steps: int = 1,
         std_multiplier: float = 2.0,
         normalize: bool = False,
-        sar_log_scale: bool = False,
+        sar_log_scale: bool | None = None,
         landsat_scale_factor: float | None = None,
         norm_from_pretrained: bool | Literal["auto"] = "auto",
         sensor_remap: dict[str, str] | None = None,
         min_image_size: int | None = None,
+        embedding: EmbeddingSource | None = None,
+        missing_bands: MissingBands | None = None,
         **_kwargs,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
+        self.embedding, self.missing_bands = _resolve_version_options(
+            version, model_size, embedding, missing_bands
+        )
 
         # Lazy imports so the package is only needed when this model is used.
         from olmoearth_pretrain_minimal import ModelID, Normalizer, load_model_from_id
@@ -413,6 +487,11 @@ class OlmoEarthBenchModel(BenchModel):
         sensor_groups = _build_sensor_groups(bands_for_routing)
         for g in sensor_groups:
             g["modality"] = getattr(Modality, g["modality_name"])
+            g["sar_to_db"] = g["sensor"] in ("sar", "s1") and (
+                sar_log_scale
+                if sar_log_scale is not None
+                else all(self.bands[i].unit == "linear_power" for i in g["src_indices"])
+            )
         self._sensor_groups = sensor_groups
 
         if input_res is None:
@@ -433,8 +512,49 @@ class OlmoEarthBenchModel(BenchModel):
         self.min_image_size = min_image_size
 
         model_id = getattr(ModelID, f"OLMOEARTH_{version.upper()}_{model_size.upper()}")
-        self.encoder_model = load_model_from_id(model_id, load_weights=True)
+        pretrained = load_model_from_id(model_id, load_weights=True)
+        # Preserve segmentation tap paths while retaining only the inference encoder.
+        self.encoder_model: Any = torch.nn.Module()
+        self.encoder_model.add_module("encoder", cast(torch.nn.Module, pretrained.encoder))
         self.normalizer = Normalizer(std_multiplier=std_multiplier)
+        self._token_layout: list[tuple[int, ...]] = []
+        self._record_token_layout()
+
+    def _record_token_layout(self) -> None:
+        """Record each modality's ``(h, w, ...)`` token shape as the encoder flattens them.
+
+        The encoder orders modalities through a ``set``, so the order is only known at call time.
+        """
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit import (
+            get_modalities_to_process,
+            return_modalities_from_dict,
+        )
+
+        encoder = self.encoder_model.encoder
+        collapse = encoder.collapse_and_combine_hwtc
+
+        def collapse_and_record(x: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+            order = get_modalities_to_process(
+                return_modalities_from_dict(x), encoder.supported_modality_names
+            )
+            self._token_layout = [tuple(x[modality].shape[1:-1]) for modality in order]
+            return collapse(x)
+
+        encoder.collapse_and_combine_hwtc = collapse_and_record
+
+    def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid."""
+        sizes = [int(np.prod(shape)) for shape in self._token_layout]
+        if sum(sizes) != tokens.shape[1]:
+            raise ValueError(
+                f"OlmoEarth tokens {tuple(tokens.shape)} do not match the last forward's "
+                f"per-modality layout {self._token_layout}."
+            )
+        grids = [
+            chunk.reshape(chunk.shape[0], shape[0], shape[1], -1, chunk.shape[-1]).mean(dim=3)
+            for chunk, shape in zip(tokens.split(sizes, dim=1), self._token_layout, strict=True)
+        ]
+        return torch.stack(grids).mean(dim=0).permute(0, 3, 1, 2)
 
     handles_own_normalization = True
 
@@ -528,8 +648,8 @@ class OlmoEarthBenchModel(BenchModel):
                 g_images = to_s2_dn(g_images, input_unit)
                 if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
                     g_images = g_images * self.landsat_scale_factor
-            if group["sensor"] in ("sar", "s1") and self.sar_log_scale:
-                g_images = 10.0 * torch.log10(g_images.clamp(min=1e-6))
+            if group["sar_to_db"]:
+                g_images = linear_power_to_db(g_images)
 
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)
@@ -542,9 +662,12 @@ class OlmoEarthBenchModel(BenchModel):
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)
 
-        # Impute after normalization so borrowed bands retain their source statistics.
-        for src_dst, tgt_dst in group["impute_ops"]:
-            g_nhwtc[..., tgt_dst] = g_nhwtc[..., src_dst]
+        # Fill after normalization: zeros match band dropout; copies keep source statistics.
+        if self.missing_bands == "zero":
+            g_nhwtc[..., group["missing_dst"]] = 0.0
+        else:
+            for src_dst, tgt_dst in group["impute_ops"]:
+                g_nhwtc[..., tgt_dst] = g_nhwtc[..., src_dst]
 
         return g_nhwtc
 
@@ -599,8 +722,16 @@ class OlmoEarthBenchModel(BenchModel):
             fast_pass=True,
         )
 
-        pooled = outputs["tokens_and_masks"].pool_spatially(PoolingType.MEAN)
-        embeddings = pooled.mean(dim=(1, 2))
+        if self.embedding == "patch_tokens":
+            pooled = outputs["tokens_and_masks"].pool_spatially(PoolingType.MEAN)
+            embeddings = pooled.mean(dim=(1, 2))
+        else:
+            key = (
+                "location_tokens"
+                if self.embedding == "location_tokens"
+                else "student_location_tokens"
+            )
+            embeddings = outputs[key].mean(dim=(1, 2))
 
         if self.do_normalize:
             embeddings = F.normalize(embeddings, p=2, dim=-1)

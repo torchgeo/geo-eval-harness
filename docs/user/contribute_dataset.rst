@@ -1,8 +1,7 @@
 Add a Dataset
 =============
 
-This page explains how to wire a new geospatial dataset into geo-eval-harness
-so that any registered model can be evaluated on it automatically.
+Add a dataset wrapper, register its metadata and download command, and test it with compatible models.
 
 Prerequisites
 -------------
@@ -82,9 +81,7 @@ Required class-level attributes:
 * ``multilabel`` — ``True`` for multi-hot labels (``m-bigearthnet``, ``benv2``, ``treesatai``).
   Selects micro-mAP over accuracy as the reported metric, so getting it wrong
   silently reports the wrong number.
-* ``supports_partitions`` — ``True`` only for V1 GeoBench datasets, which ship
-  partition JSON files.  When ``False``, ``get_datasets`` warns and ignores a
-  non-default ``input.partition``.
+* ``supports_partitions`` — ``True`` when the wrapper supports training partitions, as V1, HOTOSM, and Open Cities do. When ``False``, ``get_datasets`` warns and ignores a non-default ``input.partition``.
 
 The ``get_dataset`` method takes ``split`` (``"train"``, ``"val"``, or
 ``"test"``) plus the keyword-only arguments ``partition``, ``bands`` (the
@@ -133,7 +130,7 @@ Compute the band statistics
 
 Each :class:`~geo_eval_harness.datasets.BandSpec` carries ``mean``, ``std``, ``min``, and ``max``. They supply the default ``input.normalization: dataset`` strategy (``bandspec_zscore`` inside the model). Raw magnitudes also inform unit detection for ``input.normalization: model``. Incorrect statistics can silently mis-normalize inputs.
 
-So measure them.  Two rules:
+Measure statistics from the training data:
 
 * **Train split only.**  Statistics that include val or test leak evaluation
   data into the normalisation every model sees.
@@ -146,7 +143,7 @@ Once your class is registered with placeholder statistics and loads, run:
 
    $ uv run python scripts/compute_band_statistics.py --dataset my_dataset
 
-It accumulates in float64 over the train split and prints a ``bands = [...]`` block. Copy the generated values into your wrapper while retaining the ``bands: ClassVar[list[BandSpec]]`` annotation required for mutable class metadata. Record in a comment that the numbers came from this script, so the next person knows they are measured rather than copied from a paper.
+It accumulates in float64 over the train split and prints a ``bands = [...]`` block. Copy the generated values into your wrapper while retaining the ``bands: ClassVar[list[BandSpec]]`` annotation required for mutable class metadata. Record the measurement source in a comment.
 
 Register and configure
 ----------------------
@@ -159,12 +156,11 @@ its ``(submodule, class_name, task)``:
 
    "my_dataset": ("my_dataset", "MyDataset", "classification"),
 
-This entry enables loading, CLI listing/details, and run selection. Its task must be ``"classification"`` or ``"segmentation"`` and match the wrapper's ``task``. ``list_datasets()`` and ``get_dataset_task(name)`` read the registry without importing dataset wrappers. There is no second list to update in ``image_cli.py`` and no per-dataset YAML config.
+This entry enables loading, CLI listing/details, and run selection. Its task must be ``"classification"`` or ``"segmentation"`` and match the wrapper's ``task``. ``list_datasets()`` and ``get_dataset_task(name)`` read the registry without importing dataset wrappers. Dataset selection uses this registry.
 
 The registry stores strings rather than imported classes so metadata queries stay cheap. ``get_bench_dataset_class`` imports only the requested wrapper.
 
-**2. Export the class** from :file:`src/geo_eval_harness/datasets/__init__.py`
-by adding an ``__all__`` entry and a matching ``_LAZY_CLASSES`` mapping:
+**2. Export the class** from :file:`src/geo_eval_harness/datasets/__init__.py` by adding an alphabetically sorted ``__all__`` entry:
 
 .. code-block:: python
 
@@ -173,18 +169,7 @@ by adding an ``__all__`` entry and a matching ``_LAZY_CLASSES`` mapping:
        "MyDataset",
    ]
 
-   _LAZY_CLASSES: dict[str, str] = {
-       # Keep the existing lazy mappings.
-       "MyDataset": "my_dataset",
-   }
-
-Individual dataset classes load lazily through module ``__getattr__`` so that
-``import geo_eval_harness.datasets`` — and CLI startup — stays fast.  Do not add
-an eager ``from .my_dataset import MyDataset`` import; register the name in
-``_LAZY_CLASSES`` instead.
-
-Keep both lists alphabetically sorted; they are read by humans far more often
-than by the loader.
+Dataset class imports are derived from ``_REGISTRY_SPEC`` and load lazily through module ``__getattr__``. Do not add an eager ``from .my_dataset import MyDataset`` import.
 
 **3. Wire up the download.** Which files you touch depends on the family:
 
@@ -193,7 +178,7 @@ than by the loader.
   ``DEFAULT_V2_DATASETS`` is derived from that registry automatically.
 * **A standalone torchgeo wrapper** — add a ``download_<name>`` helper in :file:`src/geo_eval_harness/download.py`, include its name in ``TORCHGEO_DATASETS``, and route it in ``download_datasets``. ``DOWNLOADABLE_DATASETS`` is derived from the family lists. ``download_resisc45`` is the reference implementation. For a different download backend, extend the same explicit name validation and dispatch rather than adding parser-specific choices.
 
-The CLI delegates through :file:`src/geo_eval_harness/commands/_download.py`; there is no ``_cmd_download`` function or download-target ``choices`` list to edit in ``cli.py``. Also verify the missing-data hint produced by ``download_command`` in ``datasets/loading.py`` points to a working download invocation. Downloading somewhere other than ``data/`` does not change the loader's fixed paths.
+The CLI delegates through :file:`src/geo_eval_harness/commands/_download.py`. Also verify the missing-data hint produced by ``download_command`` in ``datasets/loading.py`` points to a working download invocation. Downloading somewhere other than ``data/`` does not change the loader's fixed paths.
 
 **4. Add the expected split sizes** to ``EXPECTED_SIZES`` in
 :file:`tests/test_split_sizes.py`.  Those cases are marked
@@ -239,21 +224,17 @@ Add the geographic metadata
 ---------------------------
 
 Every registered dataset carries a record in the committed geographic store
-under :file:`docs/_static/_dataset_geography/`, which drives the spatial
-coverage map.  Generate yours:
+under :file:`src/geo_eval_harness/_static/_dataset_geography/`, which drives the spatial
+coverage map. The store is included in the installed package and read by ``geo_eval_harness.geography.load_geography()`` without downloading imagery. Generate yours:
 
 .. code-block:: console
 
    $ uv run python scripts/extract_dataset_geography.py --dataset my_dataset
 
-Commit the resulting :file:`docs/_static/_dataset_geography/my_dataset.json`
+Commit the resulting :file:`src/geo_eval_harness/_static/_dataset_geography/my_dataset.json`
 together with the regenerated :file:`index.json`.
 
-:file:`tests/test_geography.py` fails when a registered dataset has no record,
-so this step is not optional — but "no coordinates" is a perfectly valid
-answer.  If the dataset genuinely carries no geolocation, add it to ``NO_GEO``
-in :file:`src/geo_eval_harness/geography.py` with the reason you verified, and
-the map will disclose the gap rather than quietly omit the dataset.
+:file:`tests/test_geography.py` checks that every registered dataset has a record. For datasets without geolocation, add an entry to ``NO_GEO`` in :file:`src/geo_eval_harness/geography.py` with the verified reason.
 
 Coordinates are read from V2 ``.tortilla`` metadata or V1 JSON affine/CRS metadata in shards and custom HDF5. A different storage layout needs an explicit extraction path in ``extract_geography``.
 

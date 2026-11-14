@@ -33,8 +33,8 @@ class KuroSiwo(_V2Dataset):
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
-        BandSpec("sar", "vv", "vv", mean=0.1347, std=1.0677, min=0, max=2550.89),
-        BandSpec("sar", "vh", "vh", mean=0.0273, std=0.1723, min=0, max=530.453),
+        BandSpec("sar", "vv", "vv", mean=0.1347, std=1.0677, min=0, max=2550.89, unit="linear_power"),
+        BandSpec("sar", "vh", "vh", mean=0.0273, std=0.1723, min=0, max=530.453, unit="linear_power"),
         BandSpec("dem", "dem", "dem", mean=146.235, std=465.777, min=-32768, max=1690.83),
     ]
     # fmt: on

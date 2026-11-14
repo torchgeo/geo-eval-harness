@@ -3,7 +3,7 @@
 import sys
 from importlib.util import find_spec
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 import numpy as np
@@ -64,12 +64,29 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["normalizer_inputs"][modality] = values.copy()
             return values / 1000 - np.arange(values.shape[-1])
 
-    class _Encoder(torch.nn.Module):
-        def encoder(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
+    class _FlexiEncoder(torch.nn.Module):
+        supported_modality_names: ClassVar[list[str]] = ["sentinel2_l2a", "sentinel1"]
+
+        def forward(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
             pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
-            return {"tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled)}
+            return {
+                "tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled),
+                "location_tokens": torch.arange(16, dtype=torch.float32).reshape(1, 2, 2, 4),
+                "student_location_tokens": torch.arange(8, dtype=torch.float32).reshape(1, 2, 2, 2),
+            }
+
+        def collapse_and_combine_hwtc(
+            self, x: dict[str, torch.Tensor]
+        ) -> tuple[torch.Tensor, None]:
+            order = sorted(key for key in x if key in self.supported_modality_names)
+            return torch.cat([x[key].flatten(1, -2) for key in order], dim=1), None
+
+    class _Encoder(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.encoder = _FlexiEncoder()
 
     def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
         state["loads"].append((model_id, load_weights))
@@ -77,7 +94,7 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     exports = {
         "olmoearth_pretrain_minimal": {
-            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano"),
+            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano", OLMOEARTH_V1_3_BASE="v1_3_base"),
             "Normalizer": _Normalizer,
             "load_model_from_id": load_model,
         },
@@ -86,6 +103,10 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit": {
             "PoolingType": SimpleNamespace(MEAN="mean"),
+            "return_modalities_from_dict": lambda x: [k for k in x if not k.endswith("_mask")],
+            "get_modalities_to_process": lambda available, supported: sorted(
+                set(available) & set(supported)
+            ),
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.datatypes": {
             "MaskedOlmoEarthSample": SimpleNamespace,
@@ -130,6 +151,47 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
 
 
+@pytest.mark.parametrize(
+    ("unit", "sar_log_scale", "expected"),
+    [
+        ("linear_power", None, [-10.0, -20.0]),  # declared linear: auto-convert to dB
+        ("db", None, [0.1, 0.01]),
+        (None, None, [0.1, 0.01]),  # undeclared: unchanged (previous behaviour)
+        ("linear_power", False, [0.1, 0.01]),
+        (None, True, [-10.0, -20.0]),
+    ],
+)
+def test_sar_db_conversion_follows_declared_unit(
+    tiny_olmoearth: dict[str, Any],
+    unit: str | None,
+    *,
+    sar_log_scale: bool | None,
+    expected: list[float],
+) -> None:
+    bands = [
+        BandSpec("sar", "vv", "VV", 0.1, 1, 0, 100, unit=unit),
+        BandSpec("sar", "vh", "VH", 0.03, 0.2, 0, 100, unit=unit),
+    ]
+    model = OlmoEarthBenchModel(
+        bands, model_size="nano", normalization="identity", sar_log_scale=sar_log_scale
+    )
+    images = torch.tensor([0.1, 0.01]).view(1, 2, 1, 1).expand(1, 2, 4, 4)
+    model(images)
+    np.testing.assert_allclose(
+        tiny_olmoearth["normalizer_inputs"]["sar"],
+        np.broadcast_to(expected, (1, 4, 4, 1, 2)),
+        rtol=1e-5,
+    )
+
+
+def test_sar_dataset_units() -> None:
+    from geo_eval_harness.datasets.benv2 import BENV2
+    from geo_eval_harness.datasets.kuro_siwo import KuroSiwo
+
+    assert {b.unit for b in KuroSiwo.bands if b.sensor == "sar"} == {"linear_power"}
+    assert {b.unit for b in BENV2.bands if b.sensor == "s1"} == {"db"}
+
+
 @pytest.mark.parametrize("normalization", ["auto", False])
 def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     tiny_olmoearth: dict[str, Any], *, normalization: str | bool
@@ -149,6 +211,26 @@ def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     assert tiny_olmoearth["normalizer_inputs"] == {}
 
 
+def test_tokens_to_grid_averages_each_location_over_modalities_and_band_sets(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    del tiny_olmoearth
+    model = OlmoEarthBenchModel(_rgb_bands(), model_size="nano", version="v1")
+    s2 = torch.arange(2 * 3 * 4 * 1 * 3 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 3, 5)
+    s1 = -torch.arange(2 * 3 * 4 * 1 * 1 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 1, 5)
+    tokens, _ = model.encoder_model.encoder.collapse_and_combine_hwtc(
+        {"sentinel2_l2a": s2, "sentinel2_l2a_mask": s2, "sentinel1": s1}
+    )
+    assert model._token_layout == [(3, 4, 1, 1), (3, 4, 1, 3)]
+
+    grid = model.tokens_to_grid(tokens)
+
+    expected = (s2.mean(dim=(3, 4)) + s1.mean(dim=(3, 4))) / 2
+    torch.testing.assert_close(grid, expected.permute(0, 3, 1, 2))
+    with pytest.raises(ValueError, match="do not match"):
+        model.tokens_to_grid(tokens[:, 1:])
+
+
 def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:
     """Aerial and S2 inputs share one sample field and must not overwrite each other."""
     from geo_eval_harness.models.olmoearth import _build_sensor_groups
@@ -160,6 +242,73 @@ def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:
 
     with pytest.raises(ValueError, match="multiple input sensors"):
         _build_sensor_groups(bands)
+
+
+@pytest.mark.parametrize(
+    ("embedding", "expected"),
+    [
+        (None, [6.0, 7.0, 8.0, 9.0]),  # v1.3 defaults to the location-token grid
+        ("patch_tokens", [10.0, 11.0, 12.0, 13.0]),
+        ("student", [3.0, 4.0]),
+    ],
+)
+def test_v1_3_embedding_source(
+    tiny_olmoearth: dict[str, Any], embedding: str | None, expected: list[float]
+) -> None:
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base",
+        version="v1_3",
+        embedding=embedding,
+        normalization="identity",
+    )
+    out = model(torch.full((1, 3, 4, 4), 1500.0))
+    assert tiny_olmoearth["loads"] == [("v1_3_base", True)]
+    torch.testing.assert_close(out, torch.tensor([expected]))
+
+
+@pytest.mark.parametrize(
+    ("version", "missing_bands", "zeroed"),
+    [("v1_3", None, True), ("v1_3", "impute", False), ("v1", None, False)],
+)
+def test_missing_bands_are_zeroed_after_pretrained_normalization(
+    tiny_olmoearth: dict[str, Any], version: str, missing_bands: str | None, *, zeroed: bool
+) -> None:
+    """Band dropout showed v1.3 dropped bands as 0, not as the normalized zero-padding."""
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base" if version == "v1_3" else "nano",
+        version=version,
+        missing_bands=missing_bands,
+        normalization="identity",
+    )
+    group = model._sensor_groups[0]
+    actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), group)
+    present = actual[..., [0, 1, 2]]
+    np.testing.assert_allclose(present.ravel(), [1.5, 0.5, -0.5])
+    missing = actual[..., group["missing_dst"]]
+    if zeroed:
+        assert group["missing_dst"] == list(range(3, 12))
+        assert not missing.any()
+    else:
+        # B05 and B01 copy red and blue; channels without a source keep the padded value.
+        np.testing.assert_allclose(actual[..., 4], actual[..., 2])
+        np.testing.assert_allclose(actual[..., 10], actual[..., 0])
+        assert missing.all()
+
+
+def test_rejects_pooler_embeddings_without_attention_pooler(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="AttentionPooler"):
+        OlmoEarthBenchModel(
+            _rgb_bands(),
+            model_size="base",
+            version="v1_2",
+            embedding="location_tokens",
+            normalization="identity",
+        )
+    assert tiny_olmoearth["loads"] == []
 
 
 # Embedding widths from the released Hugging Face model configs.
@@ -649,6 +798,6 @@ def test_invalid_model_size_at_construction_not_forward() -> None:
             "load_model_from_id",
             side_effect=AssertionError("load_model_from_id should not be called"),
         ),
-        pytest.raises(AttributeError, match="OLMOEARTH_V1_XLARGE"),
+        pytest.raises(ValueError, match="no 'xlarge' checkpoint"),
     ):
         OlmoEarthBenchModel(bands=_rgb_bands(), model_size="xlarge", normalization="identity")
