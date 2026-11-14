@@ -155,6 +155,7 @@ Classification
      knn_k: 5
      knn_device: null
      bootstrap_samples: 200
+     feature_standardize: false
      linear:
        c_log10_start: -6.0
        c_log10_stop: 4.0
@@ -178,6 +179,8 @@ on train plus validation. ``--refit-train-val`` /
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.
+
+``feature_standardize: true`` z-scores every embedding dimension with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before KNN and the linear probe. Results are written under the methods ``knn<k>-std`` and ``linear-std``. Intrinsic-dimension and spectrum measurements use the unscaled embeddings.
 
 Segmentation
 ^^^^^^^^^^^^

@@ -22,6 +22,8 @@ Targets:
 - ``bright-post-sar``: pinned ``Kullervo/BRIGHT`` post-event SAR and damage masks, into
   ``<output>/bright-post-sar``.
 - ``oscd-post`` — torchgeo's OSCD downloader, into ``<output>/oscd-post``.
+- ``planteur`` — pinned ``allenai/planteur-benchmark`` monthly mosaics and labels, stacked
+  into per-split arrays under ``<output>/planteur``.
 
 V1 uses the pinned ``calebrob6/geobenchv1-webdataset`` mirror.
 
@@ -49,6 +51,7 @@ from geo_eval_harness.datasets._v1_webdataset import download_sharded_root
 from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets, v2_checksums
 from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
 from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
+from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
 from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
 
 logger = logging.getLogger(__name__)
@@ -63,6 +66,16 @@ HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
 BRIGHT_REPO = "Kullervo/BRIGHT"
 BRIGHT_REVISION = "46f202d9520cb0844a6ca4679d016d0d27a6d58c"
+PLANTEUR_REPO = "allenai/planteur-benchmark"
+PLANTEUR_REVISION = "51b74a91424e7dc9ea1fe0042390353658af8185"
+PLANTEUR_FILES = [
+    "DATA_S2_MONTHLY/*",
+    "DATA_S1_MONTHLY/*",
+    "ANNOTATIONS/*",
+    "splits/443.json",
+    "splits/loio.json",
+    "metadata.geojson",
+]
 
 DEFAULT_V2_DATASETS: tuple[str, ...] = tuple(list_v2_datasets())
 
@@ -88,6 +101,7 @@ DIRECT_DATASETS: tuple[str, ...] = (
     "openearthmap-sar",
     "open_cities",
     "bright-post-sar",
+    "planteur",
 )
 SEN1FLOODS11_DATASETS: tuple[str, ...] = ("sen1floods11-s1", "sen1floods11-s2")
 DOWNLOADABLE_DATASETS: tuple[str, ...] = (
@@ -308,6 +322,22 @@ def download_open_cities(output_dir: Path, workers: int = 4) -> None:
         list(pool.map(build, index[["city", "scene"]].drop_duplicates().itertuples(index=False)))
     _check_open_cities_masks(target, index)
     logger.info("Open Cities download complete.")
+
+
+def download_planteur(output_dir: Path) -> None:
+    """Download the pinned PLANTEUR monthly mosaics and stack them into ``output_dir/planteur``.
+
+    The 8,250 per-patch upstream arrays (17 GB) are deleted once the stacked splits match
+    ``checksums/planteur.sha256``.
+    """
+    target = Path(output_dir) / "planteur"
+    upstream = target / "upstream"
+    logger.info("Downloading %s@%s -> %s", PLANTEUR_REPO, PLANTEUR_REVISION, upstream)
+    fetch_pinned(PLANTEUR_REPO, PLANTEUR_REVISION, upstream, {}, allow_patterns=PLANTEUR_FILES)
+    convert_planteur(upstream, target, expected_sizes=PLANTEUR.split_sizes)
+    verify_checksums(target, load_checksums("planteur.sha256"))
+    shutil.rmtree(upstream)
+    logger.info("PLANTEUR download complete.")
 
 
 def download_ucmerced(output_dir: Path) -> None:

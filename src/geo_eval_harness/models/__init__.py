@@ -20,6 +20,7 @@ from .segmentation_heads import (
     UPerNetHead,
     ViTNeck,
 )
+from .smarties import SmartiesBench
 from .terrafm import TerraFMBench
 from .terratorch_models import (
     TerraTorchClayBench,
@@ -27,6 +28,7 @@ from .terratorch_models import (
     TerraTorchTerraMindBench,
 )
 from .tessera import TesseraBenchModel
+from .thor import ThorBenchModel
 from .timm import TimmModelSettings, TimmPatchBenchModel
 from .torchgeo_models import (
     TorchGeoCromaBench,
@@ -57,11 +59,13 @@ __all__: list[str] = [
     "RCFBench",
     "RCFModelSettings",
     "SAM3Encoder",
+    "SmartiesBench",
     "TerraFMBench",
     "TerraTorchClayBench",
     "TerraTorchPrithviBench",
     "TerraTorchTerraMindBench",
     "TesseraBenchModel",
+    "ThorBenchModel",
     "TimmModelSettings",
     "TimmPatchBenchModel",
     "TorchGeoCromaBench",
