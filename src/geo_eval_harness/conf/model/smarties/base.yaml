@@ -27,4 +27,5 @@ dataset_overrides:
   spacenet2: {input: {normalization: dataset}}
   forestnet: {input: {normalization: dataset}}
   m-forestnet: {input: {normalization: dataset}}
+  infrabench-cls: {input: {normalization: dataset}}
   openearthmap-sar: {input: {normalization: dataset}}
