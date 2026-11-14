@@ -26,7 +26,7 @@ from ..devices import resolve_device
 from ..model_profile import ProfileResult, profile_inference
 
 
-def _load_batch(config: ProfileConfig) -> tuple[Dataset, torch.Tensor, list[BandSpec]]:
+def _load_batch(config: ProfileConfig) -> tuple[Dataset, dict[str, torch.Tensor], list[BandSpec]]:
     """Load one full batch and its ordered band metadata."""
     inputs = config.input
     dataset = get_bench_dataset_class(config.dataset)()
@@ -43,26 +43,12 @@ def _load_batch(config: ProfileConfig) -> tuple[Dataset, torch.Tensor, list[Band
         partition_name=inputs.partition,
         time_steps=inputs.time_steps,
     )
-    batch = next(iter(train_loader))["image"]
-    if batch.shape[0] != config.runtime.batch_size:
+    batch = next(iter(train_loader))
+    if batch["image"].shape[0] != config.runtime.batch_size:
         raise RuntimeError(
-            f"dataset returned batch size {batch.shape[0]}, requested {config.runtime.batch_size}"
+            f"dataset returned batch size {batch['image'].shape[0]}, requested {config.runtime.batch_size}"
         )
     return train_dataset, batch, selected
-
-
-def _construction_preset(
-    preset: ModelPreset, config: ProfileConfig, sample: torch.Tensor
-) -> ModelPreset:
-    """Supply the input-dependent shape required by Scale-MAE's positional embedding."""
-    if preset.target in {
-        "geo_eval_harness.models.TorchGeoScaleMAEBench",
-        "geo_eval_harness.models.torchgeo_models.TorchGeoScaleMAEBench",
-    }:
-        size = config.input.image_size
-        kwargs = {**preset.kwargs, "image_size": sample.shape[-1] if size is None else size}
-        return preset.model_copy(update={"kwargs": kwargs})
-    return preset
 
 
 def _build_model(
@@ -70,6 +56,7 @@ def _build_model(
     config: ProfileConfig,
     train_dataset: Dataset,
     selected_bands: list[BandSpec],
+    native_image_size: int,
 ) -> nn.Module:
     """Inject runtime band metadata and empirical filters' source dataset."""
     options: dict[str, Any] = {
@@ -85,7 +72,7 @@ def _build_model(
         and preset.kwargs.get("mode") == "empirical"
     ):
         options["dataset"] = train_dataset
-    return build_model(preset, **options)
+    return build_model(preset, native_image_size=native_image_size, **options)
 
 
 def _record(
@@ -144,9 +131,12 @@ def run(config: ProfileConfig) -> None:
     # Upstream dataset/model constructors may print diagnostics; stdout is one JSON record.
     with redirect_stdout(sys.stderr):
         train_dataset, batch, selected_bands = _load_batch(config)
-        preset = _construction_preset(preset, config, batch)
-        model = _build_model(preset, config, train_dataset, selected_bands).to(device).eval()
-        sample = batch.to(device)
+        model = (
+            _build_model(preset, config, train_dataset, selected_bands, batch["image"].shape[-1])
+            .to(device)
+            .eval()
+        )
+        sample = batch["image"].to(device)
         result = profile_inference(
             model,
             sample,
@@ -155,8 +145,13 @@ def run(config: ProfileConfig) -> None:
             n_warmup=config.warmup,
             n_measure=config.measurements,
             count_flops=config.count_flops,
+            doy=batch.get("doy"),
         )
-    payload = json.dumps(_record(config, preset, selected_bands, sample, result), allow_nan=False)
+    record = _record(config, preset, selected_bands, sample, result)
+    doy = batch.get("doy")
+    if doy is not None:
+        record["doy_sha256"] = hashlib.sha256(doy.detach().cpu().numpy().tobytes()).hexdigest()
+    payload = json.dumps(record, allow_nan=False)
     if config.output.directory is None and config.output.file is None:
         print(payload)
     else:

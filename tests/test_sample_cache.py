@@ -63,6 +63,18 @@ def test_cached_batches_are_bitwise_identical(tmp_path, mode: str, *, shuffle: b
         assert not torch.equal(expected[0][0][0], expected[1][0][0])
 
 
+def test_cached_samples_accept_tensor_images_with_numpy_masks() -> None:
+    images = torch.arange(24, dtype=torch.float32).reshape(2, 3, 2, 2)
+    masks = np.arange(8, dtype=np.int16).reshape(2, 2, 2)
+    masks.setflags(write=False)
+    cached = sample_cache.CachedSamples(images, masks)
+
+    batch = next(iter(DataLoader(cached, batch_size=2)))
+
+    torch.testing.assert_close(batch["image"], images)
+    torch.testing.assert_close(batch["mask"], torch.arange(8).reshape(2, 2, 2))
+
+
 def test_disk_cache_is_built_once_and_stores_small_mask_dtype(tmp_path, monkeypatch) -> None:
     loader = DataLoader(ToySegmentation(), batch_size=4)
     options = {"mode": "disk", "identity": IDENTITY, "cache_dir": tmp_path, "num_workers": 0}
@@ -84,6 +96,53 @@ def test_cache_key_tracks_identity_and_data() -> None:
     assert key != cache_key(ToySegmentation(), {**IDENTITY, "split": "val"})
     assert key != cache_key(ToySegmentation(offset=1.0), IDENTITY)
     assert key != cache_key(ToySegmentation(n=12), IDENTITY)
+
+
+def test_wrapped_cache_provenance_includes_the_underlying_adapter(monkeypatch) -> None:
+    from geo_eval_harness.datasets import geobench_v2
+
+    class Wrapper(Dataset):
+        def __init__(self):
+            self.dataset = geobench_v2.GeoBenchv2.__new__(geobench_v2.GeoBenchv2)
+
+    wrapped = sample_cache._source_digest(Wrapper())
+    plain = sample_cache._source_digest(ToySegmentation())
+    source = sample_cache.inspect.getsource
+
+    def changed(module):
+        text = source(module)
+        return text + "\n# adapter changed\n" if module is geobench_v2 else text
+
+    monkeypatch.setattr(sample_cache.inspect, "getsource", changed)
+    assert sample_cache._source_digest(Wrapper()) != wrapped
+    assert sample_cache._source_digest(ToySegmentation()) == plain
+
+
+@pytest.mark.parametrize("mode", ["host", "gpu", "disk"])
+def test_sample_cache_preserves_snapshot_dates(tmp_path, mode: str) -> None:
+    class DatedSamples(Dataset):
+        def __len__(self):
+            return 2
+
+        def __getitem__(self, index):
+            return {
+                "image": torch.full((3, 2, 2), float(index)),
+                "mask": torch.full((2, 2), index),
+                "doy": torch.tensor([260, 366])[index],
+            }
+
+    for _ in range(2):
+        loader = cache_loader(
+            DataLoader(DatedSamples(), batch_size=2, shuffle=True),
+            mode=mode,
+            identity={},
+            cache_dir=tmp_path,
+            device=torch.device("cpu"),
+            num_workers=0,
+        )
+        batch = next(iter(loader))
+        indices = batch["image"][:, 0, 0, 0].long()
+        torch.testing.assert_close(batch["doy"], torch.tensor([260, 366])[indices])
 
 
 def test_sample_cache_does_not_change_the_config_hash() -> None:

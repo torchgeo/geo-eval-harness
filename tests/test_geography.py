@@ -28,6 +28,9 @@ from geo_eval_harness.geography import (
     write_record,
 )
 
+# CI runs these once (ubuntu job `geography`) instead of in every OS/Python cell.
+pytestmark = pytest.mark.geography
+
 VALID_STATUSES = {"extracted", "no_geo", "not_downloaded"}
 
 
@@ -62,8 +65,7 @@ def test_openearthmap_sar_geography_skips_missing_tags_and_reprojects(
 
 @pytest.fixture(scope="module")
 def store() -> dict[str, GeoRecord]:
-    if not STORE_DIR.is_dir():
-        pytest.skip(f"geography store not generated at {STORE_DIR}")
+    assert STORE_DIR.is_dir()
     return list_geography()
 
 
@@ -139,7 +141,7 @@ def test_extract_geography_reports_missing_v2_coordinates(
 def test_open_cities_geography_needs_no_download(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from geo_eval_harness.datasets.open_cities import CITY_NAME, OpenCities
+    from geo_eval_harness.datasets.open_cities import CITY_NAME, FULL_SPLIT_SIZES
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
@@ -150,7 +152,8 @@ def test_open_cities_geography_needs_no_download(
 
     assert record.status == "extracted"
     assert record.version == "index"
-    assert record.n == sum(OpenCities.split_sizes.values())
+    # Geography covers every indexed chip, not only the 10k default training subset.
+    assert record.n == sum(FULL_SPLIT_SIZES.values())
     assert {point[2] for point in record.points} == set(CITY_NAME.values())
     assert sum(count for _, _, count in record.bins) == record.n
 

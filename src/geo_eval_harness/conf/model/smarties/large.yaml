@@ -1,0 +1,30 @@
+name: smarties/large
+target: geo_eval_harness.models.SmartiesBench
+supports_model_normalization: true
+kwargs:
+  variant: large
+  pretrained: true
+  pool: cls
+  s2_level: l2a
+input:
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["blocks.23", "blocks.17", "blocks.11", "blocks.5"]
+dataset_overrides:
+  # Sentinel-2 L1C sources use SMARTIES' fMoW-S2 (L1C) pretraining statistics.
+  m-eurosat: {kwargs: {s2_level: l1c}}
+  eurosat: {kwargs: {s2_level: l1c}}
+  eurosat-spatial: {kwargs: {s2_level: l1c}}
+  m-brick-kiln: {kwargs: {s2_level: l1c}}
+  m-so2sat: {kwargs: {s2_level: l1c}}
+  so2sat: {kwargs: {s2_level: l1c}}
+  sen1floods11-s2: {kwargs: {s2_level: l1c}}
+  oscd-post: {kwargs: {s2_level: l1c}}
+  # No SMARTIES pretraining statistics: Planet DN, WorldView 11-bit, 8-bit Landsat and 8-bit data labelled s2
+  # (NIR/SWIR), and SAR without a declared unit.
+  dynamic_earthnet: {input: {normalization: dataset}}
+  spacenet2: {input: {normalization: dataset}}
+  forestnet: {input: {normalization: dataset}}
+  m-forestnet: {input: {normalization: dataset}}
+  openearthmap-sar: {input: {normalization: dataset}}

@@ -1,13 +1,7 @@
 Evaluation methodology
 ======================
 
-This page describes the evaluation methodology used by
-:mod:`geo_eval_harness.main` for each supported task type.  In all cases
-the backbone model is kept **frozen** — the benchmark measures the
-quality of learned representations, not end-to-end fine-tuning
-performance.  The model is reinstantiated fresh for each dataset
-because ``num_channels`` (and therefore the input convolution) varies
-across datasets and band selections.
+Classification evaluates frozen backbone features with KNN or linear probes. Segmentation trains a decoder with a frozen backbone, LoRA adapters, or full backbone fine-tuning. Each dataset gets a new model instance with its selected bands.
 
 Overview
 --------
@@ -31,7 +25,7 @@ evaluation path is taken:
      - ``knn5``, ``linear``
      - micro-mAP
    * - Segmentation
-     - ``seg-{linear,conv_block,fpn,dpt}``
+     - ``seg-<head>`` (linear, conv_block, fpn, dpt, patch_linear, upernet, unet)
      - mIoU
 
 Optionally, intrinsic-dimension metrics
@@ -44,10 +38,8 @@ Feature extraction (classification)
 For classification tasks, features are extracted **once** per split and
 reused by both KNN and the linear probe.
 
-1. The backbone is placed in ``eval()`` mode with gradients disabled
-   (``torch.no_grad`` + ``torch.inference_mode``).
-2. Each batch is passed through ``forward_patch_features``, returning
-   embeddings of shape ``(B, K)``.
+1. The backbone is placed in ``eval()`` mode and features are extracted under ``torch.inference_mode``.
+2. ``forward_batch`` receives the images and optional day-of-year metadata. Its default implementation calls ``forward_patch_features``, returning embeddings of shape ``(B, K)``.
 3. Dictionary outputs (e.g. DINO-style models) are flattened on the
    first available key in order: ``"norm"``, ``"global_pool"``,
    ``"head.global_pool"``.
@@ -111,7 +103,7 @@ Procedure
 ^^^^^^^^^
 
 1. Extract train and test embeddings (see above).
-2. Fit a fixed **k = 5** nearest-neighbour classifier
+2. Fit a nearest-neighbour classifier (default **k = 5**, configurable with ``classification.knn_k``)
    (:class:`~geo_eval_harness.knn.KNNClassifier`, backed by FAISS) on the
    train embeddings.
 3. Predict labels for every test sample.
@@ -123,12 +115,14 @@ Procedure
 Key details
 ^^^^^^^^^^^
 
-* No hyperparameter tuning — k is fixed at 5.
+* The runner uses the requested ``knn_k`` without tuning it.
 * No validation use — the validation split is extracted but ignored.
 * FAISS is used for efficient L2 nearest-neighbour search and runs on
   CPU or GPU.
 * Feature vectors are cast to ``float32`` and labels to ``int64`` before
   indexing.
+* Embeddings are used as-is unless ``classification.feature_standardize``
+  is set (method name ``knn5-std``).
 
 Linear probe (logistic regression)
 ----------------------------------
@@ -166,7 +160,9 @@ implementation matching scikit-learn's objective scaling:
 * **Solver (final):** same, but ``max_iter=4000`` for tighter convergence.
 * **Alternative solver:** mini-batch Adam is available; L-BFGS is the
   default.
-* **No feature standardisation** — embeddings are used as-is.
+* **No feature standardisation by default** — embeddings are used as-is.
+  ``classification.feature_standardize: true`` z-scores each dimension with
+  training-split statistics first (method name ``linear-std``).
 * **TF32** is enabled on CUDA for faster matmul when available.
 
 Hyperparameters
@@ -188,6 +184,9 @@ Hyperparameters
    * - ``classification.bootstrap_samples``
      - ``200``
      - bootstrap resamples for the confidence interval
+   * - ``classification.feature_standardize``
+     - ``false``
+     - z-score embeddings with train-split statistics before KNN and the linear probe
 
 Segmentation probes
 -------------------
@@ -264,10 +263,7 @@ DPT probe
 ^^^^^^^^^
 
 **Method name:** ``seg-dpt`` (YAML ``segmentation: {head: dpt}``).
-A DPT-style reassemble + fusion-transformer decoder
-(:class:`~geo_eval_harness.models.DPTHead`).  Requires exactly four
-backbone layers in coarse-to-fine order; otherwise structurally
-similar to the FPN probe but with deeper fusion blocks.
+The DPT decoder (:class:`~geo_eval_harness.models.DPTHead`) projects and resamples four backbone layers, then combines them with residual convolutional fusion blocks. Supply layers in coarse-to-fine order.
 
 UPerNet probe
 ^^^^^^^^^^^^^
@@ -278,19 +274,23 @@ A UPerNet decoder (:class:`~geo_eval_harness.models.UPerNetHead`) wrapping the `
 ViT neck
 ^^^^^^^^
 
-**Method name:** ``seg-<head>-vitneck`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``fpn`` also accepts it).
+**Method name:** ``seg-<head>``, setup column ``neck: vit`` (YAML ``segmentation: {head: upernet, neck: vit}``; ``linear``, ``fpn``, and ``unet`` also accept it).
 Plain ViTs give every hooked block on one patch grid, so a pyramid head would compute logits at 1/16 (patch 16) of the input and upsample them. The ViT neck (:class:`~geo_eval_harness.models.ViTNeck`, mmsegmentation's ``Feature2Pyramid``) rescales four coarse-to-fine blocks by 1/2, 1, 2, and 4 (max-pool, identity, one 2×2 transposed conv, two 2×2 transposed convs with BatchNorm and GELU), giving strides 32, 16, 8, and 4 like a ConvNeXt or Swin backbone. By default (``neck_norm: layernorm``) each level first passes a learnable per-position LayerNorm over channels, because raw block outputs of some ViTs (for example OlmoEarth) carry outlier channels that the max-pool level would pass into UPerNet's BatchNorm. It is randomly initialised, trains with the head at ``learning_rate``, and works with feature caching and LoRA. Backbones whose layers already differ in resolution are rejected.
+
+``neck: vit_fine`` (setup column ``neck`` = ``vit_fine``) is for backbones that also produce a finer output map than their trunk, such as UniverSat's block-14 output tokens. The first three layers are trunk blocks on one grid and fill the 1/2, 1, and 2 levels as above; the last layer replaces the two transposed convs as the finest level, bilinearly resized to 4× the trunk grid unless it is already there (UniverSat's ``output_scale: 4``).
+
+With ``neck: vit`` and a single layer the neck builds all four levels from that one map, the ViTDet simple feature pyramid (e.g. ``layers: [model.model.blocks.14]`` for UniverSat's output tokens alone).
 
 LoRA fine-tuning
 ^^^^^^^^^^^^^^^^
 
-**Method name:** ``seg-<head>-lora`` or ``seg-<head>-vitneck-lora`` (YAML ``segmentation.lora_rank``).
+**Method name:** ``seg-<head>``, setup column ``adaptation: lora`` (YAML ``segmentation.lora_rank``).
 Any head can train together with low-rank adapters on backbone ``nn.Linear`` layers selected by ``segmentation.lora_target_modules``; all pretrained backbone weights stay frozen. Adapters come from PEFT with its default initialisation (Kaiming-uniform ``A``, zero ``B``, no dropout), so training starts from the pretrained model. torchvision's Swin attention reads its ``qkv`` and ``proj`` weights directly instead of calling those layers, so those two projections receive an equivalent weight parametrization instead of a PEFT adapter. Presets target transformer attention and MLP projections (ConvNeXt: MLP projections only); embedding layers, DOFA's wavelength weight generator, and unused decoders are not adapted. The head trains at ``learning_rate`` and the adapters at ``backbone_learning_rate``. During training the backbone stays in eval mode except for its adapters, so pretrained dropout, stochastic depth, and normalisation statistics behave as at inference. Evaluation follows :ref:`segmentation-model-selection`.
 
 Training & evaluation (all heads)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* **Optimiser:** AdamW over the probe head and, with LoRA, the backbone adapters; frozen backbone weights are never updated.
+* **Optimizer:** AdamW over the decoder and neck, plus LoRA adapters or all backbone weights when fine-tuning is enabled.
 * **Loss:** ``CrossEntropyLoss(ignore_index=255)`` so unlabeled pixels
   are excluded from both loss and metric computation.
 * **Schedule:** cosine decay to 1e-6 by default
@@ -327,6 +327,8 @@ Each fit call resets these attributes. Without validation, ``best_epoch`` and ``
 
 The solver keeps one independent CPU snapshot of the selected state: head parameters and buffers, trainable backbone parameters, and backbone buffers. Restoration copies values into the existing model tensors without replacing modules or hooks. Frozen backbone weights are not copied. The snapshot is for evaluation, not for resuming training.
 
+With a probe sweep (``segmentation.sweep_learning_rates``), :class:`~geo_eval_harness.segmentation_task.SweepSegmentationSolver` applies the same rule per head: each head keeps a snapshot of its own best validation epoch, and the head whose best epoch scores highest (ties: first in learning-rate-major grid order) is restored and alone evaluated on test. ``best_epoch`` and ``best_val_miou`` describe that head; ``head_val_history`` holds every head's validation mIoU per epoch; ``val_history`` holds the best head's score per epoch. The decay is a per-epoch cosine to zero (UniverSat ``LP_eval.py``) rather than to 1e-6.
+
 Segmentation knobs
 ------------------
 
@@ -352,7 +354,11 @@ Head type
    * - ``fpn``
      - FPN top-down pathway.  Layers must be coarse-to-fine.
    * - ``dpt``
-     - DPT-style reassemble + fusion-transformer decoder.
+     - Projection, resampling, and residual convolutional fusion of four layers.
+   * - ``patch_linear``
+     - LayerNorm followed by a linear classifier on patch features; supports probe sweeps.
+   * - ``unet``
+     - U-Net decoder over a feature pyramid, ending at the finest hooked map.
    * - ``upernet``
      - Pyramid pooling on the coarsest layer + FPN fusion.  Layers must be coarse-to-fine.
 
@@ -371,7 +377,7 @@ Training knobs
      - Backbone layer names to hook.  For FPN / DPT, deepest layer first.
    * - ``neck``
      - ``none``
-     - ``vit`` adds the ViT neck before an ``fpn`` or ``upernet`` head (four same-resolution layers).
+     - ``vit`` adds the ViT neck before a ``linear``, ``fpn``, ``upernet`` or ``unet`` head (four same-resolution layers, or one layer for a single-map pyramid); ``vit_fine`` takes the finest level from a fourth, finer layer.
    * - ``neck_norm``
      - ``layernorm``
      - Per-level LayerNorm before the ViT neck; ``none`` disables it.
@@ -419,10 +425,20 @@ Training knobs
      - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
    * - ``class_weights``
      - ``none``
-     - ``median_frequency`` weights cross-entropy by ``median(f) / f_c`` from the training-label pixel frequencies (median over classes with training pixels; classes without training pixels get 0). Counting the training masks does not change the training RNG stream. Validation loss uses the same weights; model selection and metrics are unchanged.
+     - ``inverse_frequency`` weights cross-entropy by ``median(f) / f_c`` using global training-pixel frequencies. Classes absent from training receive zero weight. Training and validation use these weights, including probe sweeps; metrics remain unweighted.
    * - ``full_finetune``
      - ``false``
      - Train every backbone weight (reference regime; norms and dropout stay in eval mode).
+   * - ``feature_standardize``
+     - ``false``
+     - Z-score each feature channel with train-split statistics before the head (frozen only).
+   * - ``sweep_learning_rates``
+     - ``[]``
+     - ``patch_linear`` only: train one probe per learning rate x ``sweep_weight_decays`` cell
+       and keep the head with the best validation mIoU.
+   * - ``sweep_weight_decays``
+     - ``[0.0]``
+     - AdamW weight decays of the probe sweep.
 
 Feature caching
 ^^^^^^^^^^^^^^^
@@ -445,6 +461,11 @@ Feature caching
      - ``float16``
      - Storage dtype for cached features.  ``float16`` halves RAM;
        autocast upcasts during the head forward pass.
+   * - ``amp``
+     - ``fp16``
+     - CUDA float16 autocast for the backbone and head.  ``off`` runs in
+       float32 for backbones that overflow float16 (requires
+       ``cache_dtype: float32`` with cached features).
 
 Common configuration
 --------------------
@@ -473,7 +494,7 @@ All evaluation paths share these settings:
    * - ``input.interpolation``
      - ``bilinear``
      - Resize interpolation method.
-   * - ``resume``
+   * - ``output.resume``
      - ``false``
      - Skip already-computed
        ``(dataset, method, model, …)`` combinations.
@@ -481,6 +502,5 @@ All evaluation paths share these settings:
 Resume mode and output schema
 -----------------------------
 
-When ``resume=true`` the runner reads the existing CSV at startup and
-skips any combination already present.  See :doc:`results-format` for
+With ``--resume`` or YAML ``output.resume: true``, the runner reads the output CSV and skips combinations with matching configuration hashes.  See :doc:`results-format` for
 the full key, the column schema, and the atomic-append guarantee.

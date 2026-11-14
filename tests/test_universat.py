@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from geo_eval_harness.datasets.base import BandSpec
-from geo_eval_harness.models import UniverSatBenchModel
+from geo_eval_harness.models import UniverSatBenchModel, _hub_helpers
 from geo_eval_harness.models.universat import (
     UNIVERSAT_REF,
     UNIVERSAT_REPO,
@@ -50,12 +50,35 @@ def test_multi_sensor_grouping() -> None:
     assert groups["s2"]["indices"] == [0, 2]
     assert groups["s1"]["indices"] == [1, 3]
     assert groups["s1"]["wavelengths"] == ["VV", "VH"]
+    # Every sensor is resized to the same pixel grid, so one input_res applies to all of them.
+    resized = {g["modality"]: g["input_res"] for g in _build_sensor_groups(bands, input_res=2.5)}
+    assert resized == {"s2": 2.5, "s1": 2.5}
 
 
 def test_sar_code_mapping() -> None:
     assert _sar_code("vh_lee_real") == "VH"
     assert _sar_code("vv_imag") == "VV"
     assert _sar_code("vv_vh") == "Ratio_VV_VH"
+    assert _sar_code("hh") == "HH"
+    assert _sar_code("hv") == "HV"
+    assert _sar_code("hh_hv") == "Ratio_HH_HV"
+
+
+def test_hls_and_aerialflair_use_their_registry_resolution_and_subpatch() -> None:
+    hls = [_s2_band("b02", 0.49), _s2_band("b12", 2.19)]
+    (group,) = _build_sensor_groups(hls, modality="hls")
+    assert (group["input_res"], group["subpatch"]) == (30.0, 1)
+    assert _resolve_subpatch("aerialflair", 32, None) == 8
+
+
+def test_wavelengths_override_sends_grey_sar_as_one_coded_channel() -> None:
+    gray = BandSpec("aerial", "red", "gray", mean=0, std=1, min=0, max=1)
+    (group,) = _build_sensor_groups([gray], modality="s1", input_res=6.0, wavelengths=["VV"])
+    assert (group["modality"], group["wavelengths"], group["input_res"]) == ("s1", ["VV"], 6.0)
+    with pytest.raises(ValueError, match="one entry per channel"):
+        _build_sensor_groups([gray, gray], modality="s1", wavelengths=["VV"])
+    with pytest.raises(ValueError, match="Unknown UniverSat channel codes"):
+        _build_sensor_groups([gray], modality="s1", wavelengths=["XX"])
 
 
 def test_rejects_unmapped_sensor() -> None:
@@ -250,6 +273,53 @@ def test_output_px_sets_a_dense_output_grid(monkeypatch: pytest.MonkeyPatch) -> 
     assert seen["output_grid"] == 32
 
 
+def test_output_scale_multiplies_the_patch_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(torch.hub, "load", lambda *_a, **_k: _vhr_encoder(seen))
+    model = UniverSatBenchModel(_AERIAL, patch_px=16, output_scale=4, normalization="identity")
+    model(torch.rand(1, 3, 64, 64))
+    assert seen["output_grid"] == 16
+    with pytest.raises(ValueError, match="output_scale"):
+        UniverSatBenchModel(_AERIAL, output_scale=4, output_px=2, normalization="identity")
+
+
+@pytest.mark.parametrize(
+    ("dataset", "patch_px", "modality", "input_res"),
+    [
+        ("burn_scars", 4, "hls", 68.5714),
+        ("cloudsen12", 4, None, 22.8571),
+        ("flair2", 16, "aerialflair", 0.4571),
+        ("loveda", 4, None, 1.3714),
+        ("kuro_siwo", 8, None, None),
+    ],
+)
+def test_seg_preset_sets_universat_recipe_per_dataset(
+    dataset: str, patch_px: int, modality: str | None, input_res: float | None
+) -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base_seg")).for_dataset(dataset)
+    assert preset.kwargs["patch_px"] == patch_px
+    assert preset.kwargs["modality"] == modality
+    # GSD of the 224 px input the model sees, not the native GSD.
+    assert preset.kwargs["input_res"] == input_res
+    assert preset.segmentation.layers[0] == "model.model.blocks.14"
+
+
+def test_seg_preset_feeds_caffe_once_as_vv_sar() -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base_seg")).for_dataset("caffe")
+    assert preset.input.bands == ["red"]
+    assert {k: preset.kwargs[k] for k in ("modality", "wavelengths", "input_res")} == {
+        "modality": "s1",
+        "wavelengths": ["VV"],
+        "input_res": 13.7143,
+    }
+
+
 @pytest.mark.slow
 def test_every_vhr_pixel_reaches_the_encoder() -> None:
     # Re-drawing the pixels a 10 px sub-patch would skip (rows/cols 10-15 of each 16 px patch)
@@ -346,6 +416,21 @@ def test_upe_training_chunks_are_capped_by_pixels(
     assert encoder.model.batches == expected
 
 
+def test_upe_chunks_are_capped_by_pixels_without_gradients(monkeypatch: pytest.MonkeyPatch) -> None:
+    from geo_eval_harness.models import universat
+
+    encoder = torch.nn.Module()
+    encoder.model = _FakeUPE()
+    encoder.model.spatial_encoder.requires_grad_(False)
+    universat._install_upe_chunking(encoder)
+    # One band keeps the value budget slack; the pixel cap (2 samples of 4x4) must still split.
+    monkeypatch.setattr(universat, "UPE_PIXEL_BUDGET", 10**9)
+    monkeypatch.setattr(universat, "UPE_PIXEL_CAP", 2 * 4 * 4)
+    x = {"s2": torch.randn(5, 1, 4, 4)}
+    encoder.model.UPE_forward(x, ["s2"], {"s2": [0.5]}, {"s2": 10.0}, 1.0, {"s2": 1})
+    assert encoder.model.batches == [2, 2, 1]
+
+
 class _FakeTrunk(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
@@ -373,8 +458,10 @@ def test_block_checkpointing_is_exact_and_keeps_hooks(monkeypatch: pytest.Monkey
     seen: list[torch.Tensor] = []
     encoder.model.blocks[1].register_forward_hook(lambda _m, _i, out: seen.append(out))
     calls: list[int] = []
-    real = universat.checkpoint
-    monkeypatch.setattr(universat, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k))
+    real = _hub_helpers.checkpoint
+    monkeypatch.setattr(
+        _hub_helpers, "checkpoint", lambda *a, **k: calls.append(1) or real(*a, **k)
+    )
     out = encoder.run(x)
     out.square().sum().backward()
 
@@ -390,3 +477,24 @@ def test_block_checkpointing_is_exact_and_keeps_hooks(monkeypatch: pytest.Monkey
     encoder.requires_grad_(False)
     encoder.run(x)
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("dataset", "patch_px", "modality", "input_res"),
+    [
+        ("eurosat", 4, None, 2.8571),
+        ("so2sat", 7, None, 1.4286),
+        ("m-forestnet", 4, "l8forestnet", 22.2321),
+        ("treesatai", 16, None, 0.2714),
+    ],
+)
+def test_cls_preset_sets_resized_gsd_and_patch_per_dataset(
+    dataset: str, patch_px: int, modality: str | None, input_res: float
+) -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="universat_base")).for_dataset(dataset)
+    assert preset.kwargs["patch_px"] == patch_px
+    assert preset.kwargs["modality"] == modality
+    assert preset.kwargs["input_res"] == input_res

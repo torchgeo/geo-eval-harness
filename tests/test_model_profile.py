@@ -434,6 +434,7 @@ def test_profile_restores_mixed_training_modes(*, count_flops: bool) -> None:
         n_warmup=0,
         n_measure=1,
         count_flops=count_flops,
+        doy=torch.tensor([[1], [2]]),
     )
     assert model.training is True
     assert model[1].training is False

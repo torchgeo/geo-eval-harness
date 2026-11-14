@@ -16,6 +16,7 @@ from torch import nn
 from torch.utils.flop_counter import FlopCounterMode
 
 from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.models.interface import forward_model_batch
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,30 @@ class ProfileTiming:
     batch_size: int
     n_warmup: int
     n_measure: int
+
+
+class _DatedModel(nn.Module):
+    """Bind dates to the fixed batch, including single-sample FLOP measurements."""
+
+    doy: torch.Tensor
+
+    def __init__(self, model: nn.Module, doy: torch.Tensor) -> None:
+        super().__init__()
+        self.model = model
+        self.register_buffer("doy", doy.detach())
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        """Use the same metadata-aware dispatch as feature extraction."""
+        return forward_model_batch(self.model, images, doy=self.doy[: images.shape[0]])
+
+
+def _with_dates(model: nn.Module, sample: torch.Tensor, doy: torch.Tensor | None) -> nn.Module:
+    """Bind aligned date metadata without changing a raw torch model interface."""
+    if doy is None:
+        return model
+    if doy.ndim == 0 or doy.shape[0] != sample.shape[0]:
+        raise ValueError("doy must contain one date entry per sample")
+    return _DatedModel(model, doy.to(sample.device))
 
 
 def _count_params(model: nn.Module) -> float:
@@ -172,6 +197,7 @@ def profile_inference(  # noqa: PLR0913 - public profiling options
     n_warmup: int = 3,
     n_measure: int = 20,
     count_flops: bool = False,
+    doy: torch.Tensor | None = None,
 ) -> ProfileResult:
     """Measure one fixed inference configuration.
 
@@ -183,6 +209,7 @@ def profile_inference(  # noqa: PLR0913 - public profiling options
         n_warmup: Number of untimed warmup passes.
         n_measure: Number of timed passes.
         count_flops: Whether to run the optional FLOP counter.
+        doy: Acquisition dates aligned with the batch, when available.
 
     Returns:
         Parameters, timing, memory, and FLOP measurements.
@@ -194,6 +221,7 @@ def profile_inference(  # noqa: PLR0913 - public profiling options
     if n_warmup < 0 or n_measure <= 0:
         raise ValueError("n_warmup must be non-negative and n_measure must be positive")
     device = _validate_profile_inputs(model, sample_batch, device, precision)
+    model = _with_dates(model, sample_batch, doy)
     batch_size = sample_batch.shape[0]
     is_cuda = device.type == "cuda"
     with _evaluation_mode(model), torch.inference_mode(), _precision_context(device, precision):
@@ -235,16 +263,24 @@ def profile_inference(  # noqa: PLR0913 - public profiling options
     )
 
 
-def measure_profile(
+def measure_profile(  # noqa: PLR0913 - profiling inputs and timing
     model: nn.Module,
     sample_batch: torch.Tensor,
     device: torch.device,
     n_warmup: int = 3,
     n_measure: int = 20,
+    *,
+    doy: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
-    """Return historical metrics, including the always-enabled FLOP count."""
+    """Return timing, memory, parameter, and FLOP measurements."""
     result = profile_inference(
-        model, sample_batch, device=device, n_warmup=n_warmup, n_measure=n_measure, count_flops=True
+        model,
+        sample_batch,
+        device=device,
+        n_warmup=n_warmup,
+        n_measure=n_measure,
+        count_flops=True,
+        doy=doy,
     )
     return {
         "throughput_samples_per_sec": result.throughput_samples_per_sec,
@@ -261,6 +297,8 @@ def measure_cpu_throughput(
     sample: torch.Tensor,
     timing: ProfileTiming,
     time_budget_s: float,
+    *,
+    doy: torch.Tensor | None = None,
 ) -> dict[str, float | None]:
     """Return ``*_cpu`` throughput and latency within a wall-time budget.
 
@@ -278,6 +316,7 @@ def measure_cpu_throughput(
     }
     if time_budget_s == 0:
         return none_result
+    model = _with_dates(model, sample, doy)
     cpu_dev = torch.device("cpu")
     # Parameter-free baselines use the sample's device as their restoration target.
     first_param = next(iter(model.parameters()), None)

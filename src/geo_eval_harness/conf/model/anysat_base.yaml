@@ -1,0 +1,53 @@
+name: anysat_base
+target: geo_eval_harness.models.AnySatBenchModel
+# AnySat's projectors have a fixed GSD, so every dataset sets input_gsd, the GSD of the pixels the
+# model receives (native GSD x native tile size / 224 at the default image_size). The wrapper
+# resamples each tile to the projector GSD at its true ground extent. Patch sizes follow the
+# authors' metres-per-sensor recipe (https://github.com/gastruc/AnySat/tree/5f6f475/configs/dataset):
+# 10 m for small tiles, 40-80 m for larger S2/S1 tiles, 240 m (8 px) for Landsat.
+# impute_missing fills projector bands absent from the input (e.g. RGB runs on S2 datasets, or
+# S2 subsets without B5/B6) with the dataset mean; the filled bands are logged.
+kwargs:
+  modality: null
+  patch_size: 10
+  input_gsd: null
+  impute_missing: true
+  doy: 120
+  pooling: cls
+  normalize: false
+dataset_overrides:
+  eurosat:  # S2 10 m, 64 px
+    kwargs: {input_gsd: 2.8571, patch_size: 20}
+  eurosat-spatial:
+    kwargs: {input_gsd: 2.8571, patch_size: 20}
+  m-eurosat:
+    kwargs: {input_gsd: 2.8571, patch_size: 20}
+  m-bigearthnet:  # S2 10 m, 120 px
+    kwargs: {input_gsd: 5.3571, patch_size: 40}
+  # S2 + S1 fused by AnySat's cross-attention. ratio_stats: VV/VH ratio over the train split, in
+  # the dataset's own unit (dB for BigEarthNet v2), as the authors' loaders compute it: clamped to
+  # +-1e4, from 2,000 random training tiles at native size.
+  benv2:
+    kwargs: {input_gsd: 5.3571, patch_size: 40, ratio_stats: [1.641, 19.296]}
+  so2sat:  # S2 + S1 10 m, 32 px; the authors' So2Sat recipe uses 80 m patches.
+    kwargs: {input_gsd: 1.4286, patch_size: 80, ratio_stats: [0.0071, 130.2186], ratio_eps: 1.0e-4}
+  # S1 = real parts of complex VV/VH, and eps 1e-4 in the ratio, as in the authors' So2Sat loader.
+  m-so2sat:
+    kwargs: {input_gsd: 1.4286, patch_size: 80, ratio_stats: [0.0562, 403.565], ratio_eps: 1.0e-4}
+  # Landsat-8 (15 m pan-sharpened, 332 px) through the Landsat-7 projector: B,G,R,NIR,SWIR1,SWIR2.
+  forestnet:
+    kwargs: {modality: l7, input_gsd: 22.2321, patch_size: 240}
+  m-forestnet:
+    kwargs: {modality: l7, input_gsd: 22.2321, patch_size: 240}
+  ucmerced:  # RGB 0.3 m, 256 px, through the 1 m SPOT projector
+    kwargs: {input_gsd: 0.3483}
+  aid:  # RGB ~1 m, 600 px
+    kwargs: {input_gsd: 2.6786, patch_size: 20}
+  resisc45:  # RGB ~1 m, 256 px
+    kwargs: {input_gsd: 1.1429}
+  treesatai:
+    kwargs: {refuse: "TreeSatAI is in AnySat's GeoPlex pretraining data"}
+  m-pv4ger:
+    kwargs: {refuse: "no verified AnySat mapping"}
+  m-brick-kiln:
+    kwargs: {refuse: "no verified AnySat mapping"}

@@ -168,6 +168,14 @@ def test_n_tokens_tracks_image_size_over_patch_squared():
     assert _n_tokens(model, 112) == (112 // 16) ** 2 == 49
 
 
+def test_n_tokens_does_not_treat_physical_patch_size_as_pixel_stride():
+    class PhysicalPatches(nn.Module):
+        patch_size = 80
+        patch_size_unit = "meters"
+
+    assert _n_tokens(PhysicalPatches(), 512) is None
+
+
 def test_n_tokens_is_none_for_cnns():
     assert _n_tokens(_TinyConvNet(), 224) is None
 
@@ -253,15 +261,29 @@ def test_load_completed_reads_cell_keys(tmp_path):
     path = tmp_path / "compute_cost.csv"
     pd.DataFrame(
         [
-            {"name": "resnet50", "band_config": "rgb", "task": "classification", "head_type": None},
-            {"name": "resnet50", "band_config": "s2", "task": "segmentation", "head_type": "fpn"},
+            {
+                "name": "resnet50",
+                "band_config": "rgb",
+                "image_size": 224,
+                "task": "classification",
+                "head_type": None,
+                "config_hash": "settings",
+            },
+            {
+                "name": "resnet50",
+                "band_config": "s2",
+                "image_size": 512,
+                "task": "segmentation",
+                "head_type": "fpn",
+                "config_hash": "settings",
+            },
         ]
     ).to_csv(path, index=False)
 
     completed = _load_completed(str(path))
-    assert ("resnet50", "rgb", "classification", "") in completed
-    assert ("resnet50", "s2", "segmentation", "fpn") in completed
-    assert ("resnet50", "s2", "segmentation", "dpt") not in completed
+    assert ("resnet50", "rgb", 224, "classification", "", "settings") in completed
+    assert ("resnet50", "s2", 512, "segmentation", "fpn", "settings") in completed
+    assert ("resnet50", "s2", 224, "segmentation", "fpn", "settings") not in completed
 
 
 def test_load_completed_rejects_invalid_schema(tmp_path: Path) -> None:
@@ -286,7 +308,7 @@ def test_build_model_skips_explicit_band_incompatibility(monkeypatch, caplog):
     [
         KeyError("missing constructor option"),
         ValueError("input channels configuration is invalid"),
-        ValueError("Could not find weights for 'tt_clay_v1_5'"),
+        ValueError("Could not find weights for 'tt_clay_v1'"),
         OSError("[Errno 122] Disk quota exceeded"),
         RuntimeError("CUDA error: out of memory"),
     ],
@@ -415,8 +437,10 @@ def flops_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FlopsRun:
         probe = nn.Module()
         probe.head = nn.Linear(5, 3)
         probe.channels_list = [2, 3]
+        probe.layer_names = ["stem"]
         probe.hooks = []
-        probe._features = {}
+        probe._features = {"stem": torch.zeros(1, 5, 2, 2)}
+        probe._process_feature = lambda feature: feature
         return probe
 
     monkeypatch.setattr(flops_pipeline, "_build_model", build_model)
@@ -454,17 +478,23 @@ def test_main_writes_ordered_measurement_rows(flops_run: FlopsRun) -> None:
     assert classification["throughput_samples_per_sec"] == 16.0
     assert classification["num_classes"] == 7
     assert segmentation["gflops_head"] == 0.25
-    assert segmentation["gflops_backbone"] is None
-    assert segmentation["gflops_total"] is None
+    assert segmentation["gflops_backbone"] == 1.75
+    assert segmentation["gflops_total"] == 2.0
     assert segmentation["feature_dim"] == 5
     assert segmentation["num_classes"] == 3
     assert segmentation["params_head_m"] == pytest.approx(18 / 1e6)
-    assert segmentation["timing_batch_size"] is None
+    assert segmentation["timing_batch_size"] == 4
+    assert segmentation["throughput_samples_per_sec"] == 16.0
+    assert segmentation["feature_shapes"] == "[[5, 2, 2]]"
 
 
 @pytest.mark.parametrize("all_complete", [False, True])
 def test_main_skips_completed_cells(flops_run: FlopsRun, *, all_complete: bool) -> None:
     cfg, rows, events = flops_run
+    flops_pipeline.main(cfg)
+    candidates = list(rows)
+    rows.clear()
+    events.clear()
     cfg.output.resume = True
     completed = [("rgb", "classification", ""), ("s2", "segmentation", "fpn")]
     if all_complete:
@@ -477,10 +507,15 @@ def test_main_skips_completed_cells(flops_run: FlopsRun, *, all_complete: bool) 
                 ("segmentation", "dpt"),
             )
         ]
-    Path(cfg.output.file).write_text(
-        "name,band_config,task,head_type\n"
-        + "".join(f"tiny,{band},{task},{head}\n" for band, task, head in completed)
-    )
+    import pandas as pd
+
+    pd.DataFrame(
+        [
+            row
+            for row in candidates
+            if (row["band_config"], row["task"], row["head_type"]) in completed
+        ]
+    ).to_csv(cfg.output.file, index=False)
     flops_pipeline.main(cfg)
 
     if all_complete:
@@ -493,7 +528,7 @@ def test_main_skips_completed_cells(flops_run: FlopsRun, *, all_complete: bool) 
             ("s2", "classification", ""),
             ("s2", "segmentation", "dpt"),
         ]
-        assert "backbone:3" not in events
+        assert events.count("backbone:3") == 2
 
 
 def test_main_skips_unavailable_model(flops_run: FlopsRun, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -677,7 +712,7 @@ def test_measure_backbone_propagates_oom_at_batch_one(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(("modality", "expected_band"), [("RGB", "rgb"), ("S2L2A", "s2")])
-def test_terramind_pipeline_measures_only_its_modality(
+def test_terramind_pipeline_preserves_name_and_measures_only_its_modality(
     flops_run: FlopsRun, modality: str, expected_band: str
 ) -> None:
     config, rows, _ = flops_run
@@ -686,7 +721,7 @@ def test_terramind_pipeline_measures_only_its_modality(
     )
     main(config)
     assert {row["band_config"] for row in rows} == {expected_band}
-    assert {row["name"] for row in rows} == {"tt_terramind_v1_base"}
+    assert {row["name"] for row in rows} == {"tt_terramind_v1_base_rgb"}
 
 
 def test_auto_device_uses_cpu_when_cuda_is_unavailable(
@@ -719,6 +754,7 @@ def test_flops_places_models_on_resolved_cuda(
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: None)
+    monkeypatch.setattr(torch.cuda, "get_device_name", lambda _device: "test GPU")
     monkeypatch.setattr(nn.Module, "to", place)
     main(cfg)
     assert devices == [expected, expected]
@@ -745,10 +781,20 @@ def test_segmentation_hooks_released_after_measurement(
     monkeypatch: pytest.MonkeyPatch, *, fail: bool
 ) -> None:
     model = _TapModel(in_ch=3).eval()
-    options = FlopsSegmentationConfig.model_validate(
-        {"heads": ["linear", "fpn"], "probe": {"layers": _TAP_LAYERS}}
+    config = FlopsConfig.model_validate(
+        {
+            "model": {"name": "rcf"},
+            "segmentation": {"heads": ["linear", "fpn"], "probe": {"layers": _TAP_LAYERS}},
+            "timing": {"batch_size": 1, "n_warmup": 0, "n_measure": 1},
+        }
     )
-    metadata = {"name": "tiny", "band_config": "rgb", "n_channels": 3, "image_size": 32}
+    metadata = {
+        "name": "tiny",
+        "band_config": "rgb",
+        "n_channels": 3,
+        "image_size": 32,
+        "config_hash": "test",
+    }
     if fail:
 
         def broken(*args: object) -> float:
@@ -756,9 +802,9 @@ def test_segmentation_hooks_released_after_measurement(
 
         monkeypatch.setattr(flops_pipeline, "_seg_head_gflops", broken)
         with pytest.raises(RuntimeError, match="broken head forward"):
-            list(flops_pipeline.segmentation_rows(options, model, metadata, CPU, frozenset()))
+            list(flops_pipeline.segmentation_rows(config, model, metadata, CPU, frozenset()))
     else:
-        rows = list(flops_pipeline.segmentation_rows(options, model, metadata, CPU, frozenset()))
+        rows = list(flops_pipeline.segmentation_rows(config, model, metadata, CPU, frozenset()))
         assert len(rows) == 2
         assert all(row["gflops_head"] > 0 for row in rows)
     assert all(not module._forward_hooks for module in model.modules())

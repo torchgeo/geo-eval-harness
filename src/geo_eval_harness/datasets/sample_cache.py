@@ -53,9 +53,19 @@ def _source_digest(dataset: Dataset) -> str:
     from geo_eval_harness.datasets import loading
 
     digest = hashlib.sha256()
-    for obj in (type(dataset), loading):
+    objects = [type(dataset)]
+    inner = getattr(dataset, "dataset", None)
+    while isinstance(inner, Dataset):
+        objects.append(type(inner))
+        inner = getattr(inner, "dataset", None)
+    seen = set()
+    for obj in [*objects, loading]:
+        module = inspect.getmodule(obj) or obj
+        if module in seen:
+            continue
+        seen.add(module)
         try:
-            digest.update(inspect.getsource(inspect.getmodule(obj) or obj).encode())
+            digest.update(inspect.getsource(module).encode())
         except (OSError, TypeError):  # allow-except: source unavailable, hash the repr instead
             digest.update(repr(obj).encode())
     return digest.hexdigest()[:16]
@@ -88,6 +98,8 @@ def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
             sample = dataset[index]
             probe.update(sample["image"].numpy().tobytes())
             probe.update(sample["mask"].numpy().tobytes())
+            if "doy" in sample:
+                probe.update(sample["doy"].numpy().tobytes())
     payload = {
         "format": _FORMAT_VERSION,
         "identity": identity,
@@ -99,11 +111,11 @@ def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
     return hashlib.sha256(encoded).hexdigest()[:20]
 
 
-def _iterate(dataset: Dataset, num_workers: int) -> Iterator[tuple[torch.Tensor, torch.Tensor]]:
+def _iterate(dataset: Dataset, num_workers: int) -> Iterator[dict[str, torch.Tensor]]:
     loader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=num_workers)
     if num_workers:
         for batch in loader:
-            yield batch["image"], batch["mask"]
+            yield batch
         return
     iterator = iter(loader)
     while True:
@@ -111,17 +123,32 @@ def _iterate(dataset: Dataset, num_workers: int) -> Iterator[tuple[torch.Tensor,
             batch = next(iterator, None)
         if batch is None:
             return
-        yield batch["image"], batch["mask"]
+        yield batch
 
 
-def _materialize(dataset: Dataset, num_workers: int) -> tuple[torch.Tensor, torch.Tensor]:
-    images, masks = [], []
-    for image, mask in _iterate(dataset, num_workers):
+def _combine_doys(chunks: list[torch.Tensor], count: int) -> torch.Tensor | None:
+    if not chunks:
+        return None
+    doys = torch.cat(chunks)
+    if len(doys) != count:
+        raise ValueError("Sample cache dates must be present for every sample or none.")
+    return doys
+
+
+def _materialize(
+    dataset: Dataset, num_workers: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+    images, masks, dates = [], [], []
+    for batch in _iterate(dataset, num_workers):
+        image, mask = batch["image"], batch["mask"]
         if image.dtype != torch.float32:
             raise TypeError(f"Sample cache expects float32 images, got {image.dtype}.")
         images.append(image)
         masks.append(mask)
-    return torch.cat(images), torch.cat(masks)
+        if "doy" in batch:
+            dates.append(batch["doy"])
+    combined = torch.cat(images)
+    return combined, torch.cat(masks), _combine_doys(dates, len(combined))
 
 
 def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
@@ -132,8 +159,9 @@ def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
     n = len(dataset)  # type: ignore[arg-type]
     images_mm = masks_mm = None
     offset = 0
-    mask_chunks = []
-    for image, mask in _iterate(dataset, num_workers):
+    mask_chunks, date_chunks = [], []
+    for batch in _iterate(dataset, num_workers):
+        image, mask = batch["image"], batch["mask"]
         if image.dtype != torch.float32:
             raise TypeError(f"Sample cache expects float32 images, got {image.dtype}.")
         if images_mm is None:
@@ -141,20 +169,31 @@ def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
                 tmp / "images.npy", mode="w+", dtype=np.float32, shape=(n, *image.shape[1:])
             )
         images_mm[offset : offset + len(image)] = image.numpy()
-        mask_chunks.append(mask)
+        # Narrow copies leave /dev/shm and keep large splits' masks small in RAM; values are exact.
+        mask_chunks.append(mask.numpy().astype(_mask_dtype(mask)))
+        if "doy" in batch:
+            date_chunks.append(batch["doy"].clone())
         offset += len(image)
     if offset != n or images_mm is None:
         raise RuntimeError(f"Sample cache read {offset} of {n} samples.")
     images_mm.flush()
     del images_mm
-    masks = torch.cat(mask_chunks)
+    dtype = np.result_type(*(chunk.dtype for chunk in mask_chunks))
     masks_mm = np.lib.format.open_memmap(
-        tmp / "masks.npy", mode="w+", dtype=_mask_dtype(masks), shape=tuple(masks.shape)
+        tmp / "masks.npy", mode="w+", dtype=dtype, shape=(n, *mask_chunks[0].shape[1:])
     )
-    masks_mm[:] = masks.numpy()
+    offset = 0
+    for chunk in mask_chunks:
+        masks_mm[offset : offset + len(chunk)] = chunk
+        offset += len(chunk)
     masks_mm.flush()
     del masks_mm
-    (tmp / "complete").write_text(json.dumps({"samples": n, "created": time.time()}))
+    doys = _combine_doys(date_chunks, n)
+    if doys is not None:
+        np.save(tmp / "doys.npy", doys.numpy())
+    (tmp / "complete").write_text(
+        json.dumps({"samples": n, "created": time.time(), "doy": doys is not None})
+    )
     tmp.rename(directory)
 
 
@@ -197,7 +236,7 @@ def _pid_exited(pid: int) -> bool:
 
 def _open_disk(
     dataset: Dataset, directory: Path, num_workers: int
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, torch.Tensor | None]:
     """Return memory maps for ``directory``, building them under a lock if needed."""
     lock = directory.with_name(f"{directory.name}.lock")
     while not (directory / "complete").exists():
@@ -226,20 +265,35 @@ def _open_disk(
                 _build_disk(dataset, directory, num_workers)
         finally:
             shutil.rmtree(lock, ignore_errors=True)
+    metadata = json.loads((directory / "complete").read_text())
+    doys = torch.from_numpy(np.load(directory / "doys.npy")) if metadata.get("doy") else None
     return (
         np.load(directory / "images.npy", mmap_mode="r"),
         np.load(directory / "masks.npy", mmap_mode="r"),
+        doys,
     )
 
 
 class CachedSamples(Dataset):
-    """Serve ``{"image", "mask"}`` samples from cached arrays or tensors."""
+    """Serve ``{"image", "mask"}`` samples from cached arrays or tensors.
 
-    def __init__(self, images: np.ndarray | torch.Tensor, masks: np.ndarray | torch.Tensor) -> None:
+    Images and masks independently accept NumPy arrays or Torch tensors.
+    """
+
+    def __init__(
+        self,
+        images: np.ndarray | torch.Tensor,
+        masks: np.ndarray | torch.Tensor,
+        *,
+        doys: torch.Tensor | None = None,
+    ) -> None:
         if len(images) != len(masks):
             raise ValueError(f"{len(images)} images but {len(masks)} masks.")
         self.images = images
         self.masks = masks
+        if doys is not None and len(doys) != len(images):
+            raise ValueError("Sample cache date count must match the image count.")
+        self.doys = doys
 
     def __len__(self) -> int:
         return len(self.images)
@@ -247,13 +301,18 @@ class CachedSamples(Dataset):
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         image, mask = self.images[index], self.masks[index]
         if isinstance(image, np.ndarray):
-            image, mask = torch.from_numpy(np.array(image)), torch.from_numpy(np.array(mask))
-        return {"image": image, "mask": mask.long()}
+            image = torch.from_numpy(np.array(image))
+        if isinstance(mask, np.ndarray):
+            mask = torch.from_numpy(np.array(mask))
+        sample = {"image": image, "mask": mask.long()}
+        if self.doys is not None:
+            sample["doy"] = self.doys[index]
+        return sample
 
     @property
     def nbytes(self) -> int:
         """Return the cached bytes."""
-        return sum(
+        return (0 if self.doys is None else self.doys.numel() * self.doys.element_size()) + sum(
             a.nbytes if isinstance(a, np.ndarray) else a.numel() * a.element_size()
             for a in (self.images, self.masks)
         )
@@ -267,12 +326,19 @@ class DeviceBatchLoader:
     """
 
     def __init__(
-        self, images: torch.Tensor, masks: torch.Tensor, *, batch_size: int, shuffle: bool
+        self,
+        images: torch.Tensor,
+        masks: torch.Tensor,
+        *,
+        batch_size: int,
+        shuffle: bool,
+        doys: torch.Tensor | None = None,
     ) -> None:
         self.images, self.masks = images, masks
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.dataset = range(len(images))
+        self.doys = doys
 
     def __len__(self) -> int:
         return -(-len(self.images) // self.batch_size)
@@ -282,7 +348,10 @@ class DeviceBatchLoader:
         sampler = RandomSampler(self.dataset) if self.shuffle else SequentialSampler(self.dataset)
         for indices in BatchSampler(sampler, self.batch_size, drop_last=False):
             index = torch.as_tensor(indices, device=self.images.device)
-            yield {"image": self.images[index], "mask": self.masks[index].long()}
+            sample = {"image": self.images[index], "mask": self.masks[index].long()}
+            if self.doys is not None:
+                sample["doy"] = self.doys[index]
+            yield sample
 
 
 def cache_loader(  # noqa: PLR0913 - one entry point for every mode
@@ -312,12 +381,12 @@ def cache_loader(  # noqa: PLR0913 - one entry point for every mode
     started = time.perf_counter()
     if mode == "disk":
         directory = Path(cache_dir).expanduser() / cache_key(dataset, identity)
-        images, masks = _open_disk(dataset, directory, num_workers)
+        images, masks, doys = _open_disk(dataset, directory, num_workers)
     elif mode in ("host", "gpu"):
-        images, masks = _materialize(dataset, num_workers)
+        images, masks, doys = _materialize(dataset, num_workers)
     else:
         raise ValueError(f"Unknown sample cache mode {mode!r}.")
-    cached = CachedSamples(images, masks)
+    cached = CachedSamples(images, masks, doys=doys)
     logger.info(
         "Sample cache %s: %d samples, %.1f MiB, ready in %.1f s",
         mode,
@@ -329,7 +398,11 @@ def cache_loader(  # noqa: PLR0913 - one entry point for every mode
         if not isinstance(images, torch.Tensor) or not isinstance(masks, torch.Tensor):
             raise TypeError("GPU sample cache needs materialized tensors.")
         return DeviceBatchLoader(
-            images.to(device), masks.to(device), batch_size=batch_size, shuffle=shuffle
+            images.to(device),
+            masks.to(device),
+            batch_size=batch_size,
+            shuffle=shuffle,
+            doys=None if doys is None else doys.to(device),
         )
     return DataLoader(
         cached,

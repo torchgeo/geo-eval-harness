@@ -118,7 +118,6 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     )
     probe, solver = _mock_probe_and_solver()
     cache = mock.Mock()
-    probe.freeze_backbone = True
     probe.extract_segmentation_features.return_value = cache
     solver.best_epoch, solver.best_val_miou = 4, 0.5
     solver.evaluate_cached.return_value = (
@@ -279,7 +278,8 @@ def test_upernet_lora_run_records_its_method_and_resumes(tmp_path: Path):
 
     data_mock.assert_not_called()
     df = pd.read_csv(out)
-    assert df["method"].tolist() == ["seg-upernet-lora"]
+    assert df["method"].tolist() == ["seg-upernet"]
+    assert (df.loc[0, "adaptation"], df.loc[0, "decoder"]) == ("lora", "upernet")
     assert 0.0 <= df.loc[0, "metric_value"] <= 1.0
 
 
@@ -510,14 +510,8 @@ def test_runner_invalid_validation_does_not_write_results(
     assert not out.exists()
 
 
-@pytest.mark.parametrize(
-    ("cached", "full_finetune"),
-    [(False, False), (True, False), (True, True)],
-    ids=["uncached", "cached", "full-finetune"],
-)
-def test_class_weights_enter_the_hash_and_the_loss(
-    tmp_path: Path, *, cached: bool, full_finetune: bool
-):
+@pytest.mark.parametrize("cached", [False, True])
+def test_class_weights_use_training_masks_and_are_recorded(tmp_path: Path, *, cached: bool):
     from geo_eval_harness import main as main_module
 
     solvers: list[SegmentationSolver] = []
@@ -527,47 +521,30 @@ def test_class_weights_enter_the_hash_and_the_loss(
         apply_weights(solver, *args)
         solvers.append(solver)
 
-    hashes = {}
-    for name, extra in {"plain": {}, "weighted": {"class_weights": "median_frequency"}}.items():
-        out = tmp_path / f"{name}.csv"
-        curves = tmp_path / f"{name}.jsonl"
-        cfg = _cfg_for_segmentation(
-            out,
-            overrides={
-                "model": _TINY_VIT,
-                "segmentation": {
-                    "head": "upernet",
-                    "layers": _TINY_VIT_LAYERS,
-                    "epochs": 1,
-                    "batch_size": 2,
-                    "cache_features": cached,
-                    "full_finetune": full_finetune,
-                    "backbone_learning_rate": 1e-5 if full_finetune else None,
-                }
-                | extra,
-                "output": {"epoch_metrics": str(curves)},
+    loaders = _synthetic_segmentation_loaders()
+    loaders[0]._masks.fill_(1)
+    loaders[0]._masks[0] = 0
+    out = tmp_path / "weighted.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "runtime": {"sample_cache": "none" if cached else "gpu"},
+            "segmentation": {
+                "head": "linear",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "batch_size": 2,
+                "cache_features": cached,
+                "class_weights": "inverse_frequency",
             },
-        )
-        with (
-            mock.patch(
-                "geo_eval_harness.main.get_datasets",
-                return_value=_synthetic_segmentation_loaders(),
-            ),
-            mock.patch.object(main_module, "_apply_class_weights", spy),
-        ):
-            main(cfg)
-        hashes[name] = pd.read_csv(out).iloc[0]["config_hash"]
-        records = _read_jsonl(curves)
-        assert [record["event"] for record in records] == ["epoch", "selected"]
-        assert all(record["config_hash"] == hashes[name] for record in records)
-        assert math.isfinite(records[0]["train_loss"])
-        assert math.isfinite(records[0]["val_loss"])
-        assert records[1]["best_epoch"] == 1
+        },
+    )
+    with (
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=loaders),
+        mock.patch.object(main_module, "_apply_class_weights", spy),
+    ):
+        main(cfg)
 
-    plain, weighted = solvers
-    assert hashes["plain"] != hashes["weighted"]
-    assert getattr(plain.criterion, "weight", None) is None
-    assert weighted.criterion.weight is not None
-    assert weighted.criterion.weight.shape == (3,)
-    assert torch.all(weighted.criterion.weight > 0)
-    assert weighted.model.freeze_backbone is not full_finetune
+    assert pd.read_csv(out).iloc[0]["class_weights"] == "inverse_frequency"
+    torch.testing.assert_close(solvers[0].criterion.weight, torch.tensor([1.0, 1.0 / 7, 0.0]))

@@ -400,7 +400,7 @@ def test_solver_evaluation_parity(
         assert metrics == pytest.approx(expected_metrics)
 
 
-@pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 1.0])])
+@pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 0.0])])
 def test_validation_loss_is_the_split_mean_of_the_criterion(
     class_weight: torch.Tensor | None,
 ) -> None:
@@ -483,6 +483,28 @@ def test_probe_vit_token_features():
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
 
 
+def test_probe_uses_backbone_declared_token_grid():
+    """Map multi-modality token sequences through the backbone's own layout, not a square guess."""
+
+    class TwoModalityViT(ViTBackbone):
+        def forward(self, x):
+            tokens = self.patch_embed(x).flatten(2).transpose(1, 2)
+            return self.blocks(torch.cat([tokens, 3 * tokens], dim=1))
+
+        def tokens_to_grid(self, tokens):
+            first, second = tokens.chunk(2, dim=1)
+            side = math.isqrt(first.shape[1])
+            return ((first + second) / 2).transpose(1, 2).reshape(len(tokens), -1, side, side)
+
+    backbone = TwoModalityViT()
+    probe = make_probe(backbone, ["blocks"], head_type="linear")
+    images = torch.randn(2, 3, 64, 64)
+
+    assert probe(images).shape == (2, NUM_CLASSES, 64, 64)
+    expected = 2 * backbone.patch_embed(images)
+    torch.testing.assert_close(probe._process_feature(probe._features["blocks"]), expected)
+
+
 def test_resolve_num_prefix_tokens_walks_module_tree():
     """Read prefix-token counts through wrappers rather than assuming a bare timm model."""
 
@@ -550,6 +572,52 @@ def test_probe_dry_run_uses_backbone_num_channels():
     images = torch.randn(2, 2, 64, 64)
     logits = probe(images)
     assert logits.shape == (2, NUM_CLASSES, 64, 64)
+
+
+class _ChannelsLastBackbone(nn.Module):
+    """Emit an NHWC stage map whose grid is wider than its channels (Swin stage 0 at 512)."""
+
+    def __init__(self, feature_layout: str | None) -> None:
+        super().__init__()
+        from torchvision.ops.misc import Permute
+
+        self.feature_layout = feature_layout
+        self.stage = nn.Sequential(nn.Conv2d(3, 8, kernel_size=4, stride=4), Permute([0, 2, 3, 1]))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.stage(x)
+
+
+def test_probe_reads_declared_nhwc_maps_whose_grid_exceeds_the_channels() -> None:
+    probe = make_probe(_ChannelsLastBackbone("nhwc"), ["stage"], head_type="linear")
+    assert probe.channels_list == [8]
+    assert probe.feature_hw_list == [(56, 56)]
+    nhwc = torch.randn(2, 56, 56, 8)
+    torch.testing.assert_close(probe._process_feature(nhwc), nhwc.permute(0, 3, 1, 2))
+    # Undeclared, the shape guess reads the 56-wide grid as channels.
+    assert make_probe(_ChannelsLastBackbone(None), ["stage"]).channels_list == [56]
+
+
+def test_timm_swin_declares_nhwc_stage_maps() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(
+        bands(3), model_name="swin_tiny_patch4_window7_224", pretrained=False
+    )
+    probe = make_probe(model, ["layers.3", "layers.0"], head_type="fpn")
+
+    assert model.feature_layout == "nhwc"
+    assert probe.channels_list == [768, 96]
+    assert probe.feature_hw_list == [(7, 7), (56, 56)]
+
+
+def test_timm_cnn_declares_no_feature_layout() -> None:
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
+    from tests.support.models import bands
+
+    model = TimmPatchBenchModel(bands(3), model_name="resnet18", pretrained=False)
+    assert model.feature_layout is None
 
 
 @pytest.mark.parametrize("cached", [False, True])
@@ -1298,7 +1366,7 @@ def test_solver_fit_cached_builds_missing_validation_gpu_cache(mock_backbone, du
         )
 
     assert isinstance(val_miou, float)
-    transfer.assert_called_once_with(val_cache, solver.device)
+    transfer.assert_called_once_with(val_cache, solver.device, amp=True)
 
 
 def test_probe_pools_time_series_features(mock_backbone, dummy_data):
@@ -1384,7 +1452,7 @@ def test_vit_neck_input_norm_removes_outlier_channel_scale() -> None:
         ViTNeck([8] * 4, input_norm="batchnorm")
 
 
-@pytest.mark.parametrize("head_type", ["upernet", "fpn", "unet"])
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "fpn", "unet"])
 @pytest.mark.parametrize("cached", [False, True])
 def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) -> None:
     from geo_eval_harness.models.segmentation_heads import NeckedHead
@@ -1403,6 +1471,76 @@ def test_probe_vit_neck_trains_with_the_head(head_type: str, *, cached: bool) ->
     assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
     _fit_upernet(solver, probe, loader, batch_size=2, cached=cached)
     assert any(not torch.equal(p, neck_before[n]) for n, p in probe.head.neck.named_parameters())
+
+
+def test_vit_fine_neck_takes_the_finest_level_from_the_last_input() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8] * 4, input_norm="none", native_finest=True)
+    trunk = [torch.randn(2, 8, 14, 14) for _ in range(3)]
+    fine = torch.randn(2, 8, 56, 56)
+
+    levels = neck([*trunk, fine])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[-1], fine)
+    assert neck([*trunk, torch.randn(2, 8, 14, 14)])[-1].shape[-2:] == (56, 56)
+
+
+def test_vit_neck_builds_a_simple_pyramid_from_one_map() -> None:
+    from geo_eval_harness.models.segmentation_heads import ViTNeck
+
+    neck = ViTNeck([8], input_norm="none")
+    feature = torch.randn(2, 8, 14, 14)
+
+    levels = neck([feature])
+    assert [tuple(f.shape[-2:]) for f in levels] == [(7, 7), (14, 14), (28, 28), (56, 56)]
+    torch.testing.assert_close(levels[1], feature)
+    with pytest.raises(ValueError, match="native_finest needs 4 inputs"):
+        ViTNeck([8], native_finest=True)
+
+
+@pytest.mark.parametrize("head_type", ["linear", "upernet", "unet"])
+def test_probe_vit_neck_trains_from_a_single_layer(head_type: str) -> None:
+    probe = SegmentationProbe(
+        FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type=head_type, hidden_dim=16, neck="vit"
+    )
+    loader = DataLoader(
+        TensorDataset(torch.randn(4, 3, 64, 64), torch.randint(0, NUM_CLASSES, (4, 64, 64))),
+        batch_size=2,
+    )
+    solver = SegmentationSolver(probe, NUM_CLASSES, device="cpu", lr_scheduler="none")
+
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    _fit_upernet(solver, probe, loader, batch_size=2, cached=False)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FourBlockViT(), ["blocks.3"], NUM_CLASSES, head_type="upernet", neck="vit_fine"
+        )
+
+
+class FineOutputViT(FourBlockViT):
+    """Three trunk blocks on a 16-pixel grid plus a fine output block on a 4-pixel grid."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fine = nn.Conv2d(3, 8, kernel_size=4, stride=4)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        trunk = super().forward(x)
+        return trunk.mean() + self.fine(x).flatten(2).transpose(1, 2)
+
+
+def test_probe_vit_fine_neck_accepts_a_finer_last_layer() -> None:
+    layers = ["blocks.3", "blocks.2", "blocks.1", "fine"]
+    probe = SegmentationProbe(
+        FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit_fine"
+    )
+    assert probe.feature_hw_list == [(14, 14)] * 3 + [(56, 56)]
+    assert probe(torch.randn(2, 3, 64, 64)).shape == (2, NUM_CLASSES, 64, 64)
+    with pytest.raises(ValueError, match="4 layers sharing one resolution"):
+        SegmentationProbe(
+            FineOutputViT(), layers, NUM_CLASSES, head_type="upernet", hidden_dim=16, neck="vit"
+        )
 
 
 def test_probe_vit_neck_rejects_pyramid_layers_and_other_heads() -> None:
@@ -1659,29 +1797,3 @@ def test_upernet_pyramid_upsampling_matches_the_reference_head_under_amp(hw) -> 
     stock_error = ((stock_grads - ref_grads).norm() / ref_grads.norm()).item()
     error = ((grads - ref_grads).norm() / ref_grads.norm()).item()
     assert error <= 1.1 * stock_error + 1e-3
-
-
-def test_median_frequency_weights() -> None:
-    from geo_eval_harness.segmentation_task import median_frequency_weights
-
-    weights = median_frequency_weights(torch.tensor([60, 30, 10, 0]))
-
-    # Frequencies .6/.3/.1, median .3; the class without training pixels gets weight 0.
-    assert weights.tolist() == pytest.approx([0.5, 1.0, 3.0, 0.0])
-    with pytest.raises(ValueError, match="labelled"):
-        median_frequency_weights(torch.zeros(3, dtype=torch.long))
-
-
-def test_class_pixel_counts_skip_ignored_labels_and_keep_the_rng() -> None:
-    from geo_eval_harness.segmentation_task import class_pixel_counts
-
-    masks = torch.tensor([[[0, 1], [255, 2]], [[2, 2], [1, 255]]])
-    assert class_pixel_counts(masks, 3, 255).tolist() == [1, 2, 3]
-
-    loader = DataLoader(TensorDataset(torch.zeros(2, 1), masks), batch_size=1, shuffle=True)
-    torch.manual_seed(0)
-    counts = class_pixel_counts(loader, 3, 255)
-    after = torch.rand(3)
-    torch.manual_seed(0)
-    assert counts.tolist() == [1, 2, 3]
-    assert torch.equal(after, torch.rand(3))

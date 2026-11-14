@@ -15,8 +15,8 @@ from .schema import (
     StrictModel,
 )
 
-type BandConfig = Literal["rgb", "s2"]
-type Head = Literal["linear", "conv_block", "fpn", "dpt", "patch_linear"]
+type BandConfig = Literal["rgb", "s2", "all"]
+type Head = Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"]
 
 
 def _band_configs() -> list[BandConfig]:
@@ -86,6 +86,7 @@ class FlopsSegmentationConfig(StrictModel):
     heads: list[Head] = Field(default_factory=_heads)
     band_configs: list[BandConfig] = Field(default_factory=_band_configs)
     num_classes: StrictInt = Field(default=4, gt=0)
+    neck_policy: Literal["preset", "auto"] = "preset"
     probe: SegmentationConfig = Field(default_factory=SegmentationConfig)
 
     @field_validator("heads", "band_configs")

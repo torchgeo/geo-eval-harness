@@ -1,9 +1,7 @@
 Evaluate your own model (Stage 1)
 ==================================
 
-This guide demonstrates how you can benchmark any frozen pretrained geospatial model against
-the included benchmark datasets. If you want to contribute a new open-source model with available weights such that the broader community can easily access your model, see
-:doc:`contribute_model`.
+Implement a model wrapper and benchmark it on the included datasets. To contribute the wrapper and its weights to the shared catalog, see :doc:`contribute_model`.
 
 .. _eval-prerequisites:
 
@@ -35,9 +33,7 @@ You can check how to download one or more dataset for evaluation in the :doc:`da
 Implement your model
 --------------------
 
-We provide a template file to give you a general setup and fill in the gaps that are unique to your model and ensure
-that each of those parts will be used correctly in the benchmark pipeline. Copy the template file to your working directory and fill in the ``TODO``
-sections:
+Copy the model template to your working directory and implement its ``TODO`` sections:
 
 .. code-block:: console
 
@@ -63,7 +59,7 @@ Pick the strategy that matches how your backbone was trained:
 
      - Forward the constructor's ``normalization`` argument. The runner maps this choice to ``bandspec_zscore``.
    * - ``none``
-     - Your backbone ships its own normalizer and must receive raw sensor
+     - Your backbone includes its own normalizer and must receive raw sensor
        values — applying a second normalization on top would corrupt the
        inputs.
 
@@ -96,9 +92,7 @@ The template shows ``backbone(images)`` as the minimal forward call, but many
 models need more than raw pixels — for example a wavelength list for
 band-agnostic ViTs, or sensor-conditional routing.
 
-The framework makes this straightforward.  The pipeline **reinstantiates your
-class once per dataset**, so the ``bands`` argument passed to ``__init__``
-always reflects exactly the channels being loaded for that run.  Every
+The runner constructs your class once per dataset. Its ``bands`` argument contains the channels selected for that run.  Every
 :class:`~geo_eval_harness.datasets.BandSpec` in that list carries the
 dataset-level metadata that is available:
 
@@ -170,7 +164,7 @@ The preset identifies your importable class and its result name. Add any constru
    kwargs:
      pretrained: true
 
-Only ``kwargs`` are passed as constructor options. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings; ``_target_``, interpolation, and recursive instantiation are not supported.
+Only ``kwargs`` are passed as constructor options. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings.
 
 .. note::
 
@@ -188,7 +182,7 @@ parent directory to ``PYTHONPATH`` before running:
 Run the benchmark
 -----------------
 
-Select the preset with ``--model`` and repeat ``--dataset`` for each applicable dataset. The CLI accepts explicit flags and Pydantic-validated YAML; the old ``key=value`` interface is retired:
+Select the preset with ``--model`` and repeat ``--dataset`` for each applicable dataset. The CLI accepts explicit flags and Pydantic-validated YAML:
 
 .. code-block:: console
 

@@ -1,7 +1,8 @@
 """Result rows, bootstrap CIs, atomic CSV writing, and per-model storage.
 
 ``EvaluationResult`` defines the CSV columns used by ``scripts/`` and ``experiments/``.
-Add fields at the end; do not reorder existing fields.
+Its field order is the header of every committed ``results/models/*.csv``. A new column
+needs a migration under ``scripts/migrations/`` that rewrites those headers.
 
 Metrics go to ``results/models/<model name>.csv``, so rerunning a model touches only its own file.
 
@@ -13,6 +14,7 @@ Routine metric runs leave these files untouched.
 
 import io
 import logging
+import math
 import os
 import re
 import stat
@@ -24,13 +26,12 @@ import numpy as np
 import pandas as pd
 import torch
 
+from geo_eval_harness.config.schema import Adaptation, SegmentationConfig
 from geo_eval_harness.resume import KEY_COLS, _canonical_key_cell
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = "results/models"
-DEFAULT_PROFILE_RESULTS_DIR = "results/profiles"
-DEFAULT_INTRINSIC_DIM_RESULTS_DIR = "results/intrinsic_dim"
 
 # The resume key minus ``config_hash`` (that column is exactly what fragments
 # legacy rows, written before it existed, from later hashed reruns of the same
@@ -38,7 +39,111 @@ DEFAULT_INTRINSIC_DIM_RESULTS_DIR = "results/intrinsic_dim"
 # the same resume key) and ``seed`` (absent from the resume key, but different
 # seeds are different measurements -- without it a multi-seed sweep would
 # collapse to a single arbitrary seed).
-DEDUP_KEY_COLS = (*(c for c in KEY_COLS if c != "config_hash"), "metric_name", "seed")
+_BASE_DEDUP_KEY_COLS = (*(c for c in KEY_COLS if c != "config_hash"), "metric_name", "seed")
+
+#: Segmentation setup columns. They describe the training setup of a row and join
+#: :data:`DEDUP_KEY_COLS` (not the resume key, which keeps ``config_hash``). Every cell
+#: is CSV text from :func:`format_setup_value`; empty means "does not apply".
+SETUP_COLS = (
+    "adaptation",
+    "decoder",
+    "neck",
+    "upsampler",
+    "epochs",
+    "head_lr",
+    "backbone_lr",
+    "weight_decay",
+    "head_dropout",
+    "lora_rank",
+    "lora_alpha",
+    "lora_last_blocks",
+    "class_weights",
+    "selection_metric",
+    "early_stopping_patience",
+)
+
+#: Setup columns compared as numbers, so ``1e-3`` and ``0.001`` give the same key.
+#: Other columns keep the generic comparison (hex config hashes can parse as floats).
+NUMERIC_SETUP_COLS = frozenset(
+    {
+        "epochs",
+        "head_lr",
+        "backbone_lr",
+        "weight_decay",
+        "head_dropout",
+        "lora_rank",
+        "lora_alpha",
+        "lora_last_blocks",
+    }
+)
+
+#: ``selection_metric`` cell of segmentation rows: the epoch with the best validation mIoU
+#: is restored. The ``config_hash`` payload names the same protocol ``best-validation-miou``.
+SELECTION_METRIC = "val_miou"
+
+DEDUP_KEY_COLS = (*_BASE_DEDUP_KEY_COLS, *SETUP_COLS)
+
+
+def format_setup_value(value: object) -> str | None:
+    """Return the CSV text of a setup or result cell, or ``None`` (empty) when unset.
+
+    Whole numbers are written as integers (``20``, ``16`` for ``16.0``, ``0``); other floats
+    use their shortest round-trip ``repr`` (``0.001``, ``1e-05``). Strings pass through.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise TypeError("setup columns hold tokens, not booleans")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return str(int(value))
+        return repr(value)
+    return str(value)
+
+
+def segmentation_setup_columns(seg: SegmentationConfig) -> dict[str, str | None]:
+    """Map a resolved segmentation config to the :data:`SETUP_COLS` cells of its result rows.
+
+    Off-values of applicable settings are explicit (``none``, ``0``). Cells that do not apply
+    stay empty: ``backbone_lr`` on frozen rows and the LoRA columns unless LoRA is on.
+    """
+    adaptation = seg.adaptation
+    lora = adaptation is Adaptation.LORA
+    columns = {
+        "adaptation": adaptation.value,
+        "decoder": seg.head,
+        "neck": seg.neck,
+        "upsampler": seg.upsampler,
+        "epochs": seg.epochs,
+        "head_lr": seg.learning_rate,
+        "backbone_lr": None if adaptation is Adaptation.FROZEN else seg.backbone_learning_rate,
+        "weight_decay": seg.weight_decay,
+        "head_dropout": seg.head_dropout,
+        "lora_rank": seg.lora_rank if lora else None,
+        "lora_alpha": seg.lora_alpha if lora else None,
+        "lora_last_blocks": seg.lora_last_blocks if lora else None,
+        "class_weights": seg.class_weights,
+        "selection_metric": SELECTION_METRIC,
+        "early_stopping_patience": seg.early_stopping_patience,
+    }
+    return {col: format_setup_value(columns[col]) for col in SETUP_COLS}
+
+
+def _canonical_setup_cell(value: object) -> str:
+    """Compare a numeric setup cell by value; empty and NaN cells become ``""``."""
+    if value is None:
+        return ""
+    s = str(value).strip()
+    try:
+        f = float(s)
+    except ValueError:  # allow-except: a malformed cell keys as its own text
+        return s
+    if math.isnan(f):
+        return ""
+    return format_setup_value(f) or ""
+
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -111,13 +216,20 @@ def _dedup_results(df: pd.DataFrame) -> pd.DataFrame:
     """Keep one row per measurement group in :data:`DEDUP_KEY_COLS`.
 
     A hashed row wins over an unhashed one; among hashed rows the last appended wins.
+    Files written before the setup columns existed key them as empty.
     """
-    missing = [c for c in DEDUP_KEY_COLS if c not in df.columns]
+    missing = [c for c in _BASE_DEDUP_KEY_COLS if c not in df.columns]
     if missing or "config_hash" not in df.columns:
         return df
     has_hash = df["config_hash"].fillna("").astype(str).str.len() > 0
-    key = df[list(DEDUP_KEY_COLS)].apply(
-        lambda row: tuple(_canonical_key_cell(v) for v in row), axis=1
+    key_df = df.reindex(columns=list(DEDUP_KEY_COLS))
+    cell_fns = [
+        _canonical_setup_cell if c in NUMERIC_SETUP_COLS else _canonical_key_cell
+        for c in DEDUP_KEY_COLS
+    ]
+    key_df[list(SETUP_COLS)] = key_df[list(SETUP_COLS)].astype(object).fillna("")
+    key = key_df.apply(
+        lambda row: tuple(fn(v) for fn, v in zip(cell_fns, row, strict=True)), axis=1
     )
     order = pd.DataFrame({"key": key, "has_hash": has_hash, "pos": range(len(df))})
     keep = order.sort_values(["has_hash", "pos"]).groupby("key", sort=False).tail(1)["pos"]
@@ -250,6 +362,22 @@ class EvaluationResult:
     # Keep resolution and pooling in the CSV for per-dataset resume keys (Scale-MAE, #215).
     res: float | None = None
     pool: str | None = None
+    # Segmentation setup (SETUP_COLS, text from segmentation_setup_columns; empty otherwise).
+    adaptation: str | None = None
+    decoder: str | None = None
+    neck: str | None = None
+    upsampler: str | None = None
+    epochs: str | None = None
+    head_lr: str | None = None
+    backbone_lr: str | None = None
+    weight_decay: str | None = None
+    head_dropout: str | None = None
+    lora_rank: str | None = None
+    lora_alpha: str | None = None
+    lora_last_blocks: str | None = None
+    class_weights: str | None = None
+    selection_metric: str | None = None
+    early_stopping_patience: str | None = None
     # Segmentation-only metrics (None for classification rows)
     fw_iou: float | None = None
     precision: float | None = None
@@ -257,9 +385,10 @@ class EvaluationResult:
     f1: float | None = None
     boundary_iou: float | None = None
     boundary_iou_width: int | None = None
-    # Segmentation epoch restored for test evaluation and its validation mIoU.
-    best_val_epoch: int | None = None
-    best_val_miou: float | None = None
+    # Segmentation epoch restored for test evaluation and its validation mIoU, as
+    # format_setup_value text (an int column would turn into floats beside empty cells).
+    best_val_epoch: str | None = None
+    best_val_miou: str | None = None
     # Calibration metrics for KNN / Linear Probing (None for segmentation rows)
     ece: float | None = None
     rms_ce: float | None = None

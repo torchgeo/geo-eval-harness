@@ -34,6 +34,7 @@ class BenchDataset(ABC):
         name: Dataset identifier used on the command line (e.g. ``"m-eurosat"``).
         task: ``"classification"`` or ``"segmentation"``.
         num_classes: Number of output classes.
+        class_names: Class names indexed by label, declared by classification datasets.
         bands: Ordered list of all available spectral bands with statistics.
         rgb_bands: Short names of the bands to use for RGB-only mode.
         split_sizes: Number of samples per split for the *default* partition,
@@ -46,6 +47,7 @@ class BenchDataset(ABC):
     name: str
     task: Literal["classification", "segmentation"]
     num_classes: int
+    class_names: ClassVar[tuple[str, ...]]
     bands: ClassVar[list[BandSpec]]
     rgb_bands: ClassVar[list[str]]
     split_sizes: ClassVar[dict[str, int]]

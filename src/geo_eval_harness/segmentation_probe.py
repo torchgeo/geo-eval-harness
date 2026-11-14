@@ -2,7 +2,7 @@
 
 import logging
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import torch
@@ -11,19 +11,50 @@ from torch.utils.data import Dataset
 
 from geo_eval_harness.config.schema import NECK_HEADS
 from geo_eval_harness.models import anyup
+from geo_eval_harness.models.interface import forward_model_batch
 from geo_eval_harness.models.segmentation_heads import (
     ConvBlockHead,
     DPTHead,
+    FeatureStandardizer,
     FPNHead,
     LinearHead,
     NeckedHead,
     PatchLinearHead,
+    StandardizedHead,
+    SweepPatchLinearHead,
     UNetHead,
     UPerNetHead,
     ViTNeck,
+    feature_moments,
 )
 
 logger = logging.getLogger(__name__)
+
+#: Largest share of an epoch's training batches, or of the samples that fit the feature
+#: standardizer, that may be skipped for non-finite backbone features.
+MAX_NONFINITE_FRACTION = 0.05
+
+
+class NonFiniteFeaturesError(FloatingPointError):
+    """Backbone features contain ``inf`` or ``NaN``, for example after a float16 overflow.
+
+    Raised before the head runs, so the head's normalisation statistics stay untouched.
+    """
+
+
+def check_finite_features(features: list[torch.Tensor]) -> None:
+    """Raise :class:`NonFiniteFeaturesError` if any feature map has a non-finite value."""
+    if not all(bool(torch.isfinite(f).all()) for f in features):
+        raise NonFiniteFeaturesError(
+            "Backbone features are not finite (float16 overflow?). Set segmentation.amp: off "
+            "to run in float32."
+        )
+
+
+def _finite_samples(features: list[torch.Tensor]) -> torch.Tensor:
+    """Return a ``(N,)`` mask of the samples whose features are finite in every layer."""
+    return torch.stack([torch.isfinite(f).flatten(1).all(dim=1) for f in features]).all(dim=0)
+
 
 #: Heads built as ``Head(channels_list, num_classes, hidden_dim=...)``.
 _HIDDEN_DIM_HEADS: dict[str, type[nn.Module]] = {
@@ -76,15 +107,6 @@ class CachedFeaturesDataset(Dataset):
         return [t[index] for t in self.layer_tensors], self.masks[index]
 
 
-def _estimate_cache_bytes(cache: "CachedFeaturesDataset") -> int:
-    if not cache.layer_tensors:
-        return 0
-    return (
-        sum(t.numel() * t.element_size() for t in cache.layer_tensors)
-        + cache.masks.numel() * cache.masks.element_size()
-    )
-
-
 class GPUTensorCache:
     """Cached features and masks kept on the target device.
 
@@ -116,19 +138,22 @@ class GPUTensorCache:
         cls,
         cache: "CachedFeaturesDataset",
         device: torch.device | str,
+        *,
+        amp: bool = True,
     ) -> "GPUTensorCache":
         """Move cached features and masks to ``device``.
 
         Args:
             cache: CPU-resident cached features.
             device: Target device.
+            amp: Store float16 features on CUDA for mixed precision; ``False`` keeps float32.
 
         Returns:
             A :class:`GPUTensorCache` with all data on *device*.
         """
         target_device = torch.device(device)
         # CPU heads need float32 without autocast; CUDA uses float16 for mixed precision.
-        dtype = torch.float16 if target_device.type == "cuda" else torch.float32
+        dtype = torch.float16 if amp and target_device.type == "cuda" else torch.float32
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
         masks = cache.masks.to(target_device, dtype=torch.long)
         return cls(layer_tensors, masks, target_device)
@@ -166,9 +191,10 @@ class SegmentationProbe(nn.Module):
             ``"fpn"``, ``"dpt"``, ``"patch_linear"``, ``"upernet"``, ``"unet"``.
         hidden_dim: Hidden channel dimension for ``conv_block``, ``fpn``,
             ``dpt``, ``upernet``, and ``unet`` heads (default 256).
-        neck: ``"none"`` (default) or ``"vit"``. ``"vit"`` puts a
+        neck: ``"none"`` (default), ``"vit"`` or ``"vit_fine"``. ``"vit"`` puts a
             :class:`~geo_eval_harness.models.ViTNeck` before an ``fpn``, ``upernet``, or ``unet``
-            head; it needs exactly four layers at one resolution.
+            head; it needs exactly four layers at one resolution. ``"vit_fine"`` takes the finest
+            level from the last layer at its own resolution, so only the first three must share one.
         neck_norm: Per-level input normalisation of the ViT neck, ``"layernorm"`` (default) or
             ``"none"``.
         head_dropout: Channel dropout (``nn.Dropout2d``, as mmsegmentation's UPerHead) before the
@@ -176,6 +202,12 @@ class SegmentationProbe(nn.Module):
         upsampler: ``"none"`` (default) or ``"anyup"``. ``"anyup"`` (UPerNet only) puts frozen
             pretrained AnyUp between the fused features and the classifier, guided by the input's
             RGB bands (see :class:`~geo_eval_harness.models.anyup.AnyUpClassifier`).
+        sweep_heads: With ``head_type="patch_linear"``, train this many independent probes at
+            once as a ``SweepPatchLinearHead`` (one per learning-rate x weight-decay cell).
+            ``0`` (default) builds a single ``PatchLinearHead``.
+        feature_standardize: Z-score each hooked feature channel with statistics fit on the
+            training split (:meth:`fit_standardizer`) before the head. Frozen backbones only.
+        amp: Run a frozen backbone under CUDA float16 autocast. ``False`` keeps it in float32.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.
@@ -192,8 +224,12 @@ class SegmentationProbe(nn.Module):
         neck_norm: str = "layernorm",
         upsampler: str = "none",
         head_dropout: float = 0.0,
+        sweep_heads: int = 0,
+        feature_standardize: bool = False,
+        amp: bool = True,
     ) -> None:
         super().__init__()
+        self.amp = amp
         if temporal_pool not in ("mean", "max"):
             raise ValueError(f"temporal_pool must be 'mean' or 'max', got {temporal_pool!r}")
         self.temporal_pool = temporal_pool
@@ -201,7 +237,6 @@ class SegmentationProbe(nn.Module):
         self.layer_names = layer_names
         self.freeze_backbone = freeze_backbone
         self.head_type = head_type
-        self.effective_classes = num_classes
 
         self._features: dict[str, torch.Tensor] = {}
         self.hooks: list[Any] = []
@@ -218,13 +253,24 @@ class SegmentationProbe(nn.Module):
 
         self.head: nn.Module
         if head_type == "linear":
-            self.head = LinearHead(self.channels_list, num_classes)
+            single_map = neck == "vit" and len(self.channels_list) == 1
+            self.head = LinearHead(
+                self.channels_list * 4 if single_map else self.channels_list, num_classes
+            )
         elif head_type in _HIDDEN_DIM_HEADS:
+            # A single-layer ViT neck builds four pyramid levels from that one map.
+            single_map = neck == "vit" and len(self.channels_list) == 1
             self.head = _HIDDEN_DIM_HEADS[head_type](
-                self.channels_list, num_classes, hidden_dim=hdim
+                self.channels_list * 4 if single_map else self.channels_list,
+                num_classes,
+                hidden_dim=hdim,
             )
         elif head_type == "patch_linear":
-            self.head = PatchLinearHead(self.channels_list, num_classes).to(self._backbone_device())
+            self.head = (
+                SweepPatchLinearHead(self.channels_list, num_classes, sweep_heads)
+                if sweep_heads
+                else PatchLinearHead(self.channels_list, num_classes)
+            ).to(self._backbone_device())
             dry_run_features = [
                 torch.zeros(
                     (1, channels, height, width),
@@ -241,10 +287,129 @@ class SegmentationProbe(nn.Module):
                 "Unknown head_type: "
                 f"{head_type!r}. Choose from: linear, conv_block, fpn, dpt, patch_linear, upernet, unet"
             )
+        if sweep_heads and head_type != "patch_linear":
+            raise ValueError(f"sweep_heads requires the patch_linear head, got {head_type!r}.")
         self._attach_neck(neck, head_type, neck_norm)
         self._attach_head_dropout(head_dropout, head_type)
         self._anyup = None
         self._attach_upsampler(upsampler, head_type)
+        self.standardizer: FeatureStandardizer | None = None
+        if feature_standardize:
+            if not self.freeze_backbone:
+                raise ValueError("feature_standardize requires a frozen backbone.")
+            self.standardizer = FeatureStandardizer(self.channels_list).to(self._backbone_device())
+            self.head = StandardizedHead(self.standardizer, self.head)
+
+    @property
+    def sweep_head(self) -> SweepPatchLinearHead | None:
+        """Return the ``SweepPatchLinearHead``, if the probe trains a sweep."""
+        head = self.head.head if isinstance(self.head, StandardizedHead) else self.head
+        return head if isinstance(head, SweepPatchLinearHead) else None
+
+    def _require_standardizer(self) -> FeatureStandardizer:
+        if self.standardizer is None:
+            raise RuntimeError("This probe was built without feature_standardize.")
+        return self.standardizer
+
+    @torch.no_grad()
+    def fit_standardizer(
+        self,
+        train: "CachedFeaturesDataset | torch.utils.data.DataLoader",
+        chunk_size: int = 256,
+    ) -> None:
+        """Fit the feature standardizer on every position of the training split.
+
+        ``train`` is either the cached training features or the training loader; a loader costs
+        one extra backbone pass. Both feed the same exact float64 moment accumulation.
+        Samples with non-finite features are left out, like non-finite training batches; more
+        than ``MAX_NONFINITE_FRACTION`` of them raises :class:`NonFiniteFeaturesError`.
+        """
+        standardizer = self._require_standardizer()
+        sums: list[torch.Tensor] = []
+        sq_sums: list[torch.Tensor] = []
+        counts: list[int] = []
+        samples = dropped = 0
+        for chunk in self._standardizer_features(train, chunk_size):
+            finite = _finite_samples(chunk)
+            samples += len(finite)
+            features = chunk
+            if not bool(finite.all()):
+                dropped += int((~finite).sum())
+                features = [layer[finite] for layer in chunk]
+            if not sums:
+                sums = [
+                    torch.zeros(f.shape[1], dtype=torch.float64, device=f.device) for f in features
+                ]
+                sq_sums = [torch.zeros_like(total) for total in sums]
+                counts = [0] * len(features)
+            for index, layer in enumerate(features):
+                total, sq_total, count = feature_moments(layer)
+                sums[index] += total
+                sq_sums[index] += sq_total
+                counts[index] += count
+        if dropped:
+            logger.warning(
+                "Feature standardization left out %d of %d samples with non-finite features.",
+                dropped,
+                samples,
+            )
+            if dropped > MAX_NONFINITE_FRACTION * samples:
+                raise NonFiniteFeaturesError(
+                    f"Feature standardization left out {dropped} of {samples} samples with "
+                    f"non-finite backbone features (limit {MAX_NONFINITE_FRACTION:.0%}). Set "
+                    "segmentation.amp: off to run in float32."
+                )
+        if not sums:
+            raise ValueError("Feature standardization needs a non-empty training split.")
+        standardizer.set_moments(sums, sq_sums, counts)
+        logger.info("Feature standardization fit on %d training positions.", counts[0])
+
+    def _standardizer_features(
+        self, train: "CachedFeaturesDataset | torch.utils.data.DataLoader", chunk_size: int
+    ) -> Iterator[list[torch.Tensor]]:
+        """Yield per-layer training features from the cache in chunks, or from the backbone."""
+        device = self._backbone_device()
+        if isinstance(train, CachedFeaturesDataset):
+            for start in range(0, len(train), chunk_size):
+                yield [
+                    layer[start : start + chunk_size].to(device) for layer in train.layer_tensors
+                ]
+            return
+        was_training = self.backbone.training
+        try:
+            for batch in train:
+                images = (batch["image"] if isinstance(batch, dict) else batch[0]).to(device)
+                yield self._backbone_features(
+                    images, batch.get("doy") if isinstance(batch, dict) else None
+                )
+        finally:
+            self.backbone.train(was_training)
+
+    def _backbone_features(
+        self, x: torch.Tensor, doy: torch.Tensor | None = None
+    ) -> list[torch.Tensor]:
+        """Run the backbone on images or a time series and return the hooked feature maps."""
+        self._validate_temporal_input(x)
+        steps = 0
+        if x.ndim == 5:
+            batch, steps = x.shape[0], x.shape[1]
+            x = x.reshape(batch * steps, *x.shape[2:])
+        self._features.clear()
+        self._run_backbone(x, doy)
+        features = [self._process_feature(self._features[n]) for n in self.layer_names]
+        if steps:
+            features = [self._pool_time(f, steps) for f in features]
+        return features
+
+    def _run_backbone(self, x: torch.Tensor, doy: torch.Tensor | None = None) -> None:
+        """Run the backbone to fill the hooks; a frozen one runs under CUDA autocast if ``amp``."""
+        if self.freeze_backbone:
+            self.backbone.eval()
+            use_amp = self.amp and x.device.type == "cuda"
+            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
+                _ = forward_model_batch(self.backbone, x, doy=doy)
+        else:
+            _ = forward_model_batch(self.backbone, x, doy=doy)
 
     def _upernet_decoder(self) -> nn.Module:
         upernet = self.head.head if isinstance(self.head, NeckedHead) else self.head
@@ -285,19 +450,25 @@ class SegmentationProbe(nn.Module):
                     f"{self.feature_hw_list[0]}. Use neck 'vit' for ViT blocks."
                 )
             return
-        if neck != "vit":
-            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit")
+        if neck not in ("vit", "vit_fine"):
+            raise ValueError(f"Unknown neck: {neck!r}. Choose from: none, vit, vit_fine")
         if head_type not in NECK_HEADS:
             raise ValueError(
-                f"neck 'vit' requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
+                f"neck {neck!r} requires head in {sorted(NECK_HEADS)}, got {head_type!r}."
             )
-        if len(self.layer_names) != 4 or len(set(self.feature_hw_list)) != 1:
+        trunk_hw = self.feature_hw_list[:3] if neck == "vit_fine" else self.feature_hw_list
+        single = neck == "vit" and len(self.layer_names) == 1
+        if not single and (len(self.layer_names) != 4 or len(set(trunk_hw)) != 1):
             raise ValueError(
-                "neck 'vit' needs exactly 4 layers sharing one resolution (ViT blocks); got "
+                f"neck {neck!r} needs exactly 4 layers sharing one resolution (ViT blocks; with "
+                f"'vit_fine' only the first three must; 'vit' also takes a single layer); got "
                 f"{len(self.layer_names)} layers with sizes {self.feature_hw_list}. Pyramid "
                 "backbones already provide multi-scale features."
             )
-        self.head = NeckedHead(ViTNeck(self.channels_list, input_norm=neck_norm), self.head)
+        self.head = NeckedHead(
+            ViTNeck(self.channels_list, input_norm=neck_norm, native_finest=neck == "vit_fine"),
+            self.head,
+        )
 
     def register_hooks(self) -> None:
         """Register feature hooks and reject missing or duplicate layer names."""
@@ -348,8 +519,10 @@ class SegmentationProbe(nn.Module):
     def _dry_run_channels(self) -> list[int]:
         device = self._backbone_device()
         in_channels = int(getattr(self.backbone, "num_channels", 3))
-        dummy = torch.randn(1, in_channels, 224, 224, device=device)
-        self.dry_run_input_hw = (224, 224)
+        # Backbones built for one fixed input size declare it; everything else accepts 224.
+        side = int(getattr(self.backbone, "probe_input_size", None) or 224)
+        dummy = torch.randn(1, in_channels, side, side, device=device)
+        self.dry_run_input_hw = (side, side)
         if not self.layer_names:
             self.layer_names = ["backbone_output"]
             self.hooks.append(self.backbone.register_forward_hook(self._hook_fn("backbone_output")))
@@ -374,15 +547,34 @@ class SegmentationProbe(nn.Module):
             return feat.view(feat.shape[0], feat.shape[1], 1, 1)
         if feat.ndim == 3:
             return self.reshape_tokens(feat)
-        # Infer NHWC when H == W and channels exceed the spatial dimensions; otherwise keep NCHW.
+        # Backbones that declare their 4D layout skip the shape guess, which fails once the grid
+        # is at least as wide as the channels (Swin stage 0 at 512). Undeclared backbones are
+        # read as NHWC when H == W and channels exceed the spatial dimensions, else NCHW.
         if feat.ndim == 4:
+            layout = getattr(self.backbone, "feature_layout", None)
+            if layout == "nhwc":
+                return feat.permute(0, 3, 1, 2).contiguous()
+            if layout == "nchw":
+                return feat
             _, d1, d2, d3 = feat.shape
             if d1 == d2 and d3 > d1:
                 return feat.permute(0, 3, 1, 2).contiguous()
         return feat
 
+    def _validate_temporal_input(self, images: torch.Tensor) -> None:
+        if images.ndim == 5 and getattr(self.backbone, "snapshot_only", False):
+            raise ValueError("This backbone supports snapshots only; drop input.time_steps.")
+
     def reshape_tokens(self, feat: torch.Tensor) -> torch.Tensor:
-        """Reshape token features into a spatial grid, accounting for prefix tokens."""
+        """Reshape token features into a spatial grid, accounting for prefix tokens.
+
+        A backbone that declares ``tokens_to_grid`` maps its own token layout instead.
+        """
+        to_grid: Callable[[torch.Tensor], torch.Tensor] | None = getattr(
+            self.backbone, "tokens_to_grid", None
+        )
+        if to_grid is not None:
+            return to_grid(feat)
         bsz, d1, d2 = feat.shape
         n_prefix = _resolve_num_prefix_tokens(self.backbone)
 
@@ -442,6 +634,7 @@ class SegmentationProbe(nn.Module):
                 else:
                     images, masks = batch[0].to(device), batch[1]
 
+                self._validate_temporal_input(images)
                 steps = 0
                 if images.ndim == 5:
                     steps = images.shape[1]
@@ -451,7 +644,11 @@ class SegmentationProbe(nn.Module):
                     masks = masks.squeeze(1)
                 masks = masks.long()
                 self._features.clear()
-                _ = self.backbone(images)
+                _ = forward_model_batch(
+                    self.backbone,
+                    images,
+                    doy=batch.get("doy") if isinstance(batch, dict) else None,
+                )
 
                 for li, n in enumerate(self.layer_names):
                     feat = self._process_feature(self._features[n])
@@ -467,34 +664,31 @@ class SegmentationProbe(nn.Module):
         logger.info("Cached features for %s samples.", masks_tensor.shape[0])
         return CachedFeaturesDataset(layer_tensors, masks_tensor)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *, doy: torch.Tensor | None = None) -> torch.Tensor:
         """Compute segmentation logits from input images.
 
         Args:
             x: ``(B, C, H, W)`` images or a ``(B, T, C, H, W)`` time series.
                 Each time step is encoded as an image before pooling features over ``T``.
                 This gives the head one map per sample.
+            doy: Optional image-aligned ordinal dates for date-aware backbones.
 
         Returns:
             Logits tensor of shape ``(B, num_classes, H, W)``.
         """
         input_h, input_w = x.shape[-2:]
+        self._validate_temporal_input(x)
         steps = 0
         if x.ndim == 5:
             batch, steps = x.shape[0], x.shape[1]
             x = x.reshape(batch * steps, *x.shape[2:])
 
-        if self.freeze_backbone:
-            self.backbone.eval()
-            use_amp = x.device.type == "cuda"
-            with torch.no_grad(), torch.autocast(device_type=x.device.type, enabled=use_amp):
-                _ = self.backbone(x)
-        else:
-            _ = self.backbone(x)
+        self._run_backbone(x, doy)
 
         features = [self._process_feature(self._features[n]) for n in self.layer_names]
         if steps:
             features = [self._pool_time(f, steps) for f in features]
+        check_finite_features(features)
         if self._anyup is not None:
             if steps:
                 raise ValueError("upsampler 'anyup' does not support time series inputs.")

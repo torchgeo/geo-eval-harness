@@ -6,27 +6,13 @@
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/geo-eval-harness.svg)](https://pypi.org/project/geo-eval-harness/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-A lightweight benchmarking framework for evaluating **frozen** geospatial
-foundation models on GeoBench V1/V2 and location encoders on CoordBench. Plug
-in a backbone or coordinate encoder and run consistent downstream probes through
-explicit CLI flags and strictly validated Pydantic YAML configuration.
+Evaluate geospatial image models and location encoders with classification, segmentation, and coordinate prediction tasks. Configure runs with CLI flags or validated YAML.
 
-- **Frozen-backbone evaluation** — KNN-5, L-BFGS logistic regression, and
-  linear / conv / FPN / DPT segmentation probes.
-- **GeoBench V1 + V2 built in** — classification and segmentation, RGB or
-  full multispectral / multi-modal stacks.
-- **CoordBench built in** — coordinate-only regression and classification with
-  random, spatial-block, and official holdouts.
-- **Config-driven** — sweep models, datasets, partitions, image sizes, and
-  bands without code changes.
-- **Resumable** — `--resume` skips already-computed `(dataset, method, model, …)` rows. Atomic CSV appends are safe across parallel jobs.
-- **Bring your own model** — copy
-  [`contrib_template.py`](src/geo_eval_harness/models/contrib_template.py),
-  implement `_forward_patch_features`, and add a one-file model config.
-  See the [Stage 1 guide](https://torchgeo.org/geo-eval-harness/user/eval_own_model.html)
-  for a full walkthrough, or the
-  [Stage 2 guide](https://torchgeo.org/geo-eval-harness/user/contribute_model.html)
-  to contribute the model back upstream.
+- Image classification uses frozen embeddings with KNN-5 or logistic regression.
+- Segmentation supports frozen backbones, LoRA, and full fine-tuning with linear, convolutional, FPN, DPT, UPerNet, and U-Net heads.
+- CoordBench evaluates location encoders with random, spatial-block, and official holdouts.
+- Runs append results to CSV files. `--resume` skips completed evaluations with matching configurations.
+- Custom image models implement `BenchModel._forward_patch_features`; custom location encoders implement `LocationEncoder._encode`. See the [custom model guide](https://torchgeo.org/geo-eval-harness/user/eval_own_model.html) and [contribution guide](https://torchgeo.org/geo-eval-harness/user/contribute_model.html).
 
 ## Installation
 
@@ -47,7 +33,7 @@ Linux x86_64 the install automatically includes GPU-accelerated FAISS KNN
 (CUDA 12, driver R525+, also works on GPU-less machines); other platforms get
 CPU FAISS.
 
-The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. Update imports, commands, and fully qualified `model.target` values when migrating from `torchgeo-bench`. Stored result CSVs and resume hashes remain usable without rewriting them. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
+The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
 
 ## Download a dataset
 
@@ -63,13 +49,17 @@ To download only the datasets needed for a run:
 geo-eval-harness download geobench_v1 --datasets m-eurosat
 ```
 
-V1 uses the pickle-free [JSON-metadata mirror](https://huggingface.co/datasets/calebrob6/geobenchv1-webdataset) under `data/classification_v1.0_wds/`, with a pinned revision and archive SHA-256 verification. Re-download existing pickle-based V1 caches; the readers no longer unpickle metadata.
+V1 uses the [JSON-metadata mirror](https://huggingface.co/datasets/calebrob6/geobenchv1-webdataset) under `data/classification_v1.0_wds/`, with a pinned revision and archive SHA-256 verification.
 
-V2 (classification + segmentation) and torchgeo's EuroSAT, RESISC45, and UC Merced downloaders work the same way, as do the AID and HOTOSM buildings Hugging Face rehosts (`geo-eval-harness download geobench_v2`, `geo-eval-harness download eurosat`, `geo-eval-harness download resisc45`, `geo-eval-harness download ucmerced`, `geo-eval-harness download hotosm_buildings`), plus the Open Cities building segmentation set (`geo-eval-harness download open_cities`) and torchgeo's OSCD as single-image post-change segmentation (`geo-eval-harness download oscd-post`; change labels CC BY-NC-SA). See the [documentation](https://torchgeo.org/geo-eval-harness/user/datasets.html) for all options.
+Download GeoBench V2 or an individual dataset by its catalog name:
 
-Hugging Face downloads (GeoBench V1 and V2, AID and HOTOSM buildings) use fixed commits and check every downloaded archive against a SHA-256 manifest in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). Missing, modified or, for GeoBench V2, unexpected archives are errors. Adding a pinned source takes a commit hash and one manifest file.
+```bash
+geo-eval-harness download geobench_v2
+geo-eval-harness download eurosat
+geo-eval-harness download openearthmap-sar
+```
 
-For standalone SAR segmentation, `geo-eval-harness download openearthmap-sar` installs the official DFC2025 Track I SAR images and labels (4,333 train / 210 validation / 490 test pairs, eight classes). Training RGB is excluded. See the [SAR example](docs/examples/openearthmap-sar-run.yaml) and [dataset protocol](https://torchgeo.org/geo-eval-harness/user/datasets.html#standalone-segmentation-openearthmap-sar).
+Hugging Face archive downloads use pinned commits and SHA-256 manifests in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). See the [dataset guide](https://torchgeo.org/geo-eval-harness/user/datasets.html) for download sources, splits, bands, and licenses.
 
 ## Run a basic experiment
 
@@ -82,15 +72,13 @@ geo-eval-harness datasets
 geo-eval-harness run --model timm/resnet50 --dataset m-eurosat
 ```
 
-The default device is `cuda:0`. On a machine without a working CUDA GPU (or if
-a GPU run crashes — see [troubleshooting](https://torchgeo.org/geo-eval-harness/user/troubleshooting.html)),
-fall back to CPU:
+The default device is `cuda:0`. Select CPU with `--device cpu`:
 
 ```bash
 geo-eval-harness run --model rcf --dataset m-eurosat --device cpu
 ```
 
-Results are appended to `results/models/<model name>.csv`, which **ship pre-populated with reference results**. To start from a clean slate, pass `--output results/my_run.csv` or set `output.file` in a YAML file passed with `--config`. Re-run the same command with `--resume` to skip completed rows. Each evaluation is saved as soon as it finishes, so a later failure does not discard completed metrics.
+Results are appended to `results/models/<model name>.csv`. The repository includes reference results; installing the package does not download them. Use `--output results/my_run.csv` or `output.file` in YAML to select a separate file. Re-run with `--resume` to skip completed rows whose configuration matches. Each evaluation is saved as it finishes.
 
 ```bash
 # Linear-only probing, with explicit flags overriding the YAML
@@ -100,15 +88,11 @@ geo-eval-harness run --config docs/examples/image-run.yaml --methods linear --de
 geo-eval-harness run --model rcf --dataset m-eurosat --dry-run
 ```
 
-See [`docs/examples/image-run.yaml`](docs/examples/image-run.yaml) for the image configuration
-fields and `run --config-help` for the JSON schema. Omitted settings inherit
+The `docs/examples/` paths refer to a repository checkout. For an installed package, save a linked example locally and pass its path to `--config`. See [`image-run.yaml`](docs/examples/image-run.yaml) for an image configuration and `run --config-help` for the JSON schema. Omitted settings inherit
 model and dataset defaults; explicit YAML values override them, and supplied
 flags override YAML. This includes explicit `false`, `null`, and `[]`.
 
-`geo-eval-harness`, `python -m geo_eval_harness`, and
-`python -m geo_eval_harness.cli` expose the same commands. The old `key=value`
-and `+key=value` overrides are **rejected**; migrate scripts to flags or YAML.
-There is no separate legacy configuration entry point.
+`geo-eval-harness`, `python -m geo_eval_harness`, and `python -m geo_eval_harness.cli` expose the same commands.
 
 ## Measure encoder cost
 
@@ -146,11 +130,9 @@ python -m geo_eval_harness download aid
 python experiments/run_handcrafted.py
 ```
 
-Future sweeps include ImageStats as level 0 and every classification protocol in the current dataset catalog, including AID, multilabel datasets and EuroSAT's spatial split. They use all bands with identity input normalization, otherwise retaining the normal 224px resize, KNN-5, validation-selected C, train-plus-validation final refit, and 200 bootstrap draws.
+The sweep includes ImageStats as level 0 and every classification protocol in the current dataset catalog, including AID, multilabel datasets and EuroSAT's spatial split. It uses all bands with identity input normalization, with 224-pixel resizing, KNN-5, validation-selected C, train-plus-validation final refit, and 200 bootstrap draws.
 
-Results go to separate `results/models/handcrafted_level*.csv` files and `imagestats_handcrafted_control.csv`. Feature lists and completion status are saved under `outputs/handcrafted/`. Resume skips matching completed rows; a missing linear or KNN result is still reported as a failure. Summaries, including `--report-only`, select only rows matching the current configuration and requested devices, so historical hashes are not mixed into new comparisons.
-
-The checked-in CSVs are unchanged historical measurements on 13 protocols from the original handcrafted study, not measurements of the current runner; they contain no AID results. Their recorded numbers and configuration hashes are preserved. Current runs use the current configuration hash and do not treat these historical rows as completed work. Use `--output-dir results/handcrafted-current` to keep a new sweep separate.
+Results go to `results/models/handcrafted_level*.csv` and `imagestats_handcrafted_control.csv`. Feature lists and completion status are saved under `outputs/handcrafted/`. Resume skips matching completed rows; a missing linear or KNN result is reported as a failure. Summaries, including `--report-only`, select rows matching the requested configuration and devices. Use `--output-dir results/handcrafted-current` to keep a sweep separate.
 
 Use `--levels 1 2`, `--datasets eurosat resisc45`, or `--dry-run` for a smaller run. The extractor also works through the normal CLI:
 
@@ -208,14 +190,13 @@ and the runnable
 
 ## Citation
 
-If you use this framework, please cite it (once the `geo-eval-harness` paper is
-available):
+To cite the software:
 
 ```bibtex
 @misc{geoevalharness,
   title  = {geo-eval-harness: A lightweight benchmarking framework for geospatial foundation models},
   author = {geo-eval-harness Contributors},
-  year   = {TBD},
+  year   = {2026},
   note   = {Software},
   url    = {https://github.com/torchgeo/geo-eval-harness}
 }

@@ -53,6 +53,10 @@
     .tabulator .tabulator-col .tabulator-col-title { white-space: normal; text-overflow: clip; font-size: 12px; line-height: 1.25; }
     .tabulator-cell.column-best { font-weight: 700; }
     .overall-ci { display: block; color: var(--muted); font-size: 11px; line-height: 1.3; }
+    .seed-sd { display: block; color: var(--muted); font-size: 10px; font-weight: 400; line-height: 1.3; }
+    .tabulator-cell.on-dark .seed-sd { color: inherit; opacity: .85; }
+    .control[hidden] { display: none; }
+    .control.toggle label.inline { display: flex; gap: 6px; align-items: center; min-height: 33px; color: var(--text); font: 14px/1 Inter, sans-serif; letter-spacing: 0; text-transform: none; }
     .sort-status { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; margin: 8px 0 0; color: var(--muted); font: 12px/1.5 Inter, sans-serif; }
     .sort-status button { padding: 2px 8px; color: var(--blue); background: var(--white); border: 1px solid var(--rule); border-radius: 2px; cursor: pointer; font: 600 12px/1.4 Inter, sans-serif; }
     .sort-status button:hover { color: var(--claret); border-color: var(--claret); }
@@ -102,16 +106,22 @@
     <ul class="intro-list">
       <li><strong>Aggregation</strong> sets how the per-dataset scores are combined into a single number.</li>
       <li><strong>Task</strong> switches between classification (per-image label) and segmentation (per-pixel mIoU) benchmarks.</li>
-      <li><strong>Probe</strong> sets how frozen embeddings become predictions: a fitted linear classifier or KNN-5 for classification, or a linear/DPT/FPN/conv-block decoder head for segmentation.</li>
-      <li><strong>Bands</strong> sets the input modality for the backbone that configures the required bands and order, either RGB or the available multispectral channels.</li>
+      <li><strong>Probe</strong> sets how frozen embeddings become predictions for classification: a fitted linear classifier or KNN-5.</li>
+      <li>For segmentation, <strong>Adaptation</strong> sets what trains with the decoder (frozen backbone, LoRA, or full fine-tuning), <strong>Decoder</strong> the head (UPerNet or U-Net), and <strong>Pyramid</strong> how the multi-scale features are built (the backbone's native features, a ViT neck, or AnyUp upsampling). Each dataset uses its canonical training protocol; <strong>Show variants</strong> adds the other epoch and backbone learning-rate setups. Cells are the mean over seeds, with the standard deviation and seed count underneath.</li>
+      <li><strong>Bands</strong> sets the input modality for the backbone that configures the required bands and order, either RGB or the available multispectral channels. For segmentation, <strong>Native bands</strong> ranks each model on its own input bands per dataset (RGB, multispectral or SAR), merging a model's per-modality configurations; the <strong>Default</strong> pyramid is each model's own (native features or ViT neck).</li>
     </ul>
-    <p class="intro">Each setting is a separate experiment rather than a filter applied to one result, so the table can reorder when you change one of them. A model is ranked only when it has a result on every eligible dataset in the selected view, and the models that fall short are named below the table. The <a href="../user/ranking_explorer.html">evaluation setup</a> documents the protocol, the coverage rules, and how each aggregation is computed.</p>
+    <p class="intro">Each setting is a separate experiment rather than a filter applied to one result, so the table can reorder when you change one of them. A model is ranked only when it has a result on every eligible dataset in the selected view, and the models that fall short are named below the table. Native-bands segmentation views are the exception: each model is ranked on the datasets it has, and the Datasets column shows how many. The <a href="../user/ranking_explorer.html">evaluation setup</a> documents the protocol, the coverage rules, and how each aggregation is computed.</p>
     <p class="feedback">If a result looks wrong, is missing, or seems implausible, please <a href="https://github.com/torchgeo/geo-eval-harness/issues" target="_blank" rel="noopener">open an issue</a> with the model, the view you were looking at, and any supporting evidence. General feedback is of course welcome too.</p>
 
     <section class="controls" aria-label="Ranking controls">
       <div class="control aggregation"><label for="sel-aggregation">Aggregation</label><select id="sel-aggregation"></select></div>
       <div class="control"><label for="sel-task">Task</label><select id="sel-task"></select></div>
-      <div class="control"><label for="sel-probe">Probe</label><select id="sel-probe"></select></div>
+      <div class="control" id="ctl-probe"><label for="sel-probe">Probe</label><select id="sel-probe"></select></div>
+      <div class="control seg-control" hidden><label for="sel-adaptation">Adaptation</label><select id="sel-adaptation"></select></div>
+      <div class="control seg-control" hidden><label for="sel-decoder">Decoder</label><select id="sel-decoder"></select></div>
+      <div class="control seg-control" hidden><label for="sel-pyramid">Pyramid</label><select id="sel-pyramid"></select></div>
+      <div class="control seg-control toggle" hidden><label>Variants</label><label class="inline" for="chk-variants"><input type="checkbox" id="chk-variants"> Show variants</label></div>
+      <div class="control seg-control" id="ctl-protocol" hidden><label for="sel-protocol">Protocol</label><select id="sel-protocol"></select></div>
       <div class="control"><label for="sel-bands">Bands</label><select id="sel-bands"></select></div>
     </section>
 
@@ -155,10 +165,17 @@
 
     const AGGREGATION_LABELS = {avg_rank: "Average rank", elo: "ELO", improvability: "Improvability"};
     const TASK_LABELS = {classification: "Classification", segmentation: "Segmentation"};
-    const PROBE_LABELS = {
-      linear: "Linear probe", knn5: "KNN-5",
-      "seg-linear": "Linear probe", "seg-dpt": "DPT", "seg-fpn": "FPN", "seg-conv_block": "Conv block",
+    const PROBE_LABELS = {linear: "Linear probe", knn5: "KNN-5"};
+    // Segmentation probes are "<adaptation>/<decoder>/<pyramid>/<protocol>" keys.
+    const SEG_AXES = ["adaptation", "decoder", "pyramid", "protocol"];
+    const SEG_LABELS = {
+      adaptation: {frozen: "Frozen", lora: "LoRA", full: "Full fine-tuning"},
+      decoder: {upernet: "UPerNet", unet: "U-Net", patch_linear: "Patch linear"},
+      pyramid: {default: "Default (native or ViT neck)", native: "Native", vit: "ViT neck", anyup: "AnyUp"},
+      protocol: {canonical: "Canonical"},
     };
+    const BAND_LABELS = {RGB: "RGB", Multispectral: "Multispectral", Native: "Native bands"};
+    const SEG_VARIANT_LABELS = {epochs: value => `${value} epochs`, backbone_lr: value => `backbone LR ${value}`, head_lr: value => `head LR ${value}`};
     const AGGREGATION_PROSE = {
       avg_rank: "Average rank first orders the models separately on each dataset by the performance metric, then averages each model's per-dataset rank into a final ranking. Because only the ordering matters, a narrow win counts the same as a wide one, and datasets with different score ranges carry equal weight in the average. The best possible score is 1.",
       elo: "ELO treats every dataset as a round of head-to-head comparisons, where the model with the higher raw score wins the pairing. Wins and losses across all datasets are pooled into a single rating, and the displayed interval is a bootstrapped 95% confidence interval around it.",
@@ -170,19 +187,49 @@
       aggregation: document.getElementById("sel-aggregation"),
       task: document.getElementById("sel-task"),
       probe: document.getElementById("sel-probe"),
+      adaptation: document.getElementById("sel-adaptation"),
+      decoder: document.getElementById("sel-decoder"),
+      pyramid: document.getElementById("sel-pyramid"),
+      protocol: document.getElementById("sel-protocol"),
       bandclass: document.getElementById("sel-bands"),
     };
-    const state = {...DEFAULT_SLICE, hoveredModel: null};
+    const variantsToggle = document.getElementById("chk-variants");
+    const state = {...DEFAULT_SLICE, showVariants: false, hoveredModel: null};
     let table = null;
 
     function labelView(view) {
-      return `${view.task} · ${view.probe} · ${view.bandclass}`;
+      return `${view.task} · ${probeLabel(view.probe)} · ${BAND_LABELS[view.bandclass] || view.bandclass}`;
+    }
+
+    function parseSegProbe(probe) {
+      const parts = probe.split("/");
+      return parts.length === SEG_AXES.length ? Object.fromEntries(SEG_AXES.map((axis, index) => [axis, parts[index]])) : null;
+    }
+
+    function protocolLabel(protocol) {
+      if (protocol === "canonical") return SEG_LABELS.protocol.canonical;
+      return protocol.split(",").map(part => {
+        const [key, value] = part.split("=");
+        return SEG_VARIANT_LABELS[key] ? SEG_VARIANT_LABELS[key](value) : part;
+      }).join(", ");
+    }
+
+    function segAxisLabels(axis, options) {
+      if (axis === "protocol") return Object.fromEntries(options.map(option => [option, protocolLabel(option)]));
+      return SEG_LABELS[axis];
+    }
+
+    function probeLabel(probe) {
+      const seg = parseSegProbe(probe);
+      if (!seg) return PROBE_LABELS[probe] || probe;
+      const parts = ["adaptation", "decoder", "pyramid"].map(axis => SEG_LABELS[axis][seg[axis]] || seg[axis]);
+      if (seg.protocol !== "canonical") parts.push(protocolLabel(seg.protocol));
+      return parts.join(" · ");
     }
 
     function labelViewLines(view) {
       const task = TASK_LABELS[view.task] || view.task;
-      const probe = PROBE_LABELS[view.probe] || view.probe;
-      return [task, probe, view.bandclass];
+      return [task, probeLabel(view.probe), BAND_LABELS[view.bandclass] || view.bandclass];
     }
 
     function values(object) {
@@ -206,15 +253,38 @@
       state.task = fillSelect(controls.task, tasks, state.task, TASK_LABELS);
       controls.task.disabled = tasks.length < 2;
       const probes = values(RANKINGS[state.task]);
-      state.probe = fillSelect(controls.probe, probes, state.probe, PROBE_LABELS);
+      const segProbes = probes.map(parseSegProbe);
+      const isSeg = segProbes.length > 0 && segProbes.every(Boolean);
+      document.getElementById("ctl-probe").hidden = isSeg;
+      document.querySelectorAll(".seg-control").forEach(control => { control.hidden = !isSeg; });
+      if (isSeg) {
+        // Cascade adaptation -> decoder -> pyramid -> protocol over the populated views.
+        const anyCanonical = segProbes.some(seg => seg.protocol === "canonical");
+        let candidates = segProbes.filter(seg => state.showVariants || !anyCanonical || seg.protocol === "canonical");
+        SEG_AXES.forEach(axis => {
+          const options = [...new Set(candidates.map(seg => seg[axis]))];
+          state[axis] = fillSelect(controls[axis], options, state[axis], segAxisLabels(axis, options));
+          candidates = candidates.filter(seg => seg[axis] === state[axis]);
+        });
+        document.getElementById("ctl-protocol").hidden = !state.showVariants;
+        variantsToggle.checked = state.showVariants;
+        state.probe = SEG_AXES.map(axis => state[axis]).join("/");
+      } else {
+        state.probe = fillSelect(controls.probe, probes, state.probe, PROBE_LABELS);
+      }
       const bands = values(RANKINGS[state.task][state.probe]);
-      state.bandclass = fillSelect(controls.bandclass, bands, state.bandclass);
+      state.bandclass = fillSelect(controls.bandclass, bands, state.bandclass, BAND_LABELS);
       const aggregations = values(RANKINGS[state.task][state.probe][state.bandclass]);
       state.aggregation = fillSelect(controls.aggregation, aggregations, state.aggregation, AGGREGATION_LABELS);
     }
 
     function block() {
       return RANKINGS[state.task][state.probe][state.bandclass][state.aggregation];
+    }
+
+    function escapeHTML(value) {
+      const entities = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
+      return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
     }
 
     // Pinned to en-US so the separators never flip with the reader's locale: a
@@ -291,13 +361,15 @@
       const datasetNames = Object.keys(data.rows[0]?.per_task || {});
       const datasetMeta = data.dataset_meta || {};
       const ranges = Object.fromEntries(datasetNames.map(dataset => {
-        const scores = data.rows.map(row => row.per_task[dataset]);
+        // Native-bands views rank models on the datasets they have; a missing cell is null.
+        const scores = data.rows.map(row => row.per_task[dataset]).filter(value => value !== null && value !== undefined);
         return [dataset, [Math.min(...scores), Math.max(...scores)]];
       }));
       // The payload arrives in aggregation order, so the position is fixed here and
       // travels with the model when the reader sorts by something else.
       const rows = data.rows.map((row, index) => ({...row, rank: index + 1}));
       const hasInterval = rows.some(row => row.overall_ci);
+      const partial = data.coverage === "partial";
       const columns = [
         {title: "#", field: "rank", width: 46, hozAlign: "right", headerSort: false},
         {title: "Model", field: "display", minWidth: 195, sorter: "string"},
@@ -308,19 +380,34 @@
           const ci = row.overall_ci ? `<span class="overall-ci">[${formatOverall(row.overall_ci[0], data.overall_meta)}, ${formatOverall(row.overall_ci[1], data.overall_meta)}]</span>` : "";
           return `${formatOverall(cell.getValue(), data.overall_meta)}${ci}`;
         }},
+        ...(partial ? [{title: "Datasets", field: "n_tasks", width: 84, hozAlign: "right", sorter: "number",
+          headerTooltip: "Datasets this model is ranked on"}] : []),
         ...datasetNames.map(dataset => ({
-          title: datasetMeta[dataset]?.label || dataset,
-          headerTooltip: `${dataset} — ${datasetMeta[dataset]?.metric || "score"}`,
+          title: escapeHTML(datasetMeta[dataset]?.label || dataset),
+          headerTooltip: `${escapeHTML(dataset)} — ${escapeHTML(datasetMeta[dataset]?.metric || "score")}`,
           field: `per_task.${dataset}`, width: 84, hozAlign: "right",
           sorter: "number", headerSortStartingDir: "desc",
           formatter(cell) {
             const value = cell.getValue(), [min, max] = ranges[dataset];
-            const fraction = max === min ? 1 : (value - min) / (max - min);
             const element = cell.getElement();
+            if (value === null || value === undefined) {
+              element.style.backgroundColor = "";
+              element.classList.remove("on-dark", "column-best");
+              element.title = "No result for this model on this dataset";
+              return "—";
+            }
+            const fraction = max === min ? 1 : (value - min) / (max - min);
             element.style.backgroundColor = heatColor(fraction);
             element.classList.toggle("on-dark", fraction >= ON_DARK_FRACTION);
             element.classList.toggle("column-best", value === max);
-            return formatFixed(value);
+            const row = cell.getRow().getData();
+            const n = row.per_task_n?.[dataset] ?? 1;
+            element.title = "";
+            if (n <= 1) return formatFixed(value);
+            const sd = row.per_task_sd?.[dataset];
+            element.title = `Mean of ${n} seeds${sd === null || sd === undefined ? "" : ` ± ${formatFixed(sd)} sd`}`;
+            const spread = sd === null || sd === undefined ? "" : `±${formatFixed(sd)} `;
+            return `${formatFixed(value)}<span class="seed-sd">${spread}n=${n}</span>`;
           },
         })),
       ];
@@ -339,10 +426,14 @@
       setHoveredModel(state.hoveredModel);
     }
 
-    function renderExcluded(excluded) {
+    function renderExcluded(excluded, data) {
       const target = document.getElementById("excluded");
+      if (data.coverage === "partial") {
+        target.textContent = "Native bands: every model is ranked on the datasets it has (a dash marks a missing one). Average rank ranks the models that have a dataset among themselves (ties share the best rank) and averages each model's ranks over its own datasets; where two configurations of a model cover a dataset, the better one counts. ELO needs a complete score matrix and is not offered here.";
+        return;
+      }
       if (!excluded.length) { target.textContent = "All observed models have complete quality coverage for this view."; return; }
-      const items = excluded.map(row => `<li>${row.display || row.model} (${row.n_tasks} datasets)</li>`).join("");
+      const items = excluded.map(row => `<li>${escapeHTML(row.display || row.model)} (${formatNumber(row.n_tasks, 0)} datasets)</li>`).join("");
       target.innerHTML = `<strong>Excluded models: incomplete quality coverage.</strong><ul>${items}</ul>`;
     }
 
@@ -524,7 +615,7 @@
       const target = document.getElementById("compute-scatter"), omitted = document.getElementById("omitted-compute");
       const points = data.rows.filter(row => Number(row.gflops_backbone) > 0);
       const absent = data.rows.filter(row => !(Number(row.gflops_backbone) > 0)).map(row => row.display);
-      omitted.textContent = absent.length ? `Omitted from the log-scale chart because GFLOPs are zero or unmeasured: ${absent.join(", ")}.` : "All seated models have positive measured GFLOPs.";
+      omitted.textContent = data.coverage === "partial" ? "Native-bands views mix input bands per model, so no single compute measurement applies." : absent.length ? `Omitted from the log-scale chart because GFLOPs are zero or unmeasured: ${absent.join(", ")}.` : "All seated models have positive measured GFLOPs.";
       const direction = data.overall_meta.direction, title = data.overall_meta.label;
       document.getElementById("scatter-copy").textContent = `Measured backbone GFLOPs at 224-pixel input (log scale) versus ${title}. The vertical direction is always the same: better is higher and worse is lower.`;
       if (!points.length) { target.innerHTML = '<p class="empty">No seated model has positive measured backbone GFLOPs.</p>'; return; }
@@ -550,8 +641,8 @@
       const positionedPoints = points.map((row, index) => ({row, index, x: xScale(Number(row.gflops_backbone)), y: yScale(Number(row.overall))}));
       positionedPoints.forEach(({row, x, y}) => {
         const point = svgElement("circle", {cx: x, cy: y, r: 5.5, class: `scatter-point ${state.hoveredModel === row.model ? "hovered" : ""}`, "data-model": row.model, tabindex: "0"});
-        const tooltip = `<strong>${row.display}</strong><br>${formatNumber(row.gflops_backbone)} GFLOPs<br>${data.overall_meta.label}: ${formatOverall(row.overall, data.overall_meta)}`;
-        point.appendChild(svgElement("title", {}, tooltip.replace(/<[^>]+>/g, " ")));
+        const tooltip = `<strong>${escapeHTML(row.display)}</strong><br>${formatNumber(row.gflops_backbone)} GFLOPs<br>${escapeHTML(data.overall_meta.label)}: ${formatOverall(row.overall, data.overall_meta)}`;
+        point.appendChild(svgElement("title", {}, `${row.display} — ${formatNumber(row.gflops_backbone)} GFLOPs; ${data.overall_meta.label}: ${formatOverall(row.overall, data.overall_meta)}`));
         point.addEventListener("mouseenter", event => { setHoveredModel(row.model); showTooltip("scatter-tooltip", event, tooltip); });
         point.addEventListener("mousemove", event => showTooltip("scatter-tooltip", event, tooltip));
         point.addEventListener("mouseleave", () => { setHoveredModel(null); hideTooltip("scatter-tooltip"); });
@@ -570,15 +661,17 @@
     function render() {
       populateControls();
       const data = block();
-      document.getElementById("aggregation-copy").textContent = `${data.overall_meta.label}: ${data.overall_meta.direction.replaceAll("-", " ")}. The table reorders complete model rows and retains their raw per-dataset scores.`;
+      const rowsCopy = data.coverage === "partial" ? "The table ranks each model on the datasets it has and retains their raw per-dataset scores." : "The table reorders complete model rows and retains their raw per-dataset scores.";
+      document.getElementById("aggregation-copy").textContent = `${data.overall_meta.label}: ${data.overall_meta.direction.replaceAll("-", " ")}. ${rowsCopy}`;
       renderAggregationProse();
       renderTable(data);
-      renderExcluded(data.excluded);
+      renderExcluded(data.excluded, data);
       renderSensitivity();
       renderScatter(data);
     }
 
     Object.entries(controls).forEach(([key, select]) => select.addEventListener("change", () => { state[key] = select.value; state.hoveredModel = null; render(); }));
+    variantsToggle.addEventListener("change", () => { state.showVariants = variantsToggle.checked; state.hoveredModel = null; render(); });
     if (Object.keys(RANKINGS).length) render();
   </script>
 </body>

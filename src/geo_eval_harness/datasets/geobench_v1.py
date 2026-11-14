@@ -127,7 +127,11 @@ class GeoBenchv1(Dataset):
 
 
 class _V1Dataset(BenchDataset):
-    """Load GeoBench V1 splits for wrappers that declare dataset metadata."""
+    """Load GeoBench V1 splits for wrappers that declare dataset metadata.
+
+    ``class_names`` copy each dataset's ``task_specs.pkl`` from the original
+    ``recursix/geo-bench-1.0`` release, whose order matches the stored labels.
+    """
 
     supports_partitions = True
 

@@ -1,0 +1,259 @@
+{
+  "artifacts_s3": "s3://ftw-outlines-676206917878/experiments/geo-eval-harness/segmentation-compute-20261112-v1-highmem/",
+  "backend_version_sets": [
+    {
+      "olmoearth-pretrain-minimal": "0.0.6",
+      "terratorch": "1.2.13",
+      "timm": "1.0.27",
+      "torch": "2.14.1",
+      "torchgeo": "0.10.1",
+      "transformers": "5.17.0"
+    },
+    {
+      "olmoearth-pretrain-minimal": "0.1.5",
+      "terratorch": "1.2.13",
+      "timm": "1.0.27",
+      "torch": "2.14.1",
+      "torchgeo": "0.10.1",
+      "transformers": "5.17.0"
+    }
+  ],
+  "baseline_commit": "f67a8916ebd7b9e7b1669eacb10c5c75eed70200",
+  "benchmark_names": 143,
+  "benchmark_names_measured": 143,
+  "cell_status_counts": {
+    "measured": 2708,
+    "oom": 6,
+    "unsupported_bands": 156,
+    "unsupported_modality": 24
+  },
+  "combined_data_sha256": "aad750f665c8ec5073a521455698806145b259aa9f625227897a10ebc3a06f03",
+  "combined_rows": 3216,
+  "data_sha256": "da95509a4a277a5a0e11f87c94a8fc79c42aead34331b29bddbfec5f519a1232",
+  "flops_convention": "One multiply-add is two operations; registered PyTorch operators only; coverage unverified.",
+  "generated_at": "2026-11-12T19:32:02.836292+00:00",
+  "gpu_names": [
+    "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+  ],
+  "hardware": {
+    "default_math_policy": {
+      "cuda_matmul_allow_tf32": false,
+      "cudnn_allow_tf32": true,
+      "cudnn_benchmark": false,
+      "torch_float32_matmul_precision": "highest"
+    },
+    "driver_version": "595.112.07",
+    "gpu_count": 2,
+    "gpu_memory_mib_each": 97887,
+    "instance_type": "g7e.12xlarge",
+    "region": "us-west-2",
+    "torch_cuda_version": "13.0",
+    "worker_policy": "one sequential worker per GPU"
+  },
+  "historical_data_sha256": "dbc03546708747ab24991d23c80688b6647a869572005c276e0357ca58df9565",
+  "historical_rows_preserved": 508,
+  "maximum_peak_gpu_mem_gib": 62.86681032180786,
+  "measurement_window_utc": {
+    "first": "2026-11-12T16:23:25+00:00",
+    "last": "2026-11-12T19:28:30+00:00"
+  },
+  "missing_benchmark_names": [],
+  "missing_segmentation_benchmark_names": [],
+  "model_presets_measured": 152,
+  "olmoearth_v1_3": {
+    "backend_version": "0.1.5",
+    "implementation_commit": "b2b7989e362841164c74005dd21ffa46df0c39f4",
+    "pull_request": 566,
+    "runtime_only": true
+  },
+  "postprocessing": {
+    "clay_v1_identifiers": {
+      "changed_compute_rows": 60,
+      "input_combined_sha256": "05482973d0a00e0a6b671f8690c10b773ffb2ca139c047b5fa0b9186459b7d22",
+      "mapping": {
+        "terratorch/clay_v1_5": "terratorch/clay_v1",
+        "terratorch/clay_v1_5_cls": "terratorch/clay_v1_cls",
+        "tt_clay_v1_5_base": "tt_clay_v1_base",
+        "tt_clay_v1_5_base_cls": "tt_clay_v1_base_cls"
+      },
+      "metrics_and_run_hashes_modified": false,
+      "output_combined_sha256": "aad750f665c8ec5073a521455698806145b259aa9f625227897a10ebc3a06f03"
+    },
+    "historical_measurement_variant": "legacy_unverified",
+    "measured_metrics_modified": false,
+    "measurement_variant_column": "labels catalog settings versus AnySat 80 m S2 classification reference",
+    "physical_patch_models_with_n_tokens_omitted": [
+      "anysat_base",
+      "anysat_base_seg",
+      "universat_base",
+      "universat_base_dense",
+      "universat_base_seg"
+    ],
+    "preset_name_corrections": [
+      {
+        "from": "tt_terramind_v1_base",
+        "model_preset": "terratorch/terramind_v1_base_rgb",
+        "rows": 12,
+        "to": "tt_terramind_v1_base_rgb"
+      },
+      {
+        "from": "tt_terramind_v1_large",
+        "model_preset": "terratorch/terramind_v1_large_rgb",
+        "rows": 12,
+        "to": "tt_terramind_v1_large_rgb"
+      }
+    ]
+  },
+  "postprocessing_scripts": {
+    "audit.py": {
+      "artifact_path": "postprocessing/audit.py",
+      "sha256": "b73dbfe5bde8580b1a6d76e39e6f6b68cf23db68fef931dea37c197236c029eb"
+    },
+    "curate.py": {
+      "artifact_path": "postprocessing/curate.py",
+      "sha256": "f215362d12309dc60488d4e0f6e1dce6d8f2f0dc4af5c7010e7261bb6864e6f8"
+    },
+    "finalize.py": {
+      "artifact_path": "postprocessing/finalize.py",
+      "sha256": "82f4ba215dd3fe9862f62bee4e52eed762532bac2afbdc67c088598cdb790911"
+    }
+  },
+  "protocol": {
+    "anysat_classification_reference_patch_size_m": 80,
+    "anysat_default_classification_oom_recorded": true,
+    "default_image_sizes": [
+      224,
+      256,
+      512
+    ],
+    "earthloc_sizes": [
+      320
+    ],
+    "heads": [
+      "linear",
+      "upernet",
+      "unet"
+    ],
+    "measurements": 20,
+    "panopticon_sizes": [
+      224,
+      252,
+      518
+    ],
+    "precision": "float32",
+    "segmentation_classes": 4,
+    "synthetic_gsd": "native sensor GSD",
+    "timing_batch_size": 1,
+    "warmup": 5
+  },
+  "requested_cells": 2894,
+  "runtime_manifests": {
+    "base-environment.final.json": {
+      "artifact_path": "environment/base-environment.final.json",
+      "sha256": "c4dbb735f96bc4c0aa7fdd67fcd043d5f677ee9e10f8ba0cd781c687dcf88066"
+    },
+    "olmo3-environment.final.json": {
+      "artifact_path": "environment/olmo3-environment.final.json",
+      "sha256": "1aacfeae9339f43bc51ceceecde77357e88aca12a821381bdd202e41f2af6f6b"
+    },
+    "weight-cache-manifest.json": {
+      "artifact_path": "environment/weight-cache-manifest.json",
+      "sha256": "c9da01bc45b92bb03177c516834116475d1231d7a8afe118be1433e3eebfa9d0"
+    }
+  },
+  "segmentation_benchmark_names": 83,
+  "segmentation_benchmark_names_measured": 83,
+  "segmentation_rows": 1860,
+  "source_archives": [
+    {
+      "baseline_commit": "f67a8916ebd7b9e7b1669eacb10c5c75eed70200",
+      "bundle_sha256": "11cf5a97311e67ce64af99e8892496ef3a28e6607b238c01ebe48f9dbdae2b8e",
+      "filename": "runtime-source-v4.tar.gz",
+      "local_profiling_changes": true,
+      "olmoearth_v1_3_implementation_commit": "b2b7989e362841164c74005dd21ffa46df0c39f4",
+      "runtime_only_model_overlay": true,
+      "source_hash": "568f1c8c1a11e9a472466f1ee3e9bf1262994669385766c12a26d8acf298e628"
+    },
+    {
+      "baseline_commit": "f67a8916ebd7b9e7b1669eacb10c5c75eed70200",
+      "bundle_sha256": "fa3e3953c589ca9b75f0ead6514732ced9f463a7f18a9a25566b6c2a1bbf23c4",
+      "filename": "runtime-source-v5.tar.gz",
+      "local_profiling_changes": true,
+      "olmoearth_v1_3_implementation_commit": "b2b7989e362841164c74005dd21ffa46df0c39f4",
+      "profiler_package_unchanged_from": "runtime-source-v4.tar.gz",
+      "runtime_only_model_overlay": true,
+      "source_hash": "568f1c8c1a11e9a472466f1ee3e9bf1262994669385766c12a26d8acf298e628",
+      "synthetic_gsd": "native sensor GSD for AnySat and UniverSat"
+    },
+    {
+      "baseline_commit": "f67a8916ebd7b9e7b1669eacb10c5c75eed70200",
+      "bundle_sha256": "bf540101fa1eee357d63af7591dad96d661d077152f7144128b5408ee3b180b3",
+      "filename": "runtime-source-v9.tar.gz",
+      "local_profiling_changes": true,
+      "olmoearth_v1_3_implementation_commit": "b2b7989e362841164c74005dd21ffa46df0c39f4",
+      "repairs": [
+        "timm dynamic window padding",
+        "Clay positional-grid construction",
+        "DINOv3 ViT-Large segmentation taps",
+        "Panopticon patch-aligned input sizes",
+        "physical patch-size metadata",
+        "resolution and hardware-aware result joins",
+        "EarthLoc native 320-pixel spatial aggregation",
+        "TerraFM forward interpolation with unchanged learned position weights"
+      ],
+      "runtime_only_model_overlay": true,
+      "source_hash": "4e6aa38e4e5f9ea508856de97733734673d4390ec8b17c70ed61b2796312f821",
+      "synthetic_gsd": "native sensor GSD for AnySat and UniverSat"
+    }
+  ],
+  "source_hashes": [
+    "4e6aa38e4e5f9ea508856de97733734673d4390ec8b17c70ed61b2796312f821",
+    "568f1c8c1a11e9a472466f1ee3e9bf1262994669385766c12a26d8acf298e628"
+  ],
+  "validated_rows": 2708,
+  "validation": {
+    "data_checks": [
+      "finite FLOPs, timing, memory and parameters",
+      "recorded class and input channel counts",
+      "float32 batch 1, warmup 5, measurements 20",
+      "unique exact configuration identities",
+      "decoder feature geometry",
+      "classification and segmentation FLOP decomposition",
+      "matching independently counted backbone FLOPs across heads",
+      "nondecreasing FLOPs with image size",
+      "unchanged decoder parameters with image size"
+    ],
+    "pytest": {
+      "command": "uv run python outputs/segmentation-compute-20261112/run_pytest.py",
+      "deselected": 211,
+      "log_sha256": "d3fc359a791032e0678fe48c63e367381ef85ba70496ee201e5655a80aa6081e",
+      "passed": 3013,
+      "seconds": 342.09,
+      "skipped": 69,
+      "test_server_adjustment": "ThreadingHTTPServer listen backlog 128 for concurrent local HTTP fixtures on macOS",
+      "warnings": 23
+    }
+  },
+  "weights": {
+    "sam3": {
+      "filename": "model.safetensors",
+      "repository": "facebook/sam3",
+      "revision": "3c879f39826c281e95690f02c7821c4de09afae7",
+      "sha256": "6d06f0a5f84e435071fe6603e61d0b4cc7b40e0d39d487cfd4d67d8cc11cc14a"
+    },
+    "terrafm": {
+      "filename": "TerraFM-B.pth",
+      "repository": "MBZUAI/TerraFM",
+      "revision": "3631173fec2c3a445a71e15985e0f3d5aaf4ecb3",
+      "sha256": "8bdb6a4cfd707a09d79f4790119daa9d76bb316b6ea756c6eb305f99d1797a06"
+    }
+  },
+  "zero_registered_backbone_flops_presets": [
+    "handcrafted",
+    "handcrafted_level1",
+    "handcrafted_level2",
+    "handcrafted_level3",
+    "imagestats",
+    "imagestats_handcrafted_control"
+  ]
+}

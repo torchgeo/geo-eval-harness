@@ -48,7 +48,9 @@ from geo_eval_harness.results import (
     bootstrap_accuracy,
     bootstrap_map,
     bootstrap_miou,
+    format_setup_value,
     model_results_path,
+    segmentation_setup_columns,
 )
 from geo_eval_harness.resume import (
     KEY_COLS,
@@ -60,12 +62,18 @@ from geo_eval_harness.resume import (
     plan_dataset_run,
     resume_config_hash,
 )
-from geo_eval_harness.utils import FeatureSplit, FeatureSplits, extract_features
+from geo_eval_harness.utils import (
+    FeatureSplit,
+    FeatureSplits,
+    extract_features,
+    standardize_features,
+)
 
 if TYPE_CHECKING:
-    import geo_eval_harness.segmentation_task
     from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.datasets.sample_cache import DeviceBatchLoader
     from geo_eval_harness.epoch_metrics import EpochMetricsWriter
+    from geo_eval_harness.segmentation_task import EpochRecord, SegmentationSolver, SegMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -109,12 +117,13 @@ class LoaderSplits:
 class SegmentationOutcome(NamedTuple):
     """Test metrics and training summary from :func:`evaluate_segmentation`."""
 
-    metrics: "geo_eval_harness.segmentation_task.SegMetrics"
+    metrics: "SegMetrics"
     feature_dim: int
     lr: float | None
     batch_size: int | None
     best_epoch: int | None
     best_val_miou: float | None
+    weight_decay: float | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -571,9 +580,13 @@ def evaluate_profile(
     profile_cfg = cfg.profile
     n_warmup, n_measure = profile_cfg.n_warmup, profile_cfg.n_measure
     cpu_cfg = profile_cfg.cpu_throughput
-    sample = next(iter(sample_loader))["image"].to(device)
+    batch = next(iter(sample_loader))
+    sample = batch["image"].to(device)
+    doy = batch.get("doy")
 
-    metrics = measure_profile(model, sample, device, n_warmup=n_warmup, n_measure=n_measure)
+    metrics = measure_profile(
+        model, sample, device, n_warmup=n_warmup, n_measure=n_measure, doy=doy
+    )
 
     if cpu_cfg.enabled:
         metrics.update(
@@ -586,6 +599,7 @@ def evaluate_profile(
                     n_measure=cpu_cfg.n_measure,
                 ),
                 time_budget_s=cpu_cfg.time_budget_s,
+                doy=doy,
             )
         )
 
@@ -608,7 +622,7 @@ def evaluate_segmentation(
     cfg: RunConfig,
     num_classes: int,
     *,
-    on_epoch: "Callable[[geo_eval_harness.segmentation_task.EpochRecord], None] | None" = None,
+    on_epoch: "Callable[[EpochRecord], None] | None" = None,
 ) -> SegmentationOutcome:
     """Train a segmentation head, optionally with LoRA backbone adapters, and evaluate test mIoU.
 
@@ -629,21 +643,26 @@ def evaluate_segmentation(
         raise ValueError("Segmentation benchmarks require a non-empty validation loader.")
     device = torch.device(cfg.runtime.device)
     seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
-    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+    from geo_eval_harness.segmentation_task import (
+        SweepSegmentationSolver,
+        build_seg_probe_and_solver,
+    )
 
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
-    use_cache = seg_cfg.cache_features
+    use_cache = seg_cfg.uses_feature_cache
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
     collect_confusions = cfg.classification.bootstrap_samples > 0
-    if use_cache and probe.freeze_backbone:
+    if use_cache:
         logger.info("Caching backbone features for train and val splits...")
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
         _apply_class_weights(solver, seg_cfg, train_cache.masks, num_classes, device)
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_cache)
         solver.fit_cached(
             train_cache=train_cache,
             val_cache=val_cache,
@@ -659,6 +678,8 @@ def evaluate_segmentation(
         )
     else:
         _apply_class_weights(solver, seg_cfg, train_loader, num_classes, device)
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_loader)
         solver.fit(
             train_loader=train_loader,
             val_loader=val_loader,
@@ -670,11 +691,7 @@ def evaluate_segmentation(
             test_loader,
             collect_confusions=collect_confusions,
         )
-    actual_batch_size = (
-        probe_batch_size
-        if use_cache and probe.freeze_backbone
-        else int(train_loader.batch_size or 1)
-    )
+    actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
 
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result
@@ -685,6 +702,9 @@ def evaluate_segmentation(
         )
     else:
         metrics = eval_result
+    weight_decay = seg_cfg.weight_decay
+    if isinstance(solver, SweepSegmentationSolver):
+        lr, weight_decay = solver.selected_lr, solver.selected_weight_decay
     return SegmentationOutcome(
         metrics=metrics,
         feature_dim=sum(probe.channels_list),
@@ -692,32 +712,31 @@ def evaluate_segmentation(
         batch_size=actual_batch_size,
         best_epoch=solver.best_epoch,
         best_val_miou=solver.best_val_miou,
+        weight_decay=weight_decay,
     )
 
 
 def _apply_class_weights(
-    solver: "geo_eval_harness.segmentation_task.SegmentationSolver",
+    solver: "SegmentationSolver",
     seg_cfg: "SegmentationConfig",
-    train_masks: "torch.utils.data.DataLoader | torch.Tensor",
+    train_masks: "torch.utils.data.DataLoader | DeviceBatchLoader | torch.Tensor",
     num_classes: int,
     device: torch.device,
 ) -> None:
-    """Replace the solver's loss with class-weighted cross-entropy when configured."""
+    """Weight the solver's loss from the training-label pixel counts."""
     if seg_cfg.class_weights == "none":
         return
-    from geo_eval_harness.segmentation_task import class_pixel_counts, median_frequency_weights
+    from geo_eval_harness.segmentation_weights import class_pixel_counts, inverse_frequency_weights
 
     counts = class_pixel_counts(train_masks, num_classes, seg_cfg.ignore_index)
-    weights = median_frequency_weights(counts)
+    weights = inverse_frequency_weights(counts)
     logger.info(
         "Class weights (%s) from %d training pixels: %s",
         seg_cfg.class_weights,
         int(counts.sum()),
         ", ".join(f"{w:.3g}" for w in weights.tolist()),
     )
-    solver.criterion = torch.nn.CrossEntropyLoss(
-        weight=weights.to(device), ignore_index=seg_cfg.ignore_index
-    )
+    solver.criterion.weight = weights.to(device)
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:
@@ -752,7 +771,12 @@ def run_segmentation(
         model, loaders, cfg, num_classes, on_epoch=None if writer is None else writer.epoch
     )
     if writer is not None:
-        writer.selected(outcome.best_epoch, outcome.best_val_miou)
+        writer.selected(
+            outcome.best_epoch,
+            outcome.best_val_miou,
+            lr=outcome.lr,
+            weight_decay=outcome.weight_decay,
+        )
     metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {
@@ -778,9 +802,10 @@ def run_segmentation(
         f1=metrics.get("f1"),
         boundary_iou=metrics["boundary_IoU"],
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
-        best_val_epoch=outcome.best_epoch,
-        best_val_miou=outcome.best_val_miou,
+        best_val_epoch=format_setup_value(outcome.best_epoch),
+        best_val_miou=format_setup_value(outcome.best_val_miou),
     ).to_row()
+    row.update(segmentation_setup_columns(cfg.segmentation))
     yield [row]
 
 
@@ -825,6 +850,8 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
     splits = FeatureSplits(
         FeatureSplit(x_train, y_train), FeatureSplit(x_val, y_val), FeatureSplit(x_test, y_test)
     )
+    if cfg.classification.feature_standardize:
+        splits = standardize_features(splits)
     common_meta = {
         **common_meta,
         "feature_dim": feature_dim,
@@ -841,7 +868,7 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         )
         row = EvaluationResult(
             **common_meta,
-            method=f"knn{knn_k}",
+            method=cfg.classification.knn_method,
             metric_name=metric_name,
             metric_value=knn_score,
             ci_lower=knn_lo,
@@ -872,7 +899,7 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         else:
             row = EvaluationResult(
                 **common_meta,
-                method="linear",
+                method=cfg.classification.linear_method,
                 metric_name=metric_name,
                 metric_value=lin_score,
                 ci_lower=lin_lo,
@@ -910,7 +937,8 @@ def instantiate_dataset_model(
     device: torch.device,
 ) -> BenchModel:
     """Construct the model with bands matching the loaded tensor channels."""
-    num_channels = train_dataset[0]["image"].shape[-3]
+    sample = train_dataset[0]["image"]
+    num_channels = sample.shape[-3]
     normalization = NORMALIZATIONS[cfg.input.normalization]
     ds_name = bench.name
     bands_list = bench.resolve_band_specs(cfg.input.bands)
@@ -927,7 +955,9 @@ def instantiate_dataset_model(
     if model_cfg.kwargs.get("mode") == "empirical":
         # Empirical RCF whitens against real patches, so it needs the dataset.
         instantiate_kwargs["dataset"] = train_dataset
-    model: BenchModel = build_model(model_cfg, **instantiate_kwargs)
+    model: BenchModel = build_model(
+        model_cfg, native_image_size=sample.shape[-1], **instantiate_kwargs
+    )
     model.to(device).eval()
 
     return model

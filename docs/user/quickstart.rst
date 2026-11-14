@@ -25,10 +25,7 @@ You can also download multiple named datasets or a collection:
    $ geo-eval-harness download eurosat
 
 ``download geobench_v1`` without a subset fetches the entire V1
-classification collection. V1 uses the pickle-free JSON-metadata mirror;
-old pickle-based caches must be replaced. Benchmark runs require local
-data and report a download command if it is missing. See :doc:`datasets`
-for names and canonical destination directories.
+classification collection. V1 uses JSON-metadata tar shards. Benchmark runs require local data and report a download command if it is missing. See :doc:`datasets` for names and destination directories.
 
 Run a benchmark
 ---------------
@@ -102,12 +99,6 @@ defaults; explicit ``null``, ``false``, and ``[]`` are preserved.
 See :doc:`configuration` and :file:`docs/examples/image-run.yaml` for calibration,
 segmentation, temporal inputs, optional profiling, and intrinsic dimension.
 
-.. warning::
-
-   Old ``key=value`` / ``+key=value`` commands are no longer accepted.
-   For example, use ``--model rcf``, not ``model=rcf``. This also applies
-   to ``python -m geo_eval_harness`` and ``python -m geo_eval_harness.cli``.
-
 Profile a model
 ---------------
 
@@ -155,13 +146,12 @@ method/config combinations:
        --output results/my_run.csv --resume
 
 Without an explicit output file, image metrics append to
-``results/models/<model name>.csv``. Those files **ship pre-populated** with
-reference results; ``--output`` keeps your run separate. Optional image-run
+``results/models/<model name>.csv``. The repository contains reference CSVs at that location; they are not included in the installed package. Use ``--output`` to keep your run separate from a checkout's reference results. Optional image-run
 profile and intrinsic-dimension measurements normally use their own
 directories, but an explicit output file combines them with image metrics.
 Each evaluation is saved when it finishes.
 
-Rows follow :class:`~geo_eval_harness.main.EvaluationResult` and can be
+Rows follow :class:`~geo_eval_harness.results.EvaluationResult` and can be
 loaded with pandas:
 
 .. code-block:: python
