@@ -66,7 +66,7 @@ def test_routing_splits_by_kind_unless_output_is_explicit(
             "classification": {"methods": ["knn"]},
             "intrinsic_dim": {
                 "enabled": True,
-                "estimators": ["twonn"],
+                "estimators": ["TwoNN"],
                 "splits": ["train"],
                 "max_samples": 100,
             },
@@ -91,8 +91,9 @@ def test_routing_splits_by_kind_unless_output_is_explicit(
             "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"TwoNN": 5.0}),
         mock.patch("geo_eval_harness.main.measure_profile", return_value=profile_metrics),
+        mock.patch("geo_eval_harness.commands._run.find_spec"),
     ):
         cli_main(flags)
 
@@ -118,7 +119,7 @@ def test_routing_splits_by_kind_unless_output_is_explicit(
     assert id_path.exists()
     id_df = pd.read_csv(id_path)
     assert set(id_df["method"]) == (all_methods if explicit_output else {"intrinsic_dim"})
-    assert "id_twonn_train" in id_df["metric_name"].values
+    assert "id_TwoNN_train" in id_df["metric_name"].values
 
 
 @pytest.mark.parametrize("explicit_output", [False, True])
@@ -129,7 +130,7 @@ def test_completed_intrinsic_dim_survives_profile_failure(
         tmp_path,
         overrides={
             "classification": {"methods": ["knn"]},
-            "intrinsic_dim": {"enabled": True, "estimators": ["twonn"], "splits": ["train"]},
+            "intrinsic_dim": {"enabled": True, "estimators": ["TwoNN"], "splits": ["train"]},
             "profile": {"enabled": True},
         },
     )
@@ -147,7 +148,7 @@ def test_completed_intrinsic_dim_survives_profile_failure(
             "geo_eval_harness.main.evaluate_knn",
             return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
         ),
-        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"twonn": 5.0}),
+        mock.patch("geo_eval_harness.main.compute_intrinsic_dim", return_value={"TwoNN": 5.0}),
         mock.patch(
             "geo_eval_harness.main.measure_profile", side_effect=RuntimeError("profile failed")
         ),
@@ -158,7 +159,7 @@ def test_completed_intrinsic_dim_survives_profile_failure(
     metrics_df = pd.read_csv(metrics_path)
     assert int((metrics_df["method"] == "knn5").sum()) == 1
     id_df = pd.read_csv(id_path)
-    row = id_df[id_df["metric_name"] == "id_twonn_train"].iloc[0]
+    row = id_df[id_df["metric_name"] == "id_TwoNN_train"].iloc[0]
     assert row["method"] == "intrinsic_dim"
     assert row["metric_value"] == 5.0
     assert not model_results_path(tmp_path / "profiles", "rcf").exists()
@@ -172,7 +173,7 @@ def test_default_routing_resume_reads_all_three_files(tmp_path: Path):
             "classification": {"methods": ["knn"]},
             "intrinsic_dim": {
                 "enabled": True,
-                "estimators": ["twonn"],
+                "estimators": ["TwoNN"],
                 "splits": ["train"],
                 "max_samples": 100,
             },

@@ -5,6 +5,7 @@
 
 import argparse
 import json
+from importlib.util import find_spec
 
 import yaml
 
@@ -54,6 +55,12 @@ def load_config(args: argparse.Namespace) -> RunConfig:
     if unknown_datasets:
         raise ValueError(
             f"unknown model or dataset: model={config.model.name}, datasets={unknown_datasets}"
+        )
+    intrinsic_dim = config.intrinsic_dim
+    if intrinsic_dim.enabled and intrinsic_dim.estimators and find_spec("torchid") is None:
+        raise ValueError(
+            "intrinsic_dim.estimators requires torchid; install geo-eval-harness[id] "
+            "(Python ≥ 3.13) or set estimators: []"
         )
     for dataset in datasets if config.datasets == ["all"] else config.datasets:
         effective, preset = resolve_run_config(config, dataset)
