@@ -1,10 +1,10 @@
 name: tessera_v2/large
 target: geo_eval_harness.models.TesseraBenchModel
-supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw]
+supported_datasets: [benv2, m-bigearthnet, pastis, treesatai, fotw, eurosat, sen1floods11-s2]
 kwargs:
   variant: large
   embedding_dim: 128
-  batch_pixels: 1024
+  batch_pixels: 32768
   fallback_doy: 183
   protocol: s2-snapshot-v1
   weights_revision: 24e186649bdd544e7c770f277444f3f88c71571c

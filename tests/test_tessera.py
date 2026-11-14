@@ -22,6 +22,7 @@ from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.models import tessera
+from geo_eval_harness.models._band_mapping import canonical_band_name
 from geo_eval_harness.models._tessera import PixelStudent
 from geo_eval_harness.resume import resume_config_hash
 from geo_eval_harness.segmentation_lora import apply_lora, merged_lora, set_lora_train_mode
@@ -104,7 +105,7 @@ def test_whole_rectangular_map_hook_chunk_bound_and_prefix(tiny: None) -> None:
     raw = images(1, 16, 20)
     maps, sizes = [], []
     model.spatial_features.register_forward_hook(lambda m, args, output: maps.append(output))
-    model.backbone.register_forward_pre_hook(lambda m, args: sizes.append(len(args[0])))
+    model.backbone.s2_backbone.register_forward_pre_hook(lambda m, args: sizes.append(len(args[0])))
     with torch.no_grad():
         pooled = model(raw)
     assert len(maps) == 1
@@ -190,6 +191,35 @@ def test_transformer_lora_gradients_overfit_and_merge(tiny: None) -> None:
             torch.testing.assert_close(model(raw), unmerged)
 
 
+def test_single_token_matches_released_bucket_and_lora_gradients(tiny: None) -> None:
+    torch.manual_seed(3)
+    model = tessera.TesseraBenchModel(specs(), batch_pixels=4)
+    apply_lora(model, TARGETS, rank=2, alpha=4.0)
+    for name, param in model.named_parameters():
+        if "lora_B" in name:
+            nn.init.normal_(param)
+    model.double()
+    set_lora_train_mode(model)
+    normalized = model.normalize_inputs(images(2, 3, 2)).double()
+    days = torch.tensor([45, 300])
+    pixels = torch.cat(
+        [
+            normalized.permute(0, 2, 3, 1).reshape(-1, 10),
+            days.repeat_interleave(6)[:, None].to(normalized),
+        ],
+        1,
+    )
+    bucket = pixels[:, None].expand(-1, 8, -1).contiguous()
+    released = model.backbone(bucket, pixels.new_zeros((len(pixels), 1, 3)))
+    actual = model._dense_features(normalized, days).permute(0, 2, 3, 1).reshape(-1, 128)
+    torch.testing.assert_close(actual, released)
+    adapters = [p for n, p in model.named_parameters() if "lora_" in n]
+    expected = torch.autograd.grad(released.square().sum(), adapters)
+    observed = torch.autograd.grad(actual.square().sum(), adapters)
+    for got, want in zip(observed, expected, strict=True):
+        torch.testing.assert_close(got, want)
+
+
 def test_solver_preserves_dates_during_lora_training_and_validation(tiny: None) -> None:
     model = tessera.TesseraBenchModel(specs())
     config = SegmentationConfig(
@@ -201,7 +231,7 @@ def test_solver_preserves_dates_during_lora_training_and_validation(tiny: None) 
     )
     _, solver = build_seg_probe_and_solver(model, 2, config, torch.device("cpu"))
     observed = set()
-    model.backbone.register_forward_pre_hook(
+    model.backbone.s2_backbone.register_forward_pre_hook(
         lambda module, args: observed.update(args[0][:, 0, -1].tolist())
     )
     raw = images()
@@ -225,6 +255,8 @@ def test_presets_native_inputs_and_resume_identity(variant: str) -> None:
         "pastis",
         "treesatai",
         "fotw",
+        "eurosat",
+        "sen1floods11-s2",
     }
     assert "supported_datasets" not in preset.kwargs
     config = RunConfig(model=ModelConfig(name=name), datasets=["pastis"])
@@ -314,10 +346,8 @@ def test_real_checkpoint_and_official_inference_parity(official_reference, varia
         "m-brick-kiln",
         "dynamic_earthnet",
         "burn_scars",
-        "eurosat",
         "eurosat-spatial",
         "oscd-post",
-        "sen1floods11-s2",
         "so2sat",
         "cloudsen12",
     ],
@@ -326,6 +356,27 @@ def test_presets_reject_unverified_or_out_of_scope_products(dataset: str) -> Non
     config = RunConfig(model=ModelConfig(name="tessera_v2/medium"), datasets=[dataset])
     with pytest.raises(BandCompatibilityError, match="verified datasets"):
         resolve_run_config(config, dataset)
+
+
+@pytest.mark.parametrize("dataset", ["eurosat", "sen1floods11-s2"])
+def test_l1c_approximation_presets_map_every_band(tiny: None, dataset: str) -> None:
+    config = RunConfig(model=ModelConfig(name="tessera_v2/nano"), datasets=[dataset])
+    effective, preset = resolve_run_config(config, dataset)
+    assert effective.input.image_size is None
+    bands = get_bench_dataset_class(dataset).resolve_band_specs(effective.input.bands)
+    model = build_model(preset, bands=bands, normalization="model_native")
+    targets = [canonical_band_name(name) for name in tessera.S2_BANDS]
+    one_std_above = torch.tensor(tessera.S2_MEAN) + torch.tensor(tessera.S2_STD)
+    raw = torch.tensor(
+        [
+            one_std_above[targets.index(canonical_band_name(b.name))]
+            if canonical_band_name(b.name) in targets
+            else 0.0
+            for b in bands
+        ]
+    )
+    normalized = model.normalize_inputs(raw.reshape(1, -1, 1, 1))
+    torch.testing.assert_close(normalized.flatten(), torch.ones(10))
 
 
 @pytest.mark.parametrize("kwargs", [{}, {"image_size": None}])
