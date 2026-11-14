@@ -13,6 +13,7 @@ from geo_eval_harness.datasets.base import BandSpec
 from ._band_mapping import BandMappingPolicy, map_to_model_bands, select_src_bands
 from ._input_units import InputUnit, convert_unit, detect_input_unit, linear_power_to_db
 from ._normalization import NormalizationStrategy
+from ._optional import TERRATORCH_INSTALL, require_package
 from ._pooling import VALID_MODES, pool_tokens
 from .interface import BenchModel
 
@@ -24,6 +25,7 @@ def _build_backbone(name: str, **kwargs: Any) -> nn.Module:
         from .clay_v15 import ClayV15Backbone
 
         return ClayV15Backbone(**kwargs)
+    require_package("terratorch", TERRATORCH_INSTALL)
     import terratorch.models.backbones  # noqa: F401 - populate registry
     from terratorch.registry import BACKBONE_REGISTRY
 

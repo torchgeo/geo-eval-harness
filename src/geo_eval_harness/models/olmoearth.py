@@ -19,6 +19,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
+from ._optional import require_package
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -466,6 +467,7 @@ class OlmoEarthBenchModel(BenchModel):
         )
 
         # Lazy imports so the package is only needed when this model is used.
+        require_package("olmoearth_pretrain_minimal", "pip install 'geo-eval-harness[olmoearth]'")
         from olmoearth_pretrain_minimal import ModelID, Normalizer, load_model_from_id
         from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
