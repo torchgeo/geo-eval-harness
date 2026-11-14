@@ -220,7 +220,7 @@ def tiny_scalemae(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_scalemae_probe_dry_run_uses_the_built_grid(tiny_scalemae: None) -> None:
     del tiny_scalemae
     net = TorchGeoScaleMAEBench(_rgb_bands(), image_size=448)
-    _probe_step(net, ["blocks.0"], 448, 28, train=False)
+    _probe_step(net, ["blocks.0"], 448, 28)
 
 
 def test_scalemae_rejects_sizes_the_patch_grid_would_crop(tiny_scalemae: None) -> None:
