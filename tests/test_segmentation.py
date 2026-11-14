@@ -1698,6 +1698,7 @@ def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
 
 
 def test_anyup_guidance_bands_follow_wavelengths() -> None:
+    from geo_eval_harness.datasets import get_bench_dataset_class
     from geo_eval_harness.datasets.base import BandSpec
     from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
 
@@ -1707,6 +1708,10 @@ def test_anyup_guidance_bands_follow_wavelengths() -> None:
     s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
     assert rgb_guidance_indices(s2) == (2, 1, 0)
     assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    coastal_first = get_bench_dataset_class("cloudsen12").resolve_band_specs("all")
+    assert rgb_guidance_indices(coastal_first) == (3, 2, 1)
+    aerial = get_bench_dataset_class("loveda").resolve_band_specs("all")
+    assert rgb_guidance_indices(aerial) == (0, 1, 2)
     guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
     assert guide.shape == (2, 3, 8, 8)
     assert guide.abs().max() < 3
