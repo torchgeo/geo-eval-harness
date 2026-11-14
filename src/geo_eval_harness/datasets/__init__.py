@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from .base import BandSpec, BenchDataset
 from .loading import (
+    _REGISTRY_SPEC,
     get_bench_dataset_class,
     get_dataset_task,
     get_datasets,
@@ -78,49 +79,9 @@ __all__ = [
 ]
 
 _LAZY_CLASSES: dict[str, str] = {
-    "AID": "aid",
-    "BENV2": "benv2",
-    "BRIGHTPostSAR": "bright_post_sar",
-    "BRIGHTPostSARRGB": "bright_post_sar",
-    "BurnScars": "burn_scars",
-    "CaFFe": "caffe",
-    "CloudSEN12": "cloudsen12",
-    "DynamicEarthNet": "dynamic_earthnet",
-    "EuroSAT": "eurosat",
-    "EuroSATSpatial": "eurosat",
-    "FLAIR2": "flair2",
-    "Forestnet": "forestnet",
-    "FieldsOfTheWorld": "fotw",
-    "HOTOSMBuildings": "hotosm_buildings",
-    "KuroSiwo": "kuro_siwo",
-    "LoveDA": "loveda",
-    "LEVIRCDPost": "levir_cd_post",
-    "MBigEarthNet": "m_bigearthnet",
-    "MBrickKiln": "m_brick_kiln",
-    "MEurosat": "m_eurosat",
-    "MForestnet": "m_forestnet",
-    "MPv4ger": "m_pv4ger",
-    "MSo2Sat": "m_so2sat",
-    "OSCDPost": "oscd_post",
-    "OpenCities": "open_cities",
-    "OpenEarthMapSAR": "openearthmap_sar",
-    "PASTIS": "pastis",
-    "PLANTEUR": "planteur",
-    "PLANTEURLOIOGuadeloupe": "planteur",
-    "PLANTEURLOIOMartinique": "planteur",
-    "PLANTEURLOIOGuyane": "planteur",
-    "PLANTEURLOIOReunion": "planteur",
-    "PLANTEURLOIOMayotte": "planteur",
-    "RESISC45": "resisc45",
-    "Sen1Floods11Base": "sen1floods11",
-    "Sen1Floods11S1": "sen1floods11",
-    "Sen1Floods11S2": "sen1floods11",
-    "So2Sat": "so2sat",
-    "SpaceNet2": "spacenet2",
-    "SpaceNet7": "spacenet7",
-    "TreeSatAI": "treesatai",
-    "UCMerced": "ucmerced",
+    class_name: module for module, class_name, _ in _REGISTRY_SPEC.values()
 }
+_LAZY_CLASSES["Sen1Floods11Base"] = "sen1floods11"
 
 
 def __getattr__(name: str) -> object:

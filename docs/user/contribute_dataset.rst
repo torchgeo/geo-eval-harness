@@ -160,8 +160,7 @@ This entry enables loading, CLI listing/details, and run selection. Its task mus
 
 The registry stores strings rather than imported classes so metadata queries stay cheap. ``get_bench_dataset_class`` imports only the requested wrapper.
 
-**2. Export the class** from :file:`src/geo_eval_harness/datasets/__init__.py`
-by adding an ``__all__`` entry and a matching ``_LAZY_CLASSES`` mapping:
+**2. Export the class** from :file:`src/geo_eval_harness/datasets/__init__.py` by adding an alphabetically sorted ``__all__`` entry:
 
 .. code-block:: python
 
@@ -170,18 +169,7 @@ by adding an ``__all__`` entry and a matching ``_LAZY_CLASSES`` mapping:
        "MyDataset",
    ]
 
-   _LAZY_CLASSES: dict[str, str] = {
-       # Keep the existing lazy mappings.
-       "MyDataset": "my_dataset",
-   }
-
-Individual dataset classes load lazily through module ``__getattr__`` so that
-``import geo_eval_harness.datasets`` — and CLI startup — stays fast.  Do not add
-an eager ``from .my_dataset import MyDataset`` import; register the name in
-``_LAZY_CLASSES`` instead.
-
-Keep both lists alphabetically sorted; they are read by humans far more often
-than by the loader.
+Dataset class imports are derived from ``_REGISTRY_SPEC`` and load lazily through module ``__getattr__``. Do not add an eager ``from .my_dataset import MyDataset`` import.
 
 **3. Wire up the download.** Which files you touch depends on the family:
 
