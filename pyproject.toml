@@ -138,7 +138,6 @@ extend-exclude = [
   "src/geo_eval_harness/cli.py",
   "src/geo_eval_harness/commands",
   "src/geo_eval_harness/config/schema.py",
-  "src/geo_eval_harness/preprocessing.py",
 ]
 lint.select = [
   "A",       # builtin shadowing
