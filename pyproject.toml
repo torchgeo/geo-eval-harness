@@ -84,7 +84,7 @@ optional-dependencies.dev = [
   "mdformat>=0.7.22",
   "pre-commit>=4.3",
   "pyproject-fmt>=2.21",
-  "pyrefly==1.2",
+  "pyrefly==1.4.1",
   "pytest>=8.2",
   "pytest-cov>=7",
   "pytest-xdist>=3.6",
