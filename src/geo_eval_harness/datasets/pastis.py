@@ -1,9 +1,41 @@
 """PASTIS (GeoBench V2) benchmark dataset."""
 
+from collections.abc import Callable
+from datetime import datetime
 from typing import ClassVar
 
+import torch
+from torch.utils.data import Dataset
+
 from .base import BandSpec
-from .geobench_v2 import _V2Dataset
+from .geobench_v2 import GeoBenchv2, _V2Dataset
+
+
+class _DatedSnapshotDataset(Dataset):
+    """Attach the date of the S2 frame actually selected by the upstream loader."""
+
+    def __init__(self, dataset: GeoBenchv2) -> None:
+        self.dataset = dataset
+
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    def __getitem__(self, index: int) -> dict:
+        sample = self.dataset[index]
+        sample["doy"] = self._doy(index)
+        return sample
+
+    def _doy(self, index: int) -> torch.Tensor:
+        data_frame = getattr(self.dataset._inner, "data_df", None)
+        if data_frame is None:
+            raise TypeError("PASTIS loader does not expose acquisition metadata.")
+        rows = data_frame.read(index)
+        dates = rows.loc[rows["tortilla:id"] == "s2", "dates"].iloc[0]
+        if not len(dates):
+            raise ValueError("PASTIS snapshot has no aligned Sentinel-2 acquisition date.")
+        # _load_image selects index 0 for num_time_steps=1, not the documented last frame.
+        date = datetime.strptime(str(int(dates[0])), "%Y%m%d")
+        return torch.tensor(date.timetuple().tm_yday, dtype=torch.long)
 
 
 class PASTIS(_V2Dataset):
@@ -21,6 +53,27 @@ class PASTIS(_V2Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["b04", "b03", "b02"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 1455, "val": 482, "test": 496}
+
+    def get_dataset(
+        self,
+        split: str,
+        *,
+        partition: str = "default",
+        bands: tuple[str, ...] | None = None,
+        transform: Callable | None = None,
+        time_steps: int | None = None,
+    ) -> Dataset:
+        """Return snapshots with aligned S2 dates, leaving temporal protocols unchanged."""
+        dataset = super().get_dataset(
+            split, partition=partition, bands=bands, transform=transform, time_steps=time_steps
+        )
+        if time_steps not in (None, 1) or not any(
+            b.sensor == "s2" for b in self.select_band_specs(bands)
+        ):
+            return dataset
+        if not isinstance(dataset, GeoBenchv2):
+            raise TypeError("PASTIS snapshot metadata requires the GeoBench V2 adapter.")
+        return _DatedSnapshotDataset(dataset)
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [

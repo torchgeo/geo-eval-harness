@@ -38,6 +38,8 @@ Integrate into the package
 
 Once your model class is working locally, move it into geo-eval-harness and expose its import path to the model preset loader.
 
+Date-aware wrappers may override ``BenchModel.forward_batch(images, *, doy=None)`` while retaining the public tensor-forward template. Canonical samples provide an optional scalar ordinal ``doy`` per image; classification extraction, segmentation probes/solvers, and sample caches preserve it. Date-independent wrappers ignore this metadata. Segmentation ``mask`` remains ground truth and must not be used as input metadata.
+
 **1. Place the module** under :file:`src/geo_eval_harness/models/`:
 
 .. code-block:: console

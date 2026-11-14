@@ -1,0 +1,14 @@
+name: eosfm
+target: geo_eval_harness.models.EoSFMBenchModel
+segmentation:
+  # Each tap concatenates one ConvNeXtV2-Atto stage of all 22 specialists (strides 32, 16, 8, 4;
+  # 7040/3520/1760/880 channels), the pyramid upstream feeds to its UperNet. No
+  # lora_target_modules: the specialists have no nn.Linear (the MLPs are 1x1 convolutions), so
+  # segmentation runs frozen or with full_finetune. The frozen feature cache would hold about
+  # 10 MB per 224 px sample in float16, so features are recomputed instead.
+  layers:
+    - taps.3
+    - taps.2
+    - taps.1
+    - taps.0
+  cache_features: false

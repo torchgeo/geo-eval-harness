@@ -20,7 +20,8 @@ class _LoRAWeightDelta(nn.Module):
     """Parametrization adding a scaled low-rank update ``B @ A`` to a ``Linear`` weight.
 
     torchvision's Swin attention passes ``qkv.weight`` and ``proj.weight`` to a functional kernel,
-    and timm's Swin V2 attention passes ``qkv.weight`` to ``F.linear`` (to add its q/v bias),
+    timm's Swin V2 attention passes ``qkv.weight`` to ``F.linear`` (to add its q/v bias), and
+    torch's fused Transformer kernels read ``linear1``/``linear2``/``out_proj`` weights directly,
     instead of calling those modules, so PEFT adapters, which wrap the module forward, never run.
     A parametrization updates the weight wherever it is read. Initialisation matches PEFT's
     default: Kaiming-uniform ``lora_A`` and zero ``lora_B``.
@@ -75,8 +76,8 @@ def apply_lora(
     """Add LoRA adapters to matching ``Linear`` layers and freeze all other parameters.
 
     Module names are relative to ``model.backbone`` when the wrapper has one, the same namespace
-    as ``segmentation.layers``. Swin attention projections receive a weight parametrization;
-    every other match receives a PEFT adapter.
+    as ``segmentation.layers``. Swin attention and torch Transformer projections receive a
+    weight parametrization; every other match receives a PEFT adapter.
 
     Args:
         model: Backbone or ``BenchModel`` wrapper, modified in place.
@@ -112,11 +113,17 @@ def apply_lora(
         matches = {name: matches[name] for name in kept}
     linear = {name: module for name, module in matches.items() if isinstance(module, nn.Linear)}
 
-    swin_attention = (ShiftedWindowAttention, ShiftedWindowAttentionV2, TimmSwinV2WindowAttention)
+    functional_parents = (
+        ShiftedWindowAttention,
+        ShiftedWindowAttentionV2,
+        TimmSwinV2WindowAttention,
+        nn.TransformerEncoderLayer,
+        nn.MultiheadAttention,
+    )
     attention_names = [
         name
         for name in linear
-        if isinstance(root.get_submodule(name.rpartition(".")[0]), swin_attention)
+        if isinstance(root.get_submodule(name.rpartition(".")[0]), functional_parents)
     ]
     peft_names = [name for name in linear if name not in attention_names]
     if peft_names:
