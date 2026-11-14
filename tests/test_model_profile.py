@@ -43,6 +43,26 @@ def test_count_gflops_matches_conv_and_linear_ops(requires_grad) -> None:
     assert all(p.grad is None for p in model.parameters())
 
 
+def test_count_gflops_counts_cpu_scaled_dot_product_attention() -> None:
+    class Attention(nn.Module):
+        def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+            return nn.functional.scaled_dot_product_attention(tokens, tokens, tokens)
+
+    heads, length, head_dim = 2, 5, 4
+    gflops = _count_gflops(Attention(), torch.rand(1, heads, length, head_dim))
+    assert gflops == pytest.approx(2 * 2 * heads * length * length * head_dim / 1e9)
+
+
+def test_count_gflops_counts_transformer_layer_in_evaluation_mode() -> None:
+    length, width, hidden = 5, 8, 16
+    layer = nn.TransformerEncoderLayer(width, 2, hidden, dropout=0.0, batch_first=True).eval()
+    gflops = _count_gflops(layer, torch.rand(1, length, width))
+    projections = 2 * length * width * (3 * width + width + 2 * hidden)
+    attention = 2 * 2 * length * length * width
+    assert gflops == pytest.approx((projections + attention) / 1e9)
+    assert torch.backends.mha.get_fastpath_enabled()
+
+
 @pytest.mark.parametrize("use_profile", [False, True])
 @pytest.mark.parametrize("outer_inference", [False, True])
 def test_count_gflops_handles_parameter_views_without_mutating_model(
