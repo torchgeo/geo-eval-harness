@@ -390,6 +390,39 @@ def test_torchgeo_croma_pools_optical_tokens_then_applies_head(
     torch.testing.assert_close(out, torch.arange(15, 23, dtype=torch.float32).expand(2, 8))
 
 
+def test_croma_segmentation_layers_capture_the_block_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CROMA's feed-forward modules return a residual update; the probe needs the block output."""
+    from torchgeo.models import CROMA
+
+    from geo_eval_harness.segmentation_probe import SegmentationProbe
+
+    def tiny_croma() -> nn.Module:
+        return CROMA(
+            modalities=["optical"], encoder_dim=16, encoder_depth=2, num_heads=16, image_size=16
+        )
+
+    _install_tiny_backbone(monkeypatch, tiny_croma)
+    torch.manual_seed(0)
+    model = TorchGeoCromaBench(
+        bands=_s2_multispectral_bands(), normalization="identity", target_size=16
+    )
+    transformer = model.backbone.s2_encoder.transformer
+    block_outputs: list[torch.Tensor] = []
+    # The residual stream after each block is the input of the module that follows it.
+    for following in (transformer.layers[1][0], transformer.norm_out):
+        following.register_forward_pre_hook(lambda _module, args: block_outputs.append(args[0]))
+    layers = ["s2_encoder.transformer.layers.1.1", "s2_encoder.transformer.layers.0.1"]
+    probe = SegmentationProbe(model, layers, num_classes=2)
+
+    block_outputs.clear()
+    probe(torch.rand(2, 12, 16, 16))
+
+    torch.testing.assert_close(probe._features[layers[1]], block_outputs[0])
+    torch.testing.assert_close(probe._features[layers[0]], block_outputs[1])
+
+
 def test_torchgeo_panopticon_forwards_batched_wavelength_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

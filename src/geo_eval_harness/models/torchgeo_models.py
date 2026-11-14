@@ -912,6 +912,8 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
 
     weights_input_unit = "reflectance_0_1"
     expected_input_unit = InputUnit.REFLECTANCE_0_1
+    # torchgeo's BaseTransformer runs ``x = self_attn(x) + x; x = ffn(x) + x``.
+    residual_branch_layers = r"s2_encoder\.transformer\.layers\.\d+\.[01]"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
