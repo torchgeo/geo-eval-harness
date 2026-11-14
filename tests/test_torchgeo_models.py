@@ -390,6 +390,35 @@ def test_torchgeo_croma_pools_optical_tokens_then_applies_head(
     torch.testing.assert_close(out, torch.arange(15, 23, dtype=torch.float32).expand(2, 8))
 
 
+def test_torchgeo_croma_reads_sentinel2_bands_from_multi_sensor_datasets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TreeSatAI's aerial channels share canonical names with Sentinel-2 bands."""
+    from geo_eval_harness.datasets.treesatai import TreeSatAI
+
+    specs = TreeSatAI.resolve_band_specs("all")
+    sources: list[int] = []
+
+    class _RecordingCroma(nn.Module):
+        attn_bias = None
+
+        def s2_encoder(self, imgs: torch.Tensor, attn_bias: None) -> torch.Tensor:
+            del attn_bias
+            sources.extend(imgs[0, :, 0, 0].int().tolist())
+            return torch.zeros(imgs.shape[0], 4, 8)
+
+        def s2_GAP_FFN(self, x: torch.Tensor) -> torch.Tensor:
+            return x
+
+    _install_tiny_backbone(monkeypatch, _RecordingCroma)
+    model = TorchGeoCromaBench(bands=specs, normalization="identity", auto_resize=False)
+    channel_index = torch.arange(len(specs), dtype=torch.float32).view(1, -1, 1, 1)
+    model(channel_index.expand(1, -1, 8, 8))
+
+    assert len(sources) == 12
+    assert {specs[index].sensor for index in sources} == {"s2"}
+
+
 def test_torchgeo_panopticon_forwards_batched_wavelength_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
