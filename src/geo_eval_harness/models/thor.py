@@ -6,8 +6,9 @@ bands) into one token grid, and attends over all groups with GSD-aware 2D ALiBi.
 
 * maps ``s2`` bands and ``s1``/``sar`` VV/VH/HH/HV in dB to THOR's channels by canonical name and
   rejects every other band unless it is listed in ``ignore_bands``;
-* resamples each group from the received pixels (``input_gsd``) to its pretraining GSD over the
-  tile's ground extent, rounded so that every group holds a whole number of patches;
+* resamples each group from the received pixels (``input_gsd`` times the run's resize ratio) to
+  its pretraining GSD over the tile's ground extent, rounded so that every group holds a whole
+  number of patches;
 * embeds with one patch size in pixels for all groups, as upstream's evaluation does.
 
 Weights are downloaded from a pinned Hugging Face commit and checked against their sha256.
@@ -155,14 +156,20 @@ class ThorBenchModel(BenchModel):
         bands: Ordered ``BandSpec`` list describing the input channels.
         variant: ``tiny``, ``small``, ``base`` or ``large``.
         patch_size: Patch size in pixels, applied to every group at its own GSD.
-        input_gsd: GSD (m/px) of the pixels the wrapper receives.
+        input_gsd: GSD (m/px) of the tiles' native pixels.
         merge: ``concat`` or ``mean`` over band groups.
         ignore_bands: Canonical band names to drop, e.g. ``cirrus`` (S2 B10 is not in THOR).
         max_tokens: Largest token count accepted; raise ``patch_size`` for larger tiles.
         pretrained: Load the pinned weights.
         weights_path: Local checkpoint to load instead of downloading (still hash-checked).
         normalization: Input-normalization strategy (dataset z-score, as THOR's own fine-tuning).
+        gsd_scale: Ground size of an input pixel relative to a native pixel: the tile side before
+            the run's resize over the resized side, which the runner supplies. 1.0 for unresized
+            tiles.
     """
+
+    #: The runner supplies ``gsd_scale`` so resized tiles keep their ground extent.
+    wants_gsd_scale = True
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -177,6 +184,7 @@ class ThorBenchModel(BenchModel):
         pretrained: bool = True,
         weights_path: str | None = None,
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
+        gsd_scale: float = 1.0,
         **kwargs: object,
     ) -> None:
         if variant not in THOR_VARIANTS:
@@ -189,7 +197,7 @@ class ThorBenchModel(BenchModel):
         self.groups = route_bands(self.bands, ignore_bands)
         self.variant = variant
         self.patch_size = patch_size
-        self.input_gsd = input_gsd
+        self.input_gsd = input_gsd * gsd_scale
         self.merge = merge
         self.max_tokens = max_tokens
         spec = THOR_VARIANTS[variant]
