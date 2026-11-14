@@ -95,13 +95,17 @@ Input and runtime
      workers: 4
      seed: 0
      verbose: false
+     sample_cache: none
+     sample_cache_dir: ~/.cache/geo_eval_harness/samples
 
 ``bands`` accepts ``rgb``, ``all``, or an ordered YAML list of dataset band
 names. The equivalent flag accepts comma-separated names, for example
 ``--bands red,green,blue``. Band names differ by dataset; see :doc:`datasets`.
 ``time_steps`` selects a positive temporal length where supported.
 ``image_size: null`` (``--image-size none``) retains native dimensions.
-Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest``.
+Interpolation is ``area``, ``bilinear``, ``bicubic``, or ``nearest`` and applies to images; segmentation masks are always resized with ``nearest-exact``, which samples each output pixel at its centre like ``bilinear`` and ``bicubic`` do.
+
+``runtime.sample_cache`` serves segmentation splits from a copy of the preprocessed samples (after band selection and resizing), so each sample is decoded once instead of once per epoch. ``disk`` writes ``.npy`` memory maps under ``sample_cache_dir`` (built once per dataset, split, bands, size, interpolation, and code/data fingerprint; concurrent runs share them through the OS page cache), ``host`` keeps them in process memory, and ``gpu`` on the training device. Images stay float32 and batch order matches the uncached loader exactly, so the setting does not change results or ``config_hash``. ``disk`` needs free disk space and benefits from free RAM; ``host`` and ``gpu`` need the whole split in RAM or device memory.
 
 For ``run`` and ``profile``, ``--image-size`` accepts a positive integer or case-insensitive ``none``. FLOPs measurements require a concrete positive image size.
 
@@ -182,24 +186,37 @@ Segmentation
 
    segmentation:
      head: fpn
+     neck: none
+     neck_norm: layernorm
+     upsampler: none
+     weight_decay: 0.0
+     head_dropout: 0.0
      layers: []
      learning_rate: 1e-3
      epochs: 10
+     early_stopping_patience: null
      batch_size: 64
      temporal_pool: mean
      scheduler: cosine
      ignore_index: 255
      cache_features: true
      cache_dtype: float16
+     amp: fp16
      lora_rank: null
      lora_target_modules: null
      lora_alpha: 16.0
+     lora_last_blocks: null
      backbone_learning_rate: null
+     full_finetune: false
+     feature_standardize: false
+     gradient_checkpointing: false
+     sweep_learning_rates: []
+     sweep_weight_decays: [0.0]
 
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
-``fpn``, ``dpt``, ``patch_linear``, and ``upernet``; not every head works with every
-backbone. Omit ``layers`` to inherit the model's selection. An explicit
+``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded as ``neck: vit`` in the result row (see :ref:`segmentation-setup-columns`). ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, recorded as ``upsampler: anyup`` in the result row; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.
@@ -209,11 +226,24 @@ feature layers. See
 ``mean`` or ``max``, ``scheduler`` is ``cosine`` or ``none``, and the cache
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
+
+``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
+runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
+whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
+all of this in float32 at the cost of speed and memory. With cached frozen features it requires
+``cache_dtype: float32``. ``fp16`` leaves hashes unchanged. Whatever the precision, a training
+batch whose backbone features are not finite is skipped before the head runs, so head
+BatchNorm statistics stay finite, and counted as ``nonfinite_batches`` in the epoch record; an
+epoch that skips more than 5% of its batches fails. ``feature_standardize`` leaves such samples
+out of its statistics under the same limit. Non-finite features or logits during evaluation fail
+the run instead of scoring a constant prediction.
 Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
-See :ref:`segmentation-model-selection` for the validation requirements and model-selection policy.
+See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
-Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. Without ``lora_rank``, ``backbone_learning_rate`` and ``lora_alpha`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with method ``seg-<head>-lora``.
+Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such rows record ``lora_last_blocks``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (``adaptation: full`` in the result row), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with ``adaptation: lora`` (see :ref:`segmentation-setup-columns`).
+
+``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. Unset, it leaves hashes unchanged; set, it is part of ``config_hash``.
 
 .. code-block:: yaml
 
@@ -221,6 +251,20 @@ Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of free
      head: upernet
      lora_rank: 8
      backbone_learning_rate: 1e-4
+
+``feature_standardize: true`` z-scores every hooked feature channel with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before the head (method suffix ``-std``). The statistics use every training position, from the feature cache or, with ``cache_features: false``, from one extra backbone pass over the training split. It requires a frozen backbone.
+
+``sweep_learning_rates`` (with ``head: patch_linear``, no neck, frozen backbone) trains one LayerNorm + linear ``patch_linear`` probe per (learning rate, weight decay) cell of ``sweep_learning_rates`` x ``sweep_weight_decays`` in one vectorised pass, each with its own AdamW group and a cosine decay to zero. Every head keeps its best validation epoch; the head with the highest best-epoch validation mIoU is restored and alone scored on test. ``learning_rate`` and ``weight_decay`` are ignored; the selected values are written to ``best_lr`` and the ``selected`` epoch-metrics event. The method gains ``-sweep<n>`` with ``n`` cells. Together they reproduce UniverSat's ``LP_eval.py`` segmentation probe:
+
+.. code-block:: yaml
+
+   segmentation:
+     head: patch_linear
+     layers: [blocks.11]
+     feature_standardize: true
+     sweep_learning_rates: [1e-4, 2e-4, 5e-4, 1e-3, 2e-3, 5e-3, 1e-2, 2e-2, 5e-2, 1e-1]
+     sweep_weight_decays: [0.0, 0.01, 0.1]
+     epochs: 50
 
 Optional image measurements
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -259,6 +303,7 @@ Results and resume
      directory: results
      file: null
      resume: false
+     epoch_metrics: null
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
 
@@ -274,6 +319,8 @@ The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneat
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. An explicit file takes precedence over the directory, even when the file comes from YAML; clear ``output.file`` to ``null`` to use the directory instead. For image runs, the explicit file combines all selected measurement kinds in one CSV. Each CLI flag overrides its corresponding YAML field, regardless of flag order.
 
 When migrating older image YAML, change ``output.directory: results/models`` to ``output.directory: results`` and remove ``profile_directory`` and ``intrinsic_dim_directory``. Those fields and the old ``--results-dir``, ``--profile-dir``, and ``--intrinsic-dim-dir`` flags are no longer accepted.
+
+``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 
 ``--resume`` / ``--no-resume`` control skipping completed measurements.
 Resume compares method/config keys and metric completeness; additive profile

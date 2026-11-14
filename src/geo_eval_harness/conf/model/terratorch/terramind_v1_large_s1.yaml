@@ -1,0 +1,14 @@
+name: tt_terramind_v1_large_s1
+target: geo_eval_harness.models.TerraTorchTerraMindBench
+kwargs:
+  backbone_name: terramind_v1_large
+  pretrained: true
+  target_size: 224
+  modality: S1GRD
+segmentation:
+  lora_target_modules: 'encoder\.\d+\.(attn\.(qkv|proj)|mlp\.fc[123])'
+  layers:
+    - encoder.23
+    - encoder.17
+    - encoder.11
+    - encoder.5

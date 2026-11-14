@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._input_units import InputUnit, _detect_band_group_unit, to_s2_dn
+from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
@@ -337,9 +337,12 @@ class OlmoEarthBenchModel(BenchModel):
             identical slots; use only for explicit multi-timestep ablations.
         std_multiplier: Std multiplier passed to ``Normalizer``.
         normalize: If True, L2-normalize output embeddings.
-        sar_log_scale: If True, convert SAR values to dB via
-            ``10·log10(max(v, 1e-6))`` before feeding OlmoEarth's S1
-            normalizer, which was trained on std⁰ dB values.
+        sar_log_scale: Convert SAR to dB via ``10·log10(max(v, 1e-6))``
+            before OlmoEarth's S1 normalizer, which expects σ⁰ in dB
+            (min-max over -50..0 dB). ``None`` (default) converts exactly
+            when every SAR band declares ``BandSpec.unit == "linear_power"``
+            (e.g. Kuro Siwo); linear values would otherwise all normalize to
+            ~0.77-0.79. ``True``/``False`` force it.
         landsat_scale_factor: Optional multiplier applied to Landsat
             values *after* the standard uint8→DN conversion.  Use to
             compensate for mis-matched scales between GeoBench's uint8
@@ -382,7 +385,7 @@ class OlmoEarthBenchModel(BenchModel):
         time_steps: int = 1,
         std_multiplier: float = 2.0,
         normalize: bool = False,
-        sar_log_scale: bool = False,
+        sar_log_scale: bool | None = None,
         landsat_scale_factor: float | None = None,
         norm_from_pretrained: bool | Literal["auto"] = "auto",
         sensor_remap: dict[str, str] | None = None,
@@ -413,6 +416,11 @@ class OlmoEarthBenchModel(BenchModel):
         sensor_groups = _build_sensor_groups(bands_for_routing)
         for g in sensor_groups:
             g["modality"] = getattr(Modality, g["modality_name"])
+            g["sar_to_db"] = g["sensor"] in ("sar", "s1") and (
+                sar_log_scale
+                if sar_log_scale is not None
+                else all(self.bands[i].unit == "linear_power" for i in g["src_indices"])
+            )
         self._sensor_groups = sensor_groups
 
         if input_res is None:
@@ -433,8 +441,49 @@ class OlmoEarthBenchModel(BenchModel):
         self.min_image_size = min_image_size
 
         model_id = getattr(ModelID, f"OLMOEARTH_{version.upper()}_{model_size.upper()}")
-        self.encoder_model = load_model_from_id(model_id, load_weights=True)
+        self.encoder_model: Any = load_model_from_id(model_id, load_weights=True)
         self.normalizer = Normalizer(std_multiplier=std_multiplier)
+        self._token_layout: list[tuple[int, ...]] = []
+        self._record_token_layout()
+
+    def _record_token_layout(self) -> None:
+        """Record each modality's ``(h, w, ...)`` token shape as the encoder flattens them.
+
+        The encoder orders modalities through a ``set``, so the order is only known at call time.
+        """
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit import (
+            get_modalities_to_process,
+            return_modalities_from_dict,
+        )
+
+        encoder = self.encoder_model.encoder
+        collapse = encoder.collapse_and_combine_hwtc
+
+        def collapse_and_record(x: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+            order = get_modalities_to_process(
+                return_modalities_from_dict(x), encoder.supported_modality_names
+            )
+            self._token_layout = [tuple(x[modality].shape[1:-1]) for modality in order]
+            return collapse(x)
+
+        encoder.collapse_and_combine_hwtc = collapse_and_record
+
+    def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid.
+
+        This matches the pooling behind :meth:`_forward_patch_features`.
+        """
+        sizes = [int(np.prod(shape)) for shape in self._token_layout]
+        if sum(sizes) != tokens.shape[1]:
+            raise ValueError(
+                f"OlmoEarth tokens {tuple(tokens.shape)} do not match the last forward's "
+                f"per-modality layout {self._token_layout}."
+            )
+        grids = [
+            chunk.reshape(chunk.shape[0], shape[0], shape[1], -1, chunk.shape[-1]).mean(dim=3)
+            for chunk, shape in zip(tokens.split(sizes, dim=1), self._token_layout, strict=True)
+        ]
+        return torch.stack(grids).mean(dim=0).permute(0, 3, 1, 2)
 
     handles_own_normalization = True
 
@@ -528,8 +577,8 @@ class OlmoEarthBenchModel(BenchModel):
                 g_images = to_s2_dn(g_images, input_unit)
                 if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
                     g_images = g_images * self.landsat_scale_factor
-            if group["sensor"] in ("sar", "s1") and self.sar_log_scale:
-                g_images = 10.0 * torch.log10(g_images.clamp(min=1e-6))
+            if group["sar_to_db"]:
+                g_images = linear_power_to_db(g_images)
 
             g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
             g_nhwtc = self._to_nhwtc(g_images)

@@ -2,21 +2,27 @@
 
 from typing import ClassVar
 
+import torch
+
 from .base import BandSpec
 from .geobench_v2 import _V2Dataset
 
 
 class FieldsOfTheWorld(_V2Dataset):
-    """Sentinel-2 field boundary segmentation (4 classes).
+    """Sentinel-2 field boundary segmentation (3 classes).
 
-    Classes: background, field, boundary, other. Upstream returns
-    ``image_a`` / ``image_b`` change-detection pairs;
-    :meth:`canonicalize_sample` keeps the later acquisition (``image_b``).
+    Classes: background, field, boundary. Fields of the World labels value 3 as unknown;
+    :meth:`canonicalize_sample` maps it to ``ignore_label``, the default
+    ``segmentation.ignore_index``, so it is excluded from loss and metrics. Upstream returns
+    ``image_a`` / ``image_b`` change-detection pairs; :meth:`canonicalize_sample` keeps the later
+    acquisition (``image_b``).
     """
 
     name = "fotw"
     task = "segmentation"
-    num_classes = 4
+    num_classes = 3
+    unknown_label = 3
+    ignore_label = 255
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 4000, "val": 1000, "test": 2000}
@@ -32,8 +38,12 @@ class FieldsOfTheWorld(_V2Dataset):
     # fmt: on
 
     def canonicalize_sample(self, sample: dict) -> dict:
-        """Use the later acquisition (``image_b``) as ``image``."""
+        """Use the later acquisition (``image_b``) as ``image`` and ignore unknown pixels."""
         if "image" not in sample and "image_b" in sample:
             sample["image"] = sample.pop("image_b")
             sample.pop("image_a", None)
+        mask = sample.get("mask")
+        if mask is not None:
+            mask = torch.as_tensor(mask)
+            sample["mask"] = mask.masked_fill(mask == self.unknown_label, self.ignore_label)
         return sample

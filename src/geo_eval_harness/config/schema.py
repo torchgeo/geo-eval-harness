@@ -247,10 +247,20 @@ class ClassificationConfig(StrictModel):
         return self
 
 
+#: Segmentation heads that accept ``neck: vit`` (they fuse a coarse-to-fine pyramid).
+NECK_HEADS = frozenset({"fpn", "upernet", "unet"})
+
+
 class SegmentationConfig(StrictModel):
     """Segmentation probe settings."""
 
-    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet"] = "fpn"
+    head: Literal["linear", "conv_block", "fpn", "dpt", "patch_linear", "upernet", "unet"] = "fpn"
+    neck: Literal["none", "vit", "vit_fine"] = "none"
+    neck_norm: Literal["layernorm", "none"] = "layernorm"
+    upsampler: Literal["none", "anyup"] = "none"
+    weight_decay: StrictFloat = Field(default=0.0, ge=0)
+    head_dropout: StrictFloat = Field(default=0.0, ge=0, lt=1)
+    early_stopping_patience: StrictInt | None = Field(default=None, gt=0)
     layers: list[StrictStr] = Field(default_factory=list)
     learning_rate: StrictFloat = Field(default=1e-3, gt=0)
     epochs: StrictInt = Field(default=10, gt=0)
@@ -260,27 +270,104 @@ class SegmentationConfig(StrictModel):
     ignore_index: StrictInt = 255
     cache_features: StrictBool = True
     cache_dtype: Literal["float16", "float32"] = "float16"
+    amp: Literal["fp16", "off"] = "fp16"
     lora_rank: StrictInt | None = Field(default=None, gt=0)
     lora_target_modules: StrictStr | None = None
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
+    lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+    full_finetune: StrictBool = False
+    feature_standardize: StrictBool = False
+    gradient_checkpointing: StrictBool = False
+    sweep_learning_rates: list[Annotated[StrictFloat, Field(gt=0)]] = Field(default_factory=list)
+    sweep_weight_decays: list[Annotated[StrictFloat, Field(ge=0)]] = Field(
+        default_factory=lambda: [0.0]
+    )
+
+    @property
+    def sweep_grid(self) -> list[tuple[float, float]]:
+        """Return the (learning rate, weight decay) cells of the probe sweep, or ``[]``."""
+        return [(lr, wd) for lr in self.sweep_learning_rates for wd in self.sweep_weight_decays]
+
+    @model_validator(mode="after")
+    def validate_probe_protocol(self) -> "SegmentationConfig":
+        """Restrict the linear-probe sweep and feature standardization to frozen probes."""
+        frozen = self.lora_rank is None and not self.full_finetune
+        if self.feature_standardize and (not frozen or self.upsampler != "none"):
+            raise ValueError("feature_standardize requires a frozen backbone without an upsampler")
+        if not self.sweep_learning_rates:
+            if self.sweep_weight_decays != [0.0]:
+                raise ValueError("sweep_weight_decays requires sweep_learning_rates")
+            return self
+        if not self.sweep_weight_decays:
+            raise ValueError("sweep_weight_decays must not be empty")
+        if self.head != "patch_linear" or self.neck != "none" or not frozen:
+            raise ValueError(
+                "sweep_learning_rates requires head 'patch_linear', no neck, and a frozen backbone"
+            )
+        if len(set(self.sweep_grid)) != len(self.sweep_grid):
+            raise ValueError("sweep learning rates and weight decays must not repeat")
+        return self
+
+    @model_validator(mode="after")
+    def validate_precision(self) -> "SegmentationConfig":
+        """Reject ``amp: off`` with a float16 feature cache, which would still overflow."""
+        frozen = self.lora_rank is None and not self.full_finetune
+        if self.amp == "off" and frozen and self.cache_features and self.cache_dtype == "float16":
+            raise ValueError(
+                "amp 'off' with cached frozen features requires cache_dtype 'float32'; a float16 "
+                "cache still overflows"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_lora(self) -> "SegmentationConfig":
         """Pair LoRA settings with ``lora_rank``; target modules may come from a model preset."""
+        if self.full_finetune and self.lora_rank is not None:
+            raise ValueError("full_finetune and lora_rank are mutually exclusive")
         if self.lora_rank is not None and self.backbone_learning_rate is None:
             raise ValueError("lora_rank requires backbone_learning_rate")
+        if self.full_finetune and self.backbone_learning_rate is None:
+            raise ValueError("full_finetune requires backbone_learning_rate")
         if self.lora_rank is None and (
-            self.backbone_learning_rate is not None
+            (self.backbone_learning_rate is not None and not self.full_finetune)
             or self.lora_alpha != type(self).model_fields["lora_alpha"].default
+            or self.lora_last_blocks is not None
         ):
-            raise ValueError("backbone_learning_rate and lora_alpha require lora_rank")
+            raise ValueError(
+                "backbone_learning_rate (without full_finetune), lora_alpha, and lora_last_blocks "
+                "require lora_rank"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_neck(self) -> "SegmentationConfig":
+        """Allow the ViT neck only for heads that fuse a multi-scale pyramid."""
+        if self.neck != "none" and self.head not in NECK_HEADS:
+            raise ValueError(
+                f"neck {self.neck!r} requires head in {sorted(NECK_HEADS)}, got {self.head!r}"
+            )
+        if self.head_dropout and self.head != "upernet":
+            raise ValueError(f"head_dropout requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.head != "upernet":
+            raise ValueError(f"upsampler 'anyup' requires head 'upernet', got {self.head!r}")
+        if self.upsampler == "anyup" and self.cache_features:
+            raise ValueError("upsampler 'anyup' needs input images; set cache_features: false")
         return self
 
     @property
     def method(self) -> str:
-        """Return the result method name, ``seg-<head>`` with a ``-lora`` suffix for LoRA."""
-        return f"seg-{self.head}" if self.lora_rank is None else f"seg-{self.head}-lora"
+        """Return ``seg-<head>``.
+
+        The rest of the setup (adaptation, neck, upsampler, learning rates, ...) is recorded in
+        the result row's setup columns; see ``geo_eval_harness.results.segmentation_setup_columns``.
+        Linear-probe settings have no setup columns yet: feature standardization appends ``-std``
+        and a probe sweep ``-sweep<n>`` with ``n`` grid cells.
+        """
+        probe = "-std" if self.feature_standardize else ""
+        if self.sweep_grid:
+            probe += f"-sweep{len(self.sweep_grid)}"
+        return f"seg-{self.head}{probe}"
 
 
 class RuntimeConfig(StrictModel):
@@ -291,6 +378,8 @@ class RuntimeConfig(StrictModel):
     workers: StrictInt = Field(default=4, ge=0)
     seed: StrictInt = 0
     verbose: StrictBool = False
+    sample_cache: Literal["none", "disk", "host", "gpu"] = "none"
+    sample_cache_dir: StrictStr = "~/.cache/geo_eval_harness/samples"
 
 
 def load_yaml(path: str | pathlib.Path) -> dict[str, Any]:

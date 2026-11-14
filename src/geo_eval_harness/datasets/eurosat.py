@@ -25,6 +25,18 @@ class EuroSAT(BenchDataset):
     name = "eurosat"
     task = "classification"
     num_classes = 10
+    class_names: ClassVar[tuple[str, ...]] = (
+        "AnnualCrop",
+        "Forest",
+        "HerbaceousVegetation",
+        "Highway",
+        "Industrial",
+        "Pasture",
+        "PermanentCrop",
+        "Residential",
+        "River",
+        "SeaLake",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 16200, "val": 5400, "test": 5400}

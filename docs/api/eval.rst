@@ -49,13 +49,21 @@ Segmentation
 
 .. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_segmentation
+.. autoclass:: LoaderSplits
+.. autoclass:: SegmentationOutcome
 
 .. currentmodule:: geo_eval_harness.segmentation_probe
 .. autoclass:: SegmentationProbe
+.. autoexception:: NonFiniteFeaturesError
 
 .. currentmodule:: geo_eval_harness.segmentation_task
 .. autoclass:: SegmentationSolver
+.. autoclass:: SweepSegmentationSolver
 .. autoclass:: SegMetrics
+.. autoclass:: EpochRecord
+
+.. currentmodule:: geo_eval_harness.epoch_metrics
+.. autoclass:: EpochMetricsWriter
 
 Intrinsic dimension
 -------------------

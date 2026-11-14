@@ -52,6 +52,7 @@ nitpick_ignore = [
     ("py:class", "geo_eval_harness.segmentation_probe.GPUTensorCache"),
     ("py:class", "CachedFeaturesDataset"),
     ("py:class", "GPUTensorCache"),
+    ("py:class", "geo_eval_harness.models.segmentation_heads.SweepPatchLinearHead"),
     # Names that autodoc cannot link to a documentation page.
     ("py:data", "_REGISTRY"),
     ("py:data", "OLMOEARTH_S2_BANDS"),

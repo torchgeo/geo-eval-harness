@@ -15,6 +15,10 @@ class MPv4ger(_V1Dataset):
     name = "m-pv4ger"
     task = "classification"
     num_classes = 2
+    class_names: ClassVar[tuple[str, ...]] = (
+        "no solar pv",
+        "solar pv",
+    )
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 11814, "val": 999, "test": 999}

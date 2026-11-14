@@ -10,7 +10,10 @@ from tests.support.data import require_dataset_data
 # EuroSAT uses torchgeo split-file counts: 27000 images split 60/20/20.
 # RESISC45 uses torchgeo split-file counts: 31500 images split 60/20/20.
 # UCMerced uses torchgeo split-file counts: 2100 images split 60/20/20.
-# HOTOSM buildings uses the official Hugging Face split row counts.
+# HOTOSM buildings: the 5k benchmark train subset (default partition), official val/test rows.
+# Open Cities counts come from the committed open_cities_index.csv.gz.
+# LoveDA uses the checked-in carve of official Train and the official Val release as test.
+# OSCD post counts 256-pixel tiles of its fixed city splits.
 EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "m-eurosat": {"train": 2000, "val": 1000, "test": 1000},
     "m-forestnet": {"train": 6464, "val": 989, "test": 993},
@@ -37,7 +40,11 @@ EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "ucmerced": {"train": 1260, "val": 420, "test": 420},
     "eurosat-spatial": {"train": 16200, "val": 5400, "test": 5400},
     "aid": {"train": 6000, "val": 2000, "test": 2000},
-    "hotosm_buildings": {"train": 57890, "val": 7237, "test": 7236},
+    "hotosm_buildings": {"train": 5000, "val": 7237, "test": 7236},
+    "openearthmap-sar": {"train": 4333, "val": 210, "test": 490},
+    "open_cities": {"train": 76818, "val": 11236, "test": 22408},
+    "loveda": {"train": 2269, "val": 253, "test": 1669},
+    "oscd-post": {"train": 119, "val": 31, "test": 69},
 }
 
 

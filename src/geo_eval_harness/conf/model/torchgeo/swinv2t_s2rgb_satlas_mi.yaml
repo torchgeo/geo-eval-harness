@@ -7,6 +7,17 @@ kwargs:
   normalization_input_unit: s2_tci_div255
   auto_resize: true
   target_size: 256
+input:
+  # Satlas trains on Sentinel-2 TCI / 255 without mean/std; `model` reproduces that (see _input_units.to_s2_tci).
+  normalization: model
+dataset_overrides:
+  # No TCI scale: SAR dB (sen1floods11-s1) or linear backscatter (kuro_siwo); `all` mixes sensor units (rest).
+  sen1floods11-s1: {input: {normalization: dataset}}
+  kuro_siwo: {input: {normalization: dataset}}
+  benv2: {input: {normalization: dataset}}
+  so2sat: {input: {normalization: dataset}}
+  m-so2sat: {input: {normalization: dataset}}
+  treesatai: {input: {normalization: dataset}}
 segmentation:
   layers:
     - features.7

@@ -2,9 +2,10 @@
 
 import logging
 import os
-from collections.abc import Iterator, Sequence, Sized
+from collections.abc import Callable, Iterator, Sequence, Sized
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, NotRequired, TypedDict
+from pathlib import Path
+from typing import TYPE_CHECKING, NamedTuple, NotRequired, TypedDict
 
 import numpy as np
 import torch
@@ -47,7 +48,9 @@ from geo_eval_harness.results import (
     bootstrap_accuracy,
     bootstrap_map,
     bootstrap_miou,
+    format_setup_value,
     model_results_path,
+    segmentation_setup_columns,
 )
 from geo_eval_harness.resume import (
     KEY_COLS,
@@ -63,6 +66,7 @@ from geo_eval_harness.utils import FeatureSplit, FeatureSplits, extract_features
 
 if TYPE_CHECKING:
     import geo_eval_harness.segmentation_task
+    from geo_eval_harness.epoch_metrics import EpochMetricsWriter
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +105,18 @@ class LoaderSplits:
     train: DataLoader
     val: DataLoader
     test: DataLoader
+
+
+class SegmentationOutcome(NamedTuple):
+    """Test metrics and training summary from :func:`evaluate_segmentation`."""
+
+    metrics: "geo_eval_harness.segmentation_task.SegMetrics"
+    feature_dim: int
+    lr: float | None
+    batch_size: int | None
+    best_epoch: int | None
+    best_val_miou: float | None
+    weight_decay: float | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -593,20 +609,32 @@ def evaluate_segmentation(
     loaders: LoaderSplits,
     cfg: RunConfig,
     num_classes: int,
-) -> "tuple[geo_eval_harness.segmentation_task.SegMetrics, int, float | None, int | None]":
+    *,
+    on_epoch: "Callable[[geo_eval_harness.segmentation_task.EpochRecord], None] | None" = None,
+) -> SegmentationOutcome:
     """Train a segmentation head, optionally with LoRA backbone adapters, and evaluate test mIoU.
 
     Frozen-backbone features can be cached to avoid recomputing them each epoch.
 
+    Args:
+        model: Backbone to probe.
+        loaders: Train, validation, and test loaders.
+        cfg: Resolved run configuration.
+        num_classes: Number of segmentation classes.
+        on_epoch: Called with each epoch's record before epoch selection.
+
     Returns:
-        Tuple of (metrics, feature_dim, lr, batch_size).
+        Test metrics with the feature dimension, learning rate, batch size, and selected epoch.
     """
     train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
     if val_loader is None or len(val_loader) == 0:
         raise ValueError("Segmentation benchmarks require a non-empty validation loader.")
     device = torch.device(cfg.runtime.device)
     seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
-    from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
+    from geo_eval_harness.segmentation_task import (
+        SweepSegmentationSolver,
+        build_seg_probe_and_solver,
+    )
 
     seg_cfg = cfg.segmentation
     epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
@@ -620,12 +648,15 @@ def evaluate_segmentation(
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_cache)
         solver.fit_cached(
             train_cache=train_cache,
             val_cache=val_cache,
             batch_size=probe_batch_size,
             epochs=epochs,
             verbose=verbose,
+            on_epoch=on_epoch,
         )
         eval_result = solver.evaluate_cached(
             test_cache,
@@ -633,7 +664,15 @@ def evaluate_segmentation(
             collect_confusions=collect_confusions,
         )
     else:
-        solver.fit(train_loader=train_loader, val_loader=val_loader, epochs=epochs, verbose=verbose)
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_loader)
+        solver.fit(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            verbose=verbose,
+            on_epoch=on_epoch,
+        )
         eval_result = solver.evaluate(
             test_loader,
             collect_confusions=collect_confusions,
@@ -653,7 +692,18 @@ def evaluate_segmentation(
         )
     else:
         metrics = eval_result
-    return metrics, sum(probe.channels_list), lr, actual_batch_size
+    weight_decay = seg_cfg.weight_decay
+    if isinstance(solver, SweepSegmentationSolver):
+        lr, weight_decay = solver.selected_lr, solver.selected_weight_decay
+    return SegmentationOutcome(
+        metrics=metrics,
+        feature_dim=sum(probe.channels_list),
+        lr=lr,
+        batch_size=actual_batch_size,
+        best_epoch=solver.best_epoch,
+        best_val_miou=solver.best_val_miou,
+        weight_decay=weight_decay,
+    )
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:
@@ -683,12 +733,23 @@ def run_segmentation(
     num_classes = common_meta["num_classes"]
     assert isinstance(val_loader.dataset, Sized)
     assert isinstance(test_loader.dataset, Sized)
-    metrics, feat_dim, best_lr, best_bs = evaluate_segmentation(model, loaders, cfg, num_classes)
+    writer = _epoch_metrics_writer(cfg, common_meta)
+    outcome = evaluate_segmentation(
+        model, loaders, cfg, num_classes, on_epoch=None if writer is None else writer.epoch
+    )
+    if writer is not None:
+        writer.selected(
+            outcome.best_epoch,
+            outcome.best_val_miou,
+            lr=outcome.lr,
+            weight_decay=outcome.weight_decay,
+        )
+    metrics = outcome.metrics
 
     segmentation_meta: ResultMetadata = {
         **common_meta,
         "merge_val": False,
-        "feature_dim": feat_dim,
+        "feature_dim": outcome.feature_dim,
         "n_train": len(train_dataset),
         "n_val": len(val_loader.dataset),
         "n_test": len(test_loader.dataset),
@@ -700,16 +761,33 @@ def run_segmentation(
         metric_value=metrics.get("mIoU", float("nan")),
         ci_lower=metrics.get("ci_lower", float("nan")),
         ci_upper=metrics.get("ci_upper", float("nan")),
-        best_lr=best_lr,
-        best_batch_size=best_bs,
+        best_lr=outcome.lr,
+        best_batch_size=outcome.batch_size,
         fw_iou=metrics.get("fw_IoU"),
         precision=metrics.get("precision"),
         recall=metrics.get("recall"),
         f1=metrics.get("f1"),
         boundary_iou=metrics["boundary_IoU"],
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
+        best_val_epoch=format_setup_value(outcome.best_epoch),
+        best_val_miou=format_setup_value(outcome.best_val_miou),
     ).to_row()
+    row.update(segmentation_setup_columns(cfg.segmentation))
     yield [row]
+
+
+def _epoch_metrics_writer(
+    cfg: RunConfig, common_meta: ResultMetadata
+) -> "EpochMetricsWriter | None":
+    """Return a per-epoch JSON Lines writer when ``output.epoch_metrics`` is set."""
+    if cfg.output.epoch_metrics is None:
+        return None
+    from geo_eval_harness.epoch_metrics import EpochMetricsWriter
+
+    identity_keys = ("dataset", "name", "bands", "partition", "image_size", "seed", "config_hash")
+    identity = {key: common_meta[key] for key in identity_keys}
+    identity["method"] = cfg.segmentation.method
+    return EpochMetricsWriter(Path(cfg.output.epoch_metrics), identity)
 
 
 def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
@@ -880,6 +958,39 @@ def dataset_metadata(
     }
 
 
+def _cache_segmentation_loaders(
+    cfg: RunConfig, ds_name: str, loaders: LoaderSplits
+) -> LoaderSplits:
+    """Serve segmentation splits from ``runtime.sample_cache``; ``none`` keeps the loaders."""
+    mode = cfg.runtime.sample_cache
+    if mode == "none":
+        return loaders
+    from geo_eval_harness.datasets.sample_cache import cache_loader
+
+    def cached(loader: DataLoader, split: str) -> DataLoader:
+        identity: dict[str, object] = {
+            "dataset": ds_name,
+            "split": split,
+            "partition": cfg.input.partition if split == "train" else "default",
+            "bands": normalize_bands_value(cfg.input.bands),
+            "image_size": cfg.input.image_size,
+            "interpolation": cfg.input.interpolation,
+            "time_steps": cfg.input.time_steps,
+        }
+        return cache_loader(  # type: ignore[return-value] - same iteration contract
+            loader,
+            mode=mode,
+            identity=identity,
+            cache_dir=Path(cfg.runtime.sample_cache_dir),
+            device=torch.device(cfg.runtime.device),
+            num_workers=cfg.runtime.workers,
+        )
+
+    return LoaderSplits(
+        cached(loaders.train, "train"), cached(loaders.val, "val"), cached(loaders.test, "test")
+    )
+
+
 def run_dataset(
     cfg: RunConfig,
     ds_name: str,
@@ -930,6 +1041,7 @@ def run_dataset(
     common_meta["normalization"] = model.effective_normalization
     loaders = LoaderSplits(train_loader, val_loader, test_loader)
     if ds_cls.task == "segmentation":
+        loaders = _cache_segmentation_loaders(cfg, ds_name, loaders)
         for rows in run_segmentation(cfg, model, loaders, common_meta):
             yield rows, [], []
         return

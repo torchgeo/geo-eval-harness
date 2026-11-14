@@ -10,9 +10,6 @@ class TreeSatAI(_V2Dataset):
     """Aerial + Sentinel-2 + SAR tree species classification (15 classes).
 
     Multi-sensor dataset with aerial RGB+NIR, 12 Sentinel-2 bands, and 3 SAR bands.
-    Class indices follow the upstream ``GeoBenchTreeSatAI.classes`` ordering:
-    Abies, Acer, Alnus, Betula, Cleared, Fagus, Fraxinus, Larix, Picea, Pinus,
-    Populus, Prunus, Pseudotsuga, Quercus, Tilia.
     """
 
     band_order_strategy = "by_sensor"
@@ -20,6 +17,23 @@ class TreeSatAI(_V2Dataset):
     name = "treesatai"
     task = "classification"
     num_classes = 15
+    class_names: ClassVar[tuple[str, ...]] = (
+        "Abies",
+        "Acer",
+        "Alnus",
+        "Betula",
+        "Cleared",
+        "Fagus",
+        "Fraxinus",
+        "Larix",
+        "Picea",
+        "Pinus",
+        "Populus",
+        "Prunus",
+        "Pseudotsuga",
+        "Quercus",
+        "Tilia",
+    )
     multilabel = True
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 4000, "val": 1000, "test": 2000}

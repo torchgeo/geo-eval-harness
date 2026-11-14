@@ -4,7 +4,9 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import tarfile
+import zipfile
 from collections.abc import Iterator
 from pathlib import Path
 from unittest import mock
@@ -12,7 +14,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
-from geo_eval_harness import hub
+from geo_eval_harness import download, hub
 from geo_eval_harness.datasets import _v1_webdataset as v1
 from geo_eval_harness.datasets import (
     geobench_v1,
@@ -32,6 +34,77 @@ from geo_eval_harness.download import (
     download_resisc45,
     download_ucmerced,
 )
+from tests.support.data import write_bright_post_sar_archives, write_openearthmap_sar_archives
+
+
+@pytest.mark.usefixtures("small_openearthmap_sar")
+def test_sar_download_verifies_selects_and_repairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    artifacts = write_openearthmap_sar_archives(source)
+    monkeypatch.setattr(download, "SAR_ARCHIVES", artifacts)
+    with mock.patch.object(
+        download,
+        "urlopen",
+        side_effect=lambda url, **kw: (source / url.rsplit("/", 1)[1]).open("rb"),
+    ) as transport:
+        download.download_datasets(["openearthmap-sar"], tmp_path / "data")
+        target = tmp_path / "data/openearthmap-sar"
+        assert transport.call_args_list == [mock.call(a.url, timeout=120) for a in artifacts]
+        assert not (target / "train/rgb_images").exists()
+        assert not (target / "__MACOSX").exists()
+        assert not (target / "val/.DS_Store").exists()
+        missing = target / "val/labels/ValArea_001.tif"
+        missing.unlink()
+        download.download_openearthmap_sar(tmp_path / "data")
+        assert missing.is_file()
+        assert transport.call_count == 4
+        archive = target / artifacts[0].filename
+        archive.write_bytes(b"corrupt")
+        with pytest.raises(ValueError, match="checksum/size mismatch"):
+            download.download_openearthmap_sar(tmp_path / "data")
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_bright_download_is_pinned_and_repairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "source"
+    checksums = write_bright_post_sar_archives(source)
+    monkeypatch.setattr(download, "load_checksums", lambda manifest: checksums)
+
+    def snapshot_download(local_dir: Path, **kwargs: object) -> None:
+        for name in checksums:
+            if not (local_dir / name).exists():
+                shutil.copy(source / name, local_dir / name)
+
+    with mock.patch.object(hub, "snapshot_download", side_effect=snapshot_download) as snapshot:
+        download.download_datasets(["bright-post-sar"], tmp_path / "data")
+        target = tmp_path / "data/bright-post-sar"
+        assert snapshot.call_args.kwargs["repo_id"] == "Kullervo/BRIGHT"
+        assert snapshot.call_args.kwargs["revision"] == download.BRIGHT_REVISION
+        missing = target / "target/b_1_building_damage.tif"
+        missing.unlink()
+        download.download_bright_post_sar(tmp_path / "data")
+        assert missing.is_file()
+        (target / "target.zip").write_bytes(b"corrupt")
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            download.download_bright_post_sar(tmp_path / "data")
+
+
+@pytest.mark.usefixtures("small_openearthmap_sar")
+@pytest.mark.parametrize("member", ["../escaped.tif", "train/sar_images/unexpected.tif"])
+def test_sar_zip_index_rejected_before_extraction(tmp_path: Path, member: str) -> None:
+    artifacts = write_openearthmap_sar_archives(tmp_path / "source")
+    artifact = artifacts[0]
+    path = tmp_path / "source" / artifact.filename
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.writestr(member, b"not a sample")
+    target = tmp_path / "destination"
+    with pytest.raises(ValueError, match=r"Unsafe ZIP member|Unexpected TIFF"):
+        download._extract_sar_archive(path, target, artifact.prefixes)
+    assert not target.exists()
 
 
 @pytest.fixture
@@ -191,7 +264,13 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "manifest",
-    ["aid.sha256", "geobench_v1.sha256", "geobench_v2.sha256", "hotosm_buildings.sha256"],
+    [
+        "aid.sha256",
+        "bright_post_sar.sha256",
+        "geobench_v1.sha256",
+        "geobench_v2.sha256",
+        "hotosm_buildings.sha256",
+    ],
 )
 def test_checksum_manifests_are_well_formed(manifest: str) -> None:
     text = (Path(hub.__file__).parent / "checksums" / manifest).read_text().splitlines()
@@ -344,12 +423,14 @@ def test_download_datasets_validates_every_name_before_dispatch(
     ):
         download_datasets(names, tmp_path)
 
-    for download in (v1, v2, eurosat, resisc45, ucmerced):
-        download.assert_not_called()
+    for downloader in (v1, v2, eurosat, resisc45, ucmerced):
+        downloader.assert_not_called()
     assert not list(tmp_path.iterdir())
 
 
-@pytest.mark.parametrize("name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings"])
+@pytest.mark.parametrize(
+    "name", ["eurosat", "resisc45", "ucmerced", "hotosm_buildings", "open_cities"]
+)
 def test_download_datasets_deduplicates_names(tmp_path: Path, name: str) -> None:
     with mock.patch(f"geo_eval_harness.download.download_{name}") as download:
         download_datasets([name, name], tmp_path)
