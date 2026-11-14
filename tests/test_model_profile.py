@@ -356,10 +356,8 @@ def test_profile_records_fixed_batch_and_precision() -> None:
     assert result.latency_ms_per_batch_p50 > 0
     assert result.peak_gpu_mem_gb is None
     assert result.reserved_gpu_mem_gb is None
-    values = result.as_dict()
-    assert values["gflops_status"] == "disabled"
-    assert values["gflops_convention"] == "one multiply-add is two operations"
-    assert values["gflops_coverage"] == "registered operators only; total coverage unverified"
+    assert result.flops.convention == "one multiply-add is two operations"
+    assert result.flops.coverage == "registered operators only; total coverage unverified"
 
 
 def test_profile_propagates_unsupported_model_flops() -> None:
