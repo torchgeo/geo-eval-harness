@@ -22,6 +22,13 @@ Clay v1 Base
 
 Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching. Use ``python scripts/migrations/migrate_clay_v1.py`` to relabel a separate results checkout.
 
+Clay v1.5 Large
+^^^^^^^^^^^^^^^
+
+``terratorch/clay_v1_5`` and ``terratorch/clay_v1_5_cls`` load the official Clay v1.5 Large checkpoint from ``made-with-clay/Clay/v1.5/clay-v1.5.ckpt`` at a pinned revision with a SHA-256 check. The wrapper runs only the 24-block, 1024-dimensional encoder and strictly checks every encoder weight; the pretraining decoder and teacher are excluded. The `v1.5 specification <https://github.com/Clay-foundation/model/blob/main/docs/release-notes/specification.md>`_ quotes approximately 311M encoder parameters and 632M across the full pretraining model.
+
+Mean-patch and CLS-token pooling are separate presets. Segmentation taps blocks 5, 11, 17, and 23. The default input is 256 pixels; an explicit ``--image-size`` controls the actual input without a fixed wrapper resize. Inputs must be square with sides divisible by eight. Wavelengths, GSD, missing time/location metadata, and Sentinel-2 normalization follow the Clay v1 wrapper. A local checkpoint can be supplied as ``model.kwargs.checkpoint_path``; it must contain a complete, shape-compatible ``model.encoder.*`` state dict.
+
 TerraFM
 ^^^^^^^
 
