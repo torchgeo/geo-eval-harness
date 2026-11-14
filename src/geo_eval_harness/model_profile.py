@@ -54,28 +54,6 @@ class ProfileResult:
     measurements: int
     input_shape: tuple[int, ...]
 
-    def as_dict(self) -> dict[str, float | int | str | None]:
-        """Return a flat representation suitable for result storage."""
-        return {
-            "params_m": self.params_m,
-            "throughput_samples_per_sec": self.throughput_samples_per_sec,
-            "latency_ms_per_batch_p50": self.latency_ms_per_batch_p50,
-            "peak_gpu_mem_gb": self.peak_gpu_mem_gb,
-            "reserved_gpu_mem_gb": self.reserved_gpu_mem_gb,
-            "gflops": self.flops.gflops,
-            "gflops_status": self.flops.status,
-            "gflops_reason": self.flops.reason,
-            "gflops_counter": self.flops.counter,
-            "gflops_convention": self.flops.convention,
-            "gflops_coverage": self.flops.coverage,
-            "batch_size": self.batch_size,
-            "device": self.device,
-            "precision": self.precision,
-            "warmup": self.warmup,
-            "measurements": self.measurements,
-            "input_shape": str(self.input_shape),
-        }
-
 
 @dataclass(frozen=True, kw_only=True)
 class ProfileTiming:
