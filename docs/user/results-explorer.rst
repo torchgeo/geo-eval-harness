@@ -29,6 +29,8 @@ grids); archived snapshots keep them.  The segmentation method menus are
 wide table that the script melts into the long ``method="profile"`` rows the
 page expects.
 
+The HTML stores repeated rows and column values once, then expands them in the browser. The generator limits the HTML and snapshot files to 50 MB each.
+
 The page is regenerated automatically: whenever a results CSV lands on
 ``main``, the ``Results explorer`` GitHub Actions workflow reruns the script
 and opens a pull request with the refreshed page for a maintainer to merge, so

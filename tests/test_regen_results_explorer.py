@@ -3,6 +3,8 @@
 import csv
 import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -25,6 +27,7 @@ const DEFAULT_SNAPSHOT = "old";
 const DATA = [];
 const GPU_PRICES = [{"provider":"aws","usd_per_hr":2.0}];
 const CARBON_INTENSITY = [{"provider":"aws","region":"us-east-1","gco2_per_kwh":100}];
+function unpackRows(p) {}
 </script>
 """
 
@@ -166,17 +169,18 @@ def test_regeneration_preserves_references_history_and_current_rows(
 
     text = explorer.HTML_PATH.read_text()
     assert _constant(text, "DEFAULT_SNAPSHOT") == label
-    assert _constant(text, "DATA") == [
+    assert explorer.unpack_rows(_constant(text, "DATA_PACKED")) == [
         *expected,
-        {"snapshot": "2020-01-01", "method": "linear", "name": "old"},
+        {"method": "linear", "name": "old", "snapshot": "2020-01-01"},
     ]
+    assert "const DATA = unpackRows(DATA_PACKED);" in text
     assert _constant(text, "SNAPSHOTS") == [
         {"label": label, "rows": 4},
         {"label": "2020-01-01", "rows": 1},
     ]
     assert _constant(text, "GPU_PRICES") == _constant(HTML, "GPU_PRICES")
     assert _constant(text, "CARBON_INTENSITY") == _constant(HTML, "CARBON_INTENSITY")
-    assert json.loads((explorer.SNAPSHOT_DIR / f"{label}.json").read_text()) == expected
+    assert explorer._read_snapshot(explorer.SNAPSHOT_DIR / f"{label}.json") == expected
     assert old_path.read_bytes() == old_bytes
     assert "This snapshot contains 4 measurements" in text
     assert "1 frozen-backbone variants on 1 classification datasets" in text
@@ -195,8 +199,8 @@ def test_regeneration_preserves_references_history_and_current_rows(
 def test_generated_json_preserves_backslashes_and_unicode() -> None:
     rows = [{"name": "model\\north", "dataset": "tile_\u5317", "snapshot": "example"}]
     meta = [{"label": "example", "rows": 1}]
-    rendered = explorer._replace_snapshot_data(HTML, rows, meta, "example")
-    assert _constant(rendered, "DATA") == rows
+    rendered = explorer._replace_snapshot_data(HTML, {"example": rows}, meta, "example")
+    assert explorer.unpack_rows(_constant(rendered, "DATA_PACKED")) == rows
     assert _constant(rendered, "GPU_PRICES") == _constant(HTML, "GPU_PRICES")
     assert _constant(rendered, "CARBON_INTENSITY") == _constant(HTML, "CARBON_INTENSITY")
 
@@ -205,13 +209,19 @@ def test_generated_json_preserves_backslashes_and_unicode() -> None:
 def test_missing_cost_references_fail_visibly(name: str) -> None:
     broken = re.sub(rf"const {name} = .*?;\n", "", HTML)
     with pytest.raises(SystemExit, match="GPU_PRICES/CARBON_INTENSITY"):
-        explorer._replace_snapshot_data(broken, [], [], "example")
+        explorer._replace_snapshot_data(broken, {}, [], "example")
 
 
 def test_missing_data_anchor_fails_visibly() -> None:
     broken = HTML.replace("const COLUMNS", "const RENAMED_COLUMNS")
     with pytest.raises(SystemExit, match="COLUMNS/NUMERIC_COLS/DATA"):
-        explorer._replace_snapshot_data(broken, [], [], "example")
+        explorer._replace_snapshot_data(broken, {}, [], "example")
+
+
+def test_page_without_decoder_fails_visibly() -> None:
+    broken = HTML.replace("function unpackRows(p) {}\n", "")
+    with pytest.raises(SystemExit, match="unpackRows"):
+        explorer._replace_snapshot_data(broken, {}, [], "example")
 
 
 def test_missing_headline_does_not_overwrite_the_page(
@@ -223,6 +233,96 @@ def test_missing_headline_does_not_overwrite_the_page(
     with pytest.raises(SystemExit, match="headline-text"):
         explorer.main()
     assert explorer.HTML_PATH.read_text() == broken
+
+
+def test_pack_rows_round_trips_duplicates_absent_keys_and_number_types() -> None:
+    shared = {"method": "linear", "name": "a", "metric_value": 0.5, "seed": 1.0, "best_c": None}
+    snapshots = {
+        "new": [
+            {**shared, "snapshot": "new"},
+            {"method": "knn5", "name": "b", "image_size": 2048, "snapshot": "new"},
+            {"method": "knn5", "name": "b", "image_size": 2048.0, "merge_val": True},
+            {**shared, "snapshot": "new"},
+        ],
+        "old": [{**shared}, {"method": "linear", "unlisted": "x"}],
+    }
+    packed = explorer.pack_rows(snapshots)
+
+    rows = explorer.unpack_rows(json.loads(json.dumps(packed)))
+    expected = [{**r, "snapshot": label} for label, rs in snapshots.items() for r in rs]
+    assert rows == expected
+    assert [type(r.get("image_size")) for r in rows[1:3]] == [int, float]
+    assert "best_c" in rows[0]
+    assert "best_c" not in rows[1]
+    # Identical rows are stored once, however many snapshots repeat them.
+    assert len(packed["index"][0]) == 4
+    assert packed["snapshots"] == [["new", [0, 3, 0, 1]], ["old", [0, 1, 3, 1]]]
+
+
+def test_archived_segmentation_rows_are_preserved(
+    explorer_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archived = [
+        {"method": "linear", "name": "old", "metric_value": 0.7},
+        {"method": "seg-fpn", "name": "legacy", "metric_value": 0.4},
+        {"method": "seg-upernet", "name": "setup", "adaptation": "frozen", "metric_value": 0.5},
+        {"method": "profile", "task": "segmentation", "metric_value": 3.0},
+    ]
+    (explorer.SNAPSHOT_DIR / "2020-01-01.json").write_text(json.dumps(archived))
+    monkeypatch.setattr("sys.argv", ["regen_results_explorer.py", "--label", "2026-09-10"])
+
+    explorer.main()
+
+    text = explorer.HTML_PATH.read_text()
+    rows = explorer.unpack_rows(_constant(text, "DATA_PACKED"))
+    old = [r.get("name") for r in rows if r["snapshot"] == "2020-01-01"]
+    assert old == ["old", "legacy", "setup", None]
+    assert {"label": "2020-01-01", "rows": 4} in _constant(text, "SNAPSHOTS")
+
+
+def test_size_guard_refuses_to_write_an_oversized_page(
+    explorer_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("sys.argv", ["regen_results_explorer.py", "--label", "2026-09-10"])
+    monkeypatch.setattr(explorer, "MAX_ARTIFACT_BYTES", 100)
+    with pytest.raises(SystemExit, match="over the"):
+        explorer.main()
+    assert explorer.HTML_PATH.read_text() == HTML
+
+
+def test_committed_explorer_artifacts_stay_far_below_github_file_limit() -> None:
+    static = explorer.ROOT / "docs" / "_static"
+    artifacts = [
+        static / "results-explorer.html",
+        static / "ranking_explorer.html",
+        *sorted(explorer.SNAPSHOT_DIR.glob("*.json")),
+    ]
+    sizes = {p.name: p.stat().st_size for p in artifacts if p.exists()}
+    assert "results-explorer.html" in sizes
+    assert {n: s for n, s in sizes.items() if s > explorer.MAX_ARTIFACT_BYTES} == {}
+
+
+def test_page_unpack_rows_matches_python(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    page = explorer.HTML_PATH.read_text(encoding="utf-8")
+    match = re.search(r"^function unpackRows\(p\) \{.*?^\}$", page, re.DOTALL | re.MULTILINE)
+    assert match is not None
+    snapshots = {
+        "b": [{"method": "linear", "seed": 1.0, "x": None}, {"method": "knn5", "n": 2048}],
+        "a": [{"method": "knn5", "n": 2048}, {"method": "seg-unet", "name": "\u5317\\"}],
+    }
+    packed = explorer.pack_rows(snapshots)
+    script = tmp_path / "unpack.js"
+    script.write_text(
+        match.group()
+        + f"\nprocess.stdout.write(JSON.stringify(unpackRows({json.dumps(packed)})));\n"
+    )
+    out = subprocess.run(
+        [node, str(script)], capture_output=True, text=True, encoding="utf-8", check=True
+    )
+    assert json.loads(out.stdout) == explorer.unpack_rows(packed)
 
 
 def test_efficiency_reference_preserves_other_sizes_and_heads_in_the_table(
