@@ -451,9 +451,11 @@ class TerraFMBench(BenchModel):
         if self.modality == "s2":
             optical = [b for b in self.bands if b.sensor == "s2"]
             x = to_s2_dn(x, detect_input_unit(optical or self.bands))
-        elif any(getattr(self.bands[i], "unit", None) == "linear_power" for i in self.s1_indices):
-            # TerraFM's S1 statistics are in dB.
-            x = linear_power_to_db(x)
+        else:
+            x = x.clone()
+            for channel, band_index in enumerate(self.s1_indices):
+                if self.bands[band_index].unit == "linear_power":
+                    x[:, channel] = linear_power_to_db(x[:, channel])
         return (x - (m - 2 * s)) / (4 * s)
 
     def _prepare_input(self, images: torch.Tensor) -> torch.Tensor:
