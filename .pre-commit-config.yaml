@@ -9,7 +9,7 @@ repos:
         exclude: ^(src/geo_eval_harness/config/schema\.py|src/geo_eval_harness/cli\.py|src/geo_eval_harness/preprocessing\.py|src/geo_eval_harness/commands)
 
   - repo: https://github.com/facebook/pyrefly-pre-commit
-    rev: 1.2.0
+    rev: 1.4.1
     hooks:
       - id: pyrefly-check
         language: system
