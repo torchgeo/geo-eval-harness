@@ -508,3 +508,43 @@ def test_runner_invalid_validation_does_not_write_results(
     with pytest.raises(ValueError, match=r"non-empty validation|must be finite"):
         main(cfg)
     assert not out.exists()
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_class_weights_use_training_masks_and_are_recorded(tmp_path: Path, *, cached: bool):
+    from geo_eval_harness import main as main_module
+
+    solvers: list[SegmentationSolver] = []
+    apply_weights = main_module._apply_class_weights
+
+    def spy(solver: SegmentationSolver, *args: object) -> None:
+        apply_weights(solver, *args)
+        solvers.append(solver)
+
+    loaders = _synthetic_segmentation_loaders()
+    loaders[0]._masks.fill_(1)
+    loaders[0]._masks[0] = 0
+    out = tmp_path / "weighted.csv"
+    cfg = _cfg_for_segmentation(
+        out,
+        overrides={
+            "model": _TINY_VIT,
+            "runtime": {"sample_cache": "none" if cached else "gpu"},
+            "segmentation": {
+                "head": "linear",
+                "layers": _TINY_VIT_LAYERS,
+                "epochs": 1,
+                "batch_size": 2,
+                "cache_features": cached,
+                "class_weights": "inverse_frequency",
+            },
+        },
+    )
+    with (
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=loaders),
+        mock.patch.object(main_module, "_apply_class_weights", spy),
+    ):
+        main(cfg)
+
+    assert pd.read_csv(out).iloc[0]["class_weights"] == "inverse_frequency"
+    torch.testing.assert_close(solvers[0].criterion.weight, torch.tensor([1.0, 1.0 / 7, 0.0]))

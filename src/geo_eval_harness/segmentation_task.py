@@ -792,7 +792,7 @@ class SegmentationSolver:
         return metrics
 
 
-class SweepCrossEntropy(nn.Module):
+class SweepCrossEntropy(nn.CrossEntropyLoss):
     """Sum of per-head cross-entropy losses for ``(n_heads, B, C, H, W)`` sweep logits.
 
     Heads share no parameters, so each receives exactly the gradient of its own mean loss.
@@ -800,18 +800,15 @@ class SweepCrossEntropy(nn.Module):
     """
 
     def __init__(self, ignore_index: int) -> None:
-        super().__init__()
-        self.ignore_index = ignore_index
+        super().__init__(ignore_index=ignore_index)
 
-    def forward(self, logits: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:  # noqa: A002 -- PyTorch loss signature.
         """Return the summed per-head loss."""
-        if logits.ndim == masks.ndim + 1:
-            return nn.functional.cross_entropy(logits, masks, ignore_index=self.ignore_index)
-        n_heads = logits.shape[0]
-        targets = masks.unsqueeze(0).expand(n_heads, *masks.shape).flatten(0, 1)
-        loss = nn.functional.cross_entropy(
-            logits.flatten(0, 1).float(), targets, ignore_index=self.ignore_index
-        )
+        if input.ndim == target.ndim + 1:
+            return super().forward(input, target)
+        n_heads = input.shape[0]
+        targets = target.unsqueeze(0).expand(n_heads, *target.shape).flatten(0, 1)
+        loss = super().forward(input.flatten(0, 1).float(), targets)
         return loss * n_heads
 
 

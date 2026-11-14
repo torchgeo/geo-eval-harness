@@ -300,6 +300,7 @@ class SegmentationConfig(StrictModel):
     lora_alpha: StrictFloat = Field(default=16.0, gt=0)
     lora_last_blocks: StrictInt | None = Field(default=None, gt=0)
     backbone_learning_rate: StrictFloat | None = Field(default=None, gt=0)
+    class_weights: Literal["none", "inverse_frequency"] = "none"
     full_finetune: StrictBool = False
     feature_standardize: StrictBool = False
     gradient_checkpointing: StrictBool = False

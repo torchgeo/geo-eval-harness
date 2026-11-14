@@ -423,6 +423,9 @@ Training knobs
    * - ``backbone_learning_rate``
      - ``null``
      - Learning rate for LoRA adapters or the fully fine-tuned backbone; required with either.
+   * - ``class_weights``
+     - ``none``
+     - ``inverse_frequency`` weights cross-entropy by ``median(f) / f_c`` using global training-pixel frequencies. Classes absent from training receive zero weight. Training and validation use these weights, including probe sweeps; metrics remain unweighted.
    * - ``full_finetune``
      - ``false``
      - Train every backbone weight (reference regime; norms and dropout stay in eval mode).

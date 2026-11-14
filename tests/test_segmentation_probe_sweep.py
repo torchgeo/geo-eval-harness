@@ -89,18 +89,22 @@ def test_sweep_head_matches_independent_patch_linear_heads() -> None:
     torch.testing.assert_close(sweep(features, 64, 64), logits[1])
 
 
-def test_sweep_cross_entropy_sums_per_head_losses() -> None:
+@pytest.mark.parametrize("weight", [None, torch.tensor([0.5, 2.0, 1.0, 0.0])])
+def test_sweep_cross_entropy_sums_per_head_losses(weight: torch.Tensor | None) -> None:
     logits = torch.randn(3, 2, NUM_CLASSES, 8, 8)
     masks = torch.randint(0, NUM_CLASSES, (2, 8, 8))
     masks[0, 0] = 255
-    loss = SweepCrossEntropy(255)(logits, masks)
+    criterion = SweepCrossEntropy(255)
+    criterion.weight = weight
+    loss = criterion(logits, masks)
     expected = sum(
-        nn.functional.cross_entropy(logits[i], masks, ignore_index=255) for i in range(3)
+        nn.functional.cross_entropy(logits[i], masks, weight=weight, ignore_index=255)
+        for i in range(3)
     )
     torch.testing.assert_close(loss, expected)
     torch.testing.assert_close(
-        SweepCrossEntropy(255)(logits[0], masks),
-        nn.functional.cross_entropy(logits[0], masks, ignore_index=255),
+        criterion(logits[0], masks),
+        nn.functional.cross_entropy(logits[0], masks, weight=weight, ignore_index=255),
     )
 
 

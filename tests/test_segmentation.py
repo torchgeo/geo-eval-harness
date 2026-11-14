@@ -400,7 +400,7 @@ def test_solver_evaluation_parity(
         assert metrics == pytest.approx(expected_metrics)
 
 
-@pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 1.0])])
+@pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 0.0])])
 def test_validation_loss_is_the_split_mean_of_the_criterion(
     class_weight: torch.Tensor | None,
 ) -> None:

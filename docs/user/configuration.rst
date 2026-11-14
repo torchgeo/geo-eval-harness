@@ -205,6 +205,7 @@ Segmentation
      lora_alpha: 16.0
      lora_last_blocks: null
      backbone_learning_rate: null
+     class_weights: none
      full_finetune: false
      feature_standardize: false
      gradient_checkpointing: false

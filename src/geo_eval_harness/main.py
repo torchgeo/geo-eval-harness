@@ -70,8 +70,10 @@ from geo_eval_harness.utils import (
 )
 
 if TYPE_CHECKING:
+    from geo_eval_harness.config.schema import SegmentationConfig
+    from geo_eval_harness.datasets.sample_cache import DeviceBatchLoader
     from geo_eval_harness.epoch_metrics import EpochMetricsWriter
-    from geo_eval_harness.segmentation_task import EpochRecord, SegMetrics
+    from geo_eval_harness.segmentation_task import EpochRecord, SegmentationSolver, SegMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -658,6 +660,7 @@ def evaluate_segmentation(
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
         val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
         test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
+        _apply_class_weights(solver, seg_cfg, train_cache.masks, num_classes, device)
         if seg_cfg.feature_standardize:
             probe.fit_standardizer(train_cache)
         solver.fit_cached(
@@ -674,6 +677,7 @@ def evaluate_segmentation(
             collect_confusions=collect_confusions,
         )
     else:
+        _apply_class_weights(solver, seg_cfg, train_loader, num_classes, device)
         if seg_cfg.feature_standardize:
             probe.fit_standardizer(train_loader)
         solver.fit(
@@ -710,6 +714,29 @@ def evaluate_segmentation(
         best_val_miou=solver.best_val_miou,
         weight_decay=weight_decay,
     )
+
+
+def _apply_class_weights(
+    solver: "SegmentationSolver",
+    seg_cfg: "SegmentationConfig",
+    train_masks: "torch.utils.data.DataLoader | DeviceBatchLoader | torch.Tensor",
+    num_classes: int,
+    device: torch.device,
+) -> None:
+    """Weight the solver's loss from the training-label pixel counts."""
+    if seg_cfg.class_weights == "none":
+        return
+    from geo_eval_harness.segmentation_weights import class_pixel_counts, inverse_frequency_weights
+
+    counts = class_pixel_counts(train_masks, num_classes, seg_cfg.ignore_index)
+    weights = inverse_frequency_weights(counts)
+    logger.info(
+        "Class weights (%s) from %d training pixels: %s",
+        seg_cfg.class_weights,
+        int(counts.sum()),
+        ", ".join(f"{w:.3g}" for w in weights.tolist()),
+    )
+    solver.criterion.weight = weights.to(device)
 
 
 def _resolve_output_path(cfg: RunConfig, subdirectory: str = "models") -> str:

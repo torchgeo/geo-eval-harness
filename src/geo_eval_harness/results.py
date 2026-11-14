@@ -124,8 +124,7 @@ def segmentation_setup_columns(seg: SegmentationConfig) -> dict[str, str | None]
         "lora_rank": seg.lora_rank if lora else None,
         "lora_alpha": seg.lora_alpha if lora else None,
         "lora_last_blocks": seg.lora_last_blocks if lora else None,
-        # No class weighting exists yet; every segmentation loss is unweighted.
-        "class_weights": "none",
+        "class_weights": seg.class_weights,
         "selection_metric": SELECTION_METRIC,
         "early_stopping_patience": seg.early_stopping_patience,
     }
