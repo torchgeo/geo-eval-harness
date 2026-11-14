@@ -63,6 +63,24 @@ def test_cached_batches_are_bitwise_identical(tmp_path, mode: str, *, shuffle: b
         assert not torch.equal(expected[0][0][0], expected[1][0][0])
 
 
+def test_building_a_cache_leaves_the_global_rng_untouched(tmp_path) -> None:
+    loader = DataLoader(ToySegmentation(), batch_size=4, shuffle=True, num_workers=0)
+    torch.manual_seed(0)
+    expected = torch.rand(1)
+
+    torch.manual_seed(0)
+    cache_loader(
+        loader,
+        mode="host",
+        identity=IDENTITY,
+        cache_dir=tmp_path,
+        device=torch.device("cpu"),
+        num_workers=0,
+    )
+
+    assert torch.equal(torch.rand(1), expected)
+
+
 def test_cached_samples_accept_tensor_images_with_numpy_masks() -> None:
     images = torch.arange(24, dtype=torch.float32).reshape(2, 3, 2, 2)
     masks = np.arange(8, dtype=np.int16).reshape(2, 2, 2)
