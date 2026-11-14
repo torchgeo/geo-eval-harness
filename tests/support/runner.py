@@ -1,9 +1,12 @@
 """Small deterministic inputs for runner orchestration tests."""
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NamedTuple
 from unittest import mock
 
 import numpy as np
+import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
@@ -97,3 +100,33 @@ def _chainable_model_mock() -> mock.Mock:
     model.eval.return_value = model
     model.effective_normalization = "bandspec_zscore"
     return model
+
+
+class RunnerMocks(NamedTuple):
+    """Mocks installed on ``geo_eval_harness.main`` by ``runner``."""
+
+    data: mock.Mock
+    build: mock.Mock
+    embed: mock.Mock
+    knn: mock.Mock
+
+
+def _embed_split(*_args: object, split: str, **_kwargs: object) -> tuple[np.ndarray, np.ndarray]:
+    return dict(zip(("train", "val", "test"), _synthetic_embeddings(), strict=True))[split]
+
+
+@pytest.fixture
+def runner() -> Iterator[RunnerMocks]:
+    """Replace data loading, model construction, embedding and KNN with deterministic mocks."""
+    with (
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()) as data,
+        mock.patch(
+            "geo_eval_harness.main.build_model", return_value=_chainable_model_mock()
+        ) as build,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_embed_split) as embed,
+        mock.patch(
+            "geo_eval_harness.main.evaluate_knn",
+            return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
+        ) as knn,
+    ):
+        yield RunnerMocks(data, build, embed, knn)
