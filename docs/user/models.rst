@@ -41,6 +41,29 @@ SkySense
 
 The official `SkySense <https://github.com/Jack-bo1220/SkySense>`_ checkpoints are released through a Notion page for non-commercial research use only. The wrapper downloads the safetensors conversion `BiliSakura/SkySense-transformers <https://huggingface.co/BiliSakura/SkySense-transformers>`_ at a pinned commit and runs its ``trust_remote_code`` model definitions; the upstream non-commercial terms still apply to the weights. Only ``skysense/hr`` has published pretraining statistics (ImageNet), so ``skysense/s2`` and ``skysense/s1`` reject ``--normalization model``. Embeddings mean-pool the final feature map. ``skysense/hr`` defaults to 256 px inputs so the last Swin stage fills its 8×8 window without padding, and ``skysense/s2`` and ``skysense/s1`` default to the 64 px size they were pretrained at.
 
+SMARTIES
+^^^^^^^^
+
+``smarties/base`` (ViT-B/16, 768-d) and ``smarties/large`` (ViT-L/16, 1024-d) wrap `SMARTIES <https://github.com/gsumbul/SMARTIES>`_ (`arXiv:2506.19585 <https://arxiv.org/abs/2506.19585>`_). Weights download from `gsumbul/SMARTIES-v1-ViT-B <https://huggingface.co/gsumbul/SMARTIES-v1-ViT-B>`_ and `gsumbul/SMARTIES-v1-ViT-L <https://huggingface.co/gsumbul/SMARTIES-v1-ViT-L>`_ at pinned revisions with SHA-256 checks; the MAE decoder is ignored and every encoder weight must load.
+
+SMARTIES projects each band with a layer chosen by its spectral range, so one input can use any subset of a sensor's bands:
+
+* Sentinel-2 bands use their own projections; B10 cirrus is dropped, as upstream does.
+* Sentinel-1 VV and VH (sensors ``s1``, ``sar``, ``s1_asc``, ``s1_desc``) use the Sentinel-1 projections.
+* Red, green, and blue from any other optical sensor use the Maxar RGB projections, and its NIR and SWIR bands use the Sentinel-2 projection of the same name.
+
+Other bands, such as WorldView yellow, complex or unpolarised SAR, and elevation, are rejected. Each input must come from one sensor: upstream encodes multi-sensor pairs separately and concatenates the features, which the single-pass interface does not support. Inputs are resized to 224 px and the CLS token is the default embedding, as in upstream kNN and linear probing; segmentation reads blocks 2/5/8/11 (base) or 5/11/17/23 (large).
+
+The presets default to ``--normalization model``, SMARTIES' pretraining preprocessing:
+
+1. Convert each band to its pretraining unit: Sentinel-2 DN, Sentinel-1 dB, or 8-bit RGB.
+2. Min-max scale it with the pretraining 1st and 99th percentiles, and clip to [0, 1].
+3. Standardize with the post-clip mean and standard deviation.
+
+Sentinel-2 uses the L2A statistics (BigEarthNet) unless ``s2_level: l1c`` selects the L1C statistics (fMoW-Sentinel). The presets select L1C for EuroSAT, BrickKiln, So2Sat, Sen1Floods11, and OSCD.
+
+Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
+
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -203,14 +226,14 @@ they work with ``--bands all`` out of the box (pretrained
 
    ``timm/efficientnet_b1``'s ``linear`` probe is unreliable across most
    classification datasets (``knn5`` is fine). The C sweep in
-   ``evaluate_logistic`` doesn't standardize features before fitting, and
+   ``evaluate_logistic`` doesn't standardize features before fitting by
+   default (see ``classification.feature_standardize``), and
    b1's feature geometry makes the fit unstable across the whole
    ``c_range`` grid rather than diverging outright — so it lands on a poor
    but finite ``best_c`` instead of raising
    ``LinearProbeDivergedError``. Treat
-   ``efficientnet_b1`` linear numbers as noise until the probe gains
-   feature standardization; other EfficientNet variants (b0, b2-b4) are
-   unaffected.
+   ``efficientnet_b1`` ``linear`` numbers as noise; other EfficientNet
+   variants (b0, b2-b4) are unaffected.
 
 torchgeo foundation models
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -263,10 +286,21 @@ optional ``olmoearth`` extra:
    $ geo-eval-harness run --model olmoearth_v1_2_small --dataset m-eurosat
    $ geo-eval-harness run --model olmoearth_v1_2_base --dataset m-eurosat
 
+   $ # OlmoEarth v1.3 (Base)
+   $ geo-eval-harness run --model olmoearth_v1_3_base --dataset m-eurosat
+
 OlmoEarth v1.1 uses a **linear patch embedding** (vs. convolutional in v1),
 a single bandset per modality, and updated masking/loss functions, yielding a
 ≈ 3× reduction in MACs with comparable accuracy.  OlmoEarth v1.2 adds **RoPE
 3D position encoding** and a new **Small** size (384-d) between Tiny and Base.
+OlmoEarth v1.3 (Base only) adds an **AttentionPooler** after the ViT: it reads
+the patch tokens into a 768-d location-token grid, with a detached linear
+student projecting it to the 128-d vectors behind AI2's published embeddings.
+The ``embedding`` kwarg selects which output is mean-pooled:
+``location_tokens`` (default for v1.3, as in AI2's evals), ``patch_tokens``
+(the v1.x readout) or ``student``.  v1.3 also sets channels missing from the
+input to 0 after normalization (``missing_bands: zero``), the value band
+dropout used during pretraining, instead of copying a spectral neighbour.
 The ``version`` parameter selects the weight family:
 
 .. list-table::
@@ -321,6 +355,18 @@ The ``version`` parameter selects the weight family:
      - v1.2
      - Base
      -
+   * - ``olmoearth_v1_3_base``
+     - v1.3
+     - Base
+     - AttentionPooler; pools location tokens
+   * - ``olmoearth_v1_3_base_patch_tokens``
+     - v1.3
+     - Base
+     - pools ViT patch tokens (v1.x readout)
+   * - ``olmoearth_v1_3_base_student128``
+     - v1.3
+     - Base
+     - pools the 128-d student
 
 .. note::
 
@@ -365,6 +411,67 @@ HuggingFace cache on first use.
 The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
+
+AnySat
+^^^^^^
+
+:class:`~geo_eval_harness.models.AnySatBenchModel` wraps AnySat v1 (Base, 126M
+parameters; `Astruc et al., CVPR 2025 <https://arxiv.org/abs/2412.14123>`_).  The model
+code loads through ``torch.hub`` from a pinned commit of
+`gastruc/AnySat <https://github.com/gastruc/AnySat>`_. The weights come from a pinned commit of
+`g-astruc/AnySat <https://huggingface.co/g-astruc/AnySat>`_ and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model anysat_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model anysat_base_seg --dataset sen1floods11-s2
+
+AnySat has one projector per modality, each built for a fixed band order and ground
+sampling distance (GSD). The wrapper adapts each input to its projector as follows:
+
+* It takes the modality from ``BandSpec.sensor`` (``s2``, ``s1``/``sar``, and very-high-resolution
+  ``aerial`` RGB to the 1 m ``spot`` projector) and reorders the bands by name.  Presets set
+  ``modality`` only where the sensor name does not apply: Landsat and HLS (``l7``), CaFFe and
+  the SpaceNet datasets.
+* It resamples every tile to the projector's GSD over the tile's true ground extent.
+  ``input_gsd`` is the GSD of the pixels the model receives: native GSD × native tile size /
+  ``image_size``.
+* It sets ``patch_size`` in metres.
+* It passes day of year 120 to the time-series projectors.
+
+Projector bands that are missing from the input are filled with the dataset mean only when
+``impute_missing`` is set, and the filled bands are logged.  The presets set it, for example
+for RGB runs on Sentinel-2 datasets.  The ``s1`` projector also needs the VV/VH ratio of the
+raw values.  The wrapper computes it and z-scores it with the training-split ``ratio_stats``
+that the preset stores per dataset.
+
+For segmentation, hook ``output_tap``: it receives AnySat's output tokens as
+``[B, 768, h, w]``.  A hook on the final cross-attention block itself never fires, because AnySat
+calls that block through a custom method.  The fusion blocks ``model.model.blocks.0``-``5`` give
+``[B, 1 + h*w, 768]`` for single-modality inputs.  ``dense_output: true`` exposes AnySat's
+1536-channel sub-patch output through ``dense_tap``.
+
+AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's.  The two
+models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
+pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
+
+THOR
+^^^^
+
+:class:`~geo_eval_harness.models.ThorBenchModel` wraps THOR (`Forgaard et al., 2026 <https://arxiv.org/abs/2601.16011>`_), a FlexiViT pretrained on Sentinel-1, -2 and -3. The presets ``thor/tiny``, ``thor/small``, ``thor/base`` and ``thor/large`` select the four released sizes. The encoder is reimplemented from `FM4CS/THOR <https://github.com/FM4CS/THOR>`_ at a pinned commit, because the upstream package pins an older ``timm`` and patches ``timm``'s attention globally. The weights come from pinned commits of the ``FM4CS/THOR-1.0-*`` Hugging Face repos and are checked against their sha256.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model thor/base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model thor/base --dataset sen1floods11-s2 --bands all
+
+THOR embeds each band with its own patch kernel at the band's native GSD and averages the bands of a group (10 m, 20 m and 60 m Sentinel-2, Sentinel-1 VV/VH, Sentinel-1 HH/HV) into one token grid. The wrapper adapts each input as follows:
+
+* It maps ``s2`` bands and ``s1``/``sar`` VV, VH, HH and HV in dB by canonical name. Other sensors, linear-power SAR, and bands THOR was not pretrained on raise an error. Presets drop the 60 m Sentinel-2 bands B01, B09 and B10 (``ignore_bands: [coastal, watervapor, cirrus]``), as the authors' Sentinel-2 fine-tuning config in `FM4CS/thor_terratorch_ext <https://github.com/FM4CS/thor_terratorch_ext>`_ does; B10 is not in THOR at all.
+* Tiles keep their native size (``input.image_size: null``). ``input_gsd`` is the GSD of the pixels the model receives, 10 m by default. Each group is resampled to its pretraining GSD over the tile's ground extent, rounded so that every group holds a whole number of patches.
+* One ``patch_size`` in pixels applies to all groups. The presets use 4 px for tiles up to 128 px and larger patches for 256 px and 512 px tiles. ``max_tokens`` rejects settings that would exceed 4,096 tokens.
+
+Classification embeddings average each group's final tokens and concatenate the groups (``merge: concat``, THOR's default in its PANGAEA experiments), so their width grows with the number of band groups. For segmentation, hook ``taps.<i>``: it receives block ``i``'s tokens as ``[B, C, h, w]``, with each group upsampled to the finest grid and merged the same way. THOR's pretraining statistics are not offered as model normalization, because its own fine-tuning configs z-score with dataset statistics.
 
 Adding a new model
 ------------------

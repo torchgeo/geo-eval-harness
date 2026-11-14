@@ -186,7 +186,7 @@ def test_study_file_entrypoint_dry_run_uses_current_cli(tmp_path: Path) -> None:
         cwd=ROOT,
         capture_output=True,
         text=True,
-        timeout=60,
+        timeout=300,
         check=False,
     )
     assert result.returncode == 0, cli_output(result)

@@ -23,6 +23,9 @@ Coordinate sources:
 * **HOTOSM buildings**: read the ``lon``/``lat``/``country`` columns that
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
 * **GeoTIFF**: reproject image header origins to EPSG:4326.
+* **Packaged index**: Open Cities chip centres from the committed index; no download needed.
+* **PLANTEUR**: read the patch centres and islands in the ``metadata.csv`` that
+  ``geo-eval-harness download planteur`` writes.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -66,10 +69,27 @@ NO_GEO: dict[str, str] = {
         "land-use TIFFs with no georeferencing: all 2,100 images lack GeoTIFF tags, "
         "EXIF GPS, and XMP location fields; the release ships no coordinate table"
     ),
+    "loveda": (
+        "Google Earth PNG tiles with no georeferencing: tile ids encode no location, "
+        "and the release names only the source cities (Nanjing, Changzhou, Wuhan)"
+    ),
+    "levir-cd-post": (
+        "change-detection PNGs with no georeferencing: no PNG text or EXIF chunks, "
+        "and the release ships no coordinate table"
+    ),
 }
 
-# Re-splits reuse coordinates from the dataset with the same imagery.
-GEO_ALIAS: dict[str, str] = {"eurosat-spatial": "m-eurosat", "eurosat": "m-eurosat"}
+# Variants reuse coordinates from the dataset with the same imagery.
+GEO_ALIAS: dict[str, str] = {
+    "bright-post-sar-rgb": "bright-post-sar",
+    "eurosat-spatial": "m-eurosat",
+    "eurosat": "m-eurosat",
+    "sen1floods11-s2": "sen1floods11-s1",
+    **{
+        f"planteur_loio_{fold}": "planteur"
+        for fold in ("guadeloupe", "martinique", "guyane", "reunion", "mayotte")
+    },
+}
 
 BIN_RES = 0.25  # Degrees per density-map cell.
 POINT_CAP = 2000  # per-dataset cap on individually plotted samples
@@ -86,8 +106,9 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
-            ``"geotiff"``. ``None`` when nothing was read.
+        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``,
+            ``"planteur"``, or ``"geotiff"``/``"index"``/``"geojson"``. ``None`` when nothing was
+            read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -165,6 +186,57 @@ def _extract_hotosm(paths: list[Path]) -> dict:
         "lat": table["lat"].to_numpy(),
         "place": np.asarray(table["country"].to_pylist(), dtype=object),
         "version": "hotosm",
+    }
+
+
+def _extract_planteur(path: Path) -> dict:
+    """Read patch centres and islands from the converted ``planteur`` metadata."""
+    import pandas as pd
+
+    frame = pd.read_csv(path)
+    return {
+        "lon": frame["lon"].to_numpy(),
+        "lat": frame["lat"].to_numpy(),
+        "place": frame["island"].to_numpy(dtype=object),
+        "version": "planteur",
+    }
+
+
+def _extract_open_cities() -> dict:
+    """Read chip-centre lon/lat and city names from the packaged Open Cities index."""
+    from .datasets.open_cities import CITY_NAME, load_index
+
+    index = load_index()
+    return {
+        "lon": index.lon.to_numpy(),
+        "lat": index.lat.to_numpy(),
+        "place": index.city.map(CITY_NAME).to_numpy(dtype=object),
+        "version": "index",
+    }
+
+
+def _extract_oscd(root: Path) -> dict:
+    """Place OSCD tile centres in each city's GeoJSON bounding box; the rasters have no CRS."""
+    from .datasets.oscd_post import OSCDPost, read_window
+
+    lon, lat, place = [], [], []
+    for split in ("train", "val", "test"):
+        for city in OSCDPost.split_cities[split]:
+            footprint = OSCDPost.image_dir(root, city).parent / f"{city}.geojson"
+            ring = json.loads(footprint.read_text())["features"][0]["geometry"]["coordinates"][0]
+            (west, south), (east, north) = np.min(ring, axis=0), np.max(ring, axis=0)
+            height, width = read_window(OSCDPost.label_path(root, city)).shape
+            rows = np.arange(0, height, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            cols = np.arange(0, width, OSCDPost.tile_size) + OSCDPost.tile_size / 2
+            y, x = np.meshgrid(np.minimum(rows, height) / height, np.minimum(cols, width) / width)
+            lon += (west + x.ravel() * (east - west)).tolist()
+            lat += (north - y.ravel() * (north - south)).tolist()
+            place += [city] * x.size
+    return {
+        "lon": np.asarray(lon),
+        "lat": np.asarray(lat),
+        "place": np.asarray(place, dtype=object),
+        "version": "geojson",
     }
 
 
@@ -406,6 +478,52 @@ def _build_record(name: str, data: dict, continents: Counter) -> GeoRecord:
     )
 
 
+def _extract_files(name: str, workers: int) -> dict | GeoRecord:
+    """Read coordinates from downloaded dataset files, or return a ``no_geo`` record."""
+    command = (
+        "geo-eval-harness download geobench_v1" if name.startswith("m-") else download_command(name)
+    )
+    directory = _dataset_dir(name)
+    if directory is None:
+        raise FileNotFoundError(f"No imagery for {name!r}. Run `{command}`.")
+
+    tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
+    shards = sorted(glob.glob(str(directory / "shard_*.tar")))
+    hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
+    hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
+    geotiffs = (
+        sorted(directory.glob("*/sar_images/*.tif"))
+        or sorted(directory.glob("data/flood_events/HandLabeled/LabelHand/*.tif"))
+        or sorted(directory.glob("post-event/*.tif"))
+    )
+
+    if tortillas:
+        data = _extract_v2(tortillas)
+        reason = "tortilla metadata has no lon/lat columns"
+    elif shards or hdf5s:
+        data = _extract_v1(name, shards or hdf5s, workers)
+        reason = "no sample carries a usable transform/crs"
+    elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
+        data = _extract_hotosm(hotosm_splits)
+        reason = "split files have no lon/lat columns"
+    elif name == "planteur" and (directory / "metadata.csv").is_file():
+        data = _extract_planteur(directory / "metadata.csv")
+        reason = "metadata has no lon/lat columns"
+    elif name == "oscd-post":
+        data = _extract_oscd(directory)
+        reason = "city footprints have no coordinates"
+    elif geotiffs:
+        data = extract_geotiffs(geotiffs)
+        reason = "no image carries a usable GeoTIFF transform/crs"
+    else:
+        raise FileNotFoundError(
+            f"No .tortilla, V1 shard, .hdf5, or SAR .tif files under {directory}. Run `{command}`."
+        )
+    if data is None:
+        return GeoRecord(name=name, status="no_geo", reason=reason)
+    return data
+
+
 def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
     """Extract the geographic footprint of one registered dataset.
 
@@ -430,38 +548,13 @@ def extract_geography(name: str, *, workers: int | None = None) -> GeoRecord:
         record = extract_geography(target, workers=workers)
         return replace(record, name=name, alias_of=target)
 
-    command = (
-        "geo-eval-harness download geobench_v1" if name.startswith("m-") else download_command(name)
-    )
-    directory = _dataset_dir(name)
-    if directory is None:
-        raise FileNotFoundError(f"No imagery for {name!r}. Run `{command}`.")
-
-    tortillas = sorted(glob.glob(str(directory / "*.tortilla")))
-    shards = sorted(glob.glob(str(directory / "shard_*.tar")))
-    hdf5s = sorted(glob.glob(str(directory / "*.hdf5")))
-    hotosm_splits = [directory / f"{split}.parquet" for split in ("train", "val", "test")]
-    geotiffs = sorted(directory.glob("*/sar_images/*.tif"))
-
-    if tortillas:
-        data = _extract_v2(tortillas)
-        reason = "tortilla metadata has no lon/lat columns"
-    elif shards or hdf5s:
-        data = _extract_v1(name, shards or hdf5s, workers)
-        reason = "no sample carries a usable transform/crs"
-    elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
-        data = _extract_hotosm(hotosm_splits)
-        reason = "split files have no lon/lat columns"
-    elif geotiffs:
-        data = extract_geotiffs(geotiffs)
-        reason = "no image carries a usable GeoTIFF transform/crs"
+    if name == "open_cities":
+        data = _extract_open_cities()
     else:
-        raise FileNotFoundError(
-            f"No .tortilla, V1 shard, .hdf5, or SAR .tif files under {directory}. Run `{command}`."
-        )
+        data = _extract_files(name, workers)
+        if isinstance(data, GeoRecord):
+            return data
 
-    if data is None:
-        return GeoRecord(name=name, status="no_geo", reason=reason)
     if len(data["lon"]) == 0:
         return GeoRecord(name=name, status="no_geo", reason="all coordinates were non-finite")
 

@@ -141,17 +141,21 @@ def _build_disk(dataset: Dataset, directory: Path, num_workers: int) -> None:
                 tmp / "images.npy", mode="w+", dtype=np.float32, shape=(n, *image.shape[1:])
             )
         images_mm[offset : offset + len(image)] = image.numpy()
-        mask_chunks.append(mask)
+        # Narrow copies leave /dev/shm and keep large splits' masks small in RAM; values are exact.
+        mask_chunks.append(mask.numpy().astype(_mask_dtype(mask)))
         offset += len(image)
     if offset != n or images_mm is None:
         raise RuntimeError(f"Sample cache read {offset} of {n} samples.")
     images_mm.flush()
     del images_mm
-    masks = torch.cat(mask_chunks)
+    dtype = np.result_type(*(chunk.dtype for chunk in mask_chunks))
     masks_mm = np.lib.format.open_memmap(
-        tmp / "masks.npy", mode="w+", dtype=_mask_dtype(masks), shape=tuple(masks.shape)
+        tmp / "masks.npy", mode="w+", dtype=dtype, shape=(n, *mask_chunks[0].shape[1:])
     )
-    masks_mm[:] = masks.numpy()
+    offset = 0
+    for chunk in mask_chunks:
+        masks_mm[offset : offset + len(chunk)] = chunk
+        offset += len(chunk)
     masks_mm.flush()
     del masks_mm
     (tmp / "complete").write_text(json.dumps({"samples": n, "created": time.time()}))

@@ -1011,6 +1011,7 @@ dependencies = [
     { name = "faissknn", extra = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "filelock" },
     { name = "geobenchv2" },
+    { name = "geopandas" },
     { name = "h5py" },
     { name = "huggingface-hub" },
     { name = "lazy-loader" },
@@ -1019,8 +1020,10 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "rasterio" },
     { name = "safetensors" },
     { name = "scikit-learn" },
+    { name = "shapely" },
     { name = "timm" },
     { name = "torch" },
     { name = "torchgeo" },
@@ -1053,6 +1056,7 @@ all = [
     { name = "torchid", marker = "python_full_version >= '3.13'" },
     { name = "ty" },
     { name = "types-pyyaml" },
+    { name = "vulture" },
 ]
 coordbench = [
     { name = "rshf" },
@@ -1070,6 +1074,7 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
     { name = "types-pyyaml" },
+    { name = "vulture" },
 ]
 docs = [
     { name = "linkify-it-py" },
@@ -1103,6 +1108,7 @@ requires-dist = [
     { name = "geo-eval-harness", extras = ["lora"], marker = "extra == 'dev'" },
     { name = "geo-eval-harness", extras = ["olmoearth"], marker = "extra == 'all'" },
     { name = "geobenchv2", specifier = ">=0.9" },
+    { name = "geopandas", specifier = ">=0.14" },
     { name = "h5py", specifier = ">=3.8" },
     { name = "huggingface-hub", specifier = ">=0.20" },
     { name = "lazy-loader", specifier = ">=0.4" },
@@ -1110,7 +1116,7 @@ requires-dist = [
     { name = "mdformat", marker = "extra == 'dev'", specifier = ">=0.7.22" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=2" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "olmoearth-pretrain-minimal", marker = "extra == 'olmoearth'", specifier = ">=0.0.6" },
+    { name = "olmoearth-pretrain-minimal", marker = "extra == 'olmoearth'", specifier = ">=0.1.5" },
     { name = "pandas", specifier = ">=2" },
     { name = "peft", marker = "extra == 'lora'", specifier = ">=0.21" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3" },
@@ -1123,10 +1129,12 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "rasterio", specifier = ">=1.3" },
     { name = "rshf", marker = "extra == 'coordbench'", specifier = ">=0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.10" },
     { name = "safetensors", specifier = ">=0.4" },
     { name = "scikit-learn", specifier = ">=1.3" },
+    { name = "shapely", specifier = ">=2" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
     { name = "sphinx-design", marker = "extra == 'docs'", specifier = ">=0.5" },
@@ -1140,6 +1148,7 @@ requires-dist = [
     { name = "transformers", specifier = ">=5.14" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.21" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.16" },
 ]
 provides-extras = ["all", "coordbench", "dev", "docs", "id", "lora", "olmoearth"]
 
@@ -2279,7 +2288,7 @@ wheels = [
 
 [[package]]
 name = "olmoearth-pretrain-minimal"
-version = "0.0.6"
+version = "0.1.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "einops" },
@@ -2288,9 +2297,9 @@ dependencies = [
     { name = "torch" },
     { name = "universal-pathlib" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3b/d1/0480b162b6c4bc7d1ce2f305dfc661b095acdef486e873a6f334ce442c5f/olmoearth_pretrain_minimal-0.0.6.tar.gz", hash = "sha256:1eaaffd270749e2d614da4af405776d4e46d4c4e5760c7cf3b61104b8b00c43e", size = 76511, upload-time = "2026-06-25T16:33:01.008Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/28/fcb0c1925e98afca40b183911adb9c747357dadcd5febb8747c5dfbe81b7/olmoearth_pretrain_minimal-0.1.5.tar.gz", hash = "sha256:45bc2f8f7f9df7599cb55abc9f4f31aa9227e252165015427bd2bdc814549258", size = 116647, upload-time = "2026-10-21T22:59:16.307Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/32/40/a591f2f77fb580e18c58be070614b9e1f5a008f6f78297274a9b4e169fa4/olmoearth_pretrain_minimal-0.0.6-py3-none-any.whl", hash = "sha256:57ff6566162eb152e6c4ef1ce1e1ca2dbff2a0a81f2a93d70416aef7cd2f5b2c", size = 78282, upload-time = "2026-06-25T16:32:59.803Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/3c/9377c4f4051f1c0fb5c2e3d5655013002a40cf1ed092631e27d2750e0cbf/olmoearth_pretrain_minimal-0.1.5-py3-none-any.whl", hash = "sha256:62664d578a97527eb6a26f9ded928bb9b292e2b701a118c46f3bed9a323781d4", size = 107521, upload-time = "2026-10-21T22:59:14.865Z" },
 ]
 
 [[package]]
@@ -3710,11 +3719,11 @@ wheels = [
 
 [[package]]
 name = "soupsieve"
-version = "2.9"
+version = "4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/80/f1/93422647dd7e461f23d254e6b2bfa687a85b53aeb4903fcdbb74474d4584/soupsieve-2.9.tar.gz", hash = "sha256:acee8417325c5653e1377dc31eccad59eb82cbc65942afe6174c53b3aaad63fc", size = 122122, upload-time = "2026-07-19T01:35:18.425Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/5e/19b7c5d20bc2f226c44f33a9d9aab9740efed7555b96e656231fd564e514/soupsieve-4.0.tar.gz", hash = "sha256:ccd6470b256394ac44b08b86fd94b30a17d335a5335c8a3d15565f7b03d3c8cf", size = 151929, upload-time = "2026-11-03T14:28:55.388Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7b/d6/3185ab5ad1280319b31986898f3206dd7227cd75e293d4dba2a5e6bf27a0/soupsieve-2.9-py3-none-any.whl", hash = "sha256:a2b2c76d67df2382d245409fd71e321a571717e58463efa32ace87dcadac2c12", size = 37387, upload-time = "2026-07-19T01:35:17.106Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/18/d24df2f733ee0655c58717d51add4118a70e64692d0e47d403b9aac4cf98/soupsieve-4.0-py3-none-any.whl", hash = "sha256:5e7494bfce90e06676cfb4c5c2cf22243e98e5cf24646bb1ecdda46d318550a0", size = 50158, upload-time = "2026-11-03T14:28:53.988Z" },
 ]
 
 [[package]]
@@ -4329,6 +4338,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/70/aa/bff50daee0488e16d611258a9b6c5a1d0c9e128f8ca424e9f4e1c0444ef2/virtualenv-21.14.13.tar.gz", hash = "sha256:de5307ba4b9a0001d9c8ea02832d38f63ca432880f416c1bface61c4323fd905", size = 5570301, upload-time = "2026-10-22T20:10:16.952Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bb/a9/c10d8a44a29fb94a18b43fdf11f38caca53ae7c9406f11a72b1cb8f624f1/virtualenv-21.14.13-py3-none-any.whl", hash = "sha256:5fbb04138a4861580b78ba9110d529a26bc48fcc93c8ec36bc0202eeed96a788", size = 5557094, upload-time = "2026-10-22T20:10:15.096Z" },
+]
+
+[[package]]
+name = "vulture"
+version = "2.16"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/3e/4d08c5903b2c0c70cad583c170cc4a663fc6a61e2ad00b711fcda61358cd/vulture-2.16.tar.gz", hash = "sha256:f8d9f6e2af03011664a3c6c240c9765b3f392917d3135fddca6d6a68d359f717", size = 52680, upload-time = "2026-03-25T14:41:27.141Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/be/f935130312330614811dae2ea9df3f395f6d63889eb6c2e68c14507152ee/vulture-2.16-py3-none-any.whl", hash = "sha256:6e0f1c312cef1c87856957e5c2ca9608834a7c794c2180477f30bf0e4cc58eee", size = 26993, upload-time = "2026-03-25T14:41:26.21Z" },
 ]
 
 [[package]]

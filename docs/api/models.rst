@@ -58,6 +58,21 @@ OlmoEarth
 
 .. autoclass:: OlmoEarthBenchModel
 
+AnySat
+^^^^^^
+
+.. autoclass:: AnySatBenchModel
+
+THOR
+^^^^
+
+.. autoclass:: ThorBenchModel
+
+SMARTIES
+^^^^^^^^
+
+.. autoclass:: SmartiesBench
+
 SAM 3
 ^^^^^
 
@@ -85,3 +100,4 @@ backbone family.
 .. autoclass:: UNetHead
 .. autoclass:: ViTNeck
 .. autoclass:: NeckedHead
+.. autoclass:: geo_eval_harness.models.anyup.AnyUpClassifier

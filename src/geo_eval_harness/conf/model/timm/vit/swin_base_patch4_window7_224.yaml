@@ -4,3 +4,10 @@ kwargs:
   model_name: swin_base_patch4_window7_224
   pretrained: true
   global_pool: avg
+segmentation:
+  lora_target_modules: 'layers\.\d+\.blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - layers.3
+    - layers.2
+    - layers.1
+    - layers.0

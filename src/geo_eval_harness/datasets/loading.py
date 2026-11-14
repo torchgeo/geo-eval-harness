@@ -54,6 +54,20 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     # other segmentation
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
     "openearthmap-sar": ("openearthmap_sar", "OpenEarthMapSAR", "segmentation"),
+    "open_cities": ("open_cities", "OpenCities", "segmentation"),
+    "loveda": ("loveda", "LoveDA", "segmentation"),
+    "levir-cd-post": ("levir_cd_post", "LEVIRCDPost", "segmentation"),
+    "sen1floods11-s1": ("sen1floods11", "Sen1Floods11S1", "segmentation"),
+    "sen1floods11-s2": ("sen1floods11", "Sen1Floods11S2", "segmentation"),
+    "bright-post-sar": ("bright_post_sar", "BRIGHTPostSAR", "segmentation"),
+    "oscd-post": ("oscd_post", "OSCDPost", "segmentation"),
+    "bright-post-sar-rgb": ("bright_post_sar", "BRIGHTPostSARRGB", "segmentation"),
+    "planteur": ("planteur", "PLANTEUR", "segmentation"),
+    "planteur_loio_guadeloupe": ("planteur", "PLANTEURLOIOGuadeloupe", "segmentation"),
+    "planteur_loio_martinique": ("planteur", "PLANTEURLOIOMartinique", "segmentation"),
+    "planteur_loio_guyane": ("planteur", "PLANTEURLOIOGuyane", "segmentation"),
+    "planteur_loio_reunion": ("planteur", "PLANTEURLOIOReunion", "segmentation"),
+    "planteur_loio_mayotte": ("planteur", "PLANTEURLOIOMayotte", "segmentation"),
 }
 
 
@@ -98,8 +112,12 @@ def get_dataset_task(name: str) -> Literal["classification", "segmentation"]:
 
 def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
+    if name == "bright-post-sar-rgb":
+        name = "bright-post-sar"
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
+    if name.startswith("planteur"):
+        return "geo-eval-harness download planteur"
     if name in {
         "eurosat",
         "eurosat-spatial",
@@ -108,6 +126,13 @@ def download_command(name: str) -> str:
         "aid",
         "hotosm_buildings",
         "openearthmap-sar",
+        "open_cities",
+        "loveda",
+        "levir-cd-post",
+        "sen1floods11-s1",
+        "sen1floods11-s2",
+        "bright-post-sar",
+        "oscd-post",
     }:
         return f"geo-eval-harness download {name.removesuffix('-spatial')}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"
@@ -220,7 +245,7 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         bands: ``"rgb"`` (use the dataset's ``rgb_bands``), ``"all"`` /
             ``None`` (load all bands), or an explicit iterable of band names.
         time_steps: Number of acquisition dates per sample.  Only accepted by
-            multi-temporal wrappers (PASTIS); ``None`` keeps each dataset's
+            multi-temporal wrappers (PASTIS, PLANTEUR); ``None`` keeps each dataset's
             own default.
 
     Returns:

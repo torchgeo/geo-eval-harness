@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import BandMappingPolicy, map_to_model_bands, select_src_bands
-from ._input_units import InputUnit, convert_unit, detect_input_unit
+from ._input_units import InputUnit, convert_unit, detect_input_unit, linear_power_to_db
 from ._normalization import NormalizationStrategy
 from ._pooling import VALID_MODES, pool_tokens
 from .interface import BenchModel
@@ -71,8 +71,15 @@ class _TerraTorchBench(BenchModel):
         self.pool = pool
         self.backbone = _build_backbone(self.backbone_name, **(backbone_kwargs or {}))
         self.backbone.eval()
+        # Full fine-tuning undoes only this blanket freeze, not the backbone's own frozen weights.
+        self._trainable_before_freeze = [p for p in self.backbone.parameters() if p.requires_grad]
         for p in self.backbone.parameters():
             p.requires_grad_(False)
+
+    def enable_full_finetune(self) -> None:
+        """Make the backbone trainable again; weights the backbone itself freezes stay frozen."""
+        for p in self._trainable_before_freeze:
+            p.requires_grad_(True)
 
     def _prepare_input(self, images: torch.Tensor) -> torch.Tensor:
         return images
@@ -243,7 +250,6 @@ class TerraTorchClayBench(_TerraTorchBench):
         )
         return mapped
 
-    @torch.no_grad()
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         x = _maybe_resize(self._prepare_input(images), self.target_size)
         return _reduce_to_vec(
@@ -269,11 +275,43 @@ TERRAMIND_MODALITY_BANDS: dict[str, dict[str, str]] = {
         "swir2": "SWIR_2",
     },
     "RGB": {"red": "RED", "green": "GREEN", "blue": "BLUE"},
+    "S1GRD": {"vv": "VV", "vh": "VH"},
+    "S1RTC": {"vv": "VV", "vh": "VH"},
 }
 
 
-_TERRAMIND_MODALITY_KEYS = {"S2L2A": "untok_sen2l2a@224", "RGB": "untok_sen2rgb@224"}
+_TERRAMIND_MODALITY_KEYS = {
+    "S2L2A": "untok_sen2l2a@224",
+    "RGB": "untok_sen2rgb@224",
+    "S1GRD": "untok_sen1grd@224",
+    "S1RTC": "untok_sen1rtc@224",
+}
 _TERRAMIND_NATIVE_UNITS = {"S2L2A": InputUnit.S2_DN, "RGB": InputUnit.UINT8}
+# Sentinel-1 modalities are pretrained on sigma0 in dB.  ``InputUnit`` has no SAR scale,
+# so these inputs are converted per band from the declared ``BandSpec.unit``.
+_TERRAMIND_SAR_MODALITIES = frozenset({"S1GRD", "S1RTC"})
+_SAR_SENSORS = ("s1", "sar")
+
+
+def _sar_to_db(bands: list[BandSpec], indices: list[int]) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Return a converter from the bands' declared SAR unit to dB for the selected channels."""
+    units = {bands[i].unit for i in indices}
+    undeclared = [bands[i].name for i in indices if bands[i].unit not in ("db", "linear_power")]
+    if undeclared:
+        raise ValueError(
+            f"TerraMind S1 model_native normalization needs SAR bands in 'db' or 'linear_power'; "
+            f"{undeclared} declare no unit. Use a dataset normalization (e.g. bandspec_zscore)."
+        )
+    if units == {"db"}:
+        return lambda x: x
+    log_channels = [i for i in indices if bands[i].unit == "linear_power"]
+
+    def _f(x: torch.Tensor) -> torch.Tensor:
+        x = x.clone()
+        x[:, log_channels] = linear_power_to_db(x[:, log_channels])
+        return x
+
+    return _f
 
 
 class TerraTorchTerraMindBench(_TerraTorchBench):
@@ -282,8 +320,10 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
     Dataset bands are matched to the modality's pretrained layout by canonical
     name (preferring Sentinel-2); missing bands use TerraTorch's ``bands=``
     patch-embed selection rather than zero-fill.  RGB-only datasets should use
-    ``modality: RGB``.  Under ``model_native``, inputs are converted to the
-    modality's native scale and z-scored with TerraMind's pretraining stats.
+    ``modality: RGB``; Sentinel-1 VV/VH datasets ``modality: S1GRD`` (or ``S1RTC``).
+    Under ``model_native``, inputs are converted to the modality's native scale
+    (dB for Sentinel-1, from each band's declared ``unit``) and z-scored with
+    TerraMind's pretraining stats.
     """
 
     expected_input_unit = InputUnit.REFLECTANCE_0_1
@@ -304,7 +344,10 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
                 f"Unsupported TerraMind modality {modality!r}; "
                 f"expected one of {sorted(TERRAMIND_MODALITY_BANDS)}."
             )
-        indices, selected = select_src_bands(bands, list(modality_bands), preferred_sensors=("s2",))
+        preferred = _SAR_SENSORS if modality in _TERRAMIND_SAR_MODALITIES else ("s2",)
+        indices, selected = select_src_bands(
+            bands, list(modality_bands), preferred_sensors=preferred
+        )
         backbone_kwargs: dict[str, Any] = {"pretrained": pretrained, "modalities": [modality]}
         if len(selected) < len(modality_bands):
             backbone_kwargs["bands"] = {modality: [modality_bands[name] for name in selected]}
@@ -329,8 +372,15 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
         )
 
         key = _TERRAMIND_MODALITY_KEYS[self.modality]
-        src = detect_input_unit(self.bands)
-        native = _TERRAMIND_NATIVE_UNITS[self.modality]
+        if self.modality in _TERRAMIND_SAR_MODALITIES:
+            to_native = _sar_to_db(self.bands, self._band_indices)
+        else:
+            src = detect_input_unit(self.bands)
+            native = _TERRAMIND_NATIVE_UNITS[self.modality]
+
+            def to_native(x: torch.Tensor) -> torch.Tensor:
+                return convert_unit(x, src, native)
+
         order = list(TERRAMIND_MODALITY_BANDS[self.modality])
         n = len(self.bands)
         mean = torch.zeros(1, n, 1, 1)
@@ -341,7 +391,7 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
             std[0, ds_idx] = v1_pretraining_std[key][pos]
 
         def _f(x: torch.Tensor) -> torch.Tensor:
-            x = convert_unit(x, src, native)
+            x = to_native(x)
             return (x - mean.to(x.device, x.dtype)) / std.to(x.device, x.dtype)
 
         return _f

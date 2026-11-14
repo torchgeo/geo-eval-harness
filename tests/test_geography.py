@@ -28,6 +28,9 @@ from geo_eval_harness.geography import (
     write_record,
 )
 
+# CI runs these once (ubuntu job `geography`) instead of in every OS/Python cell.
+pytestmark = pytest.mark.geography
+
 VALID_STATUSES = {"extracted", "no_geo", "not_downloaded"}
 
 
@@ -121,6 +124,39 @@ def test_extract_geography_reads_hotosm_splits(
     assert record.points == [list(point) for point in points]
     assert record.bbox == [-77.0, -26.0, 139.0, 35.0]
     assert sum(count for _, _, count in record.bins) == 3
+
+
+def test_extract_geography_reports_missing_v2_coordinates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(geography, "_dataset_dir", lambda name: tmp_path)
+    monkeypatch.setattr(geography, "_extract_v2", lambda paths: None)
+    (tmp_path / "samples.tortilla").touch()
+
+    record = extract_geography("burn_scars")
+
+    assert record.status == "no_geo"
+    assert record.reason == "tortilla metadata has no lon/lat columns"
+
+
+def test_open_cities_geography_needs_no_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from geo_eval_harness.datasets.open_cities import CITY_NAME, FULL_SPLIT_SIZES
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        geography, "_attribute_continents", lambda lon, lat: Counter({"Africa": len(lon)})
+    )
+
+    record = extract_geography("open_cities")
+
+    assert record.status == "extracted"
+    assert record.version == "index"
+    # Geography covers every indexed chip, not only the 10k default training subset.
+    assert record.n == sum(FULL_SPLIT_SIZES.values())
+    assert {point[2] for point in record.points} == set(CITY_NAME.values())
+    assert sum(count for _, _, count in record.bins) == record.n
 
 
 def test_build_index_weights_continents_by_sample_count(tmp_path: Path) -> None:
