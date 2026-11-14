@@ -953,7 +953,9 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
 
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
-        x_opt, _ = map_to_model_bands(images, self.bands, _CROMA_S2_12)
+        x_opt, _ = map_to_model_bands(
+            images, self.bands, _CROMA_S2_12, policy=BandMappingPolicy(preferred_sensors=("s2",))
+        )
         encodings = self.backbone.s2_encoder(imgs=x_opt, attn_bias=self.backbone.attn_bias)
         return self.backbone.s2_GAP_FFN(encodings.mean(dim=1))
 
