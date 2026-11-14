@@ -1,10 +1,7 @@
 Contributing
 ============
 
-We welcome contributions!  This page summarises the local development
-workflow.  See `AGENTS.md <https://github.com/torchgeo/geo-eval-harness/blob/main/AGENTS.md>`__
-for the longer-form guide aimed at AI coding agents (which captures the
-same conventions).
+Use this workflow to develop and validate changes. `AGENTS.md <https://github.com/torchgeo/geo-eval-harness/blob/main/AGENTS.md>`__ records the repository's coding conventions.
 
 Environment
 -----------
@@ -30,8 +27,7 @@ If you prefer `conda <https://docs.conda.io>`_, install into that environment wi
 Makefile shortcuts
 ------------------
 
-The top-level :file:`Makefile` provides convenient wrappers around the
-above:
+The top-level :file:`Makefile` runs commands through the ``geo-eval-harness`` conda environment:
 
 =================== ===================================================
 Target              What it does
@@ -57,9 +53,7 @@ formatting:
    $ uv run ruff check .
    $ uv run ruff format .
 
-The project's ruff configuration enables ``E``, ``W``, ``F``, ``I``,
-``B``, ``C4``, ``UP``, ``ARG``, ``SIM``, and ``D`` (pydocstyle, Google
-convention) checks.  Line length is 100.
+Ruff rules are configured in :file:`pyproject.toml`, including Google-style docstrings and a 100-character line length. Run ``uv run pre-commit run --all-files`` for the full formatting, lint, type, and lockfile checks.
 
 Tests
 -----
@@ -107,20 +101,14 @@ Code style
 Documentation
 -------------
 
-This very site is built with Sphinx.  The quickest way to build it locally
-is via the Makefile shortcut:
+Build the Sphinx site with warnings treated as errors:
 
 .. code-block:: console
 
-   $ make docs
-   $ open docs/_build/html/index.html
+   $ uv sync --extra dev --extra docs
+   $ uv run sphinx-build -W --keep-going -b html docs docs/_build/html
 
-This assumes ``sphinx-build`` is on your ``PATH`` (install with
-``uv sync --extra docs``).  To rebuild from scratch:
-
-.. code-block:: console
-
-   $ make docs-clean && make docs
+Open :file:`docs/_build/html/index.html` to inspect the result. Add ``-E`` to rebuild Sphinx's cached environment.
 
 Releasing to PyPI
 -----------------
@@ -129,7 +117,7 @@ PyPI publishing uses the ``pypi`` GitHub environment and a
 `Trusted Publisher <https://docs.pypi.org/trusted-publishers/>`_. Prepare every
 release through a pull request:
 
-Configure the ``geo-eval-harness`` project on PyPI with a Trusted Publisher for GitHub owner ``torchgeo``, repository ``geo-eval-harness``, workflow ``release.yml``, and environment ``pypi``. For the first publication, create a `pending publisher <https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/>`_. A publisher configured for another repository name does not authorize this repository; repository settings cannot configure the PyPI account.
+The PyPI Trusted Publisher uses GitHub owner ``torchgeo``, repository ``geo-eval-harness``, workflow ``release.yml``, and environment ``pypi``.
 
 1. Update :file:`docs/user/changelog.rst`, ``project.version`` in
    :file:`pyproject.toml`, the fallback ``__version__`` in

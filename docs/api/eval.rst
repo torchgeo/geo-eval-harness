@@ -4,7 +4,7 @@ Evaluation
 The evaluation pipeline lives in :mod:`geo_eval_harness.main` and a few
 focused sub-modules.  Each evaluation method (KNN-5, linear probe,
 segmentation, intrinsic dimension) consumes per-split feature embeddings
-or raw images and produces one :class:`EvaluationResult` row per metric.
+or raw images and produces :class:`~geo_eval_harness.results.EvaluationResult` rows.
 Image orchestration accepts
 :class:`~geo_eval_harness.config.run.RunConfig`; see :doc:`cli` for loading,
 preset resolution, and the separate standalone measurement schemas.
@@ -12,12 +12,14 @@ preset resolution, and the separate standalone measurement schemas.
 Result schema
 -------------
 
-.. currentmodule:: geo_eval_harness.main
+.. currentmodule:: geo_eval_harness.results
 
 .. autoclass:: EvaluationResult
 
 Feature extraction
 ------------------
+
+.. currentmodule:: geo_eval_harness.main
 
 .. autofunction:: embed_split
 
@@ -76,5 +78,7 @@ function lives in :mod:`geo_eval_harness.main`:
 
 Result I/O
 ----------
+
+.. currentmodule:: geo_eval_harness.results
 
 .. autofunction:: append_rows_atomic

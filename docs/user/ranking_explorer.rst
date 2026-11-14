@@ -12,16 +12,9 @@ Ranking explorer
      </a>
    </p>
 
-Benchmark results are spread across papers, repositories, and follow-up runs.
-The Ranking Explorer is a static comparison of frozen geospatial foundation
-models under one evaluation protocol, covering both classification and
-segmentation tasks. It is intended as a shared, inspectable record that the
-community can use to converge on reliable performance information—not a
-declaration of a final winner.
+The Ranking Explorer compares geospatial models on classification and segmentation tasks. Classification uses frozen features; segmentation views separate frozen backbones, LoRA, and full fine-tuning.
 
-Rankings are summaries: choose the task (classification or segmentation), how
-datasets are combined, then the probe (classification) or segmentation setup,
-and the input bands whose results are being summarized. If a result is wrong, missing, or implausible, please `open an
+Choose a task, aggregation, probe or segmentation setup, and input bands. If a result is wrong, missing, or implausible, please `open an
 issue <https://github.com/torchgeo/geo-eval-harness/issues>`__ with the model,
 view, and any supporting evidence. General feedback is welcome too.
 
@@ -78,7 +71,7 @@ Segmentation views are built from the setup columns of each result row (see
   spacenet7); 30 epochs and LoRA LR ``5e-4`` on sen1floods11-s1,
   sen1floods11-s2; 30 epochs and LoRA LR ``1e-4`` on
   every other dataset.
-  The canonical input size is 224 px on every dataset for now
+  The default input size is 224 px on every dataset
   (``SEG_IMAGE_SIZE`` in the same file, keyed by dataset). Rows trained and
   evaluated at another ``image_size`` (for example native 256 px on fotw or
   512 px on spacenet2, spacenet7 and loveda), or with no recorded size, are
@@ -90,8 +83,7 @@ Segmentation views are built from the setup columns of each result row (see
   number of seeds underneath. Seeds must share every setup column and the
   input size; two different setups in one cell stop the generator with an
   error.
-* Segmentation rows without setup columns (the legacy ``seg-linear`` /
-  ``seg-fpn`` / ``seg-dpt`` / ``seg-conv_block`` grids) are not shown.
+* Segmentation rows require setup columns to enter the rankings.
 * OSCD post-only segmentation (``oscd-post``) is excluded from the published
   benchmark and all ranking views: its scores do not meaningfully discriminate
   models. The dataset loader and example configuration remain available.

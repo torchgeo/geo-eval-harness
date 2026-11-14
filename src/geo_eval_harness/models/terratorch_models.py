@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -20,10 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def _build_backbone(name: str, **kwargs: Any) -> nn.Module:
+    if name == "clay_v1_5_large":
+        from .clay_v15 import ClayV15Backbone
+
+        return ClayV15Backbone(**kwargs)
     import terratorch.models.backbones  # noqa: F401 - populate registry
     from terratorch.registry import BACKBONE_REGISTRY
 
-    return BACKBONE_REGISTRY.build(name, **kwargs)
+    return cast(nn.Module, BACKBONE_REGISTRY.build(name, **kwargs))
 
 
 def _maybe_resize(images: torch.Tensor, size: int | None) -> torch.Tensor:
@@ -123,7 +127,7 @@ class TerraTorchPrithviBench(_TerraTorchBench):
 
     Under ``model_native``, inputs are rescaled to S2 DN before band mapping.
 
-    Datasets that lack some of :data:`PRITHVI_BANDS` (RGB-only, for instance)
+    Datasets that lack some of ``PRITHVI_BANDS`` (RGB-only, for instance)
     use TerraTorch's ``model_bands=`` patch-embed selection, which keeps the
     pretrained weights for the bands that are present and drops the rest,
     rather than zero-filling the missing channels.
@@ -193,9 +197,9 @@ _CLAY_PRETRAIN_STD_BY_BAND: dict[str, float] = dict(
 
 
 class TerraTorchClayBench(_TerraTorchBench):
-    """Clay v1 Base — S2 bands @ 256, conditioned on per-band ``waves`` (µm) and ``gsd``.
+    """Clay v1 Base or v1.5 Large, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
-    Input mapping and ``waves`` use available :data:`CLAY_BANDS` in pretrained order.
+    Input mapping and ``waves`` use available ``CLAY_BANDS`` in pretrained order.
     RGB inputs use three channels and wavelengths; full S2 inputs use all six. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
     """
@@ -210,8 +214,9 @@ class TerraTorchClayBench(_TerraTorchBench):
         *,
         backbone_name: str = "timm_clay_v1_base",
         pretrained: bool = True,
+        checkpoint_path: str | None = None,
         target_size: int | None = 256,
-        modality: str = "sentinel-2-l2a",  # noqa: ARG002 — kept for config back-compat
+        modality: str = "sentinel-2-l2a",  # noqa: ARG002 - Clay uses Sentinel-2 inputs
         gsd: float = 10.0,
         **kwargs: Any,
     ) -> None:
@@ -229,6 +234,9 @@ class TerraTorchClayBench(_TerraTorchBench):
         backbone_kwargs: dict[str, Any] = {"pretrained": pretrained}
         if target_size is not None:
             backbone_kwargs["img_size"] = target_size
+        if checkpoint_path is not None:
+            key = "checkpoint_path" if backbone_name == "clay_v1_5_large" else "ckpt_path"
+            backbone_kwargs[key] = checkpoint_path
         super().__init__(
             bands=bands,
             target_size=target_size,

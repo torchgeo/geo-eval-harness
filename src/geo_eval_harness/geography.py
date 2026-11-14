@@ -24,6 +24,8 @@ Coordinate sources:
   ``geo-eval-harness download hotosm_buildings`` writes into its split files.
 * **GeoTIFF**: reproject image header origins to EPSG:4326.
 * **Packaged index**: Open Cities chip centres from the committed index; no download needed.
+* **PLANTEUR**: read the patch centres and islands in the ``metadata.csv`` that
+  ``geo-eval-harness download planteur`` writes.
 
 Unchanged raw data produces byte-identical JSON.
 """
@@ -47,7 +49,7 @@ from .datasets.loading import download_command
 
 logger = logging.getLogger(__name__)
 
-STORE_DIR = Path(__file__).resolve().parents[2] / "docs" / "_static" / "_dataset_geography"
+STORE_DIR = Path(__file__).resolve().parent / "_static" / "_dataset_geography"
 INDEX_NAME = "index.json"
 
 Status = Literal["extracted", "no_geo", "not_downloaded"]
@@ -83,6 +85,10 @@ GEO_ALIAS: dict[str, str] = {
     "eurosat-spatial": "m-eurosat",
     "eurosat": "m-eurosat",
     "sen1floods11-s2": "sen1floods11-s1",
+    **{
+        f"planteur_loio_{fold}": "planteur"
+        for fold in ("guadeloupe", "martinique", "guyane", "reunion", "mayotte")
+    },
 }
 
 BIN_RES = 0.25  # Degrees per density-map cell.
@@ -100,8 +106,9 @@ class GeoRecord:
     Attributes:
         name: Dataset identifier, as registered (e.g. ``"m-eurosat"``).
         status: ``"extracted"``, ``"no_geo"``, or ``"not_downloaded"``.
-        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``, or
-            ``"geotiff"``/``"index"``/``"geojson"``. ``None`` when nothing was read.
+        version: Coordinate source, such as ``"v1"``, ``"v2"``, ``"torchgeo"``, ``"hotosm"``,
+            ``"planteur"``, or ``"geotiff"``/``"index"``/``"geojson"``. ``None`` when nothing was
+            read.
         n: Number of geolocated samples found.
         reason: Why coordinates are unavailable; always set for ``"no_geo"``.
         alias_of: Set when this dataset borrows another's geometry (see
@@ -179,6 +186,19 @@ def _extract_hotosm(paths: list[Path]) -> dict:
         "lat": table["lat"].to_numpy(),
         "place": np.asarray(table["country"].to_pylist(), dtype=object),
         "version": "hotosm",
+    }
+
+
+def _extract_planteur(path: Path) -> dict:
+    """Read patch centres and islands from the converted ``planteur`` metadata."""
+    import pandas as pd
+
+    frame = pd.read_csv(path)
+    return {
+        "lon": frame["lon"].to_numpy(),
+        "lat": frame["lat"].to_numpy(),
+        "place": frame["island"].to_numpy(dtype=object),
+        "version": "planteur",
     }
 
 
@@ -486,6 +506,9 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
+    elif name == "planteur" and (directory / "metadata.csv").is_file():
+        data = _extract_planteur(directory / "metadata.csv")
+        reason = "metadata has no lon/lat columns"
     elif name == "oscd-post":
         data = _extract_oscd(directory)
         reason = "city footprints have no coordinates"
@@ -600,7 +623,7 @@ def build_index(store_dir: Path | None = None) -> dict:
 
 
 def load_geography(name: str, store_dir: Path | None = None) -> GeoRecord:
-    """Load one dataset's record from the committed store.
+    """Load one dataset's record from the packaged store.
 
     Raises:
         FileNotFoundError: If the dataset has no record yet.

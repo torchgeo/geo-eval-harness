@@ -169,6 +169,7 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "olmoearth_v1_2_tiny": ("OlmoEarth v1.2 tiny", False),
     "olmoearth_v1_2_small": ("OlmoEarth v1.2 small", False),
     "olmoearth_v1_2_base": ("OlmoEarth v1.2 base", False),
+    "olmoearth_v1_3_base": ("OlmoEarth v1.3 base", False),
     "tgeo_croma_base": ("CROMA base", False),
     "tgeo_croma_large": ("CROMA large", False),
     "terrafm_base": ("TerraFM base", False),
@@ -188,6 +189,7 @@ MODEL_DISPLAY: dict[str, tuple[str, bool]] = {
     "tgeo_swinv2t_s2rgb_satlas_mi": ("SatlasNet Swin-v2-T (MI)", False),
     "tgeo_swinv2t_s2rgb_satlas_si": ("SatlasNet Swin-v2-T (SI)", False),
     "tt_clay_v1_base": ("Clay v1 Base", False),
+    "tt_clay_v1_5_large": ("Clay v1.5 Large", False),
     "tt_prithvi_eo_v1_100": ("Prithvi-EO-v1 100M", False),
     "tt_prithvi_eo_v2_100_tl": ("Prithvi-EO-v2 100M (TL)", False),
     "tt_prithvi_eo_v2_300": ("Prithvi-EO-v2 300M", False),
@@ -236,6 +238,12 @@ DATASET_DISPLAY = {
     "sen1floods11-s2": "Sen1Floods11 · S2",
     "bright-post-sar": "BRIGHT (post, SAR)",
     "oscd-post": "OSCD (post)",
+    "planteur": "PLANTEUR",
+    "planteur_loio_guadeloupe": "PLANTEUR LOIO Guadeloupe",
+    "planteur_loio_martinique": "PLANTEUR LOIO Martinique",
+    "planteur_loio_guyane": "PLANTEUR LOIO Guyane",
+    "planteur_loio_reunion": "PLANTEUR LOIO Réunion",
+    "planteur_loio_mayotte": "PLANTEUR LOIO Mayotte",
 }
 
 # Canonical metric name -> the label a reader needs to interpret the column.

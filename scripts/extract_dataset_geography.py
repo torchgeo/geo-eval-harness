@@ -1,6 +1,6 @@
 """Write geographic metadata for every registered dataset.
 
-Write dataset records and ``index.json`` to ``docs/_static/_dataset_geography/``.
+Write dataset records and ``index.json`` to ``src/geo_eval_harness/_static/_dataset_geography/``.
 
 Use the registry so newly added datasets appear in the store.
 

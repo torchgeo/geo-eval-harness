@@ -3,6 +3,7 @@
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy
 from .anysat import AnySatBenchModel
+from .eosfm import EoSFMBenchModel
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
@@ -20,12 +21,14 @@ from .segmentation_heads import (
     UPerNetHead,
     ViTNeck,
 )
+from .smarties import SmartiesBench
 from .terrafm import TerraFMBench
 from .terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
 )
+from .tessera import TesseraBenchModel
 from .thor import ThorBenchModel
 from .timm import TimmModelSettings, TimmPatchBenchModel
 from .torchgeo_models import (
@@ -45,6 +48,7 @@ __all__: list[str] = [
     "BenchModel",
     "ConvBlockHead",
     "DPTHead",
+    "EoSFMBenchModel",
     "FPNHead",
     "HandcraftedBench",
     "ImageStatsBench",
@@ -57,10 +61,12 @@ __all__: list[str] = [
     "RCFBench",
     "RCFModelSettings",
     "SAM3Encoder",
+    "SmartiesBench",
     "TerraFMBench",
     "TerraTorchClayBench",
     "TerraTorchPrithviBench",
     "TerraTorchTerraMindBench",
+    "TesseraBenchModel",
     "ThorBenchModel",
     "TimmModelSettings",
     "TimmPatchBenchModel",

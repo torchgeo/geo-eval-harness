@@ -2,7 +2,7 @@ Results format
 ==============
 
 All evaluation runs append rows to per-model CSV files.  Each row is a
-flattened :class:`~geo_eval_harness.main.EvaluationResult` describing a single
+flattened :class:`~geo_eval_harness.results.EvaluationResult` describing a single
 ``(dataset, method, model, config)`` measurement.  Rows are split by *kind*
 across three directories, keyed by ``<model name>.csv``:
 
@@ -32,6 +32,8 @@ rows every time.
 Sample rows
 -----------
 
+These illustrative rows show selected columns; they are not benchmark measurements.
+
 .. code-block:: text
 
    dataset,method,metric_name,metric_value,ci_lower,ci_upper,feature_dim,best_c,n_train,n_val,n_test,seed,model,name,normalization,image_size,interpolation,partition,bands,num_classes
@@ -59,12 +61,9 @@ and ``none`` to ``identity``.
    * - ``minmax``
      - Scale each channel to ``[0, 1]`` from BandSpec min/max.
    * - ``minmax_zscore``
-     - ``minmax`` then z-score against assumed ``mean=0.5, std=0.25``.
+     - Min-max scaling, then z-scoring with the correspondingly scaled dataset mean/std.
    * - ``identity``
      - No rescaling (for models whose forward owns normalisation).
-
-Older snapshots may carry legacy values such as ``raw`` / ``mean_stdev`` /
-``percentile_2_98`` — they are kept verbatim for resume safety.
 
 Method values
 -------------
@@ -93,7 +92,7 @@ CSV schema
 Column               Description
 ==================== ============================================================
 ``dataset``          Dataset CLI name (e.g. ``m-eurosat``).
-``method``           ``knn5``, ``linear``, ``intrinsic_dim``, or ``seg-<head_type>``.
+``method``           Probe or measurement name; see `Method values`_.
 ``metric_name``      Primary metric (``accuracy``, ``micro_mAP``, ``mIoU``,
                      ``id_<estimator>_<split>`` for intrinsic-dimension rows,
                      or ``spectrum_<metric>_<split>`` for feature-spectrum rows).
@@ -114,7 +113,7 @@ Column               Description
 ``normalization``    Strategy applied by the model wrapper (see table above).
 ``image_size``       Input resize size (``None`` if no resizing).
 ``interpolation``    Resize interpolation mode.
-``partition``        GeoBench V1 partition name (``default`` for V2).
+``partition``        Dataset training partition, such as ``default`` or ``full``.
 ``bands``            ``rgb`` / ``all`` / a sorted comma-joined list.
 ``num_classes``      Dataset label count. It is also part of the resume key so
                      label-schema changes cannot reuse stale rows.
@@ -129,7 +128,7 @@ Column               Description
 ``f1``               Macro F1 (segmentation only).
 ==================== ============================================================
 
-Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`). Rows written before these columns existed leave them empty.
+Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`).
 
 .. _segmentation-setup-columns:
 
@@ -168,22 +167,7 @@ Column                       Value on a segmentation row
 ``early_stopping_patience``  ``segmentation.early_stopping_patience``; empty when off.
 ============================ ==========================================================
 
-These columns are derived from settings that ``config_hash`` already covers, so they do not
-change any hash and do not join the resume key. They do join the de-duplication key of
-``geo_eval_harness.results.load_results``. That key drops ``config_hash``, so without the
-setup columns, runs that differ only in epochs or learning rates would collapse to one row.
-The numeric setup columns compare by value (``1e-3`` equals ``0.001``).
-
-Segmentation rows written before these columns existed (``seg-linear``, ``seg-conv_block``,
-``seg-fpn`` and ``seg-dpt`` in ``results/models``) keep them empty: their epochs and learning
-rates are not recorded, so nothing is backfilled. The leaderboard treats a segmentation row
-with an empty ``adaptation`` as a legacy row. Earlier versions encoded parts of the setup in
-``method`` (``seg-upernet-vitneck-lora``, ``-anyup``, ``-full``, ``-last<k>``). Such rows in
-local CSVs are not rewritten; they still load, and resume reruns them once because ``method``
-changed.
-
-``scripts/migrations/migrate_setup_columns.py`` rewrites CSVs with the current header and
-empty cells for the new columns.
+The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Resume uses the configuration hash.
 
 .. _segmentation-epoch-metrics:
 
@@ -218,10 +202,7 @@ The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the
 Atomic appends
 --------------
 
-Rows are appended via :func:`~geo_eval_harness.main.append_rows_atomic`,
-which uses ``fcntl`` advisory file locking (available on Linux and
-macOS).  This makes it safe to point multiple parallel jobs (e.g. one
-per GPU or per dataset) at the same output file without corrupting it.
+Rows are appended via :func:`~geo_eval_harness.results.append_rows_atomic`, which uses ``filelock.FileLock`` on Linux, macOS, and Windows. Parallel jobs can append to the same output file.
 
 Resume mode
 -----------
@@ -242,15 +223,7 @@ Resume checks each method separately, so ``--methods linear`` never requires a K
 
 Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device`` and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
-Segmentation hashes also include the best-validation-mIoU selection protocol, determined from the resolved dataset task. A final-epoch result cannot satisfy a best-validation run's resume key. Classification hashes are unaffected by this protocol discriminator.
-
-Method names and CSV columns are unchanged. The selection policy is defined in :ref:`segmentation-model-selection`.
-
-Existing results are not relabeled or rewritten. Affected segmentation configurations need new runs to obtain best-validation results.
-
-Rows written before version 0.5.0 do not have ``num_classes`` and are treated
-as incomplete by resume mode. The checked-in SpaceNet2/7 rows produced under
-the old three-class task were removed; they remain available from the 0.4.0 tag.
+Segmentation hashes include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
 
 CoordBench uses a separate schema and output path. See :doc:`coordbench` and
 :class:`~geo_eval_harness.coordbench.CoordResult`.

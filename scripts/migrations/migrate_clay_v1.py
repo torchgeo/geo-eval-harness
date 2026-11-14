@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Relabel saved Clay v1 Base measurements without changing metrics or run hashes."""
+"""Relabel Clay v1 Base results and generated snapshots."""
 
 import csv
 import hashlib

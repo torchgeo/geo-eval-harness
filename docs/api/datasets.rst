@@ -22,15 +22,14 @@ Loading API
 -----------
 
 .. autofunction:: get_datasets
+.. autofunction:: get_dataset_task
 .. autofunction:: get_bench_dataset_class
 .. autofunction:: list_datasets
 
 GeoBench V1 (classification)
 ----------------------------
 
-V1 datasets use the ``m-`` prefix on the command line.  They wrap the original
-GeoBench HDF5 distributions and expose the standard ``train``/``val``/``test``
-splits plus alternative partitions where available.
+V1 datasets use the ``m-`` prefix on the command line. They read JSON-metadata WebDataset shards or HDF5 files with JSON metadata and expose ``train``/``val``/``test`` splits plus dataset-specific partitions.
 
 .. autoclass:: MBigEarthNet
 .. autoclass:: MBrickKiln
@@ -96,5 +95,17 @@ torchgeo wrappers
 .. autoclass:: BRIGHTPostSARRGB
 
 .. autoclass:: OSCDPost
+
+.. autoclass:: PLANTEUR
+.. autoclass:: PLANTEURLOIOGuadeloupe
+   :no-show-inheritance:
+.. autoclass:: PLANTEURLOIOGuyane
+   :no-show-inheritance:
+.. autoclass:: PLANTEURLOIOMartinique
+   :no-show-inheritance:
+.. autoclass:: PLANTEURLOIOMayotte
+   :no-show-inheritance:
+.. autoclass:: PLANTEURLOIOReunion
+   :no-show-inheritance:
 
 .. autoclass:: UCMerced

@@ -13,9 +13,7 @@ Glossary
 
    BenchModel
        Abstract base class implemented by every backbone in
-       :mod:`geo_eval_harness.models`.  Sealed ``forward_patch_features``
-       method guarantees that input normalisation is always applied
-       before the subclass-specific ``_forward_patch_features``.
+       :mod:`geo_eval_harness.models`.  The public ``forward_patch_features`` method applies input normalization before the subclass's ``_forward_patch_features``.
 
    bootstrap
        Resampling technique used to estimate a confidence interval
@@ -24,9 +22,7 @@ Glossary
        in the results CSV.
 
    GeoBench V1
-       The original GeoBench benchmark released as a set of HDF5 files.
-       Datasets in V1 use the ``m-`` prefix in the CLI
-       (e.g. ``m-eurosat``) and live under ``data/classification_v1.0/``.
+       GeoBench classification datasets with the ``m-`` CLI prefix (e.g. ``m-eurosat``). Downloads use JSON-metadata tar shards under ``data/classification_v1.0_wds/``; custom JSON-metadata HDF5 files are also supported.
 
    GeoBench V2
        The second-generation GeoBench distribution, packaged as one
@@ -60,4 +56,4 @@ Glossary
    resume mode
        When ``--resume`` is supplied, the runner skips any
        ``(dataset, method, model, config)`` combination already present
-       in the output CSV.  See :doc:`results-format` for the exact key.
+       with a matching configuration hash in the output CSV. See :doc:`results-format` for the exact key.

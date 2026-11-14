@@ -5,12 +5,7 @@ All commands use explicit flags and strict Pydantic-validated YAML.
 ``geo-eval-harness``, ``python -m geo_eval_harness``, and
 ``python -m geo_eval_harness.cli`` expose the same interface.
 
-.. warning::
-
-   The old ``key=value`` and ``+key=value`` overrides are rejected, including
-   through the module entry points. Replace them with flags or ``--config``.
-   There is no Hydra/OmegaConf composition, interpolation, or recursive
-   ``_target_`` instantiation.
+Commands that use ``docs/examples/`` paths run from the repository root. With an installed package, save the example YAML locally and pass that path to ``--config``.
 
 For example:
 
@@ -64,7 +59,7 @@ A minimal run file selects a model and one or more datasets:
    datasets: [m-eurosat]
 
 Run it with ``geo-eval-harness run --config my-run.yaml``. A model selection is
-always a mapping, not the old ``model: timm/resnet50`` scalar.
+a mapping with a ``name`` field.
 Use ``datasets: [all]`` to select the image dataset catalog. On the CLI,
 ``--dataset`` is repeatable:
 
@@ -138,7 +133,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests now raise an error when CUDA is unavailable or the index is invalid, rather than silently falling back to CPU. Use ``auto`` to allow CPU fallback. The image default remains ``cuda:0``.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``,
 ``--seed``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``,
@@ -155,6 +150,7 @@ Classification
      knn_k: 5
      knn_device: null
      bootstrap_samples: 200
+     feature_standardize: false
      linear:
        c_log10_start: -6.0
        c_log10_stop: 4.0
@@ -178,6 +174,8 @@ on train plus validation. ``--refit-train-val`` /
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.
+
+``feature_standardize: true`` z-scores every embedding dimension with a mean and standard deviation fit on the training split, ``(x - mean) / sqrt(var + 1e-6)``, before KNN and the linear probe. Results are written under the methods ``knn<k>-std`` and ``linear-std``. Intrinsic-dimension and spectrum measurements use the unscaled embeddings.
 
 Segmentation
 ^^^^^^^^^^^^
@@ -216,13 +214,12 @@ Segmentation
 These YAML settings apply to segmentation datasets, independently of
 ``classification.methods``. Supported heads are ``linear``, ``conv_block``,
 ``fpn``, ``dpt``, ``patch_linear``, ``upernet``, and ``unet``; not every head works with every
-backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before an ``fpn``, ``upernet``, or ``unet`` head; it needs exactly four layers that share one resolution, such as ViT blocks, and is recorded as ``neck: vit`` in the result row (see :ref:`segmentation-setup-columns`). ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, recorded as ``upsampler: anyup`` in the result row; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
+backbone. ``unet`` (:class:`~geo_eval_harness.models.UNetHead`) is a U-Net decoder with ``hidden_dim`` channels per stage that stops at the finest hooked map, like ``upernet``; it needs a feature pyramid, so ViT blocks require ``neck: vit``. ``neck: vit`` adds the ViT neck (:class:`~geo_eval_harness.models.ViTNeck`) before a ``linear``, ``fpn``, ``upernet``, or ``unet`` head. It takes either one feature map or four layers that share one resolution and is recorded as ``neck: vit`` in the result row (see :ref:`segmentation-setup-columns`). ``neck_norm: layernorm`` (default) applies a learnable per-position LayerNorm to each level before the neck; ``none`` reproduces the neck without it. ``upsampler: anyup`` (``upernet`` only, ``cache_features: false``) puts frozen pretrained AnyUp between the fused features and the classifier, guided by the input's RGB bands, recorded as ``upsampler: anyup`` in the result row; the pinned code and checkpoint download through ``torch.hub``. Omit ``layers`` to inherit the model's selection. An explicit
 ``[]`` clears it and is rejected by image segmentation, which requires explicit
 feature layers. See
 :doc:`segmentation-layers` for verified layer paths.
 
-``runtime.batch_size`` controls feature extraction;
-``segmentation.batch_size`` controls probe training. ``temporal_pool`` is
+``runtime.batch_size`` controls image loading, feature extraction, and uncached training. ``segmentation.batch_size`` controls training on cached features. ``temporal_pool`` is
 ``mean`` or ``max``, ``scheduler`` is ``cosine`` or ``none``, and the cache
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
@@ -231,7 +228,7 @@ configured ``ignore_index``; there is no constructor-style criterion block.
 runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
 whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
 all of this in float32 at the cost of speed and memory. With cached frozen features it requires
-``cache_dtype: float32``. ``fp16`` leaves hashes unchanged. Whatever the precision, a training
+``cache_dtype: float32``. Whatever the precision, a training
 batch whose backbone features are not finite is skipped before the head runs, so head
 BatchNorm statistics stay finite, and counted as ``nonfinite_batches`` in the epoch record; an
 epoch that skips more than 5% of its batches fails. ``feature_standardize`` leaves such samples
@@ -241,9 +238,15 @@ Segmentation confidence intervals use ``classification.bootstrap_samples``.
 
 See :ref:`segmentation-model-selection` for the validation requirements, model-selection policy, and optional ``early_stopping_patience``.
 
-Setting ``lora_rank`` fine-tunes the backbone with LoRA adapters instead of freezing it; it requires ``backbone_learning_rate`` and the ``lora`` extra. ``lora_target_modules`` is a regular expression that must fully match the adapted ``nn.Linear`` module names, in the same namespace as ``layers``. Presets that support LoRA define it, so a run usually only adds the rank and learning rate. Adapter updates are scaled by ``lora_alpha / lora_rank``. ``lora_last_blocks: k`` adapts only the matches inside the last ``k`` blocks (a block is the module path up to its last index, such as ``blocks.11`` or ``stages.3.blocks.26``); earlier blocks stay frozen and skip the backward pass. Such rows record ``lora_last_blocks``. ``full_finetune: true`` instead trains every backbone weight at ``backbone_learning_rate`` (``adaptation: full`` in the result row), with dropout and normalisation statistics in eval mode as for LoRA; it is a cost and quality reference, not a recommended protocol. Otherwise, without ``lora_rank``, ``backbone_learning_rate``, ``lora_alpha``, and ``lora_last_blocks`` must stay unset. LoRA runs read images on every epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` is the training batch size. They are recorded with ``adaptation: lora`` (see :ref:`segmentation-setup-columns`).
+Set ``lora_rank`` and ``backbone_learning_rate`` to fine-tune with LoRA adapters; this requires the ``lora`` extra. ``lora_target_modules`` is a regular expression that fully matches the adapted ``nn.Linear`` module names in the same namespace as ``layers``. Presets that support LoRA define the targets. Adapter updates are scaled by ``lora_alpha / lora_rank``.
 
-``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. Unset, it leaves hashes unchanged; set, it is part of ``config_hash``.
+``lora_last_blocks: k`` restricts adapters to the last ``k`` blocks. A block is the module path through its last numeric index, such as ``blocks.11`` or ``stages.3.blocks.26``. Earlier blocks stay frozen and skip the backward pass.
+
+``full_finetune: true`` trains every backbone weight at ``backbone_learning_rate``. Both fine-tuning modes keep pretrained dropout and normalization statistics in eval mode. Result rows record ``adaptation: lora`` or ``adaptation: full``. Without LoRA, keep ``lora_alpha`` at its default and leave ``lora_last_blocks`` unset; set ``backbone_learning_rate`` only for a trainable backbone.
+
+Fine-tuning reads images each epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` controls training batches. See :ref:`segmentation-setup-columns` for the recorded settings.
+
+``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. The setting is recorded in ``config_hash``.
 
 .. code-block:: yaml
 
@@ -317,8 +320,6 @@ To keep every output from an image run outside the tracked reference results:
 The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. An explicit file takes precedence over the directory, even when the file comes from YAML; clear ``output.file`` to ``null`` to use the directory instead. For image runs, the explicit file combines all selected measurement kinds in one CSV. Each CLI flag overrides its corresponding YAML field, regardless of flag order.
-
-When migrating older image YAML, change ``output.directory: results/models`` to ``output.directory: results`` and remove ``profile_directory`` and ``intrinsic_dim_directory``. Those fields and the old ``--results-dir``, ``--profile-dir``, and ``--intrinsic-dim-dir`` flags are no longer accepted.
 
 ``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 
