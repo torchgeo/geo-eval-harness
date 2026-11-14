@@ -101,7 +101,7 @@ jobs:
       # Geography store checks are platform-independent; the `geography` job runs them once.
       - name: Run tests
         if: env.RUN_TESTS == 'true'
-        run: uv run pytest -n auto --dist=loadfile --durations=10 -m "not slow and not accuracy_check and not geography"
+        run: uv run pytest -n logical --dist=loadfile --durations=10 -m "not slow and not accuracy_check and not geography"
       - name: Run committed-results tests (results-only pull request)
         if: env.RUN_RESULTS_TESTS == 'true'
         run: uv run pytest --no-cov tests/test_setup_columns.py tests/test_results_store.py
