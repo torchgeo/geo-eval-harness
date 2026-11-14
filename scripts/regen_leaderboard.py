@@ -42,6 +42,9 @@ ABLATION_TAGS = ("_lsat_", "_naip_", "_sar_")
 # S2-pretrained model.  They are folded back onto the base model and win a
 # collision with the plain reading for the Landsat dataset.
 LANDSAT_SUB_SUFFIX = "_landsat_as_s2"
+# Datasets whose bands are declared ``landsat``; the substitution rows of any
+# other dataset are dropped.
+LANDSAT_DATASETS = frozenset({"m-forestnet"})
 
 # Datasets excluded from the leaderboard only (all_results.csv is untouched).
 DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln", "oscd-post"})
@@ -466,6 +469,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     base = base.where(~df["is_landsat_sub"], base.str.removesuffix(LANDSAT_SUB_SUFFIX))
     df["source_model"] = base
     df["base_model"] = base.map(canonical_slug)
+    df = df[~df["is_landsat_sub"] | df["dataset"].isin(LANDSAT_DATASETS)].copy()
 
     band_lists = df["bands"].astype(str).str.lower().str.replace(" ", "").str.split(",")
     rgb_list = band_lists.map(lambda bands: bool(bands) and set(bands) <= RGB_BAND_NAMES)

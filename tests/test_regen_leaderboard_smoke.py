@@ -179,6 +179,21 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     assert multispectral_rows["score"].iloc[0] == pytest.approx(0.7)
 
 
+def test_landsat_substitution_applies_only_to_landsat_datasets() -> None:
+    raw = pd.DataFrame(
+        [
+            _row("peer", "m-forestnet", "linear", "all", 0.5, "model_native"),
+            _row("peer_landsat_as_s2", "m-forestnet", "linear", "all", 0.6, "model_native"),
+            _row("peer", "resisc45", "linear", "rgb", 0.8, "model_native"),
+            _row("peer_landsat_as_s2", "resisc45", "linear", "rgb", 0.7, "model_native"),
+        ]
+    )
+    out = rl.harmonize(raw)
+    assert set(out["base_model"]) == {"peer"}
+    scores = out.set_index("dataset")["score"].to_dict()
+    assert scores == pytest.approx({"m-forestnet": 0.6, "resisc45": 0.8})
+
+
 def test_missing_normalization_is_rejected() -> None:
     raw = _raw_df()
     raw.loc[0, "normalization"] = ""
