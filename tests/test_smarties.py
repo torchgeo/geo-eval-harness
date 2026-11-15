@@ -269,22 +269,23 @@ _DATASET_NORMALIZATION_ONLY = {
 }
 
 
-@pytest.mark.parametrize(("dataset", "selection"), _single_sensor_selections())
-def test_preset_defaults_support_every_single_sensor_band_set(
-    dataset: str, selection: list[str]
-) -> None:
+def test_preset_defaults_support_every_single_sensor_band_set() -> None:
     """Every band set SMARTIES can project builds under the preset's per-dataset settings.
 
     The known exceptions must fail clearly under ``model`` and build under ``dataset``.
     """
-    effective, preset = _resolve("smarties/base", dataset)
-    bands = _bands(dataset, selection)
-    normalization = NORMALIZATIONS[effective.input.normalization]
-    if (dataset, ",".join(selection)) in _DATASET_NORMALIZATION_ONLY:
-        with pytest.raises(UnsupportedNormalizationError, match="--normalization dataset"):
+    rejected = {}
+    for dataset, selection in _single_sensor_selections():
+        effective, preset = _resolve("smarties/base", dataset)
+        bands = _bands(dataset, selection)
+        normalization = NORMALIZATIONS[effective.input.normalization]
+        try:
             build_model(preset, bands=bands, normalization=normalization)
-        normalization = NORMALIZATIONS["dataset"]
-    build_model(preset, bands=bands, normalization=normalization)
+        except UnsupportedNormalizationError as error:  # allow-except: collect rejected band sets
+            rejected[dataset, ",".join(selection)] = str(error)
+            build_model(preset, bands=bands, normalization=NORMALIZATIONS["dataset"])
+    assert set(rejected) == _DATASET_NORMALIZATION_ONLY
+    assert all("--normalization dataset" in message for message in rejected.values())
 
 
 @pytest.mark.parametrize("dataset", sorted(_NO_SMARTIES_BANDS))

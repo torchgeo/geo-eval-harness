@@ -41,9 +41,9 @@ def test_unknown_explicit_band_is_rejected(bench: BenchDataset) -> None:
 
 
 @pytest.mark.parametrize("selection", ["", "RGB", "typo", "red,green,blue"])
-def test_unknown_selection_is_not_interpreted_as_all(bench: BenchDataset, selection: str) -> None:
+def test_unknown_selection_is_not_interpreted_as_all(selection: str) -> None:
     with pytest.raises(ValueError, match="band selection"):
-        bench.resolve_band_specs(selection)
+        get_bench_dataset_class("m-eurosat").resolve_band_specs(selection)
 
 
 def test_existing_none_selection_keeps_all_bands(bench: BenchDataset) -> None:
