@@ -48,6 +48,7 @@ Evaluation and results
 
 * CoordBench evaluates location encoders with random, spatial-block, and official holdouts, using KNN and ridge-linear probes.
 * CoordBench reads its benchmark tables and pretrained encoders from Hugging Face at pinned commits and verifies the tables against packaged SHA-256 checksums.
+* The ``mind-small`` CoordBench preset is removed because its weights are no longer published; ``mind`` reads ``taylor-geospatial/MIND``.
 * The ``flops`` command measures backbone, decoder, and probe compute. The ``profile`` command measures execution on a fixed dataset batch.
 * FLOP counts include scaled dot-product attention on CPU and ``nn.MultiheadAttention`` and ``nn.TransformerEncoderLayer`` modules in evaluation mode.
 * Classification and frozen segmentation can standardize features with training-split statistics.

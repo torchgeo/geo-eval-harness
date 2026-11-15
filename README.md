@@ -161,7 +161,7 @@ geo-eval-harness coord --model mind --dataset all --split both
 geo-eval-harness coord --model sincos --dataset pdfm --methods linear
 ```
 
-`--model mind` and `--model mind-small` ([MIND](https://huggingface.co/isaaccorley/MIND),
+`--model mind` ([MIND](https://huggingface.co/taylor-geospatial/MIND),
 distilled from AlphaEarth/Climplicit/GeoCLIP/SINR) and `--model sincos` work with
 the base install. The other pretrained encoders (SatCLIP / GeoCLIP / Climplicit /
 SINR, via `rshf`) need the `coordbench` extra:

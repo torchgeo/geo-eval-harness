@@ -103,16 +103,13 @@ class MINDLocationEncoder(LocationEncoder):
 
     Load released weights from Hugging Face. ``mind`` uses the first 64 trunk features.
 
-    ``mind_small`` uses the distilled student's 128-dimensional head output.
-
-    Select trunk or head with ``feature``; ``dim`` keeps the first embedding dimensions.
+    ``dim`` keeps the first embedding dimensions.
 
     Args:
         repo: HuggingFace repo id holding the weights.
         filename: Checkpoint file within the repo (``.safetensors`` or ``.pt``).
         revision: Hugging Face commit of ``repo`` to read.
         dim: Embedding width to keep (Matryoshka prefix).
-        feature: ``"pooled"`` (trunk) or ``"head"`` (projected output).
         default_year: Year supplied to year-conditioned checkpoints when a
             benchmark carries no per-point year.
     """
@@ -121,11 +118,10 @@ class MINDLocationEncoder(LocationEncoder):
 
     def __init__(  # noqa: PLR0913 - pretrained model options.
         self,
-        repo: str = "isaaccorley/MIND",
+        repo: str = "taylor-geospatial/MIND",
         filename: str = "mind.safetensors",
         revision: str | None = MIND_REVISION,
         dim: int = 64,
-        feature: str = "pooled",
         default_year: int = 2021,
         device: str = "cpu",
         batch_size: int = 8192,
@@ -139,7 +135,6 @@ class MINDLocationEncoder(LocationEncoder):
             hf_hub_download(repo, filename, revision=revision), device=self.device
         )
         self.dim = int(dim)
-        self.feature = feature
         self.default_year = default_year
 
     @torch.no_grad()
@@ -150,7 +145,7 @@ class MINDLocationEncoder(LocationEncoder):
             y = self.default_year if year is None else year
             yr = torch.as_tensor(np.broadcast_to(y, (len(lat),)), dtype=torch.float32)
             yr = yr.to(self.device)
-        emb = self.model(latlon.to(self.device), yr, return_features=(self.feature == "pooled"))
+        emb = self.model(latlon.to(self.device), yr)
         return emb.float().cpu().numpy()[:, : self.dim]
 
 
