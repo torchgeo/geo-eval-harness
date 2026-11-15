@@ -10,7 +10,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
-from ._band_mapping import BandMappingPolicy, map_to_model_bands, select_src_bands
+from ._band_mapping import BandMappingPolicy, hls_band_specs, map_to_model_bands, select_src_bands
 from ._input_units import InputUnit, convert_unit, detect_input_unit, linear_power_to_db
 from ._normalization import NormalizationStrategy
 from ._optional import TERRATORCH_INSTALL, require_package
@@ -128,6 +128,7 @@ class TerraTorchPrithviBench(_TerraTorchBench):
     """IBM/NASA Prithvi-EO v1/v2 — maps dataset bands onto its HLS slots @ 224.
 
     Under ``model_native``, inputs are rescaled to S2 DN before band mapping.
+    Landsat's NIR band fills the narrow-NIR slot, as in HLS.
 
     Datasets that lack some of ``PRITHVI_BANDS`` (RGB-only, for instance)
     use TerraTorch's ``model_bands=`` patch-embed selection, which keeps the
@@ -146,7 +147,8 @@ class TerraTorchPrithviBench(_TerraTorchBench):
         target_size: int | None = 224,
         **kwargs: Any,
     ) -> None:
-        indices, selected = select_src_bands(bands, PRITHVI_BANDS, preferred_sensors=("s2",))
+        hls_bands = hls_band_specs(bands)
+        indices, selected = select_src_bands(hls_bands, PRITHVI_BANDS, preferred_sensors=("s2",))
         backbone_kwargs: dict[str, Any] = {"pretrained": pretrained, "num_frames": 1}
         if len(selected) < len(PRITHVI_BANDS):
             backbone_kwargs["bands"] = [_PRITHVI_HLS_BANDS[name] for name in selected]
@@ -167,11 +169,12 @@ class TerraTorchPrithviBench(_TerraTorchBench):
             **kwargs,
         )
         self.model_bands = selected
+        self._hls_bands = hls_bands
 
     def _prepare_input(self, images: torch.Tensor) -> torch.Tensor:
         mapped, _ = map_to_model_bands(
             images,
-            self.bands,
+            self._hls_bands,
             self.model_bands,
             policy=BandMappingPolicy(preferred_sensors=("s2",)),
         )

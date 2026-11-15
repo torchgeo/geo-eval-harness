@@ -16,7 +16,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.bands import BandCompatibilityError, BandSpec
 
 from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from ._optional import require_package
@@ -233,6 +233,11 @@ def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -
             f"sensor '{sensor}'.  Add them to "
             f"_MODALITY_INFO['{sensor}']['name_to_idx'] "
             f"with the correct OlmoEarth band index."
+        )
+    if not group_bands:
+        raise BandCompatibilityError(
+            f"OlmoEarth has no slot for any selected '{sensor}' band: "
+            f"{[b.name for _, b in indexed_bands]}."
         )
     input_unit: InputUnit | None = (
         None if sensor in _PASSTHROUGH_SENSORS else _detect_band_group_unit(group_bands)

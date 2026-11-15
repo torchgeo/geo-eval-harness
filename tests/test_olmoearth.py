@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
@@ -215,6 +216,12 @@ def test_sar_slots_take_only_polarization_intensities(
     (group,) = [g for g in _build_sensor_groups(bands) if g["sample_field"] == "sentinel1"]
     slots = zip(group["dst_indices"], group["src_indices"], strict=True)
     assert {dst: bands[src].name for dst, src in slots} == expected
+
+
+def test_rejects_sar_selection_without_a_backscatter_band() -> None:
+    bands = get_bench_dataset_class("m-so2sat").resolve_band_specs(["vv_real", "vv_imag"])
+    with pytest.raises(BandCompatibilityError, match="no slot for any selected 'sar' band"):
+        _build_sensor_groups(bands)
 
 
 def test_sar_dataset_units() -> None:

@@ -1717,11 +1717,13 @@ def test_anyup_guidance_bands_follow_wavelengths() -> None:
     from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
 
     def band(name: str, wavelength: float | None, sensor: str = "s2") -> BandSpec:
-        return BandSpec(name, sensor, name, mean=0, std=1, min=0, max=1, wavelength_um=wavelength)
+        return BandSpec(sensor, name, name, mean=0, std=1, min=0, max=1, wavelength_um=wavelength)
 
     s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
     assert rgb_guidance_indices(s2) == (2, 1, 0)
     assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    named = [band("nir", None), band("blue", None), band("green", None), band("red", None)]
+    assert rgb_guidance_indices(named) == (3, 2, 1)
     coastal_first = get_bench_dataset_class("cloudsen12").resolve_band_specs("all")
     assert rgb_guidance_indices(coastal_first) == (3, 2, 1)
     aerial = get_bench_dataset_class("loveda").resolve_band_specs("all")
