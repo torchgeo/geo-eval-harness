@@ -1,7 +1,10 @@
 """Tests for OlmoEarth sensor routing, normalization, and embeddings."""
 
+import hashlib
+import re
 import sys
 from importlib.util import find_spec
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, ClassVar
 from unittest import mock
@@ -12,6 +15,7 @@ import torch
 
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models import olmoearth
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
 
 olmoearth_available = find_spec("olmoearth_pretrain_minimal") is not None
@@ -54,8 +58,25 @@ def _s2_bands() -> list[BandSpec]:
 
 
 @pytest.fixture
-def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    state: dict[str, Any] = {"normalizer_inputs": {}, "loads": []}
+def tiny_olmoearth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "normalizer_inputs": {},
+        "loads": [],
+        "downloads": [],
+        "payload": b"pinned",
+    }
+
+    def download(repo: str, filename: str, *, revision: str) -> str:
+        state["downloads"].append((repo, filename, revision))
+        path = tmp_path / repo / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(state["payload"])
+        return str(path)
+
+    digest = hashlib.sha256(b"pinned").hexdigest()
+    manifest = olmoearth.load_checksums("olmoearth.sha256")
+    monkeypatch.setattr("geo_eval_harness.hub.hf_hub_download", download)
+    monkeypatch.setattr(olmoearth, "load_checksums", lambda _: dict.fromkeys(manifest, digest))
 
     class _Normalizer:
         def __init__(self, *, std_multiplier: float, model_type: str) -> None:
@@ -90,15 +111,14 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             super().__init__()
             self.encoder = _FlexiEncoder()
 
-    def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
-        state["loads"].append((model_id, load_weights))
+    def load_model(path: Path) -> _Encoder:
+        state["loads"].append(path.name)
         return _Encoder()
 
     exports = {
         "olmoearth_pretrain_minimal": {
-            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano", OLMOEARTH_V1_3_BASE="v1_3_base"),
             "Normalizer": _Normalizer,
-            "load_model_from_id": load_model,
+            "load_model_from_path": load_model,
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants": {
             "Modality": SimpleNamespace(SENTINEL2_L2A="s2", SENTINEL1="sar", LANDSAT="landsat"),
@@ -154,7 +174,7 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     assert torch.count_nonzero(sample.sentinel1_mask) == 0
     torch.testing.assert_close(sample.timestamps, torch.tensor([[[15, 6, 2020], [15, 6, 2020]]]))
     assert tiny_olmoearth["encoder_kwargs"] == {"patch_size": 4, "input_res": 10, "fast_pass": True}
-    assert tiny_olmoearth["loads"] == [("nano", True)]
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1-Nano"]
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
 
 
@@ -297,7 +317,7 @@ def test_v1_3_embedding_source(
         normalization="identity",
     )
     out = model(torch.full((1, 3, 4, 4), 1500.0))
-    assert tiny_olmoearth["loads"] == [("v1_3_base", True)]
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
     torch.testing.assert_close(out, torch.tensor([expected]))
 
 
@@ -333,9 +353,10 @@ def weight_free_olmoearth(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the installed package's preprocessing without loading a checkpoint."""
     import olmoearth_pretrain_minimal
 
+    monkeypatch.setattr(olmoearth, "_fetch_checkpoint", lambda *_args: Path())
     monkeypatch.setattr(
         olmoearth_pretrain_minimal,
-        "load_model_from_id",
+        "load_model_from_path",
         lambda *_args, **_kwargs: SimpleNamespace(encoder=_WeightFreeEncoder()),
     )
 
@@ -372,6 +393,35 @@ def test_rejects_pooler_embeddings_without_attention_pooler(
             normalization="identity",
         )
     assert tiny_olmoearth["loads"] == []
+
+
+def test_checkpoint_is_fetched_at_its_pinned_revision_and_verified_before_loading(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    OlmoEarthBenchModel(_rgb_bands(), model_size="base", version="v1_3")
+    revision = olmoearth.CHECKPOINT_REVISIONS["OlmoEarth-v1_3-Base"]
+    assert tiny_olmoearth["downloads"] == [
+        ("allenai/OlmoEarth-v1_3-Base", name, revision) for name in ("config.json", "weights.pth")
+    ]
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
+
+    tiny_olmoearth["payload"] = b"tampered"
+    with pytest.raises(ValueError, match="SHA-256"):
+        OlmoEarthBenchModel(_rgb_bands(), model_size="base", version="v1_3")
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
+
+
+def test_every_released_checkpoint_is_pinned() -> None:
+    names = {
+        f"OlmoEarth-{version}-{size.capitalize()}"
+        for version, sizes in olmoearth._VERSION_SIZES.items()
+        for size in sizes
+    }
+    checksums = olmoearth.load_checksums("olmoearth.sha256")
+    assert set(olmoearth.CHECKPOINT_REVISIONS) == names
+    assert all(re.fullmatch(r"[0-9a-f]{40}", r) for r in olmoearth.CHECKPOINT_REVISIONS.values())
+    assert set(checksums) == {f"{n}/{f}" for n in names for f in ("config.json", "weights.pth")}
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in checksums.values())
 
 
 # Embedding widths from the released Hugging Face model configs.

@@ -1,5 +1,6 @@
 """Clay v1.5 checkpoint loading and input geometry."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from torch import nn
 
 from geo_eval_harness.config.presets import load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.hub import sha256_file
 from geo_eval_harness.models import clay_v15
 
 
@@ -32,36 +34,59 @@ def encoder(monkeypatch: pytest.MonkeyPatch) -> _Encoder:
     return result
 
 
-def test_only_complete_encoder_weights_are_loaded(encoder: _Encoder, tmp_path: Path) -> None:
-    checkpoint = tmp_path / "clay.ckpt"
-    torch.save(
+@pytest.fixture
+def save_pinned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[[dict], str]:
+    """Write a checkpoint and pin its digest as the expected one."""
+
+    def save(state_dict: dict) -> str:
+        checkpoint = tmp_path / "clay.ckpt"
+        torch.save({"state_dict": state_dict}, checkpoint)
+        monkeypatch.setattr(clay_v15, "CLAY_V15_SHA256", sha256_file(checkpoint))
+        return str(checkpoint)
+
+    return save
+
+
+def test_only_complete_encoder_weights_are_loaded(
+    encoder: _Encoder, save_pinned: Callable[[dict], str]
+) -> None:
+    checkpoint = save_pinned(
         {
-            "state_dict": {
-                "model.encoder.scale": torch.tensor([2.0, 3.0]),
-                "model.teacher.weight": torch.ones(64),
-                "model.decoder.weight": torch.ones(32),
-            }
-        },
-        checkpoint,
+            "model.encoder.scale": torch.tensor([2.0, 3.0]),
+            "model.teacher.weight": torch.ones(64),
+            "model.decoder.weight": torch.ones(32),
+        }
     )
-    model = clay_v15.ClayV15Backbone(checkpoint_path=str(checkpoint))
+    model = clay_v15.ClayV15Backbone(checkpoint_path=checkpoint)
     torch.testing.assert_close(encoder.scale, torch.tensor([2.0, 3.0]))
     assert sum(p.numel() for p in model.parameters()) == 2
     assert list(model.state_dict()) == ["clay_encoder.scale"]
 
 
-def test_incompatible_encoder_is_rejected(encoder: _Encoder, tmp_path: Path) -> None:
-    checkpoint = tmp_path / "wrong-size.ckpt"
-    torch.save({"state_dict": {"model.encoder.scale": torch.ones(3)}}, checkpoint)
+def test_local_checkpoint_is_verified_before_loading(
+    encoder: _Encoder, save_pinned: Callable[[dict], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint = save_pinned({"model.encoder.scale": torch.tensor([2.0, 3.0])})
+    monkeypatch.setattr(clay_v15, "CLAY_V15_SHA256", "0" * 64)
+    with pytest.raises(ValueError, match="SHA-256"):
+        clay_v15.ClayV15Backbone(checkpoint_path=checkpoint)
+    torch.testing.assert_close(encoder.scale, torch.ones(2))
+
+
+def test_incompatible_encoder_is_rejected(
+    encoder: _Encoder, save_pinned: Callable[[dict], str]
+) -> None:
+    checkpoint = save_pinned({"model.encoder.scale": torch.ones(3)})
     with pytest.raises(RuntimeError, match="size mismatch"):
-        clay_v15.ClayV15Backbone(checkpoint_path=str(checkpoint))
+        clay_v15.ClayV15Backbone(checkpoint_path=checkpoint)
 
 
-def test_checkpoint_without_encoder_is_rejected(encoder: _Encoder, tmp_path: Path) -> None:
-    checkpoint = tmp_path / "teacher.ckpt"
-    torch.save({"state_dict": {"model.teacher.weight": torch.ones(2)}}, checkpoint)
+def test_checkpoint_without_encoder_is_rejected(
+    encoder: _Encoder, save_pinned: Callable[[dict], str]
+) -> None:
+    checkpoint = save_pinned({"model.teacher.weight": torch.ones(2)})
     with pytest.raises(ValueError, match=r"No Clay v1\.5 encoder weights"):
-        clay_v15.ClayV15Backbone(checkpoint_path=str(checkpoint))
+        clay_v15.ClayV15Backbone(checkpoint_path=checkpoint)
 
 
 def test_native_grid_and_conditioning_are_preserved(encoder: _Encoder) -> None:

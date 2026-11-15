@@ -41,7 +41,7 @@ class ClayV15Backbone(nn.Module):
     Args:
         pretrained: Load the published encoder weights.
         img_size: Default square input size in pixels.
-        checkpoint_path: Local Clay v1.5 checkpoint instead of the pinned download.
+        checkpoint_path: Local copy of the pinned checkpoint, verified against its SHA-256.
     """
 
     def __init__(
@@ -60,12 +60,15 @@ class ClayV15Backbone(nn.Module):
         self.patch_size = 8
         self.clay_encoder = _build_encoder()
         if pretrained:
-            path = Path(checkpoint_path) if checkpoint_path is not None else self._download()
-            self.load_checkpoint(path)
-
-    @staticmethod
-    def _download() -> Path:
-        return fetch_pinned_file(CLAY_V15_REPO, CLAY_V15_FILE, CLAY_V15_REVISION, CLAY_V15_SHA256)
+            self.load_checkpoint(
+                fetch_pinned_file(
+                    CLAY_V15_REPO,
+                    CLAY_V15_FILE,
+                    CLAY_V15_REVISION,
+                    CLAY_V15_SHA256,
+                    local_path=checkpoint_path,
+                )
+            )
 
     def load_checkpoint(self, path: str | Path) -> None:
         """Load the complete encoder state from a pretraining checkpoint."""

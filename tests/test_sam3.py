@@ -1,5 +1,6 @@
 """Unit tests for the SAM3 wrapper."""
 
+import hashlib
 import types
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,9 @@ import pytest
 import torch
 from transformers import Sam3Config, Sam3Model, Sam3VisionConfig, Sam3VisionModel, Sam3ViTConfig
 
+from geo_eval_harness import hub
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models import sam3
 from geo_eval_harness.models.sam3 import SAM3Encoder
 
 
@@ -42,9 +45,29 @@ def _rgb_bands() -> list[BandSpec]:
     ]
 
 
+_FILES = {
+    name: hashlib.sha256(name.encode()).hexdigest() for name in ("config.json", "model.safetensors")
+}
+
+
+def _write_checkpoint(directory: Path) -> Path:
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in _FILES:
+        (directory / name).write_bytes(name.encode())
+    return directory
+
+
 @pytest.fixture(autouse=True)
-def mock_sam3_pretrained(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    state: dict[str, Any] = {"loads": [], "configs": []}
+def mock_sam3_pretrained(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    state: dict[str, Any] = {"loads": [], "configs": [], "downloads": []}
+    state["hub"] = _write_checkpoint(tmp_path / "hub")
+
+    def _download(repo: str, filename: str, *, revision: str) -> str:
+        state["downloads"].append((repo, filename, revision))
+        return str(state["hub"] / filename)
+
+    monkeypatch.setattr(hub, "hf_hub_download", _download)
+    monkeypatch.setattr(sam3, "load_checksums", lambda _manifest: _FILES)
 
     def _config_from_pretrained(
         source: str, *, local_files_only: bool = False, **_kwargs: object
@@ -94,12 +117,25 @@ def test_missing_image_size_raises() -> None:
 
 
 def test_local_checkpoint_path(tmp_path: Path, mock_sam3_pretrained: dict[str, Any]) -> None:
-    ckpt = tmp_path / "checkpoint"
-    ckpt.mkdir()
+    ckpt = _write_checkpoint(tmp_path / "checkpoint")
     model = SAM3Encoder(bands=_rgb_bands(), image_size=224, checkpoint_path=str(ckpt))
-    assert mock_sam3_pretrained["loads"] == [(str(ckpt), True)]
+    assert mock_sam3_pretrained["loads"] == [(ckpt, True)]
+    assert mock_sam3_pretrained["downloads"] == []
     assert not model.backbone.training
     assert all(not p.requires_grad for p in model.backbone.parameters())
+
+
+@pytest.mark.parametrize("local", [False, True])
+def test_checkpoint_is_verified_before_loading(
+    tmp_path: Path, mock_sam3_pretrained: dict[str, Any], *, local: bool
+) -> None:
+    directory = _write_checkpoint(tmp_path / "checkpoint") if local else mock_sam3_pretrained["hub"]
+    (directory / "model.safetensors").write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="SHA-256"):
+        SAM3Encoder(
+            bands=_rgb_bands(), image_size=224, checkpoint_path=str(directory) if local else None
+        )
+    assert mock_sam3_pretrained["loads"] == []
 
 
 def test_missing_local_checkpoint_raises(tmp_path: Path) -> None:
@@ -127,7 +163,10 @@ def test_forward_pools_coarsest_level(mock_sam3_pretrained: dict[str, Any]) -> N
         expected = model.backbone(pixel_values=images).fpn_hidden_states[-1].mean(dim=(-2, -1))
     assert out.shape == (2, 32)
     torch.testing.assert_close(out, expected)
-    assert mock_sam3_pretrained["loads"] == [("facebook/sam3", False)]
+    assert mock_sam3_pretrained["loads"] == [(mock_sam3_pretrained["hub"], True)]
+    assert mock_sam3_pretrained["downloads"] == [
+        (sam3.SAM3_REPO, name, sam3.SAM3_REVISION) for name in _FILES
+    ]
 
 
 def test_forward_carries_gradients_to_trainable_weights() -> None:
