@@ -1032,7 +1032,7 @@ dependencies = [
     { name = "torchmetrics" },
     { name = "torchvision" },
     { name = "tqdm" },
-    { name = "transformers" },
+    { name = "transformers", extra = ["torch"] },
 ]
 
 [package.optional-dependencies]
@@ -1132,13 +1132,13 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
-    { name = "pyyaml", specifier = ">=6" },
+    { name = "pyyaml", specifier = ">=6.0.1" },
     { name = "rasterio", specifier = ">=1.3" },
     { name = "rshf", marker = "extra == 'coordbench'", specifier = ">=0.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.10" },
     { name = "safetensors", specifier = ">=0.4" },
-    { name = "scikit-learn", specifier = ">=1.3" },
-    { name = "shapely", specifier = ">=2" },
+    { name = "scikit-learn", specifier = ">=1.4.2" },
+    { name = "shapely", specifier = ">=2.0.4" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5" },
     { name = "sphinx-design", marker = "extra == 'docs'", specifier = ">=0.5" },
@@ -1149,7 +1149,7 @@ requires-dist = [
     { name = "torchmetrics", specifier = ">=1.4" },
     { name = "torchvision", specifier = ">=0.21" },
     { name = "tqdm", specifier = ">=4.66" },
-    { name = "transformers", specifier = ">=5.14" },
+    { name = "transformers", extras = ["torch"], specifier = ">=5.14" },
     { name = "ty", marker = "extra == 'dev'", specifier = ">=0.0.21" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.16" },
@@ -4188,6 +4188,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/0e/9e/750649904a065007a838981785b2bd8d9ff26154c6c341ac67d0b7f82c68/transformers-5.17.0.tar.gz", hash = "sha256:a153be279169b55b92d8000bf4af294aed684503d091cca7804da2dd8a9de000", size = 9817878, upload-time = "2026-09-09T15:39:56.886Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e8/d0/c502b60d684adbd98a8dc7d5bb866842772b816ac4354e4608be240041ae/transformers-5.17.0-py3-none-any.whl", hash = "sha256:78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801", size = 12295140, upload-time = "2026-09-09T15:39:53.746Z" },
+]
+
+[package.optional-dependencies]
+torch = [
+    { name = "accelerate" },
+    { name = "torch" },
 ]
 
 [[package]]
