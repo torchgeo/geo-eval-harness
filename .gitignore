@@ -97,6 +97,8 @@ data/
 !results/segmentation_representative_rgb_all_224_10ep.csv
 !results/segmentation_representative_rgb_all_224_10ep.csv.sweep.json
 !tests/fixtures/accuracy_baselines.csv
+!results/coverage/
+!results/coverage/*.csv
 !results/models/
 !results/models/*.csv
 !results/profiles/

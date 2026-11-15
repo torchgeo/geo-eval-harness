@@ -53,11 +53,20 @@ BASELINE_CASES: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
-def baseline_metadata(model_config: str, dataset: str, bands: str) -> dict[str, object]:
-    """Resolve the recorded settings that an accuracy check must reproduce."""
-    config = RunConfig.model_validate(
+def baseline_config(model_config: str, dataset: str, bands: str) -> RunConfig:
+    """Configure the accuracy cases with mean patch pooling where supported."""
+    mean_pool_models = {
+        "torchgeo/scalemae_large_fmow",
+        "terratorch/prithvi_eo_v2_300",
+        "terratorch/terramind_v1_base",
+        "terratorch/clay_v1",
+    }
+    return RunConfig.model_validate(
         {
-            "model": {"name": model_config},
+            "model": {
+                "name": model_config,
+                "kwargs": {"pool": "mean"} if model_config in mean_pool_models else {},
+            },
             "datasets": [dataset],
             "input": {
                 "bands": bands,
@@ -65,6 +74,11 @@ def baseline_metadata(model_config: str, dataset: str, bands: str) -> dict[str, 
             },
         }
     )
+
+
+def baseline_metadata(model_config: str, dataset: str, bands: str) -> dict[str, object]:
+    """Resolve the recorded settings that an accuracy check must reproduce."""
+    config = baseline_config(model_config, dataset, bands)
     config, preset = resolve_run_config(config, dataset)
     metadata = dict(dataset_metadata(config, dataset, get_bench_dataset_class(dataset), preset, ""))
     del metadata["bootstrap"], metadata["config_hash"]

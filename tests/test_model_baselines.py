@@ -6,13 +6,18 @@ from pathlib import Path
 import pandas as pd
 import pytest
 import torch
+import yaml
 
-from geo_eval_harness.config.presets import NORMALIZATIONS
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.models._band_mapping import map_to_model_bands
 from geo_eval_harness.models.torchgeo_models import _CROMA_S2_12
 from geo_eval_harness.resume import _canonical_key_cell
-from scripts.update_baselines import baseline_metadata, filter_and_deduplicate, main
+from scripts.update_baselines import (
+    baseline_config,
+    baseline_metadata,
+    filter_and_deduplicate,
+    main,
+)
 from tests.support.cli import run_cli
 from tests.support.data import require_dataset_data
 
@@ -49,7 +54,7 @@ def test_update_baselines_matches_effective_settings(model_config: str) -> None:
         "interpolation": "nearest",
         "num_classes": 99,
         "res": 0.1,
-        "pool": "mean",
+        "pool": "cls" if metadata["pool"] == "mean" else "mean",
         "c_range_start": -5.0,
         "c_range_stop": 6.0,
         "c_range_num": 10,
@@ -154,24 +159,19 @@ def test_accuracy(combo: dict[str, str], tmp_path: Path, pytestconfig: pytest.Co
     require_dataset_data(dataset)
 
     out = tmp_path / "out.csv"
+    config = baseline_config(model_config, dataset, bands).model_dump(
+        mode="json", exclude_unset=True
+    )
+    config["input"]["partition"] = combo["partition"]
+    config["output"] = {"file": str(out)}
+    config["classification"] = {"bootstrap_samples": 10}
+    config["runtime"] = {"device": pytestconfig.getoption("--accuracy-device")}
+    config_path = tmp_path / "run.yaml"
+    config_path.write_text(yaml.safe_dump(config))
     result = run_cli(
         "run",
-        "--model",
-        model_config,
-        "--dataset",
-        dataset,
-        "--bands",
-        bands,
-        "--normalization",
-        next(key for key, value in NORMALIZATIONS.items() if value == combo["normalization"]),
-        "--partition",
-        combo["partition"],
-        "--output",
-        str(out),
-        "--bootstrap-samples",
-        "10",
-        "--device",
-        pytestconfig.getoption("--accuracy-device"),
+        "--config",
+        str(config_path),
         cwd=Path.cwd(),
         timeout=pytestconfig.getoption("--accuracy-timeout"),
         offline=False,
