@@ -37,7 +37,7 @@ def _synthetic_segmentation_loaders(
     n_val: int = 4,
     n_test: int = 4,
     channels: int = 3,
-    n_classes: int = 3,
+    n_classes: int = 2,
 ) -> tuple[_SegmentationDataset, DataLoader, DataLoader, DataLoader]:
     rng = torch.Generator().manual_seed(1)
     train_images = torch.rand(n_train, channels, 8, 8, generator=rng)

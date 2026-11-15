@@ -39,7 +39,7 @@ These illustrative rows show selected columns; they are not benchmark measuremen
    dataset,method,metric_name,metric_value,ci_lower,ci_upper,feature_dim,best_c,n_train,n_val,n_test,seed,model,name,normalization,image_size,interpolation,partition,bands,num_classes
    m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
    m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,3
+   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,2
 
 Datasets emit unnormalized tensors; each model wrapper normalises inside
 :meth:`~geo_eval_harness.models.BenchModel.normalize_inputs` according to
