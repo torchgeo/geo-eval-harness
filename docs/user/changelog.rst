@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.5.0 (2026-11-15)
+------------------
 
 Package and configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^
