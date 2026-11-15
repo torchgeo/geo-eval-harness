@@ -31,6 +31,10 @@ def _hash(config: RunConfig, dataset: str = "m-eurosat") -> str:
     return resume_config_hash(resolved, preset, task=get_bench_dataset_class(dataset).task)
 
 
+def _seg_hash(config: RunConfig) -> str:
+    return _hash(config, "burn_scars")
+
+
 def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str:
     """Reproduce the frozen-probe hash payload before segmentation selected an epoch."""
     assert config.segmentation.lora_rank is None
@@ -123,8 +127,6 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"classification": {"calibration": {"n_bins_linear": 10}}},
         {"classification": {"bootstrap_samples": 100}},
         {"classification": {"feature_standardize": True}},
-        {"segmentation": {"head": "linear"}},
-        {"segmentation": {"learning_rate": 0.01}},
         {"model": {"name": "rcf", "kwargs": {"mode": "empirical"}}},
     ],
 )
@@ -132,74 +134,83 @@ def test_config_hash_changes_with_result_affecting_settings(overrides: dict) -> 
     assert _hash(_cfg()) != _hash(_cfg(**overrides))
 
 
+@pytest.mark.parametrize(
+    "segmentation", [{"head": "linear"}, {"learning_rate": 0.01}, {"layers": ["blocks.1"]}]
+)
+def test_segmentation_settings_change_only_segmentation_hashes(segmentation: dict) -> None:
+    changed = _cfg(segmentation=segmentation)
+    assert _hash(changed) == _hash(_cfg())
+    assert _seg_hash(changed) != _seg_hash(_cfg())
+
+
 def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
     def vit(**segmentation: object) -> RunConfig:
         return _cfg(model={"name": "timm/vit/vit_base_patch16_224"}, segmentation=segmentation)
 
     lora = {"lora_rank": 8, "backbone_learning_rate": 1e-4}
-    assert _hash(vit(lora_target_modules="blocks")) == _hash(vit())
-    assert _hash(vit(**lora)) != _hash(vit())
-    assert _hash(vit(**lora, lora_alpha=8.0)) != _hash(vit(**lora))
-    assert _hash(vit(**lora, lora_target_modules="blocks")) != _hash(vit(**lora))
+    assert _seg_hash(vit(lora_target_modules="blocks")) == _seg_hash(vit())
+    assert _seg_hash(vit(**lora)) != _seg_hash(vit())
+    assert _seg_hash(vit(**lora, lora_alpha=8.0)) != _seg_hash(vit(**lora))
+    assert _seg_hash(vit(**lora, lora_target_modules="blocks")) != _seg_hash(vit(**lora))
     full = {"full_finetune": True, "backbone_learning_rate": 1e-4}
-    assert _hash(vit(full_finetune=False)) == _hash(vit())
-    assert _hash(vit(**full)) not in {_hash(vit()), _hash(vit(**lora))}
-    assert _hash(vit(**full)) != _hash(vit(**(full | {"backbone_learning_rate": 3e-5})))
-    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora))
-    assert _hash(vit(**lora, lora_last_blocks=6)) != _hash(vit(**lora, lora_last_blocks=3))
+    assert _seg_hash(vit(full_finetune=False)) == _seg_hash(vit())
+    assert _seg_hash(vit(**full)) not in {_seg_hash(vit()), _seg_hash(vit(**lora))}
+    assert _seg_hash(vit(**full)) != _seg_hash(vit(**(full | {"backbone_learning_rate": 3e-5})))
+    assert _seg_hash(vit(**lora, lora_last_blocks=6)) != _seg_hash(vit(**lora))
+    assert _seg_hash(vit(**lora, lora_last_blocks=6)) != _seg_hash(vit(**lora, lora_last_blocks=3))
 
 
 def test_regularisation_changes_the_hash_only_when_set() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", **segmentation})
 
-    assert _hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _hash(upernet())
-    assert _hash(upernet(weight_decay=0.05)) != _hash(upernet())
-    assert _hash(upernet(head_dropout=0.1)) != _hash(upernet())
+    assert _seg_hash(upernet(weight_decay=0.0, head_dropout=0.0)) == _seg_hash(upernet())
+    assert _seg_hash(upernet(weight_decay=0.05)) != _seg_hash(upernet())
+    assert _seg_hash(upernet(head_dropout=0.1)) != _seg_hash(upernet())
 
 
 def test_neck_changes_the_hash_only_when_enabled() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", **segmentation})
 
-    assert _hash(upernet(neck="none")) == _hash(upernet())
-    assert _hash(upernet(neck="vit")) != _hash(upernet())
-    assert _hash(upernet(neck="vit_fine")) != _hash(upernet(neck="vit"))
+    assert _seg_hash(upernet(neck="none")) == _seg_hash(upernet())
+    assert _seg_hash(upernet(neck="vit")) != _seg_hash(upernet())
+    assert _seg_hash(upernet(neck="vit_fine")) != _seg_hash(upernet(neck="vit"))
     # neck_norm counts only when a neck uses it; "none" reproduces pre-option hashes.
-    assert _hash(upernet(neck_norm="none")) == _hash(upernet())
-    assert _hash(upernet(neck="vit", neck_norm="none")) != _hash(upernet(neck="vit"))
+    assert _seg_hash(upernet(neck_norm="none")) == _seg_hash(upernet())
+    assert _seg_hash(upernet(neck="vit", neck_norm="none")) != _seg_hash(upernet(neck="vit"))
 
 
 def test_unet_head_has_its_own_hash() -> None:
     def seg(head: str, **segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": head, **segmentation})
 
-    assert _hash(seg("unet")) not in {_hash(seg("upernet")), _hash(seg("fpn"))}
-    assert _hash(seg("unet", neck="vit")) != _hash(seg("upernet", neck="vit"))
+    assert _seg_hash(seg("unet")) not in {_seg_hash(seg("upernet")), _seg_hash(seg("fpn"))}
+    assert _seg_hash(seg("unet", neck="vit")) != _seg_hash(seg("upernet", neck="vit"))
 
 
 def test_upsampler_changes_the_hash_only_when_enabled() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", "cache_features": False, **segmentation})
 
-    assert _hash(upernet(upsampler="none")) == _hash(upernet())
-    assert _hash(upernet(upsampler="anyup")) != _hash(upernet())
+    assert _seg_hash(upernet(upsampler="none")) == _seg_hash(upernet())
+    assert _seg_hash(upernet(upsampler="anyup")) != _seg_hash(upernet())
 
 
 def test_early_stopping_patience_changes_the_hash_only_when_set() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", **segmentation})
 
-    assert _hash(upernet(early_stopping_patience=None)) == _hash(upernet())
-    assert _hash(upernet(early_stopping_patience=5)) != _hash(upernet())
+    assert _seg_hash(upernet(early_stopping_patience=None)) == _seg_hash(upernet())
+    assert _seg_hash(upernet(early_stopping_patience=5)) != _seg_hash(upernet())
 
 
 def test_amp_changes_the_hash_only_when_off() -> None:
     def upernet(**segmentation: object) -> RunConfig:
         return _cfg(segmentation={"head": "upernet", "cache_dtype": "float32", **segmentation})
 
-    assert _hash(upernet(amp="fp16")) == _hash(upernet())
-    assert _hash(upernet(amp="off")) != _hash(upernet())
+    assert _seg_hash(upernet(amp="fp16")) == _seg_hash(upernet())
+    assert _seg_hash(upernet(amp="off")) != _seg_hash(upernet())
 
 
 def test_frozen_probe_hash_ignores_disabled_adapter_targets() -> None:
@@ -304,16 +315,6 @@ def test_package_rename_preserves_result_resume(tmp_path: Path, dataset: str) ->
     plan = plan_dataset_run(config, ds_cls, metadata, completed)
     assert plan.skip_dataset if ds_cls.task == "segmentation" else plan.skip_knn
     assert path.read_bytes() == original
-
-
-@pytest.mark.parametrize("dataset", ["m-eurosat", "forestnet"])
-def test_epoch_selection_preserves_classification_hashes(dataset: str) -> None:
-    config, preset = resolve_run_config(_cfg(datasets=[dataset]), dataset)
-    ds_cls = get_bench_dataset_class(dataset)
-    assert ds_cls.task == "classification"
-    assert resume_config_hash(config, preset, task=ds_cls.task) == _hash_without_epoch_selection(
-        config, preset
-    )
 
 
 @pytest.mark.parametrize(

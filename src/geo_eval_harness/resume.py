@@ -60,11 +60,11 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
     ``fp16``, and ``neck_norm`` only when a neck uses it, so a run that leaves them unset
     matches rows stored without them.
-    ``task`` comes from the resolved dataset class;
-    only segmentation includes the best-validation model-selection protocol.
+    ``task`` comes from the resolved dataset class. Only segmentation hashes cover the
+    ``segmentation`` section and the best-validation model-selection protocol, so segmentation
+    settings such as a preset's ``segmentation.layers`` never change the hash of classification,
+    profile, or intrinsic-dimension rows. Segmentation hashes also cover ``classification``.
     """
-    segmentation = config.segmentation
-    segmentation_exclude = _unset_segmentation_fields(segmentation)
     classification_exclude = {"methods"}
     if not config.classification.feature_standardize:
         classification_exclude.add("feature_standardize")
@@ -79,7 +79,6 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         "classification": config.classification.model_dump(
             mode="json", exclude=classification_exclude
         ),
-        "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
         "runtime": config.runtime.model_dump(
             mode="json", include={"seed", "batch_size", "matmul_precision"}
         ),
@@ -87,7 +86,10 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     # Stored hashes include a null KNN device, so the key stays in the payload.
     payload["classification"]["knn_device"] = None
     if task == "segmentation":
-        payload["segmentation"]["selection_protocol"] = "best-validation-miou"
+        segmentation = config.segmentation
+        payload["segmentation"] = segmentation.model_dump(
+            mode="json", exclude=_unset_segmentation_fields(segmentation)
+        ) | {"selection_protocol": "best-validation-miou"}
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 
