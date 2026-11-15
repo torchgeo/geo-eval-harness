@@ -39,7 +39,7 @@ These illustrative rows show selected columns; they are not benchmark measuremen
    dataset,method,metric_name,metric_value,ci_lower,ci_upper,feature_dim,best_c,n_train,n_val,n_test,seed,model,name,normalization,image_size,interpolation,partition,bands,num_classes
    m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
    m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,3
+   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,2
 
 Datasets emit unnormalized tensors; each model wrapper normalises inside
 :meth:`~geo_eval_harness.models.BenchModel.normalize_inputs` according to
@@ -167,7 +167,7 @@ Column                       Value on a segmentation row
 ``early_stopping_patience``  ``segmentation.early_stopping_patience``; empty when off.
 ============================ ==========================================================
 
-The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Resume uses the configuration hash.
+The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Linear-probe rows with ``merge_val`` false also remain distinct from rows refit on train plus validation, and the ranking explorer ranks only the refit rows. Resume uses the configuration hash.
 
 .. _segmentation-epoch-metrics:
 
@@ -221,7 +221,7 @@ all three files -- ``results/models/<name>.csv``,
 
 Resume checks each method separately, so ``--methods linear`` never requires a KNN row. Profile and intrinsic-dimension passes do not change ``config_hash``; each requested metric must be present before a pass is skipped.
 
-Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device`` and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
+Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device``, ``classification.knn_device``, and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
 Segmentation hashes include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
 

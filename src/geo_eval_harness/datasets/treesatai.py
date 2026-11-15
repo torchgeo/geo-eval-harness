@@ -40,11 +40,12 @@ class TreeSatAI(_V2Dataset):
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
-        # German DOP ortho-aerial centre wavelengths (R/G/B/NIR).
-        BandSpec("aerial", "red", "red", mean=154.416, std=48.5986, min=0, max=255, wavelength_um=0.66),
+        # German DOP ortho-aerial centre wavelengths. The files store NIR, G, B, R, which upstream
+        # reads as red, green, blue, nir; source names are upstream's labels for those channels.
+        BandSpec("aerial", "nir", "red", mean=154.416, std=48.5986, min=0, max=255, wavelength_um=0.83),
         BandSpec("aerial", "green", "green", mean=92.4992, std=33.6488, min=0, max=255, wavelength_um=0.55),
         BandSpec("aerial", "blue", "blue", mean=85.5702, std=28.041, min=0, max=255, wavelength_um=0.48),
-        BandSpec("aerial", "nir", "nir", mean=79.8672, std=33.6009, min=0, max=255, wavelength_um=0.83),
+        BandSpec("aerial", "red", "nir", mean=79.8672, std=33.6009, min=0, max=255, wavelength_um=0.66),
         BandSpec("s2", "b02", "B02", mean=241.428, std=129.435, min=0, max=3059, wavelength_um=0.49),
         BandSpec("s2", "b03", "B03", mean=384.216, std=142.58, min=0, max=3253, wavelength_um=0.56),
         BandSpec("s2", "b04", "B04", mean=247.127, std=148.153, min=0, max=3195, wavelength_um=0.665),

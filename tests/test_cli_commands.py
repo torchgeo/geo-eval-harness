@@ -517,6 +517,16 @@ def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
     assert error.value.code == 2
 
 
+def test_dry_run_rejects_partition_on_dataset_without_partitions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    selection = ["--dataset", "so2sat", "--partition", "0.01x_train", "--methods", "knn"]
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--model", "rcf", "--dry-run", *selection])
+    assert error.value.code == 2
+    assert "supports only the default partition" in capsys.readouterr().err
+
+
 def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
     from geo_eval_harness import commands
 

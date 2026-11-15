@@ -184,7 +184,7 @@ def load_results(
         paths = sorted(directory.glob("*.csv"))
     frames = []
     for path in paths:
-        frame = pd.read_csv(path)
+        frame = pd.read_csv(path, dtype={"config_hash": str})
         if not frame.empty:
             frames.append(frame)
     if not frames:
@@ -213,11 +213,22 @@ def _relabel_olmoearth_normalization(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def train_only_linear_rows(df: pd.DataFrame) -> pd.Series:
+    """Mark linear-probe rows whose final fit excluded the validation split.
+
+    Only the linear probe uses ``merge_val``; KNN and segmentation rows record the run's setting
+    without using it. An absent or empty cell counts as a refit on train plus validation.
+    """
+    merge_val = df.reindex(columns=["merge_val"])["merge_val"].astype(str).str.lower()
+    return df["method"].astype(str).str.startswith("linear") & (merge_val == "false")
+
+
 def _dedup_results(df: pd.DataFrame) -> pd.DataFrame:
     """Keep one row per measurement group in :data:`DEDUP_KEY_COLS`.
 
     A hashed row wins over an unhashed one; among hashed rows the last appended wins.
     Files written before the setup columns existed key them as empty.
+    A train-only linear probe and one refit on train plus validation are separate groups.
     """
     missing = [c for c in _BASE_DEDUP_KEY_COLS if c not in df.columns]
     if missing or "config_hash" not in df.columns:
@@ -232,8 +243,16 @@ def _dedup_results(df: pd.DataFrame) -> pd.DataFrame:
     key = key_df.apply(
         lambda row: tuple(fn(v) for fn, v in zip(cell_fns, row, strict=True)), axis=1
     )
-    order = pd.DataFrame({"key": key, "has_hash": has_hash, "pos": range(len(df))})
-    keep = order.sort_values(["has_hash", "pos"]).groupby("key", sort=False).tail(1)["pos"]
+    order = pd.DataFrame(
+        {
+            "key": key,
+            "train_only": train_only_linear_rows(df),
+            "has_hash": has_hash,
+            "pos": range(len(df)),
+        }
+    )
+    groups = order.sort_values(["has_hash", "pos"]).groupby(["key", "train_only"], sort=False)
+    keep = groups.tail(1)["pos"]
     return df.loc[sorted(keep)].reset_index(drop=True)
 
 
@@ -434,8 +453,9 @@ def _replace_csv(path: str, contents: str) -> None:
 def append_rows_atomic(path: str, rows: list[dict]) -> None:
     """Append CSV rows under a file lock, extending the schema when needed.
 
-    Write the header for an empty or new file. Append when column names and order match.
-    Otherwise, stage and atomically replace the file with all old and new columns.
+    Write the header for an empty or new file. Append in the file's column order when it
+    already has every column of the rows, leaving its other columns empty. Otherwise, stage
+    and atomically replace the file with all old and new columns.
 
     Args:
         path: Output CSV path; created if missing.
@@ -458,9 +478,11 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
                 f.write(buf.getvalue())
             else:
                 f.seek(0)
-                existing_df = pd.read_csv(f)
-                if list(existing_df.columns) == list(df_local.columns):
-                    df_local.to_csv(buf, header=False, index=False)
+                existing_df = pd.read_csv(f, dtype={"config_hash": str})
+                if set(df_local.columns) <= set(existing_df.columns):
+                    df_local.reindex(columns=existing_df.columns).to_csv(
+                        buf, header=False, index=False
+                    )
                     f.seek(0, os.SEEK_END)
                     f.write(buf.getvalue())
                 else:

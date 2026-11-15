@@ -6,6 +6,8 @@ kwargs:
   weights_member: SENTINEL2_ALL_MOCO
   auto_resize: false
   target_size: 224
+input:
+  bands: all
 segmentation:
   layers:
     - layer4

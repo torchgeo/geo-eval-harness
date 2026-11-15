@@ -10,6 +10,7 @@ import pytest
 from geo_eval_harness.config.presets import ModelPreset, merge_settings, resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.results import append_rows_atomic, load_results
 from geo_eval_harness.resume import (
     ResumeState,
     load_completed,
@@ -81,6 +82,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         {"output": {"resume": True}},
         {"output": {"epoch_metrics": "curves.jsonl"}},
         {"runtime": {"device": "cpu", "workers": 0}},
+        {"classification": {"knn_device": "cpu"}},
     ],
     ids=[
         "profile-pass",
@@ -89,6 +91,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         "resume-toggle",
         "epoch-metrics-path",
         "execution",
+        "knn-device",
     ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
@@ -112,7 +115,6 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"input": {"bands": "all"}},
         {"input": {"normalization": "minmax"}},
         {"classification": {"knn_k": 7}},
-        {"classification": {"knn_device": "cpu"}},
         {"classification": {"linear": {"c_log10_start": -5.0}}},
         {"classification": {"linear": {"refit_train_val": False}}},
         {"classification": {"calibration": {"n_bins_linear": 10}}},
@@ -420,3 +422,15 @@ def test_load_completed_canonicalizes_csv_numbers_and_legacy_columns(tmp_path: P
         "accuracy": {("m-eurosat", "224", "")},
         "micro_mAP": {("m-forestnet", "", "")},
     }
+
+
+def test_numeric_looking_config_hash_is_read_as_text(tmp_path: Path) -> None:
+    config_hash = "36e0288988649564"
+    path = str(tmp_path / "results.csv")
+    row = {"dataset": "m-eurosat", "config_hash": config_hash}
+    append_rows_atomic(path, [row])
+    completed, _ = load_completed(path, ("dataset", "config_hash"))
+    assert completed == {("m-eurosat", config_hash)}
+    assert load_results(tmp_path)["config_hash"].tolist() == [config_hash]
+    append_rows_atomic(path, [{**row, "bands": "rgb"}])
+    assert pd.read_csv(path, dtype=str)["config_hash"].tolist() == [config_hash, config_hash]

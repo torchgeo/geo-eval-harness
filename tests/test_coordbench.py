@@ -20,7 +20,7 @@ from geo_eval_harness.coordbench import (
     spatial_fold_ids,
 )
 from geo_eval_harness.coordbench import datasets as cb_datasets
-from geo_eval_harness.coordbench.config import CoordConfig
+from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
 from geo_eval_harness.coordbench.run import _instantiate_encoder
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
@@ -276,6 +276,22 @@ def test_run_coordbench_reports_official_test_count(
     assert set(df.n_test) == {int(test_mask.sum())}
 
 
+def test_spatial_split_uses_occupied_cells(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lon = np.repeat([5.0, 15.0, 25.0], 40) + np.tile(np.linspace(-4, 4, 40), 3)
+    lat = np.tile(np.linspace(1, 9, 40), 3)
+    bench = CoordBenchmark(
+        name="three-cells", lat=lat, lon=lon, tasks={"target": lat + lon}, task_type="regression"
+    )
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [bench])
+
+    cfg = _coord_cfg(tmp_path, split="spatial")
+    run_coordbench(cfg)
+    assert set(pd.read_csv(cfg.output.file).n_folds) == {3}
+
+    with pytest.raises(ValueError, match="at least 2 occupied folds"):
+        run_coordbench(_coord_cfg(tmp_path, split="spatial", cell_deg=45.0))
+
+
 def test_load_benchmarks_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     # Use local tables instead of downloading Parquet files.
     tables = {
@@ -480,6 +496,14 @@ def test_custom_encoder_preserves_ordinary_nested_kwargs() -> None:
     assert isinstance(encoder, FixtureEncoder)
     assert encoder.payload == payload
     assert encoder.device == "cpu"
+
+
+@pytest.mark.parametrize("model", ["climplicit", "geoclip", "satclip", "sinr"])
+def test_rshf_encoders_name_the_missing_extra(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
+    monkeypatch.setattr("geo_eval_harness.coordbench.models.find_spec", lambda name: None)
+    cfg = CoordConfig.model_validate({"model": {"name": model}})
+    with pytest.raises(ImportError, match=r"pip install 'geo-eval-harness\[coordbench\]'"):
+        _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
 
 
 def test_rejects_non_location_custom_target() -> None:

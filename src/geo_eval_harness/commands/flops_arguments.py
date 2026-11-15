@@ -47,9 +47,7 @@ def add_flops_arguments(parser: argparse.ArgumentParser) -> None:
         "--seg-band-configs", choices=("rgb", "s2", "all"), nargs="*", default=argparse.SUPPRESS
     )
     parser.add_argument("--seg-num-classes", type=int, default=argparse.SUPPRESS)
-    parser.add_argument(
-        "--seg-neck-policy", choices=("preset", "auto"), default=argparse.SUPPRESS
-    )
+    parser.add_argument("--seg-neck-policy", choices=("preset", "auto"), default=argparse.SUPPRESS)
     parser.add_argument(
         "--seg-layers", nargs="*", default=argparse.SUPPRESS, help="Coarse-to-fine backbone layers"
     )

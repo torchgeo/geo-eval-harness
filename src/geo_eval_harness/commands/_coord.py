@@ -7,6 +7,7 @@ import yaml
 
 from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
 
+from ._common import setup_logging
 from ._config import OUTPUT_FLAG_OVERRIDES, FlagOverride, load_config_or_exit, load_from_flags
 
 _FLAG_OVERRIDES = (
@@ -52,6 +53,7 @@ def run(args: argparse.Namespace) -> None:
         raise SystemExit(f"error: {error}") from error
     from geo_eval_harness.coordbench.run import run_coordbench
 
+    setup_logging(verbose=True)
     run_coordbench(config)
 
 

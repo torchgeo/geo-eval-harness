@@ -1,6 +1,7 @@
 """Run the canonical CLI against tiny on-disk inputs without mocking its internals."""
 
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,6 @@ import yaml
 
 from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.run import RunConfig
-from tests.support.cli import cli_output, run_cli
 from tests.support.data import write_classification_files
 
 pytestmark = pytest.mark.integration
@@ -55,15 +55,17 @@ def classification_arguments(
 
 @pytest.mark.parametrize("temperature_scaling", [False, True])
 def test_classification_program_handles_noncontiguous_labels(
-    tmp_path: Path, classification_files: Path, *, temperature_scaling: bool
+    tmp_path: Path,
+    classification_files: Path,
+    cli_main: Callable[..., None],
+    *,
+    temperature_scaling: bool,
 ) -> None:
     output = tmp_path / "classification=1.csv"
     arguments = classification_arguments(output)
     if temperature_scaling:
         arguments.extend(["--no-refit-train-val", "--temp-scale"])
-    completed = run_cli(*arguments, cwd=tmp_path)
-    assert completed.returncode == 0, cli_output(completed)
-    assert output.is_file(), cli_output(completed)
+    cli_main(arguments)
 
     rows = pd.read_csv(output).set_index("method")
     assert set(rows.index) == {"knn5", "linear"}
@@ -83,7 +85,7 @@ def test_classification_program_handles_noncontiguous_labels(
 
 
 def test_program_profiles_features_and_resumes_without_input_files(
-    tmp_path: Path, classification_files: Path
+    tmp_path: Path, classification_files: Path, cli_main: Callable[..., None]
 ) -> None:
     output = tmp_path / "measurements.csv"
     arguments = classification_arguments(
@@ -93,9 +95,7 @@ def test_program_profiles_features_and_resumes_without_input_files(
             "profile": {"enabled": True, "n_warmup": 0, "n_measure": 1},
         },
     )
-    completed = run_cli(*arguments, cwd=tmp_path)
-    assert completed.returncode == 0, cli_output(completed)
-    assert output.is_file(), cli_output(completed)
+    cli_main(arguments)
     rows = pd.read_csv(output)
     assert set(rows["method"]) == {"knn5", "linear", "profile", "intrinsic_dim"}
     assert np.isfinite(rows["metric_value"]).all()
@@ -106,28 +106,28 @@ def test_program_profiles_features_and_resumes_without_input_files(
 
     before = output.read_bytes()
     shutil.rmtree(classification_files)
-    resumed = run_cli(*arguments, "--resume", cwd=tmp_path)
-    assert resumed.returncode == 0, cli_output(resumed)
+    cli_main([*arguments, "--resume"])
     assert output.read_bytes() == before
 
 
-def test_program_reinitializes_for_multispectral_and_multilabel_datasets(tmp_path: Path) -> None:
+def test_program_reinitializes_for_multispectral_and_multilabel_datasets(
+    tmp_path: Path, cli_main: Callable[..., None]
+) -> None:
     write_classification_files(tmp_path, "m-eurosat", (2, 7), all_bands=True)
     labels = tuple([int(index == label) for index in range(43)] for label in (0, 1))
     write_classification_files(tmp_path, "m-bigearthnet", labels, all_bands=True)
     output = tmp_path / "multiple.csv"
-    completed = run_cli(
-        *classification_arguments(output),
-        "--dataset",
-        "m-eurosat",
-        "--dataset",
-        "m-bigearthnet",
-        "--bands",
-        "all",
-        cwd=tmp_path,
+    cli_main(
+        [
+            *classification_arguments(output),
+            "--dataset",
+            "m-eurosat",
+            "--dataset",
+            "m-bigearthnet",
+            "--bands",
+            "all",
+        ]
     )
-    assert completed.returncode == 0, cli_output(completed)
-    assert output.is_file(), cli_output(completed)
     rows = pd.read_csv(output)
     assert len(rows) == 4
     for dataset, metric in (("m-eurosat", "accuracy"), ("m-bigearthnet", "micro_mAP")):
@@ -141,24 +141,21 @@ def test_program_reinitializes_for_multispectral_and_multilabel_datasets(tmp_pat
 
 @pytest.mark.parametrize(
     "dataset_names",
-    [
-        ("m-forestnet",),
-        ("m-forestnet", "m-eurosat"),
-        ("m-eurosat", "m-forestnet"),
-    ],
+    [("m-forestnet", "m-eurosat"), ("m-eurosat", "m-forestnet")],
 )
 def test_program_fails_when_any_requested_data_is_unavailable(
-    tmp_path: Path, classification_files: Path, dataset_names: tuple[str, ...]
+    tmp_path: Path,
+    classification_files: Path,
+    cli_main: Callable[..., None],
+    dataset_names: tuple[str, ...],
 ) -> None:
     output = tmp_path / "missing.csv"
-    completed = run_cli(
-        *classification_arguments(output, dataset_names=dataset_names),
-        cwd=tmp_path,
+    message = (
+        r"Required files for 'm-forestnet' are missing\. "
+        "Run `geo-eval-harness download geobench_v1 --datasets m-forestnet`"
     )
-    assert completed.returncode != 0, cli_output(completed)
-    assert "Required files for 'm-forestnet' are missing" in completed.stderr
-    assert "geo-eval-harness download geobench_v1 --datasets m-forestnet" in completed.stderr
-    assert "Traceback" not in completed.stderr
+    with pytest.raises(SystemExit, match=message):
+        cli_main(classification_arguments(output, dataset_names=dataset_names))
     if dataset_names[0] == "m-eurosat":
         rows = pd.read_csv(output)
         assert set(rows["method"]) == {"knn5", "linear"}
@@ -167,7 +164,9 @@ def test_program_fails_when_any_requested_data_is_unavailable(
         assert not output.exists()
 
 
-def test_flops_program_writes_both_band_configurations_and_resumes(tmp_path: Path) -> None:
+def test_flops_program_writes_both_band_configurations_and_resumes(
+    tmp_path: Path, cli_main: Callable[..., None]
+) -> None:
     output = tmp_path / "flops=1.csv"
     config = FlopsConfig.model_validate(
         {
@@ -188,9 +187,7 @@ def test_flops_program_writes_both_band_configurations_and_resumes(tmp_path: Pat
         "--output",
         str(output),
     ]
-    completed = run_cli(*arguments, cwd=tmp_path)
-    assert completed.returncode == 0, cli_output(completed)
-    assert output.is_file(), cli_output(completed)
+    cli_main(arguments)
     rows = pd.read_csv(output).set_index("band_config")
     assert set(rows.index) == {"rgb", "s2"}
     assert (rows["task"] == "classification").all()
@@ -200,6 +197,5 @@ def test_flops_program_writes_both_band_configurations_and_resumes(tmp_path: Pat
     assert rows.loc["s2", "gflops_backbone"] > rows.loc["rgb", "gflops_backbone"]
     assert (rows["throughput_samples_per_sec"] > 0).all()
     before = output.read_bytes()
-    resumed = run_cli(*arguments, "--resume", cwd=tmp_path)
-    assert resumed.returncode == 0, cli_output(resumed)
+    cli_main([*arguments, "--resume"])
     assert output.read_bytes() == before
