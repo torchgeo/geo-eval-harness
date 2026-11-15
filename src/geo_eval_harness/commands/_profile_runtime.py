@@ -57,9 +57,9 @@ def _build_model(
     config: ProfileConfig,
     train_dataset: Dataset,
     selected_bands: list[BandSpec],
-    native_image_size: int,
+    batch: dict[str, Any],
 ) -> nn.Module:
-    """Inject runtime band metadata and empirical filters' source dataset."""
+    """Inject runtime band metadata, the batch's sizes, and empirical filters' source dataset."""
     options: dict[str, Any] = {
         "bands": selected_bands,
         "normalization": NORMALIZATIONS[config.input.normalization],
@@ -73,7 +73,14 @@ def _build_model(
         and preset.kwargs.get("mode") == "empirical"
     ):
         options["dataset"] = train_dataset
-    return build_model(preset, native_image_size=native_image_size, **options)
+    # Collation turns the per-sample (height, width) into one tensor per axis.
+    sizes = batch.get("resized_from")
+    return build_model(
+        preset,
+        native_image_size=batch["image"].shape[-1],
+        resized_from=None if sizes is None else (int(sizes[0][0]), int(sizes[1][0])),
+        **options,
+    )
 
 
 def _record(
@@ -138,11 +145,7 @@ def run(config: ProfileConfig) -> None:
             train_dataset, batch, selected_bands = _load_batch(config)
         except MissingDatasetError as error:  # allow-except: dataset is not downloaded
             raise SystemExit(f"error: {error}") from error
-        model = (
-            _build_model(preset, config, train_dataset, selected_bands, batch["image"].shape[-1])
-            .to(device)
-            .eval()
-        )
+        model = _build_model(preset, config, train_dataset, selected_bands, batch).to(device).eval()
         sample = batch["image"].to(device)
         result = profile_inference(
             model,

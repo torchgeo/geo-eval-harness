@@ -153,6 +153,8 @@ class _ResizeTransform:
 
     Masks use ``nearest-exact``, which samples each output pixel at its centre, the same
     position that ``bilinear`` and ``bicubic`` (``align_corners=False``) use for the image.
+
+    The sample's ``resized_from`` records the image's ``(height, width)`` before the resize.
     """
 
     valid_modes = ("area", "bicubic", "bilinear", "nearest")
@@ -172,6 +174,7 @@ class _ResizeTransform:
         image_size = self.image_size
         img: torch.Tensor = sample["image"]
         h, w = img.shape[-2], img.shape[-1]
+        sample["resized_from"] = (h, w)
         if h != image_size or w != image_size:
             squeeze_batch = img.ndim == 3
             resize_input = img.unsqueeze(0) if squeeze_batch else img

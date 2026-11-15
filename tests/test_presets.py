@@ -191,6 +191,25 @@ def test_scalemae_constructor_uses_resolved_dataset_grid(
     assert received["res"] == 3.5
 
 
+@pytest.mark.parametrize(
+    ("resized_from", "message"),
+    [(None, "size before the resize"), ((512, 256), "512x256")],
+)
+def test_resized_ground_resolution_needs_square_tiles_of_a_declared_size(
+    resized_from: tuple[int, int] | None, message: str
+) -> None:
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "olmoearth_nano"},
+            "datasets": ["cloudsen12"],
+            "input": {"image_size": 224},
+        }
+    )
+    _, preset = resolve_run_config(config, "cloudsen12")
+    with pytest.raises(ValueError, match=message):
+        build_model(preset, bands=[], normalization="identity", resized_from=resized_from)
+
+
 def test_flops_scalemae_constructor_grid_follows_explicit_synthetic_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

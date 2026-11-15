@@ -316,6 +316,7 @@ class TestKuroSiwoCanonicalization:
         batch = next(iter(train_dl))
         assert batch["image"].shape[-2:] == (32, 32)
         assert batch["mask"].shape[-2:] == (32, 32)
+        assert [side.tolist() for side in batch["resized_from"]] == [[16, 16], [16, 16]]
         assert [call.kwargs["split"] for call in mocked_kuro_siwo.call_args_list] == [
             "train",
             "val",

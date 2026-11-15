@@ -43,6 +43,7 @@ Models
 * OlmoEarth fills missing bands as upstream does for each version: v1 copies the nearest present band and v1.1 and later set them to 0 after normalization.
 * OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands, rejects a sensor whose selected bands fill none of its channels, and normalizes SAR in an undeclared unit with dataset statistics.
 * Prithvi-EO reads Landsat's NIR band as its narrow-NIR input, so ``m-forestnet`` and ``forestnet`` use all six pretrained bands.
+* OlmoEarth encodes resized tiles at the ground size of the resized pixels: ``input_res`` is the sensor resolution times the tile side before the resize over the resized side.
 
 Evaluation and results
 ^^^^^^^^^^^^^^^^^^^^^^
