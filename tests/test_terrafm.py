@@ -269,7 +269,7 @@ def test_model_native_converts_linear_power_s1_to_db(vh_unit: str) -> None:
 
 def test_model_native_pretrain_s1_requires_db_or_linear_power_units() -> None:
     options = {"modality": "s1", "pretrained": False, "normalization": "model_native"}
-    undeclared = get_bench_dataset_class("treesatai").resolve_band_specs("all")
+    undeclared = get_bench_dataset_class("so2sat").resolve_band_specs("all")
     with pytest.raises(UnsupportedNormalizationError, match="unit 'db' or 'linear_power'"):
         TerraFMBench(bands=undeclared, **options)
     TerraFMBench(bands=undeclared, native_stats="dataset", **options)

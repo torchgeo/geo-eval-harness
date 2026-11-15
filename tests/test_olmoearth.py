@@ -854,35 +854,7 @@ def test_treesatai_vv_vh_ratio_band_routes_to_sar_modality() -> None:
     """TreeSatAI's VV/VH ratio is not a physical polarization and fills no Sentinel-1 channel."""
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
-    bands = [
-        BandSpec(
-            sensor="s1",
-            name="vv",
-            source_name="vv",
-            mean=60197.8,
-            std=17913.3,
-            min=0.0,
-            max=65535.0,
-        ),
-        BandSpec(
-            sensor="s1",
-            name="vh",
-            source_name="vh",
-            mean=65496.9,
-            std=1326.41,
-            min=0.0,
-            max=65535.0,
-        ),
-        BandSpec(
-            sensor="s1",
-            name="vv_vh",
-            source_name="vv/vh",
-            mean=88.73,
-            std=2409.44,
-            min=0.0,
-            max=65535.0,
-        ),
-    ]
+    bands = get_bench_dataset_class("treesatai").resolve_band_specs(["vv", "vh", "vv_vh"])
     model = OlmoEarthBenchModel(bands=bands, model_size="nano", normalization="identity")
     model.eval()
     out = model.forward_patch_features(

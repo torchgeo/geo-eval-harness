@@ -2,6 +2,8 @@
 
 from typing import ClassVar
 
+import torch
+
 from .base import BandSpec
 from .geobench_v2 import _V2Dataset
 
@@ -9,12 +11,19 @@ from .geobench_v2 import _V2Dataset
 class TreeSatAI(_V2Dataset):
     """Aerial + Sentinel-2 + SAR tree species classification (15 classes).
 
-    Multi-sensor dataset with aerial RGB+NIR, 12 Sentinel-2 bands, and 3 SAR bands.
+    Multi-sensor dataset with aerial RGB+NIR, 12 Sentinel-2 bands, and 3 SAR bands. The Sentinel-1
+    rasters hold whole-dB values and the no-data marker -9999 as two's-complement ``uint16``;
+    :meth:`canonicalize_sample` restores the signed values and replaces no-data pixels with the
+    mean of the channel's valid pixels in the sample.
+
+    ``vv_vh`` is a dummy band, the VV/VH quotient of the dB values truncated to an integer, and
+    carries almost no information. Select bands by name to leave it out.
     """
 
     band_order_strategy = "by_sensor"
 
     name = "treesatai"
+    s1_no_data = -9999
     task = "classification"
     num_classes = 15
     class_names: ClassVar[tuple[str, ...]] = (
@@ -58,8 +67,29 @@ class TreeSatAI(_V2Dataset):
         BandSpec("s2", "b12", "B12", mean=594.947, std=250.849, min=0, max=3471, wavelength_um=2.19),
         BandSpec("s2", "b01", "B01", mean=255.617, std=127.578, min=0, max=2050, wavelength_um=0.443),
         BandSpec("s2", "b09", "B09", mean=2972.19, std=682.024, min=0, max=5569, wavelength_um=0.945),
-        BandSpec("s1", "vv", "vv", mean=60197.8, std=17913.3, min=0, max=65535),
-        BandSpec("s1", "vh", "vh", mean=65496.9, std=1326.41, min=0, max=65535),
-        BandSpec("s1", "vv_vh", "vv/vh", mean=88.73, std=2409.44, min=0, max=65535),
+        # Sentinel-1 statistics describe what canonicalize_sample returns: no-data pixels count at
+        # their fill value, within 0.001 dB of leaving them out. They must never include the -9999
+        # marker, which alone raises the VV std from 3.6 to 105.
+        # vv_vh is 0 for 97.7% of training pixels; it stays declared for models that need a third
+        # SAR channel.
+        BandSpec("s1", "vv", "vv", mean=-5.9765, std=3.5617, min=-30, max=14, unit="db"),
+        BandSpec("s1", "vh", "vh", mean=-12.1626, std=3.4576, min=-43, max=9, unit="db"),
+        BandSpec("s1", "vv_vh", "vv/vh", mean=0.0194, std=0.3412, min=-85, max=46),
     ]
     # fmt: on
+
+    def canonicalize_sample(self, sample: dict) -> dict:
+        """Decode Sentinel-1 to signed values and fill its no-data pixels.
+
+        Stored values above 32767 are negative values plus 65536. No-data pixels (-9999, stored as
+        55537) take the mean of the channel's valid pixels in the sample, so the marker reaches
+        neither models nor band statistics.
+        """
+        s1 = sample.get("image_s1")
+        if s1 is not None:
+            s1 = torch.where(s1 > 32767, s1 - 65536, s1)
+            valid = s1 != self.s1_no_data
+            total = (s1 * valid).sum((-2, -1), keepdim=True)
+            mean = total / valid.sum((-2, -1), keepdim=True).clamp(min=1)
+            sample["image_s1"] = torch.where(valid, s1, mean)
+        return sample
