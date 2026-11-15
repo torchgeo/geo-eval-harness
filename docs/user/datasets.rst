@@ -559,7 +559,7 @@ set ``band_order_strategy = "by_sensor"`` and the V2 base class groups
 ``BandSpec`` entries by sensor before passing them to the upstream
 ``geobench_v2`` loader.  End users do not need to do anything special —
 set ``--bands all`` (or an explicit subset) and the right
-per-modality tensors are concatenated into a single ``image`` key.
+per-modality tensors are concatenated into a single ``image`` key. With ``--time-steps``, ``pastis`` returns ``(T, C, H, W)`` samples whose channels follow the selected bands; each sensor is sampled to ``T`` acquisitions independently, so frames from different sensors share an index, not a date.
 
 Model compatibility
 ^^^^^^^^^^^^^^^^^^^
