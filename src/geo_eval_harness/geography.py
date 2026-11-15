@@ -392,6 +392,26 @@ def extract_geotiffs(paths: list[Path]) -> dict | None:
     }
 
 
+def _extract_infrabench(directory: Path) -> dict:
+    """Read tile-centre coordinates from the Infra-Bench cell manifests."""
+    from .datasets.infrabench_cls import CELL_GLOB
+
+    records = [
+        record
+        for path in sorted(directory.glob(f"{CELL_GLOB}/manifest.json"))
+        for record in json.loads(path.read_text(encoding="utf-8"))["records"]
+    ]
+    lon = np.array([record["lon"] for record in records], dtype=float)
+    lat = np.array([record["lat"] for record in records], dtype=float)
+    valid = np.isfinite(lon) & np.isfinite(lat)
+    return {
+        "lon": lon[valid],
+        "lat": lat[valid],
+        "place": np.full(int(valid.sum()), None, dtype=object),
+        "version": "manifest",
+    }
+
+
 def _natural_earth_countries() -> str:
     """Locate the Natural Earth admin-0 shapefile, downloading if needed."""
     import cartopy.io.shapereader as shpreader
@@ -506,6 +526,9 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
+    elif name == "infrabench-cls":
+        data = _extract_infrabench(directory)
+        reason = "manifests have no lon/lat coordinates"
     elif name == "planteur" and (directory / "metadata.csv").is_file():
         data = _extract_planteur(directory / "metadata.csv")
         reason = "metadata has no lon/lat columns"
@@ -577,6 +600,7 @@ def build_index(store_dir: Path | None = None) -> dict:
     """Rebuild ``index.json`` from the per-dataset files and return it.
 
     The summary supports map legends and coverage warnings without loading per-dataset point lists.
+    Sample and continent totals exclude alias records, which repeat another dataset's samples.
     """
     directory = store_dir or STORE_DIR
     records = [
@@ -598,8 +622,9 @@ def build_index(store_dir: Path | None = None) -> dict:
         for record in records
     ]
 
+    originals = [record for record in records if record.alias_of is None]
     overall: dict[str, float] = {}
-    for record in records:
+    for record in originals:
         for continent, share in record.continents.items():
             overall[continent] = overall.get(continent, 0.0) + share * record.n / 100.0
     grand = sum(overall.values()) or 1
@@ -611,7 +636,7 @@ def build_index(store_dir: Path | None = None) -> dict:
         "totals": {
             "datasets": len(entries),
             "extracted": sum(1 for record in records if record.status == "extracted"),
-            "samples": sum(record.n for record in records),
+            "samples": sum(record.n for record in originals),
             "continents": {
                 k: round(100.0 * v / grand, 2)
                 for k, v in sorted(overall.items(), key=lambda kv: (-kv[1], kv[0]))

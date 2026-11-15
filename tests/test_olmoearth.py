@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
 
@@ -121,14 +122,20 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return state
 
 
+def test_missing_package_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "olmoearth_pretrain_minimal", None)
+    with pytest.raises(ModuleNotFoundError, match=r"pip install 'geo-eval-harness\[olmoearth\]'"):
+        OlmoEarthBenchModel(bands=_rgb_bands())
+
+
 def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     tiny_olmoearth: dict[str, Any],
 ) -> None:
     bands = [
         BandSpec("s2", "blue", "B02", 0.2, 0.1, 0, 1),
-        BandSpec("sar", "vv", "VV", 10, 2, 0, 100),
+        BandSpec("sar", "vv", "VV", 10, 2, 0, 100, unit="db"),
         BandSpec("s2", "red", "B04", 0.3, 0.1, 0, 1),
-        BandSpec("sar", "vh", "VH", 20, 3, 0, 100),
+        BandSpec("sar", "vh", "VH", 20, 3, 0, 100, unit="db"),
     ]
     model = OlmoEarthBenchModel(bands, model_size="nano", time_steps=2, normalization="identity")
     images = torch.tensor([0.2, 10.0, 0.3, 20.0]).view(1, 4, 1, 1).expand(1, 4, 4, 4)
@@ -156,7 +163,6 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     [
         ("linear_power", None, [-10.0, -20.0]),  # declared linear: auto-convert to dB
         ("db", None, [0.1, 0.01]),
-        (None, None, [0.1, 0.01]),  # undeclared: unchanged (previous behaviour)
         ("linear_power", False, [0.1, 0.01]),
         (None, True, [-10.0, -20.0]),
     ],
@@ -182,6 +188,33 @@ def test_sar_db_conversion_follows_declared_unit(
         np.broadcast_to(expected, (1, 4, 4, 1, 2)),
         rtol=1e-5,
     )
+
+
+def test_sar_in_an_undeclared_unit_uses_dataset_statistics(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    bands = get_bench_dataset_class("openearthmap-sar").resolve_band_specs(["vv", "vh"])
+    model = OlmoEarthBenchModel(bands, model_size="nano", normalization="identity")
+    images = torch.tensor([band.mean for band in bands]).view(1, 2, 1, 1)
+    actual = model.normalize_sensor_group(images, model._sensor_groups[0])
+    np.testing.assert_allclose(actual.ravel(), [0.5, 0.5])
+    assert tiny_olmoearth["normalizer_inputs"] == {}
+
+
+@pytest.mark.parametrize(
+    ("dataset", "selection", "expected"),
+    [
+        ("m-so2sat", "all", {0: "vv_lee", 1: "vh_lee"}),
+        ("treesatai", ["vv", "vh", "vv_vh"], {0: "vv", 1: "vh"}),
+    ],
+)
+def test_sar_slots_take_only_polarization_intensities(
+    dataset: str, selection: str | list[str], expected: dict[int, str]
+) -> None:
+    bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
+    (group,) = [g for g in _build_sensor_groups(bands) if g["sample_field"] == "sentinel1"]
+    slots = zip(group["dst_indices"], group["src_indices"], strict=True)
+    assert {dst: bands[src].name for dst, src in slots} == expected
 
 
 def test_sar_dataset_units() -> None:
@@ -508,7 +541,7 @@ def test_aerial_falls_back_to_s2() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_partial_s2_10band_forward_pass() -> None:
-    """Use helios' blue/B8A substitutions for m-so2sat's missing B01/B09 channels."""
+    """Encode Sentinel-2 inputs with missing B01/B09 channels."""
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ["b02", "b03", "b04", "b08", "b05", "b06", "b07", "b8a", "b11", "b12"]
@@ -530,8 +563,6 @@ def test_partial_s2_10band_forward_pass() -> None:
     assert g["channels"] == 12
     assert g["num_band_sets"] == 3
     assert set(g["dst_indices"]) == set(range(10))
-    # B01 coastal (10) <- B02 blue (0); B09 water vapour (11) <- B8A (7).
-    assert g["impute_ops"] == [(0, 10), (7, 11)]
     x = torch.rand(2, 10, 64, 64, generator=torch.Generator().manual_seed(0)) * 3000.0
     out = model.forward_patch_features(x)
     assert out.shape == (2, EXPECTED_DIM["nano"])
@@ -541,7 +572,7 @@ def test_partial_s2_10band_forward_pass() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_forestnet_landsat_imputes_missing_bands() -> None:
-    """Use helios' spectral substitutions for m-forestnet's five missing Landsat bands."""
+    """Encode Landsat inputs with five missing channels."""
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ("blue", "green", "red", "nir", "swir_1", "swir_2")
@@ -558,10 +589,6 @@ def test_forestnet_landsat_imputes_missing_bands() -> None:
         for n in names
     ]
     model = OlmoEarthBenchModel(bands=landsat_bands, model_size="nano", normalization="identity")
-    g = model._sensor_groups[0]
-    # Use green (3) for pan, blue (2) for coastal, and swir2 (7) for cirrus/TIRS.
-    assert g["impute_ops"] == [(3, 0), (2, 1), (7, 8), (7, 9), (7, 10)]
-    assert all(src in set(g["dst_indices"]) for src, _ in g["impute_ops"])
     model.eval()
     x = torch.rand(2, 6, 64, 64, generator=torch.Generator().manual_seed(0)) * 200.0
     out = model.forward_patch_features(x)
@@ -774,7 +801,7 @@ def test_s1_sensor_tag_aliases_to_sar_modality() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_treesatai_vv_vh_ratio_band_routes_to_sar_modality() -> None:
-    """TreeSatAI's VV/VH ratio shares the VH slot; it is not a separate physical polarization."""
+    """TreeSatAI's VV/VH ratio is not a physical polarization and fills no Sentinel-1 channel."""
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     bands = [

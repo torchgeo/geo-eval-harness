@@ -198,6 +198,20 @@ def test_build_seg_solver_uses_criterion_ignore_index(mock_backbone):
     assert solver.ignore_index == 7
 
 
+@pytest.mark.parametrize("ignore_index", [0, NUM_CLASSES - 1])
+def test_build_seg_solver_rejects_ignore_index_that_is_a_class_id(
+    mock_backbone, ignore_index: int
+) -> None:
+    config = SegmentationConfig(layers=["layer1"], head="linear", ignore_index=ignore_index)
+    with pytest.raises(ValueError, match="ignore_index"):
+        build_seg_probe_and_solver(
+            mock_backbone,
+            num_classes=NUM_CLASSES,
+            config=config,
+            device=torch.device("cpu"),
+        )
+
+
 def test_probe_dry_run_exception_handling():
     """Backbone failures during shape inference must remain visible."""
 
@@ -1123,6 +1137,20 @@ def test_patch_linear_head_infers_patch_geometry(
     assert torch.isfinite(logits).all()
 
 
+def test_patch_linear_head_keeps_parameter_dtype_for_float16_features() -> None:
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
+
+    head = PatchLinearHead([8], num_classes=3)
+    head([torch.zeros(1, 8, 4, 4)], 64, 64)
+    params = list(head.parameters())
+
+    logits = head([torch.randn(2, 8, 4, 4).half()], 64, 64)
+
+    assert all(param.dtype == torch.float32 for param in params)
+    assert logits.dtype == torch.float32
+    assert torch.isfinite(logits).all()
+
+
 def test_patch_linear_head_ignores_extra_channels():
     """PatchLinearHead uses only the first feature map when extra layers are passed."""
     from geo_eval_harness.models.segmentation_heads import PatchLinearHead
@@ -1684,6 +1712,7 @@ def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
 
 
 def test_anyup_guidance_bands_follow_wavelengths() -> None:
+    from geo_eval_harness.datasets import get_bench_dataset_class
     from geo_eval_harness.datasets.base import BandSpec
     from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
 
@@ -1693,6 +1722,10 @@ def test_anyup_guidance_bands_follow_wavelengths() -> None:
     s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
     assert rgb_guidance_indices(s2) == (2, 1, 0)
     assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    coastal_first = get_bench_dataset_class("cloudsen12").resolve_band_specs("all")
+    assert rgb_guidance_indices(coastal_first) == (3, 2, 1)
+    aerial = get_bench_dataset_class("loveda").resolve_band_specs("all")
+    assert rgb_guidance_indices(aerial) == (0, 1, 2)
     guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
     assert guide.shape == (2, 3, 8, 8)
     assert guide.abs().max() < 3

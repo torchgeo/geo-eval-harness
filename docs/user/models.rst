@@ -53,7 +53,7 @@ Clay v1 Base
 
 ``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` load TerraTorch's ``timm_clay_v1_base`` backbone, the 92,102,144-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy`` (``v1/clay-v1-base.ckpt``). Mean-patch and CLS-token pooling use the same weights. The Clay v1.5 checkpoint is a separate, larger encoder.
 
-Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching. Use ``python scripts/migrations/migrate_clay_v1.py`` to relabel a separate results checkout.
+Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching.
 
 Clay v1.5 Large
 ^^^^^^^^^^^^^^^
@@ -75,7 +75,7 @@ TerraFM
        checkpoint_path: checkpoints/TerraFM-B.pth
    datasets: [m-eurosat]
 
-The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
+The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. With ``pretrain`` statistics, Sentinel-1 bands must declare unit ``db`` or ``linear_power``; other SAR inputs raise an error. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
 
 SMARTIES
 ^^^^^^^^
@@ -98,7 +98,7 @@ The presets default to ``--normalization model``, SMARTIES' pretraining preproce
 
 Sentinel-2 uses the L2A statistics (BigEarthNet) unless ``s2_level: l1c`` selects the L1C statistics (fMoW-Sentinel). The presets select L1C for EuroSAT, BrickKiln, So2Sat, Sen1Floods11, and OSCD.
 
-Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
+Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, Infra-Bench CLS, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
 
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -298,7 +298,7 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
-Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size.
+Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
 
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
@@ -421,8 +421,12 @@ The ``version`` parameter selects the weight family:
    [0, 255], a scale OlmoEarth's pretrained Landsat statistics (fit on real
    DN) can't match.  OlmoEarth therefore selects normalization per sensor
    (``norm_from_pretrained="auto"``, the default): Landsat is normalized with
-   dataset-specific ``BandSpec`` stats while Sentinel-2 / SAR use the
-   pretrained normalizer. Supply constructor-specific settings in YAML
+   dataset-specific ``BandSpec`` stats while Sentinel-2 and SAR declared in dB
+   or linear power use the pretrained normalizer. SAR bands in an undeclared
+   unit (for example So2Sat, TreeSatAI and OpenEarthMap-SAR) also use ``BandSpec``
+   stats unless ``sar_log_scale`` is set. Only VV and VH backscatter bands fill
+   the Sentinel-1 channels; complex parts, covariance cross-terms and VV/VH
+   ratios are dropped. Supply constructor-specific settings in YAML
    ``model.kwargs``, not as positional overrides.
 
 .. note::

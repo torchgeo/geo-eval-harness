@@ -8,6 +8,8 @@ import pytest
 import torch
 
 from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.models.terrafm import (
     TERRAFM_MEAN_S1,
     TERRAFM_MEAN_S2_L1C,
@@ -263,6 +265,15 @@ def test_model_native_converts_linear_power_s1_to_db(vh_unit: str) -> None:
             )
     expected_grad /= 4 * std.view(1, -1, 1, 1)
     torch.testing.assert_close(grad, expected_grad)
+
+
+def test_model_native_pretrain_s1_requires_db_or_linear_power_units() -> None:
+    options = {"modality": "s1", "pretrained": False, "normalization": "model_native"}
+    undeclared = get_bench_dataset_class("treesatai").resolve_band_specs("all")
+    with pytest.raises(UnsupportedNormalizationError, match="unit 'db' or 'linear_power'"):
+        TerraFMBench(bands=undeclared, **options)
+    TerraFMBench(bands=undeclared, native_stats="dataset", **options)
+    TerraFMBench(bands=get_bench_dataset_class("benv2").resolve_band_specs("all"), **options)
 
 
 def test_model_native_dataset_stats_maps_mean_plus_minus_two_std_to_unit_range() -> None:

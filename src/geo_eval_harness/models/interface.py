@@ -43,6 +43,11 @@ class BenchModel(nn.Module, ABC):
     #: channels-first at any grid size; ``None`` lets the segmentation probe infer the layout.
     feature_layout: str | None = None
 
+    #: Regular expression matching the names (as in ``segmentation.layers``) of modules that
+    #: return a residual update, ``x = module(x) + x``. The segmentation probe adds such a
+    #: module's input to its hooked output, so the feature is the residual stream.
+    residual_branch_layers: str | None = None
+
     #: Square input size of a backbone built for one fixed size; the segmentation probe's
     #: channel dry run uses it instead of 224.
     probe_input_size: int | None = None

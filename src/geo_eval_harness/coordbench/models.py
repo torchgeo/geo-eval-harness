@@ -11,6 +11,7 @@ SatCLIP, GeoCLIP, Climplicit, and SINR need ``pip install -e '.[coordbench]'``.
 
 import logging
 from abc import ABC, abstractmethod
+from importlib.util import find_spec
 from typing import override
 
 import numpy as np
@@ -146,11 +147,21 @@ class _RSHFEncoder(LocationEncoder):
     Subclasses build ``self.model`` in :meth:`__init__` and set
     :attr:`coord_order` (``"lonlat"`` or ``"latlon"``). The default
     :meth:`_encode` stacks coordinates in that order and calls the model.
+
+    Raises:
+        ImportError: If ``rshf`` (the ``coordbench`` extra) is not installed.
     """
 
     coord_order: str = "lonlat"
     dtype: torch.dtype = torch.float32
     model: torch.nn.Module
+
+    def __init__(self, device: str = "cpu", batch_size: int = 8192) -> None:
+        super().__init__(device=device, batch_size=batch_size)
+        if find_spec("rshf") is None:
+            raise ImportError(
+                f"{self.name} requires rshf: pip install 'geo-eval-harness[coordbench]'"
+            )
 
     @override
     @torch.no_grad()
