@@ -1025,6 +1025,7 @@ def run_dataset(
             logger.info("[%s] Resume preflight: all requested work already complete", ds_name)
         return
 
+    torch.manual_seed(cfg.runtime.seed)
     if device is not None:
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
@@ -1100,7 +1101,6 @@ def main(cfg: RunConfig, *, strict: bool = False) -> None:
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
-    torch.manual_seed(cfg.runtime.seed)
     dataset_names = _expand_dataset_list(cfg.datasets)
 
     output_path = _resolve_output_path(cfg)

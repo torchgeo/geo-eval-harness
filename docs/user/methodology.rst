@@ -478,7 +478,7 @@ All evaluation paths share these settings:
      - Description
    * - ``runtime.seed``
      - ``0``
-     - Random seed for reproducibility (numpy + torch).
+     - Random seed. PyTorch's global generator is seeded with it at the start of each dataset, so a result does not depend on the datasets evaluated before it. Bootstrap resampling, subsampling, and ``seed_from_run`` models draw from their own generators created from the same seed; NumPy's global generator is not seeded.
    * - ``runtime.device``
      - ``cuda:0``
      - PyTorch device.
