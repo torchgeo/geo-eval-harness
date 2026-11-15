@@ -46,6 +46,7 @@ Evaluation and results
 * The ``flops`` command measures backbone, decoder, and probe compute. The ``profile`` command measures execution on a fixed dataset batch.
 * FLOP counts include scaled dot-product attention on CPU and ``nn.MultiheadAttention`` and ``nn.TransformerEncoderLayer`` modules in evaluation mode.
 * Classification and frozen segmentation can standardize features with training-split statistics.
+* Image runs set float32 matrix multiplication precision once using ``--matmul-precision`` or ``runtime.matmul_precision``; the default is ``highest``.
 * Segmentation supports frozen backbones, LoRA, and full fine-tuning, with configurable weight decay, head dropout, AMP, gradient checkpointing, and adapter block selection.
 * ViT necks form feature pyramids for dense decoders. UPerNet can use frozen AnyUp upsampling guided by RGB inputs.
 * Patch-linear sweeps train one head per learning-rate and weight-decay combination, then select the best validation head and epoch.

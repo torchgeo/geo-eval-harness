@@ -71,6 +71,12 @@ class IntrinsicDimensionConfig(StrictModel):
         return values
 
 
+class RunRuntimeConfig(RuntimeConfig):
+    """Image-run execution and numerical precision settings."""
+
+    matmul_precision: Literal["highest", "high", "medium"] = "highest"
+
+
 class RunConfig(StrictModel):
     """Complete core image benchmark configuration."""
 
@@ -80,7 +86,7 @@ class RunConfig(StrictModel):
     input: InputConfig = Field(default_factory=InputConfig)
     classification: ClassificationConfig = Field(default_factory=ClassificationConfig)
     segmentation: SegmentationConfig = Field(default_factory=SegmentationConfig)
-    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     profile: FeatureProfileConfig = Field(default_factory=FeatureProfileConfig)
     intrinsic_dim: IntrinsicDimensionConfig = Field(default_factory=IntrinsicDimensionConfig)

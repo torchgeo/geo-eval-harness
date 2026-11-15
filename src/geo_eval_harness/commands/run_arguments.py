@@ -25,6 +25,9 @@ def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workers", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
+        "--matmul-precision", choices=("highest", "high", "medium"), default=argparse.SUPPRESS
+    )
+    parser.add_argument(
         "--bands", default=argparse.SUPPRESS, help="rgb, all, or comma-separated band names"
     )
     parser.add_argument(

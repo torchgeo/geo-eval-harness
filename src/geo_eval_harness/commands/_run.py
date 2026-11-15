@@ -28,6 +28,7 @@ _FLAG_OVERRIDES = (
     FlagOverride("batch_size", ("runtime", "batch_size")),
     FlagOverride("workers", ("runtime", "workers")),
     FlagOverride("seed", ("runtime", "seed")),
+    FlagOverride("matmul_precision", ("runtime", "matmul_precision")),
     FlagOverride("verbose", ("runtime", "verbose")),
     FlagOverride("bands", ("input", "bands"), comma_separated_bands),
     FlagOverride("image_size", ("input", "image_size")),

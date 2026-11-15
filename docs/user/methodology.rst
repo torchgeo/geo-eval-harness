@@ -163,7 +163,7 @@ implementation matching scikit-learn's objective scaling:
 * **No feature standardisation by default** — embeddings are used as-is.
   ``classification.feature_standardize: true`` z-scores each dimension with
   training-split statistics first (method name ``linear-std``).
-* **TF32** is enabled on CUDA for faster matmul when available.
+* **Float32 matrix multiplication precision** is selected with ``--matmul-precision highest|high|medium`` or YAML ``runtime.matmul_precision``. The default, ``highest``, uses full float32 precision; ``high`` and ``medium`` allow lower internal precision on supported hardware. One setting applies before feature extraction and training, and changing it changes the resume hash.
 
 Hyperparameters
 ^^^^^^^^^^^^^^^

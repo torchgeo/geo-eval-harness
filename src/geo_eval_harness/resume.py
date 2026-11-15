@@ -80,7 +80,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
             mode="json", exclude=classification_exclude
         ),
         "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
-        "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
+        "runtime": config.runtime.model_dump(
+            mode="json", include={"seed", "batch_size", "matmul_precision"}
+        ),
     }
     # Stored hashes include a null KNN device, so the key stays in the payload.
     payload["classification"]["knn_device"] = None

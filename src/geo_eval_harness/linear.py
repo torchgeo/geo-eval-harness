@@ -40,7 +40,6 @@ class LogisticRegression:
         device: str | torch.device | None = None,
         *,
         verbose: bool = False,
-        use_tf32: bool = True,  # Faster CUDA matrix multiplication.
         multi_label: bool = False,
     ) -> None:
         if C <= 0:
@@ -58,7 +57,6 @@ class LogisticRegression:
         self.random_state = random_state
         self.device = resolve_device("cpu" if device is None else device)
         self.verbose = verbose
-        self.use_tf32 = use_tf32
         self.multi_label = multi_label
 
         self._fitted = False
@@ -68,9 +66,6 @@ class LogisticRegression:
 
         if self.random_state is not None:
             torch.manual_seed(self.random_state)
-
-        if self.device.type == "cuda" and self.use_tf32:
-            torch.set_float32_matmul_precision("high")
 
     def _build_model(self, n_features: int, n_classes: int) -> None:
         model = torch.nn.Linear(n_features, n_classes, bias=True)
@@ -320,6 +315,6 @@ class LogisticRegression:
             f"C={self.C}, max_iter={self.max_iter}, lr={self.lr}, "
             f"batch_size={self.batch_size}, tol={self.tol}, patience={self.patience}, "
             f"random_state={self.random_state}, device='{self.device}', fitted={self._fitted}, "
-            f"use_tf32={self.use_tf32}, multi_label={self.multi_label}"
+            f"multi_label={self.multi_label}"
             ")"
         )

@@ -1101,6 +1101,7 @@ def main(cfg: RunConfig, *, strict: bool = False) -> None:
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
+    torch.set_float32_matmul_precision(cfg.runtime.matmul_precision)
     dataset_names = _expand_dataset_list(cfg.datasets)
 
     output_path = _resolve_output_path(cfg)
