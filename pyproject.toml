@@ -139,11 +139,6 @@ exclude = [
   "dist",
   "outputs",
 ]
-extend-exclude = [
-  "src/geo_eval_harness/cli.py",
-  "src/geo_eval_harness/commands",
-  "src/geo_eval_harness/config/schema.py",
-]
 lint.select = [
   "A",       # builtin shadowing
   "ARG",     # flake8-unused-arguments

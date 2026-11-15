@@ -63,7 +63,7 @@ _UniqueKeyLoader.add_implicit_resolver(
         r"""^(?:[-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+]?[0-9]+)?
         |[-+]?(?:[0-9][0-9_]*)(?:[eE][-+]?[0-9]+)|\.[0-9_]+(?:[eE][-+]?[0-9]+)?
         |[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$""",
-        re.X,
+        re.VERBOSE,
     ),
     list("-+0123456789."),
 )
@@ -105,7 +105,7 @@ def _check_methods(value: list["Method"]) -> list["Method"]:
 def _check_schema_version(value: object) -> object:
     """Reject non-integer versions before literal validation."""
     if type(value) is not int:
-        raise ValueError("schema_version must be the integer 1")  # noqa: TRY004 - Pydantic field validation
+        raise ValueError("schema_version must be the integer 1")
     return value
 
 
