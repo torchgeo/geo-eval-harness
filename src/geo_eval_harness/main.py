@@ -257,13 +257,11 @@ def select_logistic_c(
         )
         model.fit(x_train, y_train)
 
-        if multi_label:
-            val_scores = model.predict_proba(x_val)
-            if not np.all(np.isfinite(val_scores)):
-                # Reject non-finite scores before average_precision_score raises.
-                val_metric = float("-inf")
-            else:
-                val_metric = float(average_precision_score(y_val, val_scores, average="micro"))
+        val_scores = model.predict_proba(x_val)
+        if not np.all(np.isfinite(val_scores)):
+            val_metric = float("-inf")
+        elif multi_label:
+            val_metric = float(average_precision_score(y_val, val_scores, average="micro"))
         else:
             val_pred = model.predict(x_val)
             val_metric = accuracy_score(y_val, val_pred)
@@ -378,12 +376,13 @@ def evaluate_logistic(
     )
     final_model.fit(x_final, y_final)
 
+    test_scores = final_model.predict_proba(x_test_tensor)
+    if not np.all(np.isfinite(test_scores)):
+        raise LinearProbeDivergedError("The refitted linear probe produced non-finite test scores.")
     if multi_label:
-        test_scores = final_model.predict_proba(x_test_tensor)
         metric, lo, hi = bootstrap_map(y_test, test_scores, n_boot=n_bootstrap, seed=seed)
     else:
         test_preds = final_model.predict(x_test_tensor)
-        test_scores = final_model.predict_proba(x_test_tensor)
         metric, lo, hi = bootstrap_accuracy(y_test, test_preds, n_boot=n_bootstrap, seed=seed)
 
     class_labels = None if multi_label else final_model.classes_
