@@ -60,6 +60,7 @@ Evaluation and results
 * Sample caches store preprocessed segmentation samples on disk, in host memory, or on the training device.
 * Each dataset starts from ``runtime.seed``, so a result does not depend on the datasets evaluated before it in the same run.
 * Result rows record label counts and segmentation setup columns. The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings; Native bands views allow incomplete dataset coverage.
+* ``config_hash`` of classification, profile, and intrinsic-dimension rows does not cover ``segmentation`` settings, so a segmentation-only change keeps ``--resume`` matching them.
 * ``load_results`` keeps a train-only linear probe separate from one refit on train plus validation; the ranking explorer ranks only the refit rows.
 * The results explorer dictionary-encodes repeated data and enforces a 50 MB limit for generated pages and snapshots.
 
