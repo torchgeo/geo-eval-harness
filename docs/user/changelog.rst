@@ -21,6 +21,7 @@ Models
 * TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
 * TerraFM's model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
+* ``torchgeo/resnet50_s2_all_moco`` defaults to all bands and feeds its 13 Sentinel-2 bands by name, zero-filling B10 for L2A datasets and rejecting band selections that lack any other band.
 * Scale-MAE segmentation probes run at the constructed input size, and input sizes that are not multiples of 16 are rejected.
 * Scale-MAE accepts ordered RGB bands under any recognized band name, such as Planet's ``r``, ``g``, ``b``.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.

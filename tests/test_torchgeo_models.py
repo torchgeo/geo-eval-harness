@@ -953,22 +953,47 @@ def test_rejects_other_multiband_satlas_checkpoints(
         wrapper(bands=MEurosat().bands, weights_class=weights_class, weights_member=weights_member)
 
 
-def test_non_satlas_multiband_checkpoints_keep_first_conv_adaptation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _ssl4eo_s2_model(
+    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec], normalization: str
+) -> TorchGeoResNetBench:
     import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()
     )
-    model = TorchGeoResNetBench(
-        bands=MEurosat().bands,
+    return TorchGeoResNetBench(
+        bands=bands,
         weights_class="ResNet50_Weights",
         weights_member="SENTINEL2_ALL_MOCO",
+        normalization=normalization,
     )
-    assert model.weights.meta["dataset"] != "SatlasPretrain"
-    assert model._satlas_s2_ms_indices is None
-    assert model.backbone.conv1.in_channels == 13
+
+
+def test_ssl4eo_s2_checkpoints_use_checkpoint_band_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SSL4EO-S12 orders B01-B08, B8A, B09-B12; m-eurosat lists B8A last."""
+    model = _ssl4eo_s2_model(monkeypatch, MEurosat().bands, "identity")
+    images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
+    selected = model.normalize_inputs(images).flatten().tolist()
+    assert selected == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 12.0, 8.0, 9.0, 10.0, 11.0]
+
+
+def test_ssl4eo_s2_native_zero_fills_cirrus_absent_from_l2a(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ssl4eo_s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
+    reflectance = torch.arange(1, 13, dtype=torch.float32).view(1, 12, 1, 1) / 100
+    expected = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.0, 0.11, 0.12]
+    torch.testing.assert_close(
+        model.normalize_inputs(reflectance), torch.tensor(expected).view(1, 13, 1, 1)
+    )
+
+
+@pytest.mark.parametrize("bands", [_rgb_bands(), MSo2Sat().bands])
+def test_ssl4eo_s2_rejects_datasets_missing_required_bands(
+    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec]
+) -> None:
+    with pytest.raises(BandCompatibilityError, match="B01"):
+        _ssl4eo_s2_model(monkeypatch, bands, "bandspec_zscore")
 
 
 class _TinyConvNet(nn.Module):
