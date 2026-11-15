@@ -26,7 +26,7 @@ KEY_COLS = (
     "partition",
     "bands",
     "num_classes",
-    # Dataset overrides can change resolution or pooling under one model name (Scale-MAE, #215).
+    # Dataset overrides can change resolution or pooling under one model name (Scale-MAE).
     "res",
     "pool",
     # Include result-affecting settings not represented by the other columns.
@@ -58,8 +58,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
     ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` (both tasks),
     ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
-    ``fp16``, and ``neck_norm`` only when a neck uses it, so hashes from before these options are
-    unchanged.
+    ``fp16``, and ``neck_norm`` only when a neck uses it, so a run that leaves them unset
+    matches rows stored without them.
     ``task`` comes from the resolved dataset class;
     only segmentation includes the best-validation model-selection protocol.
     """
@@ -92,7 +92,7 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 
 
-#: Segmentation options hashed only when set (truthy), so older hashes stay unchanged.
+#: Segmentation options hashed only when set (truthy), so rows stored without them still match.
 _OPTIONAL_SEGMENTATION_FIELDS = (
     "weight_decay",
     "head_dropout",

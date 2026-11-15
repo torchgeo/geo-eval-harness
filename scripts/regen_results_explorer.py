@@ -30,21 +30,18 @@ ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results" / "models"
 PROFILE_RESULTS_DIR = ROOT / "results" / "profiles"
 INTRINSIC_DIM_RESULTS_DIR = ROOT / "results" / "intrinsic_dim"
-# Cost/throughput moved out of results/profiles/ into one wide table; only
-# imagestats was ever migrated, which is why the efficiency figure emptied out.
 COMPUTE_COST_CSV = ROOT / "results" / "compute_cost.csv"
 HTML_PATH = ROOT / "docs" / "_static" / "results-explorer.html"
 SNAPSHOT_DIR = ROOT / "docs" / "_static" / "_results_snapshots"
 # Segmentation rows are ``seg-<decoder>`` with their setup in the SETUP_COLS
-# columns.  Rows without ``adaptation`` predate those columns (the legacy
-# seg-linear/conv_block/fpn/dpt grids) and are left out of new snapshots.
+# columns.  Rows without ``adaptation`` are left out of new snapshots.
 SEG_METHOD_PREFIX = "seg-"
 ACCURACY_METHODS = ("knn5", "linear")
 ALLOWED_METHODS = (*ACCURACY_METHODS, "profile", "intrinsic_dim")
 
 # compute_cost.csv is wide -- one row per measured config, one column per
-# quantity.  The explorer wants the long ``method="profile"`` rows that
-# results/profiles/*.csv used to supply, so melt these columns into rows.
+# quantity.  The explorer wants long ``method="profile"`` rows like those in
+# results/profiles/*.csv, so melt these columns into rows.
 COMPUTE_COST_METRICS = (
     "gflops_backbone",
     "gflops_head",

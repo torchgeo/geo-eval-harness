@@ -208,7 +208,7 @@ def _dead_lock_owner(lock: Path) -> int | None:
     """Return the PID that took ``lock`` if it was on this host and has exited, else ``None``."""
     try:
         host, pid = (lock / "owner").read_text().split()
-    except (OSError, ValueError):  # allow-except: owner not written yet, or a legacy lock
+    except (OSError, ValueError):  # allow-except: owner missing or partly written
         return None
     if host != socket.gethostname():
         return None

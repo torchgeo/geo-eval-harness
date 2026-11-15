@@ -40,7 +40,7 @@ class FlopsRuntimeConfig(StrictModel):
 class FlopsInputConfig(StrictModel):
     """Synthetic input shape and metadata, never actual dataset samples.
 
-    ``s2`` retains the historical meaning: all bands from ``band_source``.
+    ``s2`` means all bands from ``band_source``.
     The default CloudSen12 source contains twelve Sentinel-2 optical bands.
     """
 

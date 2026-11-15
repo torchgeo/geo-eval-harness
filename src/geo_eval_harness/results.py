@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RESULTS_DIR = "results/models"
 
-# The resume key minus ``config_hash`` (that column is exactly what fragments
-# legacy rows, written before it existed, from later hashed reruns of the same
-# measurement), plus ``metric_name`` (one run emits several metric rows under
+# The resume key minus ``config_hash`` (an unhashed row and a hashed rerun of
+# the same measurement share a key, so the hashed row replaces the unhashed
+# one), plus ``metric_name`` (one run emits several metric rows under
 # the same resume key) and ``seed`` (absent from the resume key, but different
 # seeds are different measurements -- without it a multi-seed sweep would
 # collapse to a single arbitrary seed).
@@ -227,7 +227,7 @@ def _dedup_results(df: pd.DataFrame) -> pd.DataFrame:
     """Keep one row per measurement group in :data:`DEDUP_KEY_COLS`.
 
     A hashed row wins over an unhashed one; among hashed rows the last appended wins.
-    Files written before the setup columns existed key them as empty.
+    Files without the setup columns key them as empty.
     A train-only linear probe and one refit on train plus validation are separate groups.
     """
     missing = [c for c in _BASE_DEDUP_KEY_COLS if c not in df.columns]
@@ -379,7 +379,7 @@ class EvaluationResult:
     c_range_num: int
     merge_val: bool
     bootstrap: int
-    # Keep resolution and pooling in the CSV for per-dataset resume keys (Scale-MAE, #215).
+    # Keep resolution and pooling in the CSV for per-dataset resume keys (Scale-MAE).
     res: float | None = None
     pool: str | None = None
     # Segmentation setup (SETUP_COLS, text from segmentation_setup_columns; empty otherwise).
