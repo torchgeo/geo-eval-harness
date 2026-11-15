@@ -102,7 +102,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download planteur                                 # PLANTEUR crop types
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
-Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
+Names that share another dataset's files, such as ``eurosat-spatial``, ``bright-post-sar-rgb``, and the ``planteur_loio_*`` folds, download that dataset. Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
 
 The default V2 download set is: ``benv2``, ``burn_scars``, ``caffe``,
 ``cloudsen12``, ``dynamic_earthnet``, ``flair2``, ``forestnet``,
@@ -200,9 +200,9 @@ GeoBench V2 — classification
 CLI name           #cls   bands multilabel   sensor                                 Class
 ================== ====== ===== ============ ====================================== =====================================
 ``benv2``          19     14    **yes**      Sentinel-1 + Sentinel-2 (multi-modal)  :class:`~geo_eval_harness.datasets.BENV2`
-``forestnet``      12     6     no           Sentinel-2                             :class:`~geo_eval_harness.datasets.Forestnet`
+``forestnet``      12     6     no           Landsat-8                              :class:`~geo_eval_harness.datasets.Forestnet`
 ``so2sat``         17     12    no           Sentinel-1 + Sentinel-2                :class:`~geo_eval_harness.datasets.So2Sat`
-``treesatai``      13     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
+``treesatai``      15     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
 ================== ====== ===== ============ ====================================== =====================================
 
 V2 datasets are stored as a single ``.tortilla`` file each, hosted under
@@ -223,8 +223,8 @@ before running a benchmark, for example with
    * ``m-so2sat`` (V1) — 18-band stack including LCZ context.
      ``so2sat`` (V2) — 10 S2 + 2 S1 bands stored at reflectance scale.
    * ``m-forestnet`` (V1) — Landsat-8 6-band uint8.
-     ``forestnet`` (V2) — Sentinel-2 6-band uint8 with a different split
-     than V1 despite the same channel count.
+     ``forestnet`` (V2) — the same Landsat-8 chips and split, repackaged
+     by GeoBench V2; the only pair here with identical data.
 
    The leaderboard prefixes panel titles with ``GeoBench V1`` /
    ``GeoBench V2`` so V1 and V2 results are never compared on the same
@@ -236,10 +236,10 @@ GeoBench V2 — segmentation
 ==================== ====== ===== ============================================ ==============================================================
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
-``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
+``burn_scars``       2      6     no-data (2) ignored                          :class:`~geo_eval_harness.datasets.BurnScars`
 ``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
-``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
+``dynamic_earthnet`` 7      16    Planet + Sentinel-2; needs a Planet band     :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
 ``fotw``             3      4     Fields of the World; unknown (3) ignored     :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
 ``kuro_siwo``        4      3     SAR ``vv`` / ``vh`` + DEM (no RGB triplet)   :class:`~geo_eval_harness.datasets.KuroSiwo`
@@ -536,7 +536,7 @@ objects.  Three modes are supported:
 * ``--bands rgb`` *(default)* — only the bands listed in
   :attr:`~geo_eval_harness.datasets.BenchDataset.rgb_bands`.
 * ``--bands all`` — every band the dataset exposes.
-* ``--bands red,green,blue,nir`` — an explicit subset.
+* ``--bands red,green,blue,nir`` — an explicit subset. GeoBench V2 datasets with several sensors need each sensor's bands listed next to each other, and ``kuro_siwo`` needs ``dem`` last.
 
 The runner derives ``num_channels`` from the loaded tensor and constructs
 the matching ``list[BandSpec]`` so the model wrapper can size its input
@@ -559,7 +559,7 @@ set ``band_order_strategy = "by_sensor"`` and the V2 base class groups
 ``BandSpec`` entries by sensor before passing them to the upstream
 ``geobench_v2`` loader.  End users do not need to do anything special —
 set ``--bands all`` (or an explicit subset) and the right
-per-modality tensors are concatenated into a single ``image`` key.
+per-modality tensors are concatenated into a single ``image`` key. With ``--time-steps``, ``pastis`` returns ``(T, C, H, W)`` samples whose channels follow the selected bands; each sensor is sampled to ``T`` acquisitions independently, so frames from different sensors share an index, not a date.
 
 Model compatibility
 ^^^^^^^^^^^^^^^^^^^
@@ -576,7 +576,7 @@ Model compatibility
 Data partitions
 ---------------
 
-V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets ignore or reject non-default values.
+V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets reject non-default values.
 
 .. code-block:: console
 

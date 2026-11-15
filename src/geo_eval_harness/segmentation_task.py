@@ -163,6 +163,12 @@ class SegmentationSolver:
             amp: Train and evaluate under CUDA float16 autocast with gradient scaling.
                 ``False`` runs in float32.
         """
+        if 0 <= ignore_index < num_classes:
+            raise ValueError(
+                f"ignore_index={ignore_index} is one of the {num_classes} class ids, so metrics "
+                "would disagree on whether that class counts. Remap ignored pixels to a value "
+                "outside [0, num_classes)."
+            )
         self.model = model.to(device)
         self.backbone_eval_mode = False
         self.num_classes = num_classes

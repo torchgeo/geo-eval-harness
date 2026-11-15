@@ -600,6 +600,7 @@ def build_index(store_dir: Path | None = None) -> dict:
     """Rebuild ``index.json`` from the per-dataset files and return it.
 
     The summary supports map legends and coverage warnings without loading per-dataset point lists.
+    Sample and continent totals exclude alias records, which repeat another dataset's samples.
     """
     directory = store_dir or STORE_DIR
     records = [
@@ -621,8 +622,9 @@ def build_index(store_dir: Path | None = None) -> dict:
         for record in records
     ]
 
+    originals = [record for record in records if record.alias_of is None]
     overall: dict[str, float] = {}
-    for record in records:
+    for record in originals:
         for continent, share in record.continents.items():
             overall[continent] = overall.get(continent, 0.0) + share * record.n / 100.0
     grand = sum(overall.values()) or 1
@@ -634,7 +636,7 @@ def build_index(store_dir: Path | None = None) -> dict:
         "totals": {
             "datasets": len(entries),
             "extracted": sum(1 for record in records if record.status == "extracted"),
-            "samples": sum(record.n for record in records),
+            "samples": sum(record.n for record in originals),
             "continents": {
                 k: round(100.0 * v / grand, 2)
                 for k, v in sorted(overall.items(), key=lambda kv: (-kv[1], kv[0]))

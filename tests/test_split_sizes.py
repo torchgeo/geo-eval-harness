@@ -11,7 +11,7 @@ from tests.support.data import require_dataset_data
 # RESISC45 uses torchgeo split-file counts: 31500 images split 60/20/20.
 # UCMerced uses torchgeo split-file counts: 2100 images split 60/20/20.
 # HOTOSM buildings: the 5k benchmark train subset (default partition), official val/test rows.
-# Open Cities counts come from the committed open_cities_index.csv.gz.
+# Open Cities: the fixed 10k benchmark train subset (default partition), official val/test rows.
 # LoveDA uses the checked-in carve of official Train and the official Val release as test.
 # OSCD post counts 256-pixel tiles of its fixed city splits.
 # PLANTEUR uses the official splits/443.json and splits/loio.json patch lists.
@@ -44,7 +44,7 @@ EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "aid": {"train": 6000, "val": 2000, "test": 2000},
     "hotosm_buildings": {"train": 5000, "val": 7237, "test": 7236},
     "openearthmap-sar": {"train": 4333, "val": 210, "test": 490},
-    "open_cities": {"train": 76818, "val": 11236, "test": 22408},
+    "open_cities": {"train": 10000, "val": 11236, "test": 22408},
     "loveda": {"train": 2269, "val": 253, "test": 1669},
     "oscd-post": {"train": 119, "val": 31, "test": 69},
     "planteur": {"train": 1896, "val": 411, "test": 443},

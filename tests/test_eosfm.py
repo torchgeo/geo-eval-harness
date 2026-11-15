@@ -115,7 +115,7 @@ def test_pins_weights_and_hash() -> None:
 
 
 def test_weights_are_hash_checked(ensemble: Path) -> None:
-    with pytest.raises(RuntimeError, match="sha256"):
+    with pytest.raises(ValueError, match="SHA-256"):
         EoSFMBenchModel(_RGB, weights_path=str(ensemble), normalization="identity")
 
 
@@ -248,7 +248,7 @@ def test_model_native_is_rejected(ensemble: Path) -> None:
         ("eurosat", "all", "B1 B2 B3 B4 B5 B6 B7 B8 B9 B10 B11 B12 B8A"),
         ("aid", "rgb", "R G B"),
         ("m-forestnet", "all", "B G R NIR SWIR1 SWIR2"),
-        ("so2sat", "all", "B2 B3 B4 B5 B6 B7 B8 B8A B11 B12 VV VH"),
+        ("so2sat", "all", "B2 B3 B4 B5 B6 B7 B8 B8A B11 B12 VH VV"),
         ("m-so2sat", "all", "VH_REAL B2 VH_IMAG B3 VV_REAL B4 VV_IMAG VH_LEE B5 VV_LEE B6"),
     ],
 )
@@ -288,7 +288,7 @@ def test_expression_channels_are_computed() -> None:
         ("aid", "rgb", "red"),
         ("benv2", "all", "nir"),
         ("eurosat", "all", "nir"),
-        ("forestnet", "all", "nir_narrow"),
+        ("forestnet", "all", "nir"),
         ("m-bigearthnet", "all", "nir"),
         ("m-eurosat", "rgb", "red"),
         ("m-forestnet", "all", "nir"),

@@ -282,7 +282,7 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
 
    $ # Sentinel-2 RGB SSL
    $ geo-eval-harness run --model torchgeo/resnet50_s2rgb_moco --dataset m-eurosat
-   $ geo-eval-harness run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat
+   $ geo-eval-harness run --model torchgeo/resnet18_s2rgb_seco --dataset m-eurosat --normalization model
    $ geo-eval-harness run --model torchgeo/resnet50_fmow_gassl --dataset m-eurosat
 
    $ # ScaleMAE on fMoW RGB
@@ -298,7 +298,9 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
-Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size.
+SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
+
+Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
 
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
@@ -337,9 +339,11 @@ the patch tokens into a 768-d location-token grid, with a detached linear
 student projecting it to the 128-d vectors behind AI2's published embeddings.
 The ``embedding`` kwarg selects which output is mean-pooled:
 ``location_tokens`` (default for v1.3, as in AI2's evals), ``patch_tokens``
-(the v1.x readout) or ``student``.  v1.3 also sets channels missing from the
-input to 0 after normalization (``missing_bands: zero``), the value band
-dropout used during pretraining, instead of copying a spectral neighbour.
+(the v1.x readout) or ``student``.  Channels missing from the input are filled
+as upstream's ``Normalizer`` fills them: v1.1, v1.2 and v1.3 set them to 0 after
+normalization (``missing_bands: zero``), the value band dropout used during
+pretraining, and v1 copies the present band nearest in wavelength
+(``missing_bands: impute``).
 The ``version`` parameter selects the weight family:
 
 .. list-table::

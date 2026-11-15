@@ -28,7 +28,6 @@ of ``taps[3]``.  Upstream's optional feature BatchNorm, projection and fusion ar
 checkpoint and are omitted, as in upstream's raw frozen-feature setting.
 """
 
-import hashlib
 import logging
 import re
 from pathlib import Path
@@ -41,6 +40,7 @@ from torch import nn
 
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.hub import verify_checksums
 
 from ._band_mapping import canonical_band_name
 from ._normalization import NormalizationStrategy
@@ -98,22 +98,12 @@ class View(NamedTuple):
     channels: tuple[Channel, ...]
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1 << 24), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def load_specialists(
     path: Path, weights_sha256: str | None
 ) -> list[tuple[Specialist, dict[str, torch.Tensor]]]:
     """Read the ``[(in_chans, state_dict, config), ...]`` ensemble file after a hash check."""
-    if weights_sha256 is not None and (actual := _sha256(path)) != weights_sha256:
-        raise RuntimeError(
-            f"EoS-FM weights {path} have sha256 {actual}, expected {weights_sha256}."
-        )
+    if weights_sha256 is not None:
+        verify_checksums(path.parent, {path.name: weights_sha256})
     entries = torch.load(path, map_location="cpu", weights_only=True)
     specialists = []
     for in_chans, state_dict, config in entries:

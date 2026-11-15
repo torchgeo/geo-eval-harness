@@ -51,9 +51,10 @@ _UNHASHED_ADAPTATION_FIELDS = {
 def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
-    Excludes device and worker count, which only control execution. Includes batch size because
-    it can change floating-point results. LoRA settings count only when ``lora_rank`` enables
-    LoRA, so preset LoRA targets do not change frozen-probe hashes. ``neck``, ``upsampler``,
+    Excludes the model and KNN devices and worker count, which only control execution. Includes
+    batch size because it can change floating-point results. LoRA settings count only when
+    ``lora_rank`` enables LoRA, so preset LoRA targets do not change frozen-probe hashes.
+    ``neck``, ``upsampler``,
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
     ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` (both tasks),
     ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
@@ -81,6 +82,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         "segmentation": segmentation.model_dump(mode="json", exclude=segmentation_exclude),
         "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
+    # Stored hashes include a null KNN device, so the key stays in the payload.
+    payload["classification"]["knn_device"] = None
     if task == "segmentation":
         payload["segmentation"]["selection_protocol"] = "best-validation-miou"
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
@@ -202,7 +205,7 @@ def load_completed(
     output_path: str, key_cols: Sequence[str] = KEY_COLS
 ) -> tuple[set[tuple[str, ...]], dict[str, set[tuple[str, ...]]]]:
     """Read an existing results CSV into resume-key sets (overall and per-metric)."""
-    existing_df = pd.read_csv(output_path)
+    existing_df = pd.read_csv(output_path, dtype={"config_hash": str})
     for col in key_cols:
         if col not in existing_df.columns:
             existing_df[col] = ""

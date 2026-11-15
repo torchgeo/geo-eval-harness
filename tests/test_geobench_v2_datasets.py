@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import ClassVar
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -127,8 +128,8 @@ class TestV2Loading:
         assert batch["mask"].shape == (2, 32, 32)
         assert batch["mask"].dtype == torch.long
 
-    def test_partition_warning(self, mock_v2_env: dict[str, MagicMock]) -> None:
-        with pytest.warns(UserWarning, match="does not support custom partitions"):
+    def test_unsupported_partition_is_rejected(self, mock_v2_env: dict[str, MagicMock]) -> None:
+        with pytest.raises(ValueError, match="supports only the default partition"):
             get_datasets(
                 dataset_name="benv2",
                 partition_name="0.10x_train",
@@ -199,6 +200,17 @@ def test_treesatai_rgb_selects_stored_red_green_blue_channels() -> None:
     assert bench.rgb_bands == ["red", "green", "blue"]
 
 
+@pytest.mark.parametrize(
+    ("dataset_name", "bands"),
+    [("benv2", ("vv", "b04", "vh")), ("kuro_siwo", ("dem", "vv", "vh"))],
+)
+def test_band_orders_the_loader_cannot_return_are_rejected(
+    dataset_name: str, bands: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match=f"{dataset_name}.*{', '.join(bands)}"):
+        get_bench_dataset_class(dataset_name)().build_band_order(bands)
+
+
 class MockKuroSiwo:
     """Match upstream Kuro Siwo samples, with each image shaped ``(C, H, W)``.
 
@@ -243,6 +255,13 @@ class MockKuroSiwo:
         if self.transforms is not None:
             sample = self.transforms(sample)
         return sample
+
+
+def test_forestnet_declares_the_landsat_bands_of_m_forestnet() -> None:
+    """GeoBench V2 ForestNet repackages the m-forestnet Landsat-8 chips."""
+    v1, v2 = get_bench_dataset_class("m-forestnet"), get_bench_dataset_class("forestnet")
+    assert [(b.sensor, b.name) for b in v2.bands] == [(b.sensor, b.name) for b in v1.bands]
+    assert v2.rgb_bands == v1.rgb_bands
 
 
 class TestKuroSiwoCanonicalization:
@@ -328,12 +347,27 @@ class TestKuroSiwoLive:
         )
 
 
+def test_so2sat_sar_names_select_stored_polarizations() -> None:
+    """So2Sat Sentinel-1 files store VH, then VV."""
+    from geobench_v2.datasets import GeoBenchSo2Sat
+
+    bench = get_bench_dataset_class("so2sat")()
+    stored = torch.arange(2.0)[:, None, None]
+    selected = object.__new__(GeoBenchSo2Sat).rearrange_bands(
+        {"s1": stored}, bench.build_band_order(("vh", "vv"))
+    )
+    assert selected["image_s1"].flatten().tolist() == [0, 1]
+
+
 class MockPASTIS:
     """Stand-in for ``geobench_v2.datasets.GeoBenchPASTIS``.
 
-    Mirrors the real upstream loader: per-sensor ``image_<sensor>`` keys, folded
-    into a single stacked ``image`` only when ``return_stacked_image`` is set.
+    Mirrors the real upstream loader: per-sensor ``image_<sensor>`` keys with a leading time
+    axis for time series, transformed, moved to ``(C, T, H, W)`` for ``CTHW``, and then joined
+    on the first axis into a single ``image`` only when ``return_stacked_image`` is set.
     """
+
+    sensor_values: ClassVar[dict[str, float]] = {"s2": 1.0, "s1_asc": 2.0, "s1_desc": 3.0}
 
     def __init__(
         self,
@@ -345,12 +379,14 @@ class MockPASTIS:
         return_stacked_image=False,
         **kwargs,
     ):
-        del kwargs
         self.root = root
         self.split = split
         self.band_order = band_order or {}
         self.transforms = transforms
         self.return_stacked_image = return_stacked_image
+        steps = kwargs.get("num_time_steps", 1)
+        self.time = () if steps == 1 else (steps,)
+        self.channels_first = kwargs.get("temporal_output_format", "CTHW") == "CTHW"
         self.h, self.w = 16, 16
         self.data_df = MagicMock()
         self.data_df.read.return_value = pd.DataFrame(
@@ -364,13 +400,18 @@ class MockPASTIS:
         del idx
         sample: dict[str, torch.Tensor] = {"mask": torch.zeros(self.h, self.w, dtype=torch.long)}
         for sensor, bands in self.band_order.items():
-            sample[f"image_{sensor}"] = torch.ones(len(bands), self.h, self.w)
+            sample[f"image_{sensor}"] = torch.full(
+                (*self.time, len(bands), self.h, self.w), self.sensor_values[sensor]
+            )
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+        if self.time and self.channels_first:
+            for sensor in self.band_order:
+                sample[f"image_{sensor}"] = sample[f"image_{sensor}"].permute(1, 0, 2, 3)
         if self.return_stacked_image:
             sample["image"] = torch.cat(
                 [sample.pop(f"image_{sensor}") for sensor in self.band_order], 0
             )
-        if self.transforms is not None:
-            sample = self.transforms(sample)
         return sample
 
 
@@ -415,8 +456,50 @@ class TestPASTISSampleConstruction:
         PASTIS().get_dataset("train", bands=("b04", "b03", "b02"), time_steps=4)
         kwargs = mocked_pastis.call_args.kwargs
         assert kwargs["num_time_steps"] == 4
-        assert kwargs["temporal_output_format"] == "TCHW"
+        assert kwargs["temporal_output_format"] == "CTHW"
+
+    def test_time_series_joins_sensors_on_the_channel_axis(self, mocked_pastis):
+        del mocked_pastis
+        bands = ("vv_desc", "b04", "b03", "vv_asc")
+        image = PASTIS().get_dataset("train", bands=bands, time_steps=4)[0]["image"]
+        assert image.shape == (4, 4, 16, 16)
+        torch.testing.assert_close(
+            image[:, :, 0, 0], torch.tensor([3.0, 1.0, 1.0, 2.0]).expand(4, 4)
+        )
 
     def test_time_steps_rejected_when_not_multi_temporal(self):
         with pytest.raises(ValueError, match="not multi-temporal"):
             BurnScars().get_dataset("train", time_steps=2)
+
+
+def test_dynamic_earthnet_s2_names_select_stored_bands() -> None:
+    """Dynamic EarthNet Sentinel-2 files store the 10 m bands, then the 20 m, then the 60 m."""
+    from geobench_v2.datasets import GeoBenchDynamicEarthNet
+
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    names = [band.name for band in bench.bands if band.sensor == "s2"]
+    stored = {"planet": torch.arange(4.0)[:, None, None], "s2": torch.arange(12.0)[:, None, None]}
+    selected = object.__new__(GeoBenchDynamicEarthNet).rearrange_bands(
+        stored, bench.build_band_order(None)
+    )
+    channels = selected["image_s2"].flatten().int().tolist()
+    assert dict(zip(names, channels, strict=True)) == {
+        "b02": 0,
+        "b03": 1,
+        "b04": 2,
+        "b08": 3,
+        "b05": 4,
+        "b06": 5,
+        "b07": 6,
+        "b8a": 7,
+        "b11": 8,
+        "b12": 9,
+        "b01": 10,
+        "b09": 11,
+    }
+
+
+def test_dynamic_earthnet_requires_a_planet_band() -> None:
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    with pytest.raises(ValueError, match="Planet band"):
+        bench.build_band_order(("b04", "b03", "b02"))
