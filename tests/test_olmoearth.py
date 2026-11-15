@@ -10,20 +10,23 @@ from typing import Any, ClassVar
 from unittest import mock
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
 from geo_eval_harness import flops_pipeline
 from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.config.flops import FlopsConfig
-from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.presets import build_model, resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.datasets.loading import _ResizeTransform
-from geo_eval_harness.main import instantiate_dataset_model
+from geo_eval_harness.main import instantiate_dataset_model, main
 from geo_eval_harness.models import olmoearth
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
+from tests.support.runner import RunnerMocks, _compose_cfg
+from tests.support.runner import runner as runner
 
 olmoearth_available = find_spec("olmoearth_pretrain_minimal") is not None
 requires_olmoearth = pytest.mark.skipif(
@@ -221,6 +224,28 @@ def test_flops_measures_synthetic_tiles_as_native_pixels(tiny_olmoearth: dict[st
     model = flops_pipeline._build_model(preset, bands, "bandspec_zscore", "rgb")
     assert model is not None
     assert model.input_res == 10
+
+
+@pytest.mark.usefixtures("tiny_olmoearth")
+def test_resume_skips_finished_olmoearth_rows(tmp_path: Path, runner: RunnerMocks) -> None:
+    out = tmp_path / "out.csv"
+    cfg = _compose_cfg(
+        out,
+        overrides={
+            "model": {"name": "olmoearth_nano"},
+            "classification": {"methods": ["knn"]},
+            "output": {"resume": True},
+        },
+    )
+    runner.build.side_effect = build_model
+
+    main(cfg)
+    stored = out.read_bytes()
+    main(cfg)
+
+    runner.knn.assert_called_once()
+    assert out.read_bytes() == stored
+    assert pd.read_csv(out)["normalization"].tolist() == ["model_native"]
 
 
 @pytest.mark.parametrize(

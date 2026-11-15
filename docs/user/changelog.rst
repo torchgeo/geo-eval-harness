@@ -58,6 +58,7 @@ Evaluation and results
 * Each dataset starts from ``runtime.seed``, so its result does not depend on the datasets evaluated before it in the same run.
 * ``--matmul-precision`` (``runtime.matmul_precision``, default ``highest``) sets float32 matrix multiplication precision once per run.
 * The ``config_hash`` of classification, profile, and intrinsic-dimension rows leaves out ``segmentation`` settings and covers ``runtime.matmul_precision`` only when it is not ``highest``, so segmentation-only changes and the default precision keep ``--resume`` matching stored rows.
+* ``--resume`` matches OlmoEarth rows, which record ``model_native`` normalization whatever ``--normalization`` requests, so a relaunch skips finished OlmoEarth runs instead of recomputing them.
 * Result rows record label counts and segmentation setup columns. ``load_results`` keeps a train-only linear probe separate from one refit on train plus validation.
 * The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings, ranks only the refit linear probes, and shows a model's recorded pooling under its name when it is not the patch mean. Native bands views allow incomplete dataset coverage.
 
