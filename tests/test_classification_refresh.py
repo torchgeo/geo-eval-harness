@@ -5,7 +5,7 @@ from geo_eval_harness.config.presets import resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class, get_dataset_task, list_datasets
 from geo_eval_harness.main import dataset_metadata
-from geo_eval_harness.results import DEDUP_KEY_COLS
+from geo_eval_harness.results import DEDUP_KEY_COLS, model_results_path
 from geo_eval_harness.resume import _canonical_key_cell
 
 
@@ -86,3 +86,48 @@ def test_cls_companion_preserves_resolved_mean_settings():
         assert mean["config_hash"] != cls["config_hash"]
         assert cls["mean_job_id"] == mean["id"]
         assert not cls_config.output.resume
+
+
+def test_cls_comparison_uses_audited_hashes_and_only_paired_methods(tmp_path):
+    import csv
+
+    from experiments.summarize_classification_cls import compare
+
+    mean_job = {
+        "id": "mean",
+        "dataset": "m-eurosat",
+        "config": {"model": {"name": "smarties/base"}, "datasets": ["m-eurosat"]},
+    }
+    cls_job = mean_job | {"id": "cls", "mean_job_id": "mean", "model": "smarties/base"}
+    _, preset = resolve_run_config(RunConfig.model_validate(mean_job["config"]), "m-eurosat")
+    rows = [
+        ("mean-hash", "knn5", 0.5, 0.4, 0.6),
+        ("stale-hash", "knn5", 0.99, 0.98, 1.0),
+        ("cls-hash", "knn5", 0.8, 0.7, 0.9),
+        ("cls-hash", "linear", 0.9, 0.8, 1.0),
+    ]
+    with model_results_path(tmp_path, preset.name).open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(
+            ["config_hash", "method", "metric_value", "ci_lower", "ci_upper", "dataset"]
+        )
+        writer.writerows([*row, "m-eurosat"] for row in rows)
+    result = compare(
+        ({"jobs": [mean_job]}, {"jobs": [cls_job]}),
+        (
+            [{"job_id": "mean", "state": "partial", "effective_config_hash": "mean-hash"}],
+            [{"job_id": "cls", "state": "complete", "effective_config_hash": "cls-hash"}],
+        ),
+        tmp_path,
+    )
+    assert result == [
+        {
+            "model": "smarties/base",
+            "method": "knn5",
+            "matched_configurations": 1,
+            "mean_pool_score": 0.5,
+            "cls_pool_score": 0.8,
+            "cls_ci_above_mean": 1,
+            "mean_ci_above_cls": 0,
+        }
+    ]

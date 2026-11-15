@@ -19,3 +19,5 @@ The protocol uses seed 0, 200 bootstrap samples, KNN-5, and linear probing with 
 The ranking explorer treats CLS as a distinct model identity, including SMARTIES and TerraFM rows that share a CSV/name with mean pooling. Each pooling independently meets the existing coverage and normalization-selection requirements. Neither pooling fills gaps in the other.
 
 Final comparisons pair methods using the manifest's mean job IDs and audited effective hashes, with equal weight per matched configuration. Report means and counts of disjoint 95% confidence intervals in both directions; disjoint intervals are descriptive comparisons, not a multiple-comparison-adjusted significance test.
+
+Generate the paired summary with `python experiments/summarize_classification_cls.py --refresh-manifest <mean-manifest.json> --refresh-coverage results/coverage/classification-refresh-20261114.csv --manifest <batch-manifest.json> --coverage <batch-coverage.csv> --output <comparison.json>`. It joins audited effective hashes, excludes unpaired methods, and retains separate model/method counts.
