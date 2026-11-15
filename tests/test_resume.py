@@ -71,9 +71,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
                 "sweep_weight_decays",
             },
         ),
-        "runtime": config.runtime.model_dump(
-            mode="json", include={"seed", "batch_size", "matmul_precision"}
-        ),
+        "runtime": config.runtime.model_dump(mode="json", include={"seed", "batch_size"}),
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
@@ -102,6 +100,20 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
     assert _hash(_cfg()) == _hash(_cfg(**overrides))
+
+
+@pytest.mark.parametrize(("precision", "hashed"), [("highest", False), ("high", True)])
+def test_matmul_precision_is_hashed_only_when_not_the_default(
+    monkeypatch: pytest.MonkeyPatch, precision: str, *, hashed: bool
+) -> None:
+    payloads = []
+    dumps = json.dumps
+    monkeypatch.setattr(
+        "geo_eval_harness.resume.json.dumps",
+        lambda payload, **kwargs: payloads.append(payload) or dumps(payload, **kwargs),
+    )
+    _hash(_cfg(runtime={"matmul_precision": precision}))
+    assert ("matmul_precision" in payloads[-1]["runtime"]) is hashed
 
 
 def test_config_hash_ignores_output_paths_and_method_selection() -> None:
