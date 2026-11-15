@@ -193,7 +193,8 @@ def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> 
         pytest.skip(f"{preset_name} loads pretrained weights only from a local checkpoint_path")
     dataset, band_selection = _MULTISPECTRAL_INPUTS.get(preset_name, ("fotw", "rgb"))
     model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
-    model = build_model(preset, bands=model_bands, normalization=NORMALIZATIONS["dataset"])
+    normalization = NORMALIZATIONS[preset.input.normalization]
+    model = build_model(preset, bands=model_bands, normalization=normalization)
     segmentation = preset.segmentation
     assert segmentation.lora_target_modules is not None
 
