@@ -404,7 +404,7 @@ Training knobs
      - ``cosine`` (CosineAnnealingLR to 1e-6) or ``none`` (constant).
    * - ``ignore_index``
      - ``255``
-     - Unlabeled mask value excluded by cross entropy and segmentation metrics.
+     - Unlabeled mask value excluded by cross entropy and segmentation metrics. It must not be a class id (``0`` to ``num_classes - 1``).
    * - ``batch_size``
      - ``64``
      - Batch size when training the probe head on cached features.
