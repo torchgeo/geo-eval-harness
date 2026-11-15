@@ -507,12 +507,11 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
         res: float = 1.0,
         **_kwargs: Any,
     ) -> None:
-        band_names = tuple(band.name.lower() for band in bands)
-        valid_rgb_orders = {("red", "green", "blue"), ("b04", "b03", "b02")}
-        if band_names not in valid_rgb_orders:
+        band_names = [canonical_band_name(band.name) for band in bands]
+        if band_names != ["red", "green", "blue"]:
             raise ValueError(
-                "Scale-MAE FMOW_RGB requires exactly three ordered RGB bands: "
-                "[red, green, blue] or [b04, b03, b02]."
+                "Scale-MAE FMOW_RGB requires exactly three ordered RGB bands "
+                f"(red, green, blue); got {band_names}."
             )
         if pool not in ("cls", "mean"):
             raise ValueError("Scale-MAE pool must be 'cls' or 'mean'.")
