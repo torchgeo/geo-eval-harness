@@ -81,6 +81,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         {"output": {"resume": True}},
         {"output": {"epoch_metrics": "curves.jsonl"}},
         {"runtime": {"device": "cpu", "workers": 0}},
+        {"classification": {"knn_device": "cpu"}},
     ],
     ids=[
         "profile-pass",
@@ -89,6 +90,7 @@ def _hash_without_epoch_selection(config: RunConfig, preset: ModelPreset) -> str
         "resume-toggle",
         "epoch-metrics-path",
         "execution",
+        "knn-device",
     ],
 )
 def test_config_hash_ignores_run_selection_and_additive_passes(overrides: dict) -> None:
@@ -112,7 +114,6 @@ def test_config_hash_ignores_output_paths_and_method_selection() -> None:
         {"input": {"bands": "all"}},
         {"input": {"normalization": "minmax"}},
         {"classification": {"knn_k": 7}},
-        {"classification": {"knn_device": "cpu"}},
         {"classification": {"linear": {"c_log10_start": -5.0}}},
         {"classification": {"linear": {"refit_train_val": False}}},
         {"classification": {"calibration": {"n_bins_linear": 10}}},
