@@ -59,3 +59,30 @@ def test_refresh_covers_current_datasets_with_fresh_outputs():
     assert preset.kwargs["pool"] == "mean"
     assert preset.kwargs["checkpoint_path"]
     assert preset.kwargs["checkpoint_md5"]
+
+
+def test_cls_companion_preserves_resolved_mean_settings():
+    from experiments.plan_classification_cls import companion_job
+    from experiments.plan_classification_refresh import make_job
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    for model, cls_model in (
+        ("torchgeo/scalemae_large_fmow", "torchgeo/scalemae_large_fmow_cls"),
+        ("terrafm/base_s2", "terrafm/base_s2"),
+        ("terratorch/clay_v1", "terratorch/clay_v1_cls"),
+    ):
+        preset = load_model_preset(ModelConfig(name=model))
+        mean = make_job(model, "m-eurosat", preset, {"bands": "rgb", "normalization": "dataset"})
+        cls = companion_job(mean, cls_model)
+        mean_config, mean_preset = resolve_run_config(
+            RunConfig.model_validate(mean["config"]), "m-eurosat"
+        )
+        cls_config, cls_preset = resolve_run_config(
+            RunConfig.model_validate(cls["config"]), "m-eurosat"
+        )
+        assert mean_config.model_dump(exclude={"model"}) == cls_config.model_dump(exclude={"model"})
+        assert cls_preset.kwargs == mean_preset.kwargs | {"pool": "cls"}
+        assert mean["config_hash"] != cls["config_hash"]
+        assert cls["mean_job_id"] == mean["id"]
+        assert not cls_config.output.resume

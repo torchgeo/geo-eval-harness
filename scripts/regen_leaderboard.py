@@ -285,6 +285,9 @@ def canonical_slug(slug: str) -> str:
 
 def resolve_meta(slug: str) -> tuple[str, bool]:
     """Resolve a model slug to its display name and baseline flag."""
+    if slug.endswith("__pool_cls"):
+        display, baseline = resolve_meta(slug.removesuffix("__pool_cls"))
+        return f"{display} (CLS)", baseline
     return MODEL_DISPLAY.get(slug, (slug, False))
 
 
@@ -465,13 +468,21 @@ def _pooling_label(df: pd.DataFrame) -> pd.Series:
     return pool.where(pool.notna() & (pool != ""), suffix).mask(df["task"] == "segmentation")
 
 
+def _separate_pooling(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep classification CLS scores out of the mean model's ranking cells."""
+    df = df.assign(bands=df["bands"].astype(str), pooling=_pooling_label(df))
+    cls_pool = (df["task"] == "classification") & (df["pooling"] == "cls-token")
+    df.loc[cls_pool, "base_model"] += "__pool_cls"
+    return df
+
+
 def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw result rows into canonical quality rows.
 
     The output remains long-format so view selection can choose either a fully
     native model row or a fully z-scored one.  Normalization is retained
-    internally only.  ``pooling`` is a label and never a view axis:
-    ``cls_ablation`` marks the ``_cls`` presets, which stay out of every view.
+    internally only. Classification CLS pooling receives a separate model identity,
+    including when it shares a source name with mean pooling.
     """
     df = df.copy()
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
@@ -553,7 +564,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     ]
     has_landsat = df.groupby(keys)["is_landsat_sub"].transform("any")
     df = df[~(has_landsat & ~df["is_landsat_sub"])]
-    df = df.assign(bands=df["bands"].astype(str), pooling=_pooling_label(df))
+    df = _separate_pooling(df)
     df = _aggregate_seeds(
         df[[*keys, "pooling", "source_model", "bands", *SEG_SETUP_COLS, "score"]], keys
     )
@@ -638,7 +649,6 @@ def select_view(
         (harmonized["task"] == task)
         & (harmonized["probe"] == probe)
         & (harmonized["bandclass"] == bandclass)
-        & ~harmonized["cls_ablation"]
     ].copy()
     if sub.empty:
         return None, []
@@ -987,7 +997,7 @@ def extract_compute_cost(raw: pd.DataFrame) -> dict[tuple[str, str], float]:
 
 def _view_keys(harmonized: pd.DataFrame) -> list[dict[str, str]]:
     """Enumerate all quality views in display order."""
-    ranked = harmonized[~harmonized["cls_ablation"]]
+    ranked = harmonized
     tasks = ordered_values(ranked["task"], TASK_ORDER)
     probes = sorted(ordered_values(ranked["probe"], PROBE_ORDER), key=_probe_sort_key)
     bands = ordered_values(ranked["bandclass"], BANDCLASS_ORDER)

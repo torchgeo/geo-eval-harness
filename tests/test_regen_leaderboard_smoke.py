@@ -125,38 +125,36 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     assert "m-pv4ger" not in set(out["dataset"])
 
 
-def test_pooling_label_follows_the_recorded_pool_and_leaves_the_roster_alone() -> None:
-    raw = _raw_df().assign(pool="")
-    raw.loc[raw["name"] == "native_full", "pool"] = "cls"
-    raw.loc[raw["name"] == "zscore_only", "pool"] = "cls"
-    raw.loc[(raw["name"] == "zscore_only") & (raw["dataset"] == "d1"), "pool"] = "mean"
-    ablation = raw[raw["name"] == "rcf"].assign(name="rcf_cls")
-    out = rl.harmonize(pd.concat([raw, ablation], ignore_index=True))
-    assert set(out.loc[out["base_model"] == "native_full", "pooling"]) == {"cls-token"}
-    # A blank ``pool`` is labelled from the name suffix.
-    rcf = out[out["base_model"] == "rcf"]
-    assert set(rcf.loc[rcf["cls_ablation"], "pooling"]) == {"cls-token"}
-    assert set(rcf.loc[~rcf["cls_ablation"], "pooling"]) == {"patch-mean"}
-
-    rankings, _sensitivity, _default = rl.assemble(out, n_bootstrap=0)
+def test_pooling_rows_are_separate_for_shared_names_and_cls_presets() -> None:
+    raw = _raw_df().assign(pool="mean")
+    companions = raw[raw["name"].isin(["native_full", "rcf"])].copy()
+    companions["pool"] = "cls"
+    companions.loc[companions["name"] == "rcf", "name"] = "rcf_cls"
+    companions["metric_value"] -= 0.1
+    out = rl.harmonize(pd.concat([raw, companions], ignore_index=True))
+    selected, _ = rl.select_view(out, "classification", "linear", "RGB")
+    assert selected is not None
+    assert set(selected["model"]) == set(MODELS) | {"native_full__pool_cls", "rcf__pool_cls"}
+    scores = selected.set_index(["model", "dataset"])["score"]
+    for base in ("native_full", "rcf"):
+        for dataset in DATASETS:
+            assert scores[base, dataset] - scores[base + "__pool_cls", dataset] == pytest.approx(
+                0.1
+            )
+    rankings, _, _ = rl.assemble(out, n_bootstrap=0)
     rows = _view_block(rankings)["avg_rank"]["rows"]
-    assert {row["model"]: row["pooling"] for row in rows} == {
-        "native_full": "cls-token",
-        "partial_native": "patch-mean",
-        "zscore_only": "cls-token, patch-mean",
-        "rcf": "patch-mean",
-        "imagestats": "patch-mean",
-    }
-    baseline, _, _ = rl.assemble(_harmonized(), n_bootstrap=0)
-    assert [(row["model"], row["overall"], row["per_task"]) for row in rows] == [
-        (row["model"], row["overall"], row["per_task"])
-        for row in _view_block(baseline)["avg_rank"]["rows"]
-    ]
-
+    assert len(rows) == len(MODELS) + 2
+    assert rl.resolve_meta("rcf__pool_cls")[0].endswith("(CLS)")
+    partial = companions[companions["dataset"] != "d1"]
+    selected, excluded = rl.select_view(
+        rl.harmonize(pd.concat([raw, partial])), "classification", "linear", "RGB"
+    )
+    assert selected is not None
+    assert set(selected["model"]) == set(MODELS)
+    assert {row["model"] for row in excluded} >= {"native_full__pool_cls", "rcf__pool_cls"}
     segmentation = rl.harmonize(_seg_raw_df().assign(pool="cls"))
     assert segmentation["pooling"].isna().all()
-    seg_rows = rl.assemble(segmentation, n_bootstrap=0)[0]["segmentation"][FROZEN]["RGB"]
-    assert all(row["pooling"] is None for row in seg_rows["avg_rank"]["rows"])
+    assert not segmentation["base_model"].str.endswith("__pool_cls").any()
 
 
 def test_harmonize_drops_train_only_linear_probes() -> None:
