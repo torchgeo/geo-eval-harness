@@ -58,6 +58,7 @@ Evaluation and results
 * Each dataset starts from ``runtime.seed``, so a result does not depend on the datasets evaluated before it in the same run.
 * Result rows record label counts and segmentation setup columns. The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings; Native bands views allow incomplete dataset coverage.
 * ``load_results`` keeps a train-only linear probe separate from one refit on train plus validation; the ranking explorer ranks only the refit rows.
+* The ranking explorer names a model's recorded pooling under its name when it is not the patch mean.
 * The results explorer dictionary-encodes repeated data and enforces a 50 MB limit for generated pages and snapshots.
 
 Datasets

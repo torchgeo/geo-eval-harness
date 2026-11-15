@@ -125,6 +125,40 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     assert "m-pv4ger" not in set(out["dataset"])
 
 
+def test_pooling_label_follows_the_recorded_pool_and_leaves_the_roster_alone() -> None:
+    raw = _raw_df().assign(pool="")
+    raw.loc[raw["name"] == "native_full", "pool"] = "cls"
+    raw.loc[raw["name"] == "zscore_only", "pool"] = "cls"
+    raw.loc[(raw["name"] == "zscore_only") & (raw["dataset"] == "d1"), "pool"] = "mean"
+    ablation = raw[raw["name"] == "rcf"].assign(name="rcf_cls")
+    out = rl.harmonize(pd.concat([raw, ablation], ignore_index=True))
+    assert set(out.loc[out["base_model"] == "native_full", "pooling"]) == {"cls-token"}
+    # A blank ``pool`` is labelled from the name suffix.
+    rcf = out[out["base_model"] == "rcf"]
+    assert set(rcf.loc[rcf["cls_ablation"], "pooling"]) == {"cls-token"}
+    assert set(rcf.loc[~rcf["cls_ablation"], "pooling"]) == {"patch-mean"}
+
+    rankings, _sensitivity, _default = rl.assemble(out, n_bootstrap=0)
+    rows = _view_block(rankings)["avg_rank"]["rows"]
+    assert {row["model"]: row["pooling"] for row in rows} == {
+        "native_full": "cls-token",
+        "partial_native": "patch-mean",
+        "zscore_only": "cls-token, patch-mean",
+        "rcf": "patch-mean",
+        "imagestats": "patch-mean",
+    }
+    baseline, _, _ = rl.assemble(_harmonized(), n_bootstrap=0)
+    assert [(row["model"], row["overall"], row["per_task"]) for row in rows] == [
+        (row["model"], row["overall"], row["per_task"])
+        for row in _view_block(baseline)["avg_rank"]["rows"]
+    ]
+
+    segmentation = rl.harmonize(_seg_raw_df().assign(pool="cls"))
+    assert segmentation["pooling"].isna().all()
+    seg_rows = rl.assemble(segmentation, n_bootstrap=0)[0]["segmentation"][FROZEN]["RGB"]
+    assert all(row["pooling"] is None for row in seg_rows["avg_rank"]["rows"])
+
+
 def test_harmonize_drops_train_only_linear_probes() -> None:
     rows = [
         _row("native_full", "d1", "linear", "rgb", 0.9, "bandspec_zscore") | {"merge_val": True},
@@ -296,6 +330,7 @@ ROW_KEYS = {
     "display",
     "is_baseline",
     "gflops_backbone",
+    "pooling",
     "overall",
     "overall_ci",
     "n_tasks",
@@ -650,14 +685,15 @@ def test_segmentation_mixed_image_size_cell_raises() -> None:
                 "task": "segmentation",
                 "probe": FROZEN,
                 "bandclass": "RGB",
-                "pooling": "patch-mean",
+                "cls_ablation": False,
                 "metric": "miou",
                 "score": 0.5,
             }
             for seed, size in ((0, 224), (1, 512))
         ]
     )
-    keys = [c for c in df.columns if c not in ("source_model", "score", "score_sd", "n_seeds")]
+    values = ("pooling", "source_model", "score", "score_sd", "n_seeds")
+    keys = [c for c in df.columns if c not in values]
     columns = [*keys, "source_model", "bands", *rl.SEG_SETUP_COLS, "score"]
     with pytest.raises(ValueError, match="share one leaderboard cell"):
         rl._aggregate_seeds(rows[columns].astype({"image_size": str}), keys)

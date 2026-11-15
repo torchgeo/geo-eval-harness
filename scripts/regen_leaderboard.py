@@ -454,12 +454,24 @@ def _aggregate_seeds(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
     return pd.concat([other, stats], ignore_index=True)
 
 
+def _pooling_label(df: pd.DataFrame) -> pd.Series:
+    """Label classification rows with their recorded ``pool``, else the ``_cls`` name suffix.
+
+    Segmentation rows get no label: their probes read feature maps.
+    """
+    pool = df["pool"] if "pool" in df else pd.Series(pd.NA, index=df.index)
+    pool = pool.astype("string").str.strip().replace({"cls": "cls-token", "mean": "patch-mean"})
+    suffix = df["cls_ablation"].map({True: "cls-token", False: "patch-mean"})
+    return pool.where(pool.notna() & (pool != ""), suffix).mask(df["task"] == "segmentation")
+
+
 def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw result rows into canonical quality rows.
 
     The output remains long-format so view selection can choose either a fully
-    native model row or a fully z-scored one.  Pooling and normalization are
-    retained internally only; the public explorer has neither as an axis.
+    native model row or a fully z-scored one.  Normalization is retained
+    internally only.  ``pooling`` is a label and never a view axis:
+    ``cls_ablation`` marks the ``_cls`` presets, which stay out of every view.
     """
     df = df.copy()
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
@@ -481,7 +493,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
 
     name = df["name"].astype(str)
     is_cls = name.str.endswith("_cls")
-    df["pooling"] = is_cls.map({True: "cls-token", False: "patch-mean"})
+    df["cls_ablation"] = is_cls
     base = name.where(~is_cls, name.str.slice(0, -4))
     df["is_landsat_sub"] = base.str.endswith(LANDSAT_SUB_SUFFIX)
     base = base.where(~df["is_landsat_sub"], base.str.removesuffix(LANDSAT_SUB_SUFFIX))
@@ -534,19 +546,23 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
         "task",
         "probe",
         "bandclass",
-        "pooling",
+        "cls_ablation",
         "normalization",
         "metric",
     ]
     has_landsat = df.groupby(keys)["is_landsat_sub"].transform("any")
     df = df[~(has_landsat & ~df["is_landsat_sub"])]
-    df = df.assign(bands=df["bands"].astype(str))
-    df = _aggregate_seeds(df[[*keys, "source_model", "bands", *SEG_SETUP_COLS, "score"]], keys)
-    return df[[*keys, "source_model", "score", "score_sd", "n_seeds"]].reset_index(drop=True)
+    df = df.assign(bands=df["bands"].astype(str), pooling=_pooling_label(df))
+    df = _aggregate_seeds(
+        df[[*keys, "pooling", "source_model", "bands", *SEG_SETUP_COLS, "score"]], keys
+    )
+    return df[[*keys, "pooling", "source_model", "score", "score_sd", "n_seeds"]].reset_index(
+        drop=True
+    )
 
 
 def _describe_view(task: str, probe: str, bandclass: str) -> str:
-    return f"task={task}, probe={probe}, bandclass={bandclass}, pooling=patch-mean"
+    return f"task={task}, probe={probe}, bandclass={bandclass}"
 
 
 def _raise_on_alias_collisions(sub: pd.DataFrame, *, task: str, probe: str, bandclass: str) -> None:
@@ -614,13 +630,13 @@ def select_view(
     A model uses ``model_native`` only when that *entire* row is complete;
     otherwise it uses its complete ``bandspec_zscore`` row.  Partial native
     measurements cannot displace or mix with a z-score row.  Returns the
-    selected ``model, dataset, metric, score, score_sd, n_seeds`` cells.
+    selected ``model, dataset, metric, score, score_sd, n_seeds, pooling`` cells.
     """
     sub = harmonized[
         (harmonized["task"] == task)
         & (harmonized["probe"] == probe)
         & (harmonized["bandclass"] == bandclass)
-        & (harmonized["pooling"] == "patch-mean")
+        & ~harmonized["cls_ablation"]
     ].copy()
     if sub.empty:
         return None, []
@@ -652,7 +668,8 @@ def select_view(
     frame = pd.concat(selected, ignore_index=True)
     _raise_on_duplicate_selected_cells(frame, task=task, probe=probe, bandclass=bandclass)
     frame = frame.rename(columns={"base_model": "model"})
-    return frame[["model", "dataset", "metric", "score", "score_sd", "n_seeds"]], excluded
+    columns = ["model", "dataset", "metric", "score", "score_sd", "n_seeds", "pooling"]
+    return frame[columns], excluded
 
 
 def _load_bench(frame: pd.DataFrame) -> object:
@@ -687,9 +704,7 @@ def native_band_rows(harmonized: pd.DataFrame) -> pd.DataFrame:
     ``default`` pyramid.  A model with both pyramids in one setup has no single
     default and is rejected.
     """
-    seg = harmonized[
-        (harmonized["task"] == "segmentation") & (harmonized["pooling"] == "patch-mean")
-    ]
+    seg = harmonized[(harmonized["task"] == "segmentation") & ~harmonized["cls_ablation"]]
     if seg.empty:
         return seg.copy()
     seg = seg.assign(
@@ -779,6 +794,7 @@ def _native_rows(
                 "display": display,
                 "is_baseline": is_baseline,
                 "gflops_backbone": None,
+                "pooling": None,
                 "overall": row["overall"],
                 "overall_ci": None,
                 "n_tasks": sum(cell is not None for cell in mine.values()),
@@ -880,12 +896,19 @@ def _enrich_rows(
 
     ``per_task`` holds the score (the seed mean for segmentation) and
     ``per_task_sd`` / ``per_task_n`` its seed standard deviation (``None`` for
-    one seed) and seed count, taken from the selected ``cells``.
+    one seed) and seed count, taken from the selected ``cells``.  ``pooling``
+    lists the pooling labels of the model's cells, or ``None`` when they have none.
     """
     band_config = "rgb" if bandclass == "RGB" else "s2"
     scores = bench.scores_
     seeds: dict[tuple[str, str], tuple[float | None, int]] = {}
+    pooling: dict[str, str] = {}
     if cells is not None:
+        pooling = (
+            cells.groupby("model")["pooling"]
+            .agg(lambda labels: ", ".join(sorted(labels.dropna().unique())))
+            .to_dict()
+        )
         for cell in cells.itertuples(index=False):
             sd = float(cell.score_sd)
             seeds[(str(cell.model), str(cell.dataset))] = (
@@ -904,6 +927,7 @@ def _enrich_rows(
                 "display": display,
                 "is_baseline": is_baseline,
                 "gflops_backbone": compute.get((model, band_config)),
+                "pooling": pooling.get(model) or None,
                 "overall": row["overall"],
                 "overall_ci": list(ci) if ci is not None else None,
                 "n_tasks": n_tasks,
@@ -957,21 +981,21 @@ def extract_compute_cost(raw: pd.DataFrame) -> dict[tuple[str, str], float]:
 
 
 def _view_keys(harmonized: pd.DataFrame) -> list[dict[str, str]]:
-    """Enumerate all patch-mean quality views in display order."""
-    patch_mean = harmonized[harmonized["pooling"] == "patch-mean"]
-    tasks = ordered_values(patch_mean["task"], TASK_ORDER)
-    probes = sorted(ordered_values(patch_mean["probe"], PROBE_ORDER), key=_probe_sort_key)
-    bands = ordered_values(patch_mean["bandclass"], BANDCLASS_ORDER)
+    """Enumerate all quality views in display order."""
+    ranked = harmonized[~harmonized["cls_ablation"]]
+    tasks = ordered_values(ranked["task"], TASK_ORDER)
+    probes = sorted(ordered_values(ranked["probe"], PROBE_ORDER), key=_probe_sort_key)
+    bands = ordered_values(ranked["bandclass"], BANDCLASS_ORDER)
     keys: list[dict[str, str]] = []
     for task in tasks:
         for probe in probes:
             keys.extend(
                 {"task": task, "probe": probe, "bandclass": bandclass}
                 for bandclass in bands
-                if not patch_mean[
-                    (patch_mean["task"] == task)
-                    & (patch_mean["probe"] == probe)
-                    & (patch_mean["bandclass"] == bandclass)
+                if not ranked[
+                    (ranked["task"] == task)
+                    & (ranked["probe"] == probe)
+                    & (ranked["bandclass"] == bandclass)
                 ].empty
             )
     return keys

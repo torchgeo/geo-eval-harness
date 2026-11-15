@@ -130,7 +130,7 @@
     <section aria-labelledby="table-heading">
       <h2 id="table-heading">Aggregation table</h2>
       <p id="aggregation-copy" class="lede"></p>
-      <div class="table-key"><span><i class="swatch"></i>Raw dataset score, low to high</span><span id="metric-key"></span><span>Bold marks the best score in a dataset column</span><span>Shaded rows are reference baselines, not foundation models</span><span>Click a column header to sort; the # column keeps the ranking position</span></div>
+      <div class="table-key"><span><i class="swatch"></i>Raw dataset score, low to high</span><span id="metric-key"></span><span>Bold marks the best score in a dataset column</span><span>Shaded rows are reference baselines, not foundation models</span><span>A recorded pooling other than the patch mean is named under the model</span><span>Click a column header to sort; the # column keeps the ranking position</span></div>
       <div id="table" aria-label="Ranking aggregation table"></div>
       <p id="sort-status" class="sort-status" aria-live="polite"></p>
       <div id="excluded" class="excluded" aria-live="polite"></div>
@@ -372,7 +372,12 @@
       const partial = data.coverage === "partial";
       const columns = [
         {title: "#", field: "rank", width: 46, hozAlign: "right", headerSort: false},
-        {title: "Model", field: "display", minWidth: 195, sorter: "string"},
+        {title: "Model", field: "display", minWidth: 195, sorter: "string",
+         formatter(cell) {
+          const pooling = cell.getRow().getData().pooling;
+          const label = pooling && pooling !== "patch-mean" ? `<span class="seed-sd">pooling: ${escapeHTML(pooling)}</span>` : "";
+          return `${escapeHTML(cell.getValue())}${label}`;
+        }},
         {title: data.overall_meta.label, field: "overall", width: hasInterval ? 132 : 108, hozAlign: "right",
          sorter: "number", headerSortStartingDir: data.overall_meta.direction === "lower-is-better" ? "asc" : "desc",
          formatter(cell) {
