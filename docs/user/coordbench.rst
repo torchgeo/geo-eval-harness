@@ -39,7 +39,6 @@ Model preset      Installation    Description
 ================  ==============  =============================================
 ``sincos``        base            Four-dimensional periodic coordinate baseline.
 ``mind``          base            64-dimensional MIND Matryoshka prefix.
-``mind-small``    base            128-dimensional distilled MIND student.
 ``climplicit``    ``coordbench``  Climplicit climate-specialist encoder.
 ``geoclip``       ``coordbench``  GeoCLIP Equal-Earth/RFF encoder.
 ``satclip``       ``coordbench``  SatCLIP spherical-harmonic encoder.

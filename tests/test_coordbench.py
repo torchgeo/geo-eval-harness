@@ -361,9 +361,10 @@ def test_mind_load_roundtrip(tmp_path: Path) -> None:
 
     from geo_eval_harness.coordbench.mind import ReSIRENLocationEncoder, load_mind
 
-    model = ReSIRENLocationEncoder(embed_dim=16, out_dim=8, depth=2).eval()
+    model = ReSIRENLocationEncoder(embed_dim=16, depth=2).eval()
     path = tmp_path / "m.safetensors"
-    save_file(model.state_dict(), str(path))
+    head = {"head.weight": torch.zeros(8, 16), "head.bias": torch.zeros(8)}
+    save_file(model.state_dict() | head, str(path))
 
     loaded = load_mind(str(path))
     assert loaded.embed_dim == 16
@@ -372,9 +373,6 @@ def test_mind_load_roundtrip(tmp_path: Path) -> None:
 
     latlon = torch.tensor([[37.77, -122.42], [51.51, -0.13]], dtype=torch.float32)
     with torch.no_grad():
-        torch.testing.assert_close(
-            loaded(latlon, return_features=True), model(latlon, return_features=True)
-        )
         torch.testing.assert_close(loaded(latlon), model(latlon))
 
 
@@ -382,20 +380,20 @@ def test_mind_encoder_dim_slice(monkeypatch: pytest.MonkeyPatch) -> None:
     from geo_eval_harness.coordbench import mind as mind_mod
     from geo_eval_harness.coordbench.models import MINDLocationEncoder
 
-    model = mind_mod.ReSIRENLocationEncoder(embed_dim=32, out_dim=32, depth=2).eval()
+    model = mind_mod.ReSIRENLocationEncoder(embed_dim=32, depth=2).eval()
     monkeypatch.setattr(mind_mod, "load_mind", lambda path, device="cpu": model)
     requested: dict[str, Any] = {}
     monkeypatch.setattr(
         "huggingface_hub.hf_hub_download", lambda *a, **k: requested.update(k) or "dummy"
     )
 
-    enc = MINDLocationEncoder(dim=8, feature="pooled", device="cpu")
+    enc = MINDLocationEncoder(dim=8, device="cpu")
     assert requested == {"revision": cb_models.MIND_REVISION}
     out = enc.encode(np.array([1.0, 2.0]), np.array([37.0, 51.0]))
     assert out.shape == (2, 8)  # MIND's training permits using a prefix of the 32 features.
     assert out.dtype == np.float32
     with torch.no_grad():
-        expected = model(torch.tensor([[37.0, 1.0], [51.0, 2.0]]), return_features=True)
+        expected = model(torch.tensor([[37.0, 1.0], [51.0, 2.0]]))
     np.testing.assert_allclose(out, expected[:, :8].numpy())
 
 

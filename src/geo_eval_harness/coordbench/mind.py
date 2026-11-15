@@ -6,7 +6,7 @@ GeoCLIP, SINR). Given a coordinate it returns a Matryoshka-structured embedding
 with no imagery or labels at inference. Ported from the upstream standalone
 loader so geo-eval-harness needs no dependency on the training repo.
 
-Weights: https://huggingface.co/isaaccorley/MIND
+Weights: https://huggingface.co/taylor-geospatial/MIND
 """
 
 import math
@@ -61,7 +61,6 @@ class ReSIRENLocationEncoder(nn.Module):
     def __init__(  # noqa: PLR0913 - checkpoint architecture options.
         self,
         embed_dim: int,
-        out_dim: int,
         depth: int,
         *,
         use_year: bool = False,
@@ -83,19 +82,14 @@ class ReSIRENLocationEncoder(nn.Module):
         self.blocks = nn.ModuleList(
             SIRENLayer(embed_dim, embed_dim, w0=w0, act=variant) for _ in range(depth)
         )
-        self.head: nn.Module = (
-            nn.Identity() if out_dim in (None, embed_dim) else nn.Linear(embed_dim, out_dim)
-        )
 
     def year_feats(self, year: Tensor) -> Tensor:
         """Fourier-encode the (scaled, centered) year into sin/cos features."""
         ang = ((year.float() - self.year_ref) / self.year_scale).reshape(-1, 1) * self.year_freqs
         return torch.cat([torch.sin(ang), torch.cos(ang)], dim=-1)
 
-    def forward(
-        self, latlon: Tensor, year: Tensor | None = None, *, return_features: bool = False
-    ) -> Tensor:
-        """Encode ``(lat, lon)`` degrees to trunk features or head output."""
+    def forward(self, latlon: Tensor, year: Tensor | None = None) -> Tensor:
+        """Encode ``(lat, lon)`` degrees to trunk features."""
         loc = equal_earth_projection(latlon)
         if self.use_year:
             if year is None:
@@ -104,7 +98,7 @@ class ReSIRENLocationEncoder(nn.Module):
         h = self.first(loc)
         for blk in self.blocks:
             h = h + blk(h)
-        return h if return_features else self.head(h)
+        return h
 
 
 def load_mind(ckpt_path: str, device: str = "cpu") -> ReSIRENLocationEncoder:
@@ -119,13 +113,9 @@ def load_mind(ckpt_path: str, device: str = "cpu") -> ReSIRENLocationEncoder:
             state = state["state_dict"]
     embed_dim, in_dim = state["first.linear.weight"].shape
     depth = sum(1 for k in state if k.startswith("blocks.") and k.endswith(".linear.weight"))
-    out_dim = state["head.weight"].shape[0] if "head.weight" in state else embed_dim
     year_freqs = int(state["year_freqs"].shape[0])
     use_year = in_dim == 2 + 2 * year_freqs
-    model = ReSIRENLocationEncoder(
-        embed_dim, out_dim, depth, use_year=use_year, year_frequencies=year_freqs
-    )
-    if "head.weight" in state and isinstance(model.head, nn.Identity):
-        model.head = nn.Linear(embed_dim, out_dim)  # distilled students carry an explicit head
-    model.load_state_dict(state)
+    model = ReSIRENLocationEncoder(embed_dim, depth, use_year=use_year, year_frequencies=year_freqs)
+    # Released checkpoints also store a projection head, which the trunk features do not use.
+    model.load_state_dict({k: v for k, v in state.items() if not k.startswith("head.")})
     return model.to(device).eval()
