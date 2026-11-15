@@ -53,8 +53,9 @@ from geo_eval_harness.datasets.geobench_v2 import V2_REVISIONS, list_v2_datasets
 from geo_eval_harness.datasets.hotosm_buildings import FILE_ROWS as HOTOSM_FILE_ROWS
 from geo_eval_harness.datasets.hotosm_buildings import UPSTREAM_SPLITS, convert_hotosm_split
 from geo_eval_harness.datasets.infrabench_cls import SPLIT_FILE
+from geo_eval_harness.datasets.loading import download_name
 from geo_eval_harness.datasets.planteur import PLANTEUR, convert_planteur
-from geo_eval_harness.hub import fetch_pinned, load_checksums, verify_checksums
+from geo_eval_harness.hub import fetch_pinned, load_checksums, sha256_file, verify_checksums
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +123,10 @@ DOWNLOADABLE_DATASETS: tuple[str, ...] = (
 
 
 def _validate_names(names: list[str]) -> list[str]:
-    """Validate and deduplicate names before creating download roots."""
+    """Map names to their downloads, validating and deduplicating before creating roots."""
     if not names:
         raise ValueError("datasets must contain at least one dataset name")
-    unique = list(dict.fromkeys(names))
+    unique = list(dict.fromkeys(download_name(name) for name in names))
     unknown = sorted(set(unique) - set(DOWNLOADABLE_DATASETS))
     if unknown:
         raise ValueError(
@@ -547,13 +548,6 @@ def download_openearthmap_sar(output_dir: Path) -> None:
 SEN1FLOODS11_URL = "https://storage.googleapis.com/sen1floods11/v1.1"
 
 
-def _sha256(path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
-
-
 def download_sen1floods11(output_dir: Path) -> None:
     """Fetch the checksum-listed split CSVs and hand-labelled chips, skipping verified files."""
     from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
@@ -563,7 +557,7 @@ def download_sen1floods11(output_dir: Path) -> None:
     def fetch(item: tuple[str, str]) -> None:
         name, digest = item
         path = target / name
-        if _sha256(path) == digest:
+        if path.is_file() and sha256_file(path) == digest:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(f"{path.name}.part")
@@ -572,7 +566,7 @@ def download_sen1floods11(output_dir: Path) -> None:
             partial.open("wb") as out,
         ):
             shutil.copyfileobj(response, out)
-        if _sha256(partial) != digest:
+        if sha256_file(partial) != digest:
             partial.unlink()
             raise ValueError(f"Sen1Floods11 SHA-256 mismatch for {SEN1FLOODS11_URL}/{name}. Retry.")
         partial.replace(path)
@@ -615,7 +609,7 @@ def download_datasets(names: list[str], output_dir: Path = Path("data")) -> None
     """Download individually named benchmark datasets.
 
     Args:
-        names: Dataset names from :data:`DOWNLOADABLE_DATASETS`.
+        names: Registered dataset names; those sharing files resolve to one download.
         output_dir: Benchmark data root.
 
     Raises:

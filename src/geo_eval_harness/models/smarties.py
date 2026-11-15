@@ -24,7 +24,7 @@ from timm.models.vision_transformer import Block
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
 from geo_eval_harness.errors import UnsupportedNormalizationError
-from geo_eval_harness.hub import verify_checksums
+from geo_eval_harness.hub import fetch_pinned_file
 
 from ._band_mapping import canonical_band_name
 from ._input_units import InputUnit, detect_input_unit
@@ -431,12 +431,8 @@ class SmartiesBench(BenchModel):
 
     @staticmethod
     def _download_checkpoint(variant: str) -> Path:
-        from huggingface_hub import hf_hub_download
-
         repo, revision, sha256 = SMARTIES_WEIGHTS[variant]
-        path = Path(hf_hub_download(repo, "model.safetensors", revision=revision))
-        verify_checksums(path.parent, {path.name: sha256})
-        return path
+        return fetch_pinned_file(repo, "model.safetensors", revision, sha256)
 
     def load_checkpoint(self, path: str | Path) -> None:
         """Load released SMARTIES weights strictly, ignoring only the MAE decoder.
