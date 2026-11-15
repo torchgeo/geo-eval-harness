@@ -9,6 +9,7 @@ import torch
 from geo_eval_harness.datasets.burn_scars import BurnScars
 from geo_eval_harness.datasets.eurosat import EuroSAT, EuroSATSpatial
 from geo_eval_harness.datasets.fotw import FieldsOfTheWorld as FOTW
+from geo_eval_harness.datasets.pastis import PASTIS
 from geo_eval_harness.datasets.spacenet2 import SpaceNet2
 from geo_eval_harness.datasets.spacenet7 import SpaceNet7
 from geo_eval_harness.datasets.treesatai import TreeSatAI
@@ -59,6 +60,13 @@ def test_treesatai_sentinel1_is_decoded_to_signed_db() -> None:
     assert result["image_aerial"] is aerial
     units = {band.name: band.unit for band in TreeSatAI.bands if band.sensor == "s1"}
     assert units == {"vv": "db", "vh": "db", "vv_vh": None}
+
+
+def test_pastis_sentinel1_declares_db() -> None:
+    units = {band.name: band.unit for band in PASTIS.bands if band.sensor != "s2"}
+    # The VV/VH channels hold VV - VH in dB, the polarisation ratio on the dB scale.
+    names = ["vv_asc", "vh_asc", "vv_vh_asc", "vv_desc", "vh_desc", "vv_vh_desc"]
+    assert units == dict.fromkeys(names, "db")
 
 
 @pytest.mark.parametrize("dataset_cls", [SpaceNet2, SpaceNet7])

@@ -81,6 +81,7 @@ Dataset fixes
 * Dynamic EarthNet maps its stored Sentinel-2 channels in B02, B03, B04, B08, B05, B06, B07, B8A, B11, B12, B01, B09 order, and band selections need at least one Planet band.
 * TreeSatAI maps its stored aerial channels in NIR, green, blue, red order, so ``bands: rgb`` selects the stored red, green, and blue channels.
 * TreeSatAI returns its Sentinel-1 ``vv`` and ``vh`` bands in dB, decoded from the stored ``uint16`` values, with no-data pixels set to the channel's mean over the sample's valid pixels.
+* PASTIS declares its ascending and descending Sentinel-1 bands in dB, including the VV/VH ratio channels (VV minus VH in dB), so SMARTIES accepts one orbit's VV and VH under ``--normalization model``.
 * ``forestnet`` declares the Landsat-8 bands of ``m-forestnet`` (``blue``, ``green``, ``red``, ``nir``, ``swir_1``, ``swir_2``), because GeoBench V2 repackages the same chips and split.
 * Burn Scars has two classes, background and burn scar, and its no-data pixels are ignored in the loss and metrics.
 * SpaceNet2 and SpaceNet7 use binary building masks.

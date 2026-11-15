@@ -254,6 +254,8 @@ CLI name             #cls   bands notes                                        C
 ``spacenet7``        2      3                                                  :class:`~geo_eval_harness.datasets.SpaceNet7`
 ==================== ====== ===== ============================================ ==============================================================
 
+``pastis`` stores Sentinel-1 backscatter in dB for both orbits (``unit="db"``). ``vv_vh_asc`` and ``vv_vh_desc`` hold the VV/VH ratio on the same scale, that is VV minus VH in dB.
+
 Other
 -----
 
