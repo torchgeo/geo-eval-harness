@@ -4,7 +4,6 @@ Wrapper modules and torch load only when needed; listing datasets does not impor
 """
 
 import logging
-import warnings
 from importlib import import_module
 from typing import TYPE_CHECKING, Literal
 
@@ -243,8 +242,8 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
 
     Args:
         dataset_name: Identifier registered in ``_REGISTRY_SPEC``.
-        partition_name: Partition name (only honoured by datasets where
-            :attr:`~.base.BenchDataset.supports_partitions` is ``True``).
+        partition_name: Training partition name. A non-default value requires
+            :attr:`~.base.BenchDataset.supports_partitions`.
         batch_size: Batch size for the returned dataloaders.
         return_val: If ``True``, also return a validation dataloader.
         num_workers: Number of dataloader worker processes.
@@ -265,6 +264,7 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
 
     Raises:
         KeyError: If ``dataset_name`` is not registered.
+        ValueError: If the dataset does not support the requested partition.
         FileNotFoundError: If a required dataset file is missing.
     """
     from torchgeo.datasets import DatasetNotFoundError
@@ -273,11 +273,8 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
     bench = cls()
 
     if partition_name != "default" and not bench.supports_partitions:
-        warnings.warn(
-            f"Dataset '{dataset_name}' does not support custom partitions. "
-            f"Ignoring partition '{partition_name}'.",
-            UserWarning,
-            stacklevel=2,
+        raise ValueError(
+            f"Dataset {dataset_name!r} supports only the default partition, got {partition_name!r}."
         )
 
     if bands == "rgb":
@@ -293,14 +290,13 @@ def get_datasets(  # noqa: PLR0913 - public dataset loading options.
         bands_tuple = tuple(bands)
 
     transform = _ResizeTransform(image_size, interpolation) if image_size is not None else None
-    train_partition = partition_name if bench.supports_partitions else "default"
 
     common: dict = {"bands": bands_tuple, "transform": transform}
     if time_steps is not None:
         # Only multi-temporal wrappers accept a time axis.
         common["time_steps"] = time_steps
     try:
-        train_ds = bench.get_dataset("train", partition=train_partition, **common)
+        train_ds = bench.get_dataset("train", partition=partition_name, **common)
         val_ds = bench.get_dataset("val", partition="default", **common)
         test_ds = bench.get_dataset("test", partition="default", **common)
     except (

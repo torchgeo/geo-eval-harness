@@ -127,8 +127,8 @@ class TestV2Loading:
         assert batch["mask"].shape == (2, 32, 32)
         assert batch["mask"].dtype == torch.long
 
-    def test_partition_warning(self, mock_v2_env: dict[str, MagicMock]) -> None:
-        with pytest.warns(UserWarning, match="does not support custom partitions"):
+    def test_unsupported_partition_is_rejected(self, mock_v2_env: dict[str, MagicMock]) -> None:
+        with pytest.raises(ValueError, match="supports only the default partition"):
             get_datasets(
                 dataset_name="benv2",
                 partition_name="0.10x_train",
