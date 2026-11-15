@@ -504,7 +504,7 @@ e199f1c4cc513ce3263c,olmoearth_nano_t6,m-bigearthnet,all,model,92520ec7cc0b7ab4,
 af83f998ca2bc1fc61af,olmoearth_nano_t6,m-eurosat,all,model,92520ec7cc0b7ab4,92520ec7cc0b7ab4,64,complete,
 e51a132629089582fbe2,olmoearth_nano_t6,m-forestnet,rgb,model,a30da8b971f137b4,a30da8b971f137b4,64,complete,
 31f3b627fcba5dca3278,olmoearth_nano_t6,m-forestnet,all,model,92520ec7cc0b7ab4,b52dc17ef9db2bce,32,complete,
-6afa6c5b3056446b65ca,olmoearth_nano_t6,m-pv4ger,rgb,model,a30da8b971f137b4,a30da8b971f137b4,64,pending,AWS evaluation or retry remains in progress; no previous classification score is retained.
+6afa6c5b3056446b65ca,olmoearth_nano_t6,m-pv4ger,rgb,model,a30da8b971f137b4,a30da8b971f137b4,64,complete,
 25ca820e33fa5d67ef8d,olmoearth_nano_t6,m-pv4ger,all,model,92520ec7cc0b7ab4,,64,pending,AWS evaluation or retry remains in progress; no previous classification score is retained.
 8edf32dfbf691bc87b65,olmoearth_nano_t6,m-so2sat,rgb,model,a30da8b971f137b4,a30da8b971f137b4,64,complete,
 7f3a879d041b803930c0,olmoearth_nano_t6,m-so2sat,all,model,92520ec7cc0b7ab4,92520ec7cc0b7ab4,64,complete,

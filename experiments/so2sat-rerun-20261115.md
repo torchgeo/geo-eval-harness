@@ -1,6 +1,6 @@
 # So2Sat classification reruns
 
-Two unchanged refresh jobs were rerun on evaluation source `4c8693320629fec9df030bbb04062ebdde6a6f3c`, using the existing AWS environment, seed 0, batch size 64, both probes, and fresh output paths with resume disabled. Both reproduced the original KNN score exactly at full precision and retained their original configuration hash. Neither configuration is replaced; the result files and refresh coverage entries remain unchanged.
+Two unchanged refresh jobs were rerun on evaluation source `4c8693320629fec9df030bbb04062ebdde6a6f3c`, using the existing AWS environment, seed 0, batch size 64, both probes, and fresh output paths with resume disabled. Both reproduced the original KNN score exactly at full precision and retained their original configuration hash. Neither configuration is replaced; both existing result pairs and their refresh coverage entries remain unchanged.
 
 The replacement rule was fixed before execution: replace only when KNN/hash match and rerun linear accuracy is within 0.01 of the m-so2sat twin. Preserve a repeated low score or any other outcome.
 
