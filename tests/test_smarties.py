@@ -148,7 +148,7 @@ def test_model_normalization_converts_linear_sar_to_db() -> None:
     ("bands", "match"),
     [
         (_bands("spacenet2", "rgb"), "8-bit RGB"),
-        (_bands("forestnet", "rgb"), "DN or reflectance"),
+        (_rgb("s2"), "DN or reflectance"),
         (_bands("m-forestnet", ["nir"]), "8-bit RGB"),
         (_bands("pastis", ["vv_asc"]), "unit"),
     ],

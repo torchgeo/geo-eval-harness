@@ -63,6 +63,7 @@ Datasets
 
 * Infra-Bench CLS provides 13-class Sentinel-1/2 infrastructure classification with spatial splits.
 * GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
+* ``forestnet`` declares the Landsat-8 bands of ``m-forestnet`` (``blue``, ``green``, ``red``, ``nir``, ``swir_1``, ``swir_2``); GeoBench V2 repackages the same chips and split.
 * ``geo-eval-harness download`` accepts every registered dataset name; names that share another dataset's files download that dataset.
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
 * A non-default ``--partition`` is an error for datasets without training partitions.
