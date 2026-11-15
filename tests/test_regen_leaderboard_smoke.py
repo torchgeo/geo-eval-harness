@@ -394,39 +394,6 @@ def test_inline_replaces_only_the_three_template_anchors() -> None:
         assert json.loads(match.group(1)) == expected
 
 
-def test_generator_renders_a_synthetic_template_and_output(tmp_path) -> None:
-    csv_path = tmp_path / "all_results.csv"
-    compute_path = tmp_path / "compute_cost.csv"
-    html_path = tmp_path / "ranking_explorer.html"
-    _raw_df().to_csv(csv_path, index=False)
-    _compute_df().to_csv(compute_path, index=False)
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(SCRIPTS / "regen_leaderboard.py"),
-            "--csv",
-            str(csv_path),
-            "--compute",
-            str(compute_path),
-            "--template",
-            str(TEMPLATE_PATH),
-            "--html",
-            str(html_path),
-            "--bootstrap",
-            "10",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    text = html_path.read_text(encoding="utf-8")
-    match = re.search(r"const RANKINGS = (.*?);", text, re.DOTALL)
-    assert match is not None
-    rankings = json.loads(match.group(1))
-    assert rankings["classification"]["linear"]["RGB"]["avg_rank"]["rows"]
-
-
 SEG_MODELS = {"seg_a": 0.60, "seg_b": 0.50, "seg_c": 0.40}
 SEG_SEEDS = (0, 1, 2)
 # burn_scars is an original grid dataset (20 epochs, LoRA 5e-4); loveda uses the
@@ -773,6 +740,7 @@ def test_generator_renders_segmentation_views(tmp_path) -> None:
     match = re.search(r"const RANKINGS = (.*?);", text, re.DOTALL)
     assert match is not None
     rankings = json.loads(match.group(1))
+    assert rankings["classification"]["linear"]["RGB"]["avg_rank"]["rows"]
     assert set(rankings["segmentation"]) == {
         FROZEN,
         LORA,
