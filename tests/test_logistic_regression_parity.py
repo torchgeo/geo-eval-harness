@@ -34,7 +34,7 @@ def test_logistic_regression_accuracy_parity_iris(c: float, device: str) -> None
     X = torch.from_numpy(X_np)
     y = torch.from_numpy(y_np)
 
-    torch_clf = LogisticRegression(C=c, max_iter=500, solver="lbfgs", device=device, use_tf32=False)
+    torch_clf = LogisticRegression(C=c, max_iter=500, solver="lbfgs", device=device)
     torch_clf.fit(X, y)
     torch_acc = (torch_clf.predict(X) == y_np).mean()
     sk_clf = SkLogReg(C=c, max_iter=500, solver="lbfgs").fit(X_np, y_np)

@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import torch
 
-from geo_eval_harness.datasets import geobench_v1
+from geo_eval_harness.datasets import geobench_v1, get_datasets
 from geo_eval_harness.datasets._metadata import decode_metadata
 from geo_eval_harness.datasets._v1_webdataset import GeoBenchv1Sharded
 from geo_eval_harness.datasets.geobench_v1 import GeoBenchv1
@@ -120,7 +120,7 @@ def test_metadata_accepts_json_text_and_bytes(*, as_bytes: bool) -> None:
         ({"dataset_name": "missing", "split": "train"}, FileNotFoundError, "dir"),
         (
             {"dataset_name": "m-eurosat", "partition": "missing", "split": "train"},
-            FileNotFoundError,
+            ValueError,
             r"missing_partition\.json",
         ),
         (
@@ -211,6 +211,20 @@ def test_v1_wrapper_loads_data_only_metadata(
     dataset = MEurosat().get_dataset("train", bands=("red", "green"))
     assert dataset[0]["image"].shape == (2, 2, 3)
     assert dataset[0]["label"].item() == 1
+
+
+def test_unknown_partition_is_not_reported_as_missing_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "hdf5" / "m-eurosat"
+    _write_partition(source, [SID])
+    _write_hdf5(source, json.dumps(_metadata()))
+    monkeypatch.setattr(geobench_v1, "V1_ROOT", tmp_path / "hdf5")
+    monkeypatch.setattr(geobench_v1, "V1_SHARDED_ROOT", tmp_path / "shards")
+    with pytest.raises(ValueError, match=r"nope_partition\.json"):
+        get_datasets(
+            dataset_name="m-eurosat", partition_name="nope", bands=("red", "green"), num_workers=0
+        )
 
 
 def test_repack_validation_does_not_require_partition_files(tmp_path: Path) -> None:

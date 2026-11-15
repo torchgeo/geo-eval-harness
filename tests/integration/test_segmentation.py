@@ -1,6 +1,8 @@
 """Learn a known segmentation target through the CLI on a tiny GeoBench V2 Taco."""
 
+import logging
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -9,12 +11,10 @@ import pytest
 import torch
 import yaml
 
-from geo_eval_harness.cli import main
 from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
-from tests.support.cli import cli_output, run_cli
 from tests.support.data import (
     write_bright_post_sar_files,
     write_caffe_files,
@@ -24,180 +24,77 @@ from tests.support.data import (
     write_oscd_post_files,
     write_sen1floods11_files,
 )
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("isolated_torch_rng")]
 
 
-@pytest.mark.usefixtures("small_openearthmap_sar")
-def test_openearthmap_sar_public_segmentation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    write_openearthmap_sar_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "sar.csv"
-    config = _segmentation_config(output, cached=True)
-    config.datasets = ["openearthmap-sar"]
-    config.input.bands = ["sar"]
-    config.segmentation.epochs = 1
-    config.segmentation.ignore_index = 255
-    path = tmp_path / "sar.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    rows = pd.read_csv(output)
-    assert len(rows) == 1
-    row = rows.iloc[0]
-    assert row["dataset"] == "openearthmap-sar"
-    assert row["num_classes"] == 8
-    assert row[["n_train", "n_val", "n_test"]].tolist() == [3, 2, 2]
-    assert row["method"] == "seg-linear"
-    assert row["metric_name"] == "mIoU"
-    assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
+# Each entry: size-limiting fixture, file writer, input settings, feature caching, and the
+# expected (num_classes, n_train, n_val, n_test).
+# fmt: off
+TOY_DATASETS = {
+    "openearthmap-sar": ("small_openearthmap_sar", write_openearthmap_sar_files, {"bands": ["sar"]}, True, (8, 3, 2, 2)),
+    "loveda": ("small_loveda", write_loveda_files, {"bands": ["red", "green", "blue"]}, True, (7, 2, 1, 2)),
+    "levir-cd-post": ("small_levir_cd_post", write_levir_cd_post_files, {"image_size": 8}, False, (2, 12, 8, 8)),
+    "bright-post-sar": ("small_bright_post_sar", write_bright_post_sar_files, {"bands": "rgb"}, True, (4, 3, 2, 2)),
+    "bright-post-sar-rgb": ("small_bright_post_sar", write_bright_post_sar_files, {"bands": "rgb"}, True, (4, 3, 2, 2)),
+    "oscd-post": ("small_oscd_post", write_oscd_post_files, {"bands": "all", "image_size": 8}, True, (2, 7, 4, 4)),
+    # One Sen1Floods11 val chip is entirely ignored; metrics must stay finite.
+    "sen1floods11-s1": ("small_sen1floods11", write_sen1floods11_files, {"bands": "all"}, True, (2, 3, 2, 2)),
+    "sen1floods11-s2": ("small_sen1floods11", write_sen1floods11_files, {"bands": "all"}, True, (2, 3, 2, 2)),
+}
+# fmt: on
 
 
-@pytest.mark.usefixtures("small_loveda")
-def test_loveda_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    write_loveda_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "loveda.csv"
-    config = _segmentation_config(output, cached=True)
-    config.datasets = ["loveda"]
-    config.input.bands = ["red", "green", "blue"]
-    config.segmentation.epochs = 1
-    config.segmentation.ignore_index = 255
-    path = tmp_path / "loveda.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    rows = pd.read_csv(output)
-    assert len(rows) == 1
-    row = rows.iloc[0]
-    assert row["dataset"] == "loveda"
-    assert row["num_classes"] == 7
-    assert row[["n_train", "n_val", "n_test"]].tolist() == [2, 1, 2]
-    assert row["metric_name"] == "mIoU"
-    assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
-
-
-@pytest.mark.usefixtures("small_levir_cd_post")
-def test_levir_cd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    write_levir_cd_post_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "levir.csv"
-    config = _segmentation_config(output, cached=False)
-    config.datasets = ["levir-cd-post"]
-    config.input.image_size = 8
-    config.segmentation.epochs = 1
-    path = tmp_path / "levir.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    row = pd.read_csv(output).iloc[0]
-    assert row["num_classes"] == 2
-    assert row[["n_train", "n_val", "n_test"]].tolist() == [12, 8, 8]
-
-
-@pytest.mark.usefixtures("small_bright_post_sar")
-@pytest.mark.parametrize("dataset_name", ["bright-post-sar", "bright-post-sar-rgb"])
-def test_bright_post_sar_public_segmentation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dataset_name: str
-) -> None:
-    write_bright_post_sar_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "bright.csv"
-    config = _segmentation_config(output, cached=True)
-    config.datasets = [dataset_name]
-    config.input.bands = "rgb"
-    config.segmentation.epochs = 1
-    path = tmp_path / "bright.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    (row,) = pd.read_csv(output).to_dict("records")
-    assert row["dataset"] == dataset_name
-    assert (row["num_classes"], row["n_train"], row["n_test"]) == (4, 3, 2)
-
-
-@pytest.mark.usefixtures("small_oscd_post")
-def test_oscd_post_public_segmentation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    write_oscd_post_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "oscd.csv"
-    config = _segmentation_config(output, cached=True)
-    config.datasets = ["oscd-post"]
-    config.input.bands = "all"
-    config.input.image_size = 8
-    config.segmentation.epochs = 1
-    path = tmp_path / "oscd.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    row = pd.read_csv(output).iloc[0]
-    assert row[["num_classes", "n_train", "n_val", "n_test"]].tolist() == [2, 7, 4, 4]
-    assert np.isfinite(row["metric_value"])
+class TestToyDatasetSegmentation:
+    @pytest.mark.parametrize("dataset", TOY_DATASETS)
+    def test_run_writes_one_row(
+        self,
+        request: pytest.FixtureRequest,
+        tmp_path: Path,
+        cli_main: Callable[..., None],
+        dataset: str,
+    ) -> None:
+        fixture, write_files, input_settings, cached, expected = TOY_DATASETS[dataset]
+        request.getfixturevalue(fixture)
+        write_files(tmp_path)
+        output = tmp_path / "rows.csv"
+        config = _segmentation_config(output, cached=cached)
+        config.datasets = [dataset]
+        config.segmentation.epochs = 1
+        for name, value in input_settings.items():
+            setattr(config.input, name, value)
+        path = tmp_path / "run.yaml"
+        path.write_text(yaml.safe_dump(config.model_dump_yaml()))
+        cli_main(["run", "--config", str(path)])
+        (row,) = pd.read_csv(output).to_dict("records")
+        assert row["dataset"] == dataset
+        assert row["method"] == "seg-linear"
+        assert row["metric_name"] == "mIoU"
+        assert (row["num_classes"], row["n_train"], row["n_val"], row["n_test"]) == expected
+        assert np.isfinite([row["metric_value"], row["ci_lower"], row["ci_upper"]]).all()
 
 
 @pytest.mark.parametrize("cached", [True, False], ids=["cached", "uncached"])
 def test_public_segmentation_with_random_weight_preset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, cached: bool
+    tmp_path: Path,
+    cli_main: Callable[..., None],
+    caplog: pytest.LogCaptureFixture,
+    *,
+    cached: bool,
 ) -> None:
     write_caffe_files(tmp_path, target_class=2)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    monkeypatch.chdir(tmp_path)
     output = tmp_path / "public-segmentation.csv"
     arguments = _segmentation_arguments(output, cached=cached)
-    with torch.random.fork_rng(devices=[]):
-        main(arguments)
-        _assert_segmentation_results(output, cached=cached)
-        before = output.read_bytes()
-        shutil.rmtree(tmp_path / "data")
-        main([*arguments, "--resume"])
-    assert output.read_bytes() == before
-
-
-@pytest.mark.parametrize("cached", [True, False], ids=["cached", "uncached"])
-def test_module_segmentation_training_and_resume(tmp_path: Path, *, cached: bool) -> None:
-    write_caffe_files(tmp_path, target_class=2)
-    output = tmp_path / "segmentation.csv"
-    arguments = _segmentation_arguments(output, cached=cached)
-    result = run_cli(*arguments, cwd=tmp_path)
-    assert result.returncode == 0, cli_output(result)
-    assert output.is_file(), cli_output(result)
+    with caplog.at_level(logging.INFO, logger="geo_eval_harness"):
+        cli_main(arguments)
     _assert_segmentation_results(output, cached=cached)
-    logs = result.stdout + result.stderr
-    assert ("Cached features for" in logs) is cached
-    assert "Epoch 1 Val mIoU:" in logs
-    assert "Epoch 10 Val mIoU:" in logs
-
+    assert ("Cached features for" in caplog.text) is cached
+    assert "Epoch 1 Val mIoU:" in caplog.text
+    assert "Epoch 10 Val mIoU:" in caplog.text
     before = output.read_bytes()
     shutil.rmtree(tmp_path / "data")
-    resumed = run_cli(*arguments, "--resume", cwd=tmp_path)
-    assert resumed.returncode == 0, cli_output(resumed)
+    cli_main([*arguments, "--resume"])
     assert output.read_bytes() == before
-
-
-@pytest.mark.usefixtures("small_sen1floods11")
-@pytest.mark.parametrize("dataset", ["sen1floods11-s1", "sen1floods11-s2"])
-def test_sen1floods11_public_segmentation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dataset: str
-) -> None:
-    write_sen1floods11_files(tmp_path)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    output = tmp_path / "flood.csv"
-    config = _segmentation_config(output, cached=True)
-    config.datasets = [dataset]
-    config.input.bands = "all"
-    config.segmentation.epochs = 1
-    config.segmentation.ignore_index = 255
-    path = tmp_path / "flood.yaml"
-    path.write_text(yaml.safe_dump(config.model_dump_yaml()))
-    main(["run", "--config", str(path)])
-    row = pd.read_csv(output).iloc[0]
-    assert row[["n_train", "n_val", "n_test"]].tolist() == [3, 2, 2]
-    # One val chip is entirely ignored; metrics must stay finite.
-    assert np.isfinite(row[["metric_value", "ci_lower", "ci_upper"]].astype(float)).all()
 
 
 def _segmentation_config(output: Path, *, cached: bool) -> RunConfig:
@@ -322,7 +219,7 @@ def test_caffe_serves_gray_as_identical_rgb_channels(
     write_caffe_files(tmp_path)
     monkeypatch.chdir(tmp_path)
     train, loader, *_ = get_datasets(
-        "caffe", num_workers=1, return_val=True, image_size=12, bands="rgb"
+        "caffe", num_workers=0, return_val=True, image_size=12, bands="rgb"
     )
     image = next(iter(loader))["image"]
     assert image.shape[1] == 3

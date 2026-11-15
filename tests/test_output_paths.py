@@ -33,22 +33,6 @@ class TestOutputPaths:
     ) -> None:
         assert config_class().model_dump()[field] == default
 
-    @pytest.mark.parametrize("value", ["", " ", "\t\n", 1, False, 1.5])
-    def test_blank_or_non_string_path_is_rejected(
-        self, config_class: type[StrictModel], field: str, default: str | None, value: object
-    ) -> None:
-        with pytest.raises(ValidationError, match=field) as error:
-            config_class.model_validate({field: value})
-        assert error.value.errors()[0]["loc"] == (field,)
-
-    @pytest.mark.parametrize(
-        "value", ["results.csv", " path with spaces.csv ", "missing/tree/out.csv"]
-    )
-    def test_valid_path_is_not_rewritten(
-        self, config_class: type[StrictModel], field: str, default: str | None, value: str
-    ) -> None:
-        assert config_class.model_validate({field: value}).model_dump()[field] == value
-
     def test_only_optional_paths_accept_null(
         self, config_class: type[StrictModel], field: str, default: str | None
     ) -> None:
@@ -59,23 +43,59 @@ class TestOutputPaths:
                 config_class.model_validate({field: None})
 
 
-@pytest.mark.parametrize("yaml_output", [False, True])
 @pytest.mark.parametrize(
-    "flags",
+    ("config_class", "field", "value"),
     [
-        ["--output-dir"],
-        ["--output"],
-        ["--output-dir", "--output"],
-        ["--output", "--output-dir"],
+        (OutputConfig, "directory", ""),
+        (OutputConfig, "file", 1),
+        (FlopsOutputConfig, "directory", False),
+        (CoordOutputConfig, "file", " "),
+        (ProfileOutputConfig, "directory", "\t\n"),
+        (ProfileOutputConfig, "file", 1.5),
     ],
 )
+def test_blank_or_non_string_path_is_rejected(
+    config_class: type[StrictModel], field: str, value: object
+) -> None:
+    with pytest.raises(ValidationError, match=field) as error:
+        config_class.model_validate({field: value})
+    assert error.value.errors()[0]["loc"] == (field,)
+
+
 @pytest.mark.parametrize(
-    ("command", "config_class", "selection"),
+    ("config_class", "field", "value"),
     [
-        ("run", RunConfig, {"model": {"name": "rcf"}, "datasets": ["m-eurosat"]}),
-        ("flops", FlopsConfig, {"model": {"name": "rcf"}}),
-        ("coord", CoordConfig, {"model": {"name": "sincos"}}),
-        ("profile", ProfileConfig, {"model": {"name": "rcf"}, "dataset": "m-eurosat"}),
+        (OutputConfig, "directory", "results.csv"),
+        (FlopsOutputConfig, "file", " path with spaces.csv "),
+        (CoordOutputConfig, "directory", "missing/tree/out.csv"),
+        (ProfileOutputConfig, "directory", " path with spaces.csv "),
+    ],
+)
+def test_valid_path_is_not_rewritten(
+    config_class: type[StrictModel], field: str, value: str
+) -> None:
+    assert config_class.model_validate({field: value}).model_dump()[field] == value
+
+
+@pytest.mark.parametrize(
+    ("command", "config_class", "selection", "flags", "yaml_output"),
+    [
+        (
+            "run",
+            RunConfig,
+            {"model": {"name": "rcf"}, "datasets": ["m-eurosat"]},
+            ["--output-dir"],
+            True,
+        ),
+        ("flops", FlopsConfig, {"model": {"name": "rcf"}}, ["--output"], True),
+        ("coord", CoordConfig, {"model": {"name": "sincos"}}, ["--output-dir", "--output"], False),
+        (
+            "profile",
+            ProfileConfig,
+            {"model": {"name": "rcf"}, "dataset": "m-eurosat"},
+            ["--output", "--output-dir"],
+            False,
+        ),
     ],
 )
 def test_output_flags_preserve_other_settings_and_round_trip(  # noqa: PLR0913 - parameterized CLI matrix

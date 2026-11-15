@@ -46,6 +46,16 @@ class FeatureProfileConfig(StrictModel):
     cpu_throughput: CPUThroughputConfig = Field(default_factory=CPUThroughputConfig)
 
 
+IntrinsicDimensionEstimator = Literal[
+    "lPCA", "TwoNN", "MLE", "CorrInt", "MiND_ML", "KNN", "DANCo", "FisherS"
+]
+
+
+def _default_estimators() -> list[IntrinsicDimensionEstimator]:
+    """Return the default intrinsic-dimension estimator selection."""
+    return ["TwoNN", "MLE", "lPCA"]
+
+
 def _default_splits() -> list[Literal["train", "val", "test"]]:
     """Return the default intrinsic-dimension split selection."""
     return ["train"]
@@ -55,11 +65,11 @@ class IntrinsicDimensionConfig(StrictModel):
     """Additive feature-dimension and spectrum measurements."""
 
     enabled: StrictBool = False
-    estimators: list[StrictStr] = Field(default_factory=lambda: ["TwoNN", "MLE", "lPCA"])
+    estimators: list[IntrinsicDimensionEstimator] = Field(default_factory=_default_estimators)
     splits: list[Literal["train", "val", "test"]] = Field(
         default_factory=_default_splits, min_length=1
     )
-    max_samples: StrictInt | None = Field(default=10000, gt=0)
+    max_samples: StrictInt | None = Field(default=10000, ge=2)
     device: StrictStr | None = None
 
     @field_validator("estimators", "splits")
@@ -71,6 +81,12 @@ class IntrinsicDimensionConfig(StrictModel):
         return values
 
 
+class RunRuntimeConfig(RuntimeConfig):
+    """Image-run execution and numerical precision settings."""
+
+    matmul_precision: Literal["highest", "high", "medium"] = "highest"
+
+
 class RunConfig(StrictModel):
     """Complete core image benchmark configuration."""
 
@@ -80,7 +96,7 @@ class RunConfig(StrictModel):
     input: InputConfig = Field(default_factory=InputConfig)
     classification: ClassificationConfig = Field(default_factory=ClassificationConfig)
     segmentation: SegmentationConfig = Field(default_factory=SegmentationConfig)
-    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    runtime: RunRuntimeConfig = Field(default_factory=RunRuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     profile: FeatureProfileConfig = Field(default_factory=FeatureProfileConfig)
     intrinsic_dim: IntrinsicDimensionConfig = Field(default_factory=IntrinsicDimensionConfig)

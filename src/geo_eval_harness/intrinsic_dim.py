@@ -9,11 +9,12 @@ Use raw embeddings, without L2 normalization, to match the KNN and linear probes
 """
 
 import logging
-from typing import Any
+from typing import Any, get_args
 
 import numpy as np
 import torch
 
+from geo_eval_harness.config.run import IntrinsicDimensionEstimator
 from geo_eval_harness.devices import resolve_device
 
 logger = logging.getLogger(__name__)
@@ -23,16 +24,7 @@ class DegenerateManifoldError(ValueError):
     """Raised when an estimator returns a non-finite intrinsic dimension."""
 
 
-SUPPORTED_ESTIMATORS: tuple[str, ...] = (
-    "lPCA",
-    "TwoNN",
-    "MLE",
-    "CorrInt",
-    "MiND_ML",
-    "KNN",
-    "DANCo",
-    "FisherS",
-)
+SUPPORTED_ESTIMATORS: tuple[str, ...] = get_args(IntrinsicDimensionEstimator)
 
 FEATURE_SPECTRUM_METRICS: tuple[str, ...] = (
     "effective_rank",

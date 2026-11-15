@@ -115,7 +115,7 @@ def test_pins_weights_and_hash() -> None:
 
 
 def test_weights_are_hash_checked(ensemble: Path) -> None:
-    with pytest.raises(RuntimeError, match="sha256"):
+    with pytest.raises(ValueError, match="SHA-256"):
         EoSFMBenchModel(_RGB, weights_path=str(ensemble), normalization="identity")
 
 
@@ -211,9 +211,8 @@ def test_segmentation_probe_on_the_taps(ensemble: Path, adaptation: str) -> None
         assert all(g is not None and g.abs().sum() > 0 for g in grads)
 
 
-@pytest.mark.parametrize(
-    ("dataset", "selection"),
-    [
+def test_segmentation_datasets_route() -> None:
+    cases = [
         ("bright-post-sar", "all"),
         ("burn_scars", "all"),
         ("caffe", "rgb"),
@@ -225,14 +224,16 @@ def test_segmentation_probe_on_the_taps(ensemble: Path, adaptation: str) -> None
         ("sen1floods11-s1", "all"),
         ("sen1floods11-s2", "all"),
         ("spacenet2", "all"),
-    ],
-)
-def test_segmentation_datasets_route(dataset: str, selection: str) -> None:
-    bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
-    views = plan_views(bands, _RELEASED)
-    assert len(views) == len(_RELEASED)
-    used = {i for v in views for i in re.findall(r"\d+", str(v.channels))}
-    assert not any(bands[int(i)].sensor in ("dem", "elevation") for i in used)
+    ]
+    mismatches = []
+    for dataset, selection in cases:
+        bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
+        views = plan_views(bands, _RELEASED)
+        used = {int(i) for v in views for i in re.findall(r"\d+", str(v.channels))}
+        elevation = sorted(bands[i].name for i in used if bands[i].sensor in ("dem", "elevation"))
+        if len(views) != len(_RELEASED) or elevation:
+            mismatches.append((dataset, len(views), elevation))
+    assert not mismatches
 
 
 def test_model_native_is_rejected(ensemble: Path) -> None:
@@ -248,7 +249,7 @@ def test_model_native_is_rejected(ensemble: Path) -> None:
         ("eurosat", "all", "B1 B2 B3 B4 B5 B6 B7 B8 B9 B10 B11 B12 B8A"),
         ("aid", "rgb", "R G B"),
         ("m-forestnet", "all", "B G R NIR SWIR1 SWIR2"),
-        ("so2sat", "all", "B2 B3 B4 B5 B6 B7 B8 B8A B11 B12 VV VH"),
+        ("so2sat", "all", "B2 B3 B4 B5 B6 B7 B8 B8A B11 B12 VH VV"),
         ("m-so2sat", "all", "VH_REAL B2 VH_IMAG B3 VV_REAL B4 VV_IMAG VH_LEE B5 VV_LEE B6"),
     ],
 )
@@ -282,13 +283,12 @@ def test_expression_channels_are_computed() -> None:
     assert adapt_input(x, channels).flatten().tolist() == pytest.approx([5, 3, 3, 10, 2.5])
 
 
-@pytest.mark.parametrize(
-    ("dataset", "selection", "near_infrared"),
-    [
+def test_classification_datasets_route() -> None:
+    cases = [
         ("aid", "rgb", "red"),
         ("benv2", "all", "nir"),
         ("eurosat", "all", "nir"),
-        ("forestnet", "all", "nir_narrow"),
+        ("forestnet", "all", "nir"),
         ("m-bigearthnet", "all", "nir"),
         ("m-eurosat", "rgb", "red"),
         ("m-forestnet", "all", "nir"),
@@ -296,19 +296,20 @@ def test_expression_channels_are_computed() -> None:
         ("so2sat", "all", "nir"),
         ("treesatai", "all", "nir"),
         ("ucmerced", "rgb", "red"),
-    ],
-)
-def test_classification_datasets_route(dataset: str, selection: str, near_infrared: str) -> None:
-    routes = _routes(get_bench_dataset_class(dataset).resolve_band_specs(selection))
-    assert list(routes) == [s.name for s in _RELEASED]
-
-    def canonical(names: list) -> list[str]:
-        return [canonical_band_name(n) for n in names]
-
-    assert canonical(routes["imagenet"]) == ["red", "green", "blue"]
-    # IR is matched by wavelength: B08 or NIR, else B8A, else the nearest band, red.
-    irrg = [near_infrared, "red", "green"]
-    assert canonical(routes["potsdam"]) == canonical(routes["opencanopy"]) == irrg
+    ]
+    mismatches = {}
+    for dataset, selection, near_infrared in cases:
+        routes = _routes(get_bench_dataset_class(dataset).resolve_band_specs(selection))
+        actual = {
+            name: [canonical_band_name(n) for n in routes[name]]
+            for name in ("imagenet", "potsdam", "opencanopy")
+        }
+        # IR is matched by wavelength: B08 or NIR, else B8A, else the nearest band, red.
+        irrg = [near_infrared, "red", "green"]
+        expected = {"imagenet": ["red", "green", "blue"], "potsdam": irrg, "opencanopy": irrg}
+        if list(routes) != [s.name for s in _RELEASED] or actual != expected:
+            mismatches[dataset] = (list(routes), actual)
+    assert not mismatches
 
 
 def test_s2_l1c_feeds_the_13_band_specialists_in_their_own_order() -> None:

@@ -17,16 +17,14 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Literal
 
 import torch
 import torch.nn.functional as F
-from huggingface_hub import hf_hub_download
 from torch import nn
 
 from geo_eval_harness.datasets.base import BandSpec
-from geo_eval_harness.hub import load_checksums, verify_checksums
+from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
 from ._band_mapping import canonical_band_name
 from ._normalization import NormalizationStrategy
@@ -138,11 +136,9 @@ def route_bands(
 def load_thor_weights(encoder: ThorEncoder, variant: str, weights_path: str | None) -> None:
     """Load a released checkpoint (flat ``encoder.*`` state dict) strictly, after a sha256 check."""
     filename = f"thor_v1_vit_{variant}.pt"
-    if weights_path is None:
-        spec = THOR_VARIANTS[variant]
-        weights_path = hf_hub_download(spec.repo, filename, revision=spec.revision)
-    path = Path(weights_path).expanduser()
-    verify_checksums(path.parent, {path.name: load_checksums("thor.sha256")[filename]})
+    spec = THOR_VARIANTS[variant]
+    digest = load_checksums("thor.sha256")[filename]
+    path = fetch_pinned_file(spec.repo, filename, spec.revision, digest, local_path=weights_path)
     state = torch.load(path, map_location="cpu", weights_only=True)
     encoder.load_state_dict({k.removeprefix("encoder."): v for k, v in state.items()})
 

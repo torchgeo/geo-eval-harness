@@ -2,6 +2,7 @@
 
 import logging
 import math
+import re
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
@@ -493,12 +494,15 @@ class SegmentationProbe(nn.Module):
                 f"Segmentation probe layers must be unique; duplicates: {sorted(duplicate_layers)}."
             )
 
+        residual_branches = getattr(self.backbone, "residual_branch_layers", None)
         found_layers = set()
         for name, module in self.backbone.named_modules():
             if name.startswith("backbone."):
                 name = name.replace("backbone.", "", 1)
             if name in self.layer_names:
-                self.hooks.append(module.register_forward_hook(self._hook_fn(name)))
+                residual = bool(residual_branches and re.fullmatch(residual_branches, name))
+                hook = self._hook_fn(name, residual_branch=residual)
+                self.hooks.append(module.register_forward_hook(hook))
                 found_layers.add(name)
 
         missing_layers = set(self.layer_names) - found_layers
@@ -513,11 +517,14 @@ class SegmentationProbe(nn.Module):
                 f"{[n for n in available if n][:8]}."
             )
 
-    def _hook_fn(self, name: str):
-        """Return a forward hook that captures the output of the named layer."""
+    def _hook_fn(self, name: str, *, residual_branch: bool = False):
+        """Return a forward hook that captures the output of the named layer.
 
-        def hook(module, _input, output):  # noqa: ARG001
-            self._features[name] = output
+        A residual branch returns only its update, so its input is added to give the stream.
+        """
+
+        def hook(module, inputs, output):  # noqa: ARG001
+            self._features[name] = output + inputs[0] if residual_branch else output
 
         return hook
 

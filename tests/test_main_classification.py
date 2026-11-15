@@ -144,10 +144,10 @@ class TestClassificationRun:
 
 
 @pytest.mark.parametrize(
-    ("requested", "expected_device"),
+    ("requested", "expected_device", "precision"),
     [
-        ("cuda", "cuda:1"),
-        ("auto", "cuda:1"),
+        ("cuda", "cuda:1", "high"),
+        ("auto", "cuda:1", "highest"),
     ],
 )
 def test_device_resolution_and_resume(
@@ -155,12 +155,13 @@ def test_device_resolution_and_resume(
     monkeypatch: pytest.MonkeyPatch,
     requested: str,
     expected_device: str,
+    precision: str,
 ) -> None:
     cfg = validate_run_config(
         {
             "model": {"name": "rcf"},
             "datasets": ["m-eurosat"],
-            "runtime": {"device": requested},
+            "runtime": {"device": requested, "matmul_precision": precision},
             "classification": {"methods": ["knn"]},
             "output": {"file": str(tmp_path / "out.csv")},
         }
@@ -170,6 +171,8 @@ def test_device_resolution_and_resume(
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     monkeypatch.setattr("geo_eval_harness.knn.gpu_faiss_available", lambda: False)
+    set_precision = mock.Mock()
+    monkeypatch.setattr(torch, "set_float32_matmul_precision", set_precision)
     with (
         mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()) as data,
         mock.patch(
@@ -184,6 +187,7 @@ def test_device_resolution_and_resume(
         ),
     ):
         main(cfg)
+        set_precision.assert_called_once_with(precision)
         assert cfg.model_dump_json() == original
         assert build.return_value.to.call_args.args[0] == torch.device(expected_device)
         assert all(call.args[2] == torch.device(expected_device) for call in embed.call_args_list)

@@ -7,6 +7,7 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
+from geo_eval_harness import hub
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
 from geo_eval_harness.config import list_model_configs
 from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, resolve_run_config
@@ -147,7 +148,7 @@ def test_model_normalization_converts_linear_sar_to_db() -> None:
     ("bands", "match"),
     [
         (_bands("spacenet2", "rgb"), "8-bit RGB"),
-        (_bands("forestnet", "rgb"), "DN or reflectance"),
+        (_rgb("s2"), "DN or reflectance"),
         (_bands("m-forestnet", ["nir"]), "8-bit RGB"),
         (_bands("pastis", ["vv_asc"]), "unit"),
     ],
@@ -201,7 +202,7 @@ def test_download_verifies_pinned_revision_and_sha256(
         calls.append((repo, filename, revision))
         return str(path)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_download)
+    monkeypatch.setattr(hub, "hf_hub_download", fake_download)
     digest = hashlib.sha256(b"weights").hexdigest()
     monkeypatch.setitem(smarties.SMARTIES_WEIGHTS, "base", ("org/repo", "abc123", digest))
     assert SmartiesBench._download_checkpoint("base") == path
@@ -264,26 +265,27 @@ def _single_sensor_selections() -> list[tuple[str, list[str]]]:
 _DATASET_NORMALIZATION_ONLY = {
     ("flair2", "red,green,blue,nir"),
     ("treesatai", "nir,green,blue,red"),
-    ("so2sat", "vv,vh"),
+    ("so2sat", "vh,vv"),
 }
 
 
-@pytest.mark.parametrize(("dataset", "selection"), _single_sensor_selections())
-def test_preset_defaults_support_every_single_sensor_band_set(
-    dataset: str, selection: list[str]
-) -> None:
+def test_preset_defaults_support_every_single_sensor_band_set() -> None:
     """Every band set SMARTIES can project builds under the preset's per-dataset settings.
 
     The known exceptions must fail clearly under ``model`` and build under ``dataset``.
     """
-    effective, preset = _resolve("smarties/base", dataset)
-    bands = _bands(dataset, selection)
-    normalization = NORMALIZATIONS[effective.input.normalization]
-    if (dataset, ",".join(selection)) in _DATASET_NORMALIZATION_ONLY:
-        with pytest.raises(UnsupportedNormalizationError, match="--normalization dataset"):
+    rejected = {}
+    for dataset, selection in _single_sensor_selections():
+        effective, preset = _resolve("smarties/base", dataset)
+        bands = _bands(dataset, selection)
+        normalization = NORMALIZATIONS[effective.input.normalization]
+        try:
             build_model(preset, bands=bands, normalization=normalization)
-        normalization = NORMALIZATIONS["dataset"]
-    build_model(preset, bands=bands, normalization=normalization)
+        except UnsupportedNormalizationError as error:  # allow-except: collect rejected band sets
+            rejected[dataset, ",".join(selection)] = str(error)
+            build_model(preset, bands=bands, normalization=NORMALIZATIONS["dataset"])
+    assert set(rejected) == _DATASET_NORMALIZATION_ONLY
+    assert all("--normalization dataset" in message for message in rejected.values())
 
 
 @pytest.mark.parametrize("dataset", sorted(_NO_SMARTIES_BANDS))

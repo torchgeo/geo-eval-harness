@@ -7,6 +7,7 @@ import yaml
 
 from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
 
+from ._common import setup_logging
 from ._config import OUTPUT_FLAG_OVERRIDES, FlagOverride, load_config_or_exit, load_from_flags
 
 _FLAG_OVERRIDES = (
@@ -44,8 +45,15 @@ def run(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         print(yaml.safe_dump(config.model_dump_yaml(), sort_keys=False), end="")
         return
+    from geo_eval_harness.devices import resolve_device
+
+    try:
+        resolve_device(config.runtime.device)
+    except ValueError as error:  # allow-except: report unavailable or invalid requested devices
+        raise SystemExit(f"error: {error}") from error
     from geo_eval_harness.coordbench.run import run_coordbench
 
+    setup_logging(verbose=True)
     run_coordbench(config)
 
 
