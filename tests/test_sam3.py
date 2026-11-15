@@ -130,6 +130,12 @@ def test_forward_pools_coarsest_level(mock_sam3_pretrained: dict[str, Any]) -> N
     assert mock_sam3_pretrained["loads"] == [("facebook/sam3", False)]
 
 
+def test_forward_carries_gradients_to_trainable_weights() -> None:
+    model = SAM3Encoder(bands=_rgb_bands(), image_size=28, normalization="identity")
+    model.backbone.requires_grad_(True)
+    assert model(torch.randn(1, 3, 28, 28)).requires_grad
+
+
 def test_forward_size_mismatch_raises() -> None:
     model = SAM3Encoder(bands=_rgb_bands(), image_size=224, normalization="identity")
     with pytest.raises(ValueError, match="built for 224x224"):

@@ -163,7 +163,7 @@ implementation matching scikit-learn's objective scaling:
 * **No feature standardisation by default** — embeddings are used as-is.
   ``classification.feature_standardize: true`` z-scores each dimension with
   training-split statistics first (method name ``linear-std``).
-* **TF32** is enabled on CUDA for faster matmul when available.
+* **Float32 matrix multiplication precision** is selected with ``--matmul-precision highest|high|medium`` or YAML ``runtime.matmul_precision``. The default, ``highest``, uses full float32 precision; ``high`` and ``medium`` allow lower internal precision on supported hardware. One setting applies before feature extraction and training, and changing it changes the resume hash.
 
 Hyperparameters
 ^^^^^^^^^^^^^^^
@@ -404,7 +404,7 @@ Training knobs
      - ``cosine`` (CosineAnnealingLR to 1e-6) or ``none`` (constant).
    * - ``ignore_index``
      - ``255``
-     - Unlabeled mask value excluded by cross entropy and segmentation metrics.
+     - Unlabeled mask value excluded by cross entropy and segmentation metrics. It must not be a class id (``0`` to ``num_classes - 1``).
    * - ``batch_size``
      - ``64``
      - Batch size when training the probe head on cached features.
@@ -478,7 +478,7 @@ All evaluation paths share these settings:
      - Description
    * - ``runtime.seed``
      - ``0``
-     - Random seed for reproducibility (numpy + torch).
+     - Random seed. PyTorch's global generator is seeded with it at the start of each dataset, so a result does not depend on the datasets evaluated before it. Bootstrap resampling, subsampling, and ``seed_from_run`` models draw from their own generators created from the same seed; NumPy's global generator is not seeded.
    * - ``runtime.device``
      - ``cuda:0``
      - PyTorch device.

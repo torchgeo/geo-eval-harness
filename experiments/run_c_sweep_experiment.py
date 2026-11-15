@@ -23,8 +23,8 @@ from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 
 from geo_eval_harness.config.presets import build_model, resolve_run_config
-from geo_eval_harness.config.run import RunConfig
-from geo_eval_harness.config.schema import ModelConfig, RuntimeConfig
+from geo_eval_harness.config.run import RunConfig, RunRuntimeConfig
+from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets import get_bench_dataset_class, get_datasets
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.linear import LogisticRegression
@@ -57,7 +57,7 @@ def instantiate_model(
 ) -> torch.nn.Module:
     """Create a model with the requested configuration and input bands."""
     _, preset = resolve_run_config(
-        RunConfig(model=model_cfg, datasets=[dataset_name], runtime=RuntimeConfig(seed=SEED)),
+        RunConfig(model=model_cfg, datasets=[dataset_name], runtime=RunRuntimeConfig(seed=SEED)),
         dataset_name,
     )
     return build_model(preset, bands=bands, normalization="bandspec_zscore")

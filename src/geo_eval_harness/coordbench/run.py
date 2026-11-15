@@ -231,7 +231,7 @@ def _evaluate_benchmark(
                     metric_value=score,
                     ci_lower=score - std,
                     ci_upper=score + std,
-                    n_folds=1 if split_label == "official" else folds,
+                    n_folds=len(fold_scores),
                     cell_deg=coord.cell_deg,
                     feature_dim=int(features.shape[1]),
                     n_samples=len(labels),

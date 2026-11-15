@@ -12,27 +12,42 @@ Package and configuration
 * Dataset geography records are included in the wheel and source distribution.
 * Linux x86_64 installations use CUDA FAISS; other platforms use CPU FAISS.
 * TerraTorch models require the separate source installation documented in :doc:`installation`.
+* Image runs reject unknown ``intrinsic_dim.estimators`` names, ``max_samples`` below 2, and enabled estimators without ``torchid`` when the configuration is loaded.
 
 Models
 ^^^^^^
 
 * Tessera V2 Nano, Small, Medium, and Large pixel students support Sentinel-2 snapshot classification, frozen segmentation, and LoRA. PASTIS supplies acquisition dates; undated inputs use the configured fallback day of year. See :doc:`models` for accepted datasets and input requirements.
 * Clay v1 Base and Clay v1.5 Large presets provide mean-patch and CLS-token embeddings.
+* CROMA and Clay segmentation features are the outputs of the configured transformer blocks.
 * TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
+* TerraFM's model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.
+* ``torchgeo/resnet50_s2_all_moco`` defaults to all bands and feeds its 13 Sentinel-2 bands by name, zero-filling B10 for L2A datasets and rejecting band selections that lack any other band.
+* Scale-MAE segmentation probes run at the constructed input size, and input sizes that are not multiples of 16 are rejected.
+* Scale-MAE accepts ordered RGB bands under any recognized band name, such as Planet's ``r``, ``g``, ``b``.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
+* CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
+* SeCo ResNet model normalization converts RGB inputs to its 8-bit image scale, applies per-band quantiles, and standardizes with ImageNet statistics.
+* torchgeo wrappers apply their model-native normalization out of place, so forwarding the same batch again gives the same features.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
+* timm models built with ``global_pool: ""`` average channels-last feature maps over their spatial axes and exclude register tokens from the patch average; ``use_cls_token`` is rejected for backbones without a class token.
 * EoS-FM combines 22 supervised specialists for classification and segmentation. See :doc:`models` for pretraining overlap with benchmark datasets.
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
+* timm ViT and DeiT models keep their pretrained final normalization when patch tokens are pooled, so ``global_pool: avg`` averages the normalized patch tokens.
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
+* OlmoEarth fills missing bands as upstream does for each version: v1 copies the nearest present band and v1.1 and later set them to 0 after normalization.
+* OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands and normalizes SAR in an undeclared unit with dataset statistics.
 
 Evaluation and results
 ^^^^^^^^^^^^^^^^^^^^^^
 
 * CoordBench evaluates location encoders with random, spatial-block, and official holdouts, using KNN and ridge-linear probes.
 * The ``flops`` command measures backbone, decoder, and probe compute. The ``profile`` command measures execution on a fixed dataset batch.
+* FLOP counts include scaled dot-product attention on CPU and ``nn.MultiheadAttention`` and ``nn.TransformerEncoderLayer`` modules in evaluation mode.
 * Classification and frozen segmentation can standardize features with training-split statistics.
+* Image runs set float32 matrix multiplication precision once using ``--matmul-precision`` or ``runtime.matmul_precision``; the default is ``highest``.
 * Segmentation supports frozen backbones, LoRA, and full fine-tuning, with configurable weight decay, head dropout, AMP, gradient checkpointing, and adapter block selection.
 * ViT necks form feature pyramids for dense decoders. UPerNet can use frozen AnyUp upsampling guided by RGB inputs.
 * Patch-linear sweeps train one head per learning-rate and weight-decay combination, then select the best validation head and epoch.
@@ -40,18 +55,30 @@ Evaluation and results
 * Segmentation reports Boundary IoU alongside mIoU and can write per-epoch training records to JSON Lines.
 * Non-finite backbone features are counted and skipped during training; an epoch fails if more than 5% of batches are skipped. Evaluation rejects non-finite features and logits.
 * Sample caches store preprocessed segmentation samples on disk, in host memory, or on the training device.
+* Each dataset starts from ``runtime.seed``, so a result does not depend on the datasets evaluated before it in the same run.
 * Result rows record label counts and segmentation setup columns. The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings; Native bands views allow incomplete dataset coverage.
+* ``load_results`` keeps a train-only linear probe separate from one refit on train plus validation; the ranking explorer ranks only the refit rows.
 * The results explorer dictionary-encodes repeated data and enforces a 50 MB limit for generated pages and snapshots.
 
 Datasets
 ^^^^^^^^
 
+* Infra-Bench CLS provides 13-class Sentinel-1/2 infrastructure classification with spatial splits.
 * GeoBench V1 supports collection and subset downloads with JSON metadata and verified archives.
+* ``forestnet`` declares the Landsat-8 bands of ``m-forestnet`` (``blue``, ``green``, ``red``, ``nir``, ``swir_1``, ``swir_2``); GeoBench V2 repackages the same chips and split.
+* ``geo-eval-harness download`` accepts every registered dataset name; names that share another dataset's files download that dataset.
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
+* A non-default ``--partition`` is an error for datasets without training partitions.
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
+* Multi-sensor GeoBench V2 datasets reject explicit band lists whose order the loader cannot return.
+* So2Sat maps its stored Sentinel-1 channels in VH, VV order.
 * CaFFe and ``bright-post-sar-rgb`` expose grayscale SAR as three identical RGB channels for RGB model inputs.
 * AID, NWPU-RESISC45, and UC Merced provide RGB scene classification with fixed splits and training-split statistics.
+* PASTIS time series return ``(T, C, H, W)`` samples with every selected sensor on the channel axis.
+* Dynamic EarthNet maps its stored Sentinel-2 channels in B02, B03, B04, B08, B05, B06, B07, B8A, B11, B12, B01, B09 order. Selections need at least one Planet band.
 * PLANTEUR provides crop-type segmentation with monthly Sentinel-1/2 inputs and five leave-one-island-out folds.
 * SpaceNet2 and SpaceNet7 use binary building masks. BENV2 maps its stored Sentinel-1 channels in VH, VV order.
+* Burn Scars has two classes, background and burn scar; no-data pixels are ignored in loss and metrics.
+* TreeSatAI maps its stored aerial channels in NIR, green, blue, red order, so ``bands: rgb`` selects the stored red, green, and blue channels.
 * Classification datasets declare class names in label-index order.
 * Band-statistics tools support excluding ignored segmentation pixels; geography extraction and coverage checks include the registered datasets.

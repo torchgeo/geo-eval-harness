@@ -24,7 +24,7 @@ def test_intrinsic_dim_rows_emitted(tmp_path: Path):
             "classification": {"methods": ["knn"]},
             "intrinsic_dim": {
                 "enabled": True,
-                "estimators": ["twonn", "mle"],
+                "estimators": ["TwoNN", "MLE"],
                 "splits": ["train"],
                 "max_samples": 100,
             },
@@ -33,7 +33,7 @@ def test_intrinsic_dim_rows_emitted(tmp_path: Path):
 
     def _mock_compute(*args, **kwargs):
         est = str(kwargs["estimators"][0])
-        values = {"twonn": 5.0, "mle": 4.8}
+        values = {"TwoNN": 5.0, "MLE": 4.8}
         return {est: values[est]}
 
     with (
@@ -50,8 +50,8 @@ def test_intrinsic_dim_rows_emitted(tmp_path: Path):
     df = pd.read_csv(out)
     id_df = df[df["method"] == "intrinsic_dim"]
     assert not id_df.empty
-    assert "id_twonn_train" in id_df["metric_name"].values
-    assert "id_mle_train" in id_df["metric_name"].values
+    assert "id_TwoNN_train" in id_df["metric_name"].values
+    assert "id_MLE_train" in id_df["metric_name"].values
     assert {
         "spectrum_effective_rank_train",
         "spectrum_participation_ratio_train",
@@ -150,7 +150,7 @@ def test_intrinsic_dim_resume_per_estimator(tmp_path: Path):
             "classification": {"methods": ["knn"]},
             "intrinsic_dim": {
                 "enabled": True,
-                "estimators": ["twonn", "mle"],
+                "estimators": ["TwoNN", "MLE"],
                 "splits": ["train"],
                 "max_samples": 100,
             },
@@ -159,7 +159,7 @@ def test_intrinsic_dim_resume_per_estimator(tmp_path: Path):
 
     seed_rows = [
         _resume_row(cfg, method="knn5", metric_name="accuracy"),
-        _resume_row(cfg, method="intrinsic_dim", metric_name="id_twonn_train"),
+        _resume_row(cfg, method="intrinsic_dim", metric_name="id_TwoNN_train"),
         _resume_row(
             cfg,
             method="intrinsic_dim",
@@ -170,7 +170,7 @@ def test_intrinsic_dim_resume_per_estimator(tmp_path: Path):
 
     def _mock_compute(*args, **kwargs):
         est = str(kwargs["estimators"][0])
-        values = {"twonn": 5.0, "mle": 4.8}
+        values = {"TwoNN": 5.0, "MLE": 4.8}
         return {est: values[est]}
 
     with (
@@ -186,8 +186,8 @@ def test_intrinsic_dim_resume_per_estimator(tmp_path: Path):
 
     df = pd.read_csv(out)
     id_df = df[df["method"] == "intrinsic_dim"]
-    assert int((id_df["metric_name"] == "id_twonn_train").sum()) == 1
-    assert int((id_df["metric_name"] == "id_mle_train").sum()) == 1
+    assert int((id_df["metric_name"] == "id_TwoNN_train").sum()) == 1
+    assert int((id_df["metric_name"] == "id_MLE_train").sum()) == 1
     assert int((id_df["metric_name"] == "spectrum_effective_rank_train").sum()) == 1
     assert len(id_df[id_df["metric_name"].str.startswith("spectrum_")]) == 5
 
@@ -202,7 +202,7 @@ def test_resume_backfills_spectrum_without_rerunning_completed_estimators(tmp_pa
             "classification": {"methods": ["knn"]},
             "intrinsic_dim": {
                 "enabled": True,
-                "estimators": ["twonn", "mle"],
+                "estimators": ["TwoNN", "MLE"],
                 "splits": ["train"],
                 "max_samples": 100,
             },
@@ -211,8 +211,8 @@ def test_resume_backfills_spectrum_without_rerunning_completed_estimators(tmp_pa
 
     seed_rows = [
         _resume_row(cfg, method="knn5", metric_name="accuracy"),
-        _resume_row(cfg, method="intrinsic_dim", metric_name="id_twonn_train"),
-        _resume_row(cfg, method="intrinsic_dim", metric_name="id_mle_train"),
+        _resume_row(cfg, method="intrinsic_dim", metric_name="id_TwoNN_train"),
+        _resume_row(cfg, method="intrinsic_dim", metric_name="id_MLE_train"),
     ]
     pd.DataFrame(seed_rows).to_csv(out, index=False)
 

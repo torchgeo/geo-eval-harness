@@ -224,6 +224,8 @@ feature layers. See
 dtype is ``float16`` or ``float32``. The loss is cross entropy with the
 configured ``ignore_index``; there is no constructor-style criterion block.
 
+Feature caches stay on the training device when they fit in available CUDA memory with 6 GiB reserved for decoder activations. Larger caches stay in host memory and transfer one batch at a time, preserving the configured precision.
+
 ``amp: fp16`` (default) trains and evaluates under CUDA float16 autocast with gradient scaling,
 runs a frozen backbone under autocast, and keeps device feature caches in float16. Backbones
 whose activations exceed the float16 range (about 65,504) overflow to ``inf``; ``amp: off`` runs
@@ -244,7 +246,7 @@ Set ``lora_rank`` and ``backbone_learning_rate`` to fine-tune with LoRA adapters
 
 ``full_finetune: true`` trains every backbone weight at ``backbone_learning_rate``. Both fine-tuning modes keep pretrained dropout and normalization statistics in eval mode. Result rows record ``adaptation: lora`` or ``adaptation: full``. Without LoRA, keep ``lora_alpha`` at its default and leave ``lora_last_blocks`` unset; set ``backbone_learning_rate`` only for a trainable backbone.
 
-Fine-tuning reads images each epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` controls training batches. See :ref:`segmentation-setup-columns` for the recorded settings.
+Fine-tuning reads images each epoch, so ``cache_features`` does not apply and ``runtime.batch_size`` controls training batches. A model whose forward pass disables gradients, for example with ``@torch.no_grad()``, is rejected at the first training step because its backbone would not train. See :ref:`segmentation-setup-columns` for the recorded settings.
 
 ``gradient_checkpointing: true`` checkpoints the backbone's transformer blocks while LoRA or full fine-tuning trains: their activations are recomputed in the backward pass instead of being stored, which cuts activation memory at the cost of about one extra backbone forward per step. Losses and gradients are unchanged up to floating-point reordering. It is supported for timm SwinV2 (timm's ``set_grad_checkpointing``), TerraTorch Prithvi-EO and OlmoEarth (each block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``); any other backbone raises. It has no effect on a frozen backbone. The setting is recorded in ``config_hash``.
 
@@ -291,11 +293,7 @@ Optional image measurements
      max_samples: 10000
      device: null
 
-These are additive passes within an image run, not the standalone
-``profile`` command. Intrinsic-dimension estimators require the ``id`` extra;
-``estimators: []`` requests only the dependency-free feature-spectrum
-diagnostics. ``splits`` accepts ``train``, ``val``, and ``test``.
-``max_samples: null`` removes the sample cap.
+These are additive passes within an image run, not the standalone ``profile`` command. ``estimators`` accepts ``lPCA``, ``TwoNN``, ``MLE``, ``CorrInt``, ``MiND_ML``, ``KNN``, ``DANCo``, and ``FisherS``. They require the ``id`` extra (Python ≥ 3.13); without it, an enabled pass that selects any estimator is a configuration error, so ``--dry-run`` reports it. ``estimators: []`` requests only the dependency-free feature-spectrum diagnostics. ``splits`` accepts ``train``, ``val``, and ``test``. ``max_samples`` must be at least 2; ``null`` removes the sample cap.
 
 Results and resume
 ^^^^^^^^^^^^^^^^^^

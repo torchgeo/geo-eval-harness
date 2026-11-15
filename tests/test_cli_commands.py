@@ -139,11 +139,14 @@ def test_runtime_preserves_typed_schema(
 
 
 @pytest.mark.parametrize(
-    ("device", "available", "message"),
-    [("cuda", False, "CUDA is unavailable"), ("cuda:2", True, "CUDA index 2")],
+    ("device_flags", "available", "message"),
+    [
+        ([], False, "Requested 'cuda:0', but CUDA is unavailable"),
+        (["--device", "cuda:2"], True, "CUDA index 2"),
+    ],
 )
 def test_runtime_rejects_invalid_cuda_before_loading(
-    monkeypatch: pytest.MonkeyPatch, device: str, *, available: bool, message: str
+    monkeypatch: pytest.MonkeyPatch, device_flags: list[str], *, available: bool, message: str
 ) -> None:
     import torch
 
@@ -152,9 +155,9 @@ def test_runtime_rejects_invalid_cuda_before_loading(
     with (
         mock.patch("geo_eval_harness.main.get_datasets") as data,
         mock.patch("geo_eval_harness.main.build_model") as build,
-        pytest.raises(ValueError, match=message),
+        pytest.raises(SystemExit, match=f"^error: .*{message}"),
     ):
-        main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", device])
+        main(["run", "--model", "rcf", "--dataset", "m-eurosat", *device_flags])
     data.assert_not_called()
     build.assert_not_called()
 
@@ -506,12 +509,48 @@ def test_dry_run_rejects_unsupported_method_and_band_selections(flags: list[str]
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize(
+    ("intrinsic_dim", "diagnostic"),
+    [
+        ("{enabled: true, estimators: [TwoNN]}", "geo-eval-harness[id]"),
+        ("{estimators: [twonn]}", "intrinsic_dim.estimators"),
+        ("{max_samples: 1}", "intrinsic_dim.max_samples"),
+    ],
+)
+def test_dry_run_rejects_unusable_intrinsic_dim_settings(
+    intrinsic_dim: str,
+    diagnostic: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("geo_eval_harness.commands._run.find_spec", lambda name: None)
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"model: {{name: rcf}}\ndatasets: [m-eurosat]\nintrinsic_dim: {intrinsic_dim}\n"
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--config", str(path), "--dry-run"])
+    assert error.value.code == 2
+    assert diagnostic in capsys.readouterr().err
+
+
 def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
     path = tmp_path / "bands.yaml"
     path.write_text("model: {name: rcf}\ndatasets: [m-eurosat]\ninput:\n  bands: red,green\n")
     with pytest.raises(SystemExit) as error:
         main(["run", "--config", str(path), "--dry-run"])
     assert error.value.code == 2
+
+
+def test_dry_run_rejects_partition_on_dataset_without_partitions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    selection = ["--dataset", "so2sat", "--partition", "0.01x_train", "--methods", "knn"]
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--model", "rcf", "--dry-run", *selection])
+    assert error.value.code == 2
+    assert "supports only the default partition" in capsys.readouterr().err
 
 
 def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
