@@ -195,6 +195,15 @@ def test_scalemae_rejects_non_rgb_order() -> None:
         TorchGeoScaleMAEBench(bands=list(reversed(_rgb_bands())))
 
 
+def test_scalemae_accepts_rgb_bands_under_alias_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    from geo_eval_harness.datasets.dynamic_earthnet import DynamicEarthNet
+
+    install_tiny_scalemae_factory(monkeypatch)
+    bands = DynamicEarthNet.resolve_band_specs("rgb")
+    assert [band.name for band in bands] == ["r", "g", "b"]
+    TorchGeoScaleMAEBench(bands=bands, normalization="identity")
+
+
 def test_scalemae_uses_bandspec_zscore_instead_of_checkpoint_transform(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -417,6 +426,39 @@ def test_torchgeo_croma_pools_optical_tokens_then_applies_head(
     images = torch.arange(11, -1, -1, dtype=torch.float32).view(1, 12, 1, 1).expand(2, 12, 64, 64)
     out = model.forward_patch_features(images)
     torch.testing.assert_close(out, torch.arange(15, 23, dtype=torch.float32).expand(2, 8))
+
+
+def test_croma_segmentation_layers_capture_the_block_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CROMA's feed-forward modules return a residual update; the probe needs the block output."""
+    from torchgeo.models import CROMA
+
+    from geo_eval_harness.segmentation_probe import SegmentationProbe
+
+    def tiny_croma() -> nn.Module:
+        return CROMA(
+            modalities=["optical"], encoder_dim=16, encoder_depth=2, num_heads=16, image_size=16
+        )
+
+    _install_tiny_backbone(monkeypatch, tiny_croma)
+    torch.manual_seed(0)
+    model = TorchGeoCromaBench(
+        bands=_s2_multispectral_bands(), normalization="identity", target_size=16
+    )
+    transformer = model.backbone.s2_encoder.transformer
+    block_outputs: list[torch.Tensor] = []
+    # The residual stream after each block is the input of the module that follows it.
+    for following in (transformer.layers[1][0], transformer.norm_out):
+        following.register_forward_pre_hook(lambda _module, args: block_outputs.append(args[0]))
+    layers = ["s2_encoder.transformer.layers.1.1", "s2_encoder.transformer.layers.0.1"]
+    probe = SegmentationProbe(model, layers, num_classes=2)
+
+    block_outputs.clear()
+    probe(torch.rand(2, 12, 16, 16))
+
+    torch.testing.assert_close(probe._features[layers[1]], block_outputs[0])
+    torch.testing.assert_close(probe._features[layers[0]], block_outputs[1])
 
 
 def test_torchgeo_panopticon_forwards_batched_wavelength_ids(
@@ -719,6 +761,34 @@ def test_weights_normalize_only_applies_under_model_native(
     assert torch.allclose(native, torch.full_like(native, 500.0))
 
 
+@pytest.mark.parametrize("channels", [3, 6])
+def test_model_native_normalization_leaves_the_input_batch_unchanged(
+    monkeypatch: pytest.MonkeyPatch, channels: int
+) -> None:
+    """torchgeo weight transforms normalize in place; six channels use the tiled chain."""
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    class _FakeWeights:
+        meta: ClassVar[dict[str, Any]] = {}
+        transforms = nn.Sequential(Normalize(mean=[0.0] * 3, std=[2.0] * 3, inplace=True))
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinyConvNet()
+    )
+    monkeypatch.setattr(
+        tg_models,
+        "_resolve_torchgeo_weights",
+        lambda _weights_class, _weights_member: _FakeWeights(),
+    )
+    model = TorchGeoResNetBench(bands=(_dn_bands() * 2)[:channels], normalization="model_native")
+    images = torch.full((1, channels, 4, 4), 1000.0)
+    original = images.clone()
+
+    model.forward_patch_features(images)
+
+    assert torch.equal(images, original)
+
+
 def test_expected_input_unit_is_derived_per_instance(monkeypatch: pytest.MonkeyPatch) -> None:
     """Derived units must neither mutate classes nor overwrite declared units."""
     import geo_eval_harness.models.torchgeo_models as tg_models
@@ -916,22 +986,47 @@ def test_rejects_other_multiband_satlas_checkpoints(
         wrapper(bands=MEurosat().bands, weights_class=weights_class, weights_member=weights_member)
 
 
-def test_non_satlas_multiband_checkpoints_keep_first_conv_adaptation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _ssl4eo_s2_model(
+    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec], normalization: str
+) -> TorchGeoResNetBench:
     import geo_eval_harness.models.torchgeo_models as tg_models
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()
     )
-    model = TorchGeoResNetBench(
-        bands=MEurosat().bands,
+    return TorchGeoResNetBench(
+        bands=bands,
         weights_class="ResNet50_Weights",
         weights_member="SENTINEL2_ALL_MOCO",
+        normalization=normalization,
     )
-    assert model.weights.meta["dataset"] != "SatlasPretrain"
-    assert model._satlas_s2_ms_indices is None
-    assert model.backbone.conv1.in_channels == 13
+
+
+def test_ssl4eo_s2_checkpoints_use_checkpoint_band_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SSL4EO-S12 orders B01-B08, B8A, B09-B12; m-eurosat lists B8A last."""
+    model = _ssl4eo_s2_model(monkeypatch, MEurosat().bands, "identity")
+    images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
+    selected = model.normalize_inputs(images).flatten().tolist()
+    assert selected == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 12.0, 8.0, 9.0, 10.0, 11.0]
+
+
+def test_ssl4eo_s2_native_zero_fills_cirrus_absent_from_l2a(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    model = _ssl4eo_s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
+    reflectance = torch.arange(1, 13, dtype=torch.float32).view(1, 12, 1, 1) / 100
+    expected = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.0, 0.11, 0.12]
+    torch.testing.assert_close(
+        model.normalize_inputs(reflectance), torch.tensor(expected).view(1, 13, 1, 1)
+    )
+
+
+@pytest.mark.parametrize("bands", [_rgb_bands(), MSo2Sat().bands])
+def test_ssl4eo_s2_rejects_datasets_missing_required_bands(
+    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec]
+) -> None:
+    with pytest.raises(BandCompatibilityError, match="B01"):
+        _ssl4eo_s2_model(monkeypatch, bands, "bandspec_zscore")
 
 
 class _TinyConvNet(nn.Module):

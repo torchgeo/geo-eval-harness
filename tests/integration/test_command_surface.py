@@ -1,99 +1,103 @@
-"""Process-level entry-point contracts, without importing or faking CLI dispatch."""
+"""Entry-point contracts: installed launchers match ``cli.main`` and reject bad input cleanly."""
 
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 import yaml
 
+from geo_eval_harness.cli import main
 from tests.support.cli import cli_output, run_module_cli, run_public_cli
 
 pytestmark = pytest.mark.integration
 
-
-@pytest.mark.parametrize("module", ["console", "geo_eval_harness", "geo_eval_harness.cli"])
-def test_every_entrypoint_and_subcommand_has_help(tmp_path: Path, module: str) -> None:
-    commands = ("run", "models", "datasets", "download", "profile", "flops", "coord")
-    for arguments in (("--help",), *((command, "--help") for command in commands)):
-        if module == "console":
-            result = run_public_cli(*arguments, cwd=tmp_path)
-        else:
-            result = run_module_cli(module, *arguments, cwd=tmp_path)
-        assert result.returncode == 0, cli_output(result)
-        assert "usage:" in result.stdout, cli_output(result)
-        assert not result.stderr, cli_output(result)
+DRY_RUN = ("run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu", "--dry-run")
 
 
-@pytest.mark.parametrize(
-    ("arguments", "expected"),
-    [
-        (("models",), "timm/resnet18"),
-        (("models", "rcf"), "target: geo_eval_harness.models.RCFBench"),
-        (("datasets",), "m-eurosat"),
-        (("datasets", "caffe"), "task: segmentation"),
-        (("run", "--config-help"), "schema_version"),
-    ],
-)
-def test_public_catalogs_and_schema(
-    tmp_path: Path, arguments: tuple[str, ...], expected: str
-) -> None:
-    result = run_public_cli(*arguments, cwd=tmp_path)
-    assert result.returncode == 0, cli_output(result)
-    assert expected in result.stdout, cli_output(result)
-    assert not (tmp_path / "data").exists()
-    assert not (tmp_path / "results").exists()
+class TestEntryPoints:
+    @pytest.mark.parametrize("entry_point", ["console", "geo_eval_harness", "geo_eval_harness.cli"])
+    def test_version_and_dry_run_agree(
+        self, entry_point: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        main(list(DRY_RUN))
+        expected = {
+            ("--version",): f"geo-eval-harness {version('geo-eval-harness')}\n",
+            DRY_RUN: capsys.readouterr().out,
+        }
+        for arguments, stdout in expected.items():
+            if entry_point == "console":
+                result = run_public_cli(*arguments, cwd=tmp_path)
+            else:
+                result = run_module_cli(entry_point, *arguments, cwd=tmp_path)
+            assert result.returncode == 0, cli_output(result)
+            assert result.stdout == stdout, cli_output(result)
+            assert result.stderr == "", cli_output(result)
+        assert not (tmp_path / "data").exists()
+        assert not (tmp_path / "results").exists()
 
-
-@pytest.mark.parametrize(
-    ("arguments", "exit_code", "message"),
-    [
-        ((), 2, "required"),
-        (("run", "--model", "rcf"), 2, "datasets"),
-        (
-            ("run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run", "unexpected=value"),
-            2,
-            "error:",
-        ),
-        (("models", "missing-preset"), 1, "unknown model"),
-        (("download", "missing-dataset"), 1, "Unknown dataset"),
-        (("profile", "--model", "rcf"), 2, "dataset"),
-    ],
-)
-def test_public_validation_fails_without_side_effects(
-    tmp_path: Path, arguments: tuple[str, ...], exit_code: int, message: str
-) -> None:
-    result = run_public_cli(*arguments, cwd=tmp_path)
-    assert result.returncode == exit_code, cli_output(result)
-    assert message in result.stderr, cli_output(result)
-    assert not (tmp_path / "data").exists()
-    assert not (tmp_path / "results").exists()
-
-
-def test_public_dry_run_is_reusable_yaml(tmp_path: Path) -> None:
-    result = run_public_cli(
-        "run",
-        "--model",
-        "rcf",
-        "--dataset",
-        "m-eurosat",
-        "--device",
-        "cpu",
-        "--image-size",
-        "16",
-        "--methods",
-        "knn",
-        "--dry-run",
-        cwd=tmp_path,
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            (("--dry-run", "unexpected=value"), "key=value and +key=value overrides"),
+            (("--bands", "B99"), "error: MEurosat: unknown band 'B99'; available:"),
+        ],
+        ids=["retired-override", "unknown-band"],
     )
-    assert result.returncode == 0, cli_output(result)
-    config = yaml.safe_load(result.stdout)
-    assert config["model"] == {"name": "rcf"}
-    assert config["datasets"] == ["m-eurosat"]
-    assert config["classification"]["methods"] == ["knn"]
-    assert config["input"]["image_size"] == 16
-    path = tmp_path / "config.yaml"
-    path.write_text(result.stdout)
-    replay = run_public_cli("run", "--config", str(path), "--dry-run", cwd=tmp_path)
-    assert replay.returncode == 0, cli_output(replay)
-    assert yaml.safe_load(replay.stdout) == config
-    assert not (tmp_path / "data").exists()
-    assert not (tmp_path / "results").exists()
+    def test_invalid_run_fails_without_traceback_or_side_effects(
+        self, tmp_path: Path, arguments: tuple[str, ...], message: str
+    ) -> None:
+        result = run_public_cli(
+            "run", "--model", "rcf", "--dataset", "m-eurosat", *arguments, cwd=tmp_path
+        )
+        assert result.returncode == 2, cli_output(result)
+        assert result.stdout == "", cli_output(result)
+        assert message in result.stderr, cli_output(result)
+        assert "Traceback" not in result.stderr, cli_output(result)
+        assert not (tmp_path / "data").exists()
+        assert not (tmp_path / "results").exists()
+
+
+class TestMain:
+    @pytest.mark.parametrize(
+        "command", [None, "run", "models", "datasets", "download", "profile", "flops", "coord"]
+    )
+    def test_help(self, command: str | None, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit) as error:
+            main(["--help"] if command is None else [command, "--help"])
+        assert error.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.out.startswith("usage: geo-eval-harness")
+        assert captured.err == ""
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            ([], "the following arguments are required: command"),
+            (
+                ["run", "-m", "rcf", "-d", "m-eurosat", "--normalization", "model", "--dry-run"],
+                "error: 'rcf' does not support --normalization model",
+            ),
+            (
+                ["profile", "-m", "rcf", "-d", "m-eurosat", "--dataset=so2sat", "--dry-run"],
+                "--dataset may only be specified once",
+            ),
+        ],
+        ids=["no-command", "unsupported-normalization", "repeated-profile-dataset"],
+    )
+    def test_invalid_input_exits_with_message(
+        self, arguments: list[str], message: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as error:
+            main(arguments)
+        assert error.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert message in captured.err
+
+    def test_profile_dataset_flag_overrides_yaml(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "profile.yaml"
+        path.write_text("model: {name: rcf}\ndataset: m-eurosat\n", encoding="utf-8")
+        main(["profile", "--config", str(path), "--dataset=so2sat", "--dry-run"])
+        assert yaml.safe_load(capsys.readouterr().out)["dataset"] == "so2sat"

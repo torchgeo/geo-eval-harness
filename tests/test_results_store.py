@@ -167,6 +167,23 @@ def test_load_results_keeps_distinct_seeds(tmp_path):
     assert sorted(df["seed"]) == [0, 1]
 
 
+def test_load_results_keeps_train_only_and_refit_linear_probes(tmp_path: Path) -> None:
+    pd.DataFrame(
+        [
+            _dedup_row(merge_val=True, config_hash="a", metric_value=0.9),
+            _dedup_row(merge_val=False, config_hash="b", metric_value=0.8),
+            _dedup_row(method="knn5", merge_val=True, config_hash="a", metric_value=0.7),
+            _dedup_row(method="knn5", merge_val=False, config_hash="b", metric_value=0.7),
+        ]
+    ).to_csv(tmp_path / "a.csv", index=False)
+    df = load_results(tmp_path)
+    assert list(zip(df["method"], df["merge_val"], strict=True)) == [
+        ("linear", True),
+        ("linear", False),
+        ("knn5", False),
+    ]
+
+
 def test_load_results_relabels_olmoearth_normalization(tmp_path):
     pd.DataFrame(
         [
