@@ -374,6 +374,17 @@ class TestProfileCommand:
         profile_runtime.load.assert_not_called()
         profile_runtime.build.assert_not_called()
 
+    def test_profile_reports_a_missing_dataset_without_a_traceback(
+        self, profile_config: ProfileConfig, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        message = (
+            r"^error: Required files for 'm-eurosat' are missing\. "
+            "Run `geo-eval-harness download geobench_v1 --datasets m-eurosat`"
+        )
+        with pytest.raises(SystemExit, match=message):
+            _profile_runtime.run(profile_config)
+
     @pytest.mark.parametrize(
         ("requested", "expected"),
         [("auto", "cpu"), ("auto", "cuda:1"), ("cuda", "cuda:1"), ("cuda:0", "cuda:0")],
