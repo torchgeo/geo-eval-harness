@@ -1,5 +1,6 @@
 """Tests for model accuracy baselines."""
 
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
@@ -88,6 +89,29 @@ def test_update_baselines_requires_comparable_results() -> None:
     }
     with pytest.raises(ValueError, match="Missing comparable knn5/linear results for rcf"):
         filter_and_deduplicate(pd.DataFrame([row]), cases={"rcf": {"all": ("m-eurosat",)}})
+
+
+def test_update_baselines_reads_a_numeric_looking_config_hash_as_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_hash = "36e0288988649564"
+    row = {
+        **baseline_metadata("rcf", "m-eurosat", "all"),
+        "metric_name": "accuracy",
+        "metric_value": 0.75,
+        "config_hash": config_hash,
+    }
+    source = tmp_path / "rcf.csv"
+    pd.DataFrame([{**row, "method": method} for method in ("knn5", "linear")]).to_csv(
+        source, index=False
+    )
+    monkeypatch.setattr(
+        "scripts.update_baselines.filter_and_deduplicate",
+        partial(filter_and_deduplicate, cases={"rcf": {"all": ("m-eurosat",)}}),
+    )
+    out = tmp_path / "out.csv"
+    main(["--input", str(source), "--output", str(out)])
+    assert pd.read_csv(out, dtype=str)["source_config_hash"].tolist() == [config_hash] * 2
 
 
 def test_accuracy_fixture_matches_stored_results(tmp_path: Path) -> None:
