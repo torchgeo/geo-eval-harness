@@ -43,8 +43,9 @@ CHUNK_BUDGET = 2**26
 
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
-# Visible band centres (micrometres) accepted as red, green, blue.
-_RGB_RANGES_UM = ((0.62, 0.70), (0.52, 0.60), (0.44, 0.52))
+# Visible band centres (micrometres) accepted as red, green, blue. Blue starts above the coastal
+# aerosol bands at 0.443.
+_RGB_RANGES_UM = ((0.62, 0.70), (0.52, 0.60), (0.45, 0.52))
 _RGB_NAMES = (("red", "r", "b04"), ("green", "g", "b03"), ("blue", "b", "b02"))
 
 

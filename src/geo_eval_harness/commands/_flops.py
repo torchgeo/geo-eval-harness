@@ -2,13 +2,13 @@
 
 import argparse
 import json
-import logging
 from typing import Any
 
 import yaml
 
 from .. import commands
 from ..config.flops import FlopsConfig
+from ._common import setup_logging
 from ._config import (
     OUTPUT_FLAG_OVERRIDES,
     FlagOverride,
@@ -65,10 +65,7 @@ def run(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         print(yaml.safe_dump(config.model_dump_yaml(), sort_keys=False), end="")
         return
-    logging.basicConfig(
-        level=logging.INFO if config.runtime.verbose else logging.WARNING,
-        format="%(levelname)s: %(message)s",
-    )
+    setup_logging(verbose=config.runtime.verbose)
     commands.run_flops(config)
 
 

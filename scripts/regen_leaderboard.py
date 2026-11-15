@@ -24,6 +24,7 @@ from geo_eval_harness.results import (
     SETUP_COLS,
     format_setup_value,
     load_results,
+    train_only_linear_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -34,21 +35,42 @@ COMPUTE_PATH = ROOT / "results" / "compute_cost.csv"
 TEMPLATE_PATH = ROOT / "scripts" / "ranking_explorer.template.html"
 HTML_PATH = ROOT / "docs" / "_static" / "ranking_explorer.html"
 
-# Rows whose ``name`` contains any of these are single-dataset / experimental
+# Rows whose ``name`` starts with any of these are single-dataset / experimental
 # OlmoEarth ablations, not benchmark entries.
-ABLATION_TAGS = ("_lsat_", "_naip_", "_sar_")
+ABLATION_PREFIXES = (
+    "olmoearth_v1_nano_lsat_",
+    "olmoearth_v1_nano_naip_",
+    "olmoearth_v1_nano_sar_",
+)
 
 # ``<base>_landsat_as_s2`` rows feed a Landsat dataset's bands through the
 # S2-pretrained model.  They are folded back onto the base model and win a
 # collision with the plain reading for the Landsat dataset.
 LANDSAT_SUB_SUFFIX = "_landsat_as_s2"
+# Datasets whose bands are declared ``landsat``; the substitution rows of any
+# other dataset are dropped.
+LANDSAT_DATASETS = frozenset({"m-forestnet", "forestnet"})
 
 # Datasets excluded from the leaderboard only (all_results.csv is untouched).
 DROPPED_DATASETS = frozenset({"m-pv4ger", "m-brick-kiln", "oscd-post"})
 
 # Datasets that only ship RGB bands.  A ``bands=all`` run on these is still an
 # RGB measurement and must never enter the Multispectral views.
-RGB_ONLY_DATASETS = frozenset({"aid", "hotosm_buildings", "open_cities", "resisc45", "ucmerced"})
+RGB_ONLY_DATASETS = frozenset(
+    {
+        "aid",
+        "bright-post-sar-rgb",
+        "caffe",
+        "hotosm_buildings",
+        "levir-cd-post",
+        "loveda",
+        "m-pv4ger",
+        "open_cities",
+        "resisc45",
+        "spacenet7",
+        "ucmerced",
+    }
+)
 # An explicit band list made only of these names (``red,green,blue``) is RGB too.
 RGB_BAND_NAMES = frozenset({"red", "green", "blue"})
 
@@ -441,6 +463,8 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
+    # Linear views compare probes refit on train plus validation.
+    df = df[~train_only_linear_rows(df)]
     name = df["name"].astype(str)
 
     is_rgb_sweep = df["bands"].astype(str) == "rgb"
@@ -450,10 +474,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~off_modality].copy()
     name = df["name"].astype(str)
 
-    ablation = pd.Series(False, index=df.index)
-    for tag in ABLATION_TAGS:
-        ablation |= name.str.contains(tag, regex=False)
-    df = df[~ablation].copy()
+    df = df[~name.str.startswith(ABLATION_PREFIXES)].copy()
 
     df = df[df["metric_name"].isin(METRIC_MAP)].copy()
     df["metric"] = df["metric_name"].map(METRIC_MAP)
@@ -466,6 +487,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     base = base.where(~df["is_landsat_sub"], base.str.removesuffix(LANDSAT_SUB_SUFFIX))
     df["source_model"] = base
     df["base_model"] = base.map(canonical_slug)
+    df = df[~df["is_landsat_sub"] | df["dataset"].isin(LANDSAT_DATASETS)].copy()
 
     band_lists = df["bands"].astype(str).str.lower().str.replace(" ", "").str.split(",")
     rgb_list = band_lists.map(lambda bands: bool(bands) and set(bands) <= RGB_BAND_NAMES)

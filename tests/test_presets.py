@@ -1,5 +1,8 @@
 """Offline coverage of the typed preset boundary."""
 
+import importlib
+import re
+
 import pytest
 
 from geo_eval_harness.config import list_model_configs, model_config_path
@@ -45,6 +48,26 @@ def test_packaged_preset_is_typed_and_omits_schema_defaults(name: str) -> None:
             for dataset, override in preset.dataset_overrides.items()
         }
     assert raw == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "torchgeo/croma_base",
+        "torchgeo/croma_large",
+        "terratorch/clay_v1",
+        "terratorch/clay_v1_cls",
+        "terratorch/clay_v1_5",
+        "terratorch/clay_v1_5_cls",
+    ],
+)
+def test_croma_and_clay_segmentation_layers_are_declared_residual_branches(name: str) -> None:
+    """Their feed-forward modules return an update; the probe adds the input only if declared."""
+    preset = load_model_preset(ModelConfig(name=name))
+    module, _, symbol = preset.target.rpartition(".")
+    declared = getattr(importlib.import_module(module), symbol).residual_branch_layers
+    assert preset.segmentation.layers
+    assert all(re.fullmatch(declared, layer) for layer in preset.segmentation.layers)
 
 
 def test_rcf_seed_is_explicit_and_overridable() -> None:

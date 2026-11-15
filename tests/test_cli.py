@@ -1,6 +1,7 @@
 """Unit tests for CLI entrypoints."""
 
 import argparse
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -36,6 +37,45 @@ def test_run_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.datasets == ["m-eurosat"]
     assert cfg.runtime.batch_size == 8
     assert cfg.runtime.device == "cpu"
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["run", "-m", "rcf", "-d", "m-eurosat", "--device", "cpu"], "WARNING: problem\n"),
+        (
+            ["run", "-m", "rcf", "-d", "m-eurosat", "--device", "cpu", "--verbose"],
+            "INFO: progress\nWARNING: problem\n",
+        ),
+        (
+            ["coord", "--model", "sincos", "--dataset", "country"],
+            "INFO: progress\nWARNING: problem\n",
+        ),
+    ],
+)
+def test_commands_log_to_stderr_at_the_selected_level(
+    argv: list[str],
+    expected: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def runtime(_config: object) -> None:
+        logger = logging.getLogger("geo_eval_harness.main")
+        logger.info("progress")
+        logger.warning("problem")
+
+    root = logging.getLogger()
+    level = root.level
+    monkeypatch.setattr(root, "handlers", [])
+    monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=runtime))
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.run_coordbench", runtime)
+    try:
+        cli_main(argv)
+    finally:
+        root.setLevel(level)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == expected
 
 
 @pytest.mark.parametrize("command", ["run", "flops"])

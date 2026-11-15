@@ -84,8 +84,7 @@ holdout:
 ``random``
    Seeded k-fold cross-validation.
 ``spatial``
-   K-fold cross-validation over geographic grid cells. ``evaluation.cell_deg``
-   (``--cell-deg``) sets the cell width in degrees.
+   K-fold cross-validation over geographic grid cells. ``evaluation.cell_deg`` (``--cell-deg``) sets the cell width in degrees. Each occupied cell is assigned to one fold, so a benchmark with fewer occupied cells than ``evaluation.folds`` uses one fold per cell; ``n_folds`` records the number used, and a single occupied cell is an error.
 ``both``
    Run both cross-validation protocols. Benchmarks with an official test mask
    use that fixed holdout once instead.
