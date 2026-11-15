@@ -271,6 +271,13 @@ def test_partial_native_falls_back_to_a_complete_zscore_row() -> None:
     assert list(bench.scores_.loc["partial_native"].index) == list(DATASETS)
 
 
+def test_identity_only_model_is_seated() -> None:
+    raw = _raw_df()
+    raw.loc[raw["name"] == "imagestats", "normalization"] = "identity"
+    bench, _excluded = rl.build_view(rl.harmonize(raw), "classification", "linear", "RGB")
+    assert bench.scores_.loc["imagestats", "d1"] == pytest.approx(0.40)
+
+
 def test_incomplete_zscore_is_excluded_even_when_native_is_partial() -> None:
     bench, excluded = rl.build_view(_harmonized(), "classification", "linear", "RGB")
     assert "excluded" not in set(bench.models_)
