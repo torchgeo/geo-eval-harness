@@ -276,6 +276,22 @@ def test_run_coordbench_reports_official_test_count(
     assert set(df.n_test) == {int(test_mask.sum())}
 
 
+def test_spatial_split_uses_occupied_cells(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lon = np.repeat([5.0, 15.0, 25.0], 40) + np.tile(np.linspace(-4, 4, 40), 3)
+    lat = np.tile(np.linspace(1, 9, 40), 3)
+    bench = CoordBenchmark(
+        name="three-cells", lat=lat, lon=lon, tasks={"target": lat + lon}, task_type="regression"
+    )
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [bench])
+
+    cfg = _coord_cfg(tmp_path, split="spatial")
+    run_coordbench(cfg)
+    assert set(pd.read_csv(cfg.output.file).n_folds) == {3}
+
+    with pytest.raises(ValueError, match="at least 2 occupied folds"):
+        run_coordbench(_coord_cfg(tmp_path, split="spatial", cell_deg=45.0))
+
+
 def test_load_benchmarks_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     # Use local tables instead of downloading Parquet files.
     tables = {
