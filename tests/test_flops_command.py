@@ -414,7 +414,7 @@ def test_invalid_cuda_errors_without_cpu_fallback(
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(SystemExit, match=f"^error: .*{message}"):
         _flops.run(
             parser().parse_args(
                 ["--model", "rcf", "--device", device, "--output", str(tmp_path / "cuda.csv")]

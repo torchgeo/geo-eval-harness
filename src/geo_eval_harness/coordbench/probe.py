@@ -67,6 +67,11 @@ def _fold_indices(
     """Index arrays for each CV fold — spatial groups if given, else random partition."""
     if fold_assign is not None:
         groups = [np.where(fold_assign == f)[0] for f in np.unique(fold_assign)]
+        if len(groups) < 2:
+            raise ValueError(
+                f"spatial cross-validation needs at least 2 occupied folds, got {len(groups)}; "
+                "use a smaller cell_deg"
+            )
         return [g for g in groups if g.size > 0]
     perm = np.random.default_rng(seed).permutation(n)
     return [perm[i::folds] for i in range(folds)]

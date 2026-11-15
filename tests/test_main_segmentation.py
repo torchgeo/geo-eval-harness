@@ -37,7 +37,7 @@ def _synthetic_segmentation_loaders(
     n_val: int = 4,
     n_test: int = 4,
     channels: int = 3,
-    n_classes: int = 3,
+    n_classes: int = 2,
 ) -> tuple[_SegmentationDataset, DataLoader, DataLoader, DataLoader]:
     rng = torch.Generator().manual_seed(1)
     train_images = torch.rand(n_train, channels, 8, 8, generator=rng)
@@ -178,6 +178,32 @@ def test_segmentation_resume_skips_complete_run(tmp_path: Path):
     build_mock.assert_not_called()
     df = pd.read_csv(out)
     assert int((df["method"] == "seg-fpn").sum()) == 1
+
+
+def _randomly_initialized_backbone(*_args: object) -> torch.nn.Module:
+    backbone = torch.nn.Sequential(torch.nn.Conv2d(3, 4, 1))
+    backbone.effective_normalization = "bandspec_zscore"
+    return backbone
+
+
+def test_dataset_row_does_not_depend_on_earlier_datasets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "geo_eval_harness.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    monkeypatch.setattr(
+        "geo_eval_harness.main.instantiate_dataset_model", _randomly_initialized_backbone
+    )
+    rows = []
+    for datasets in (["caffe"], ["burn_scars", "caffe"]):
+        out = tmp_path / f"{len(datasets)}.csv"
+        segmentation = {"head": "linear", "layers": ["0"], "epochs": 2}
+        main(_cfg_for_segmentation(out, {"datasets": datasets, "segmentation": segmentation}))
+        df = pd.read_csv(out)
+        rows.append(df.loc[df["dataset"] == "caffe", ["metric_value", "ci_lower", "ci_upper"]])
+
+    assert rows[0].to_numpy().tolist() == rows[1].to_numpy().tolist()
 
 
 _TINY_VIT = {

@@ -81,7 +81,7 @@ Required class-level attributes:
 * ``multilabel`` — ``True`` for multi-hot labels (``m-bigearthnet``, ``benv2``, ``treesatai``).
   Selects micro-mAP over accuracy as the reported metric, so getting it wrong
   silently reports the wrong number.
-* ``supports_partitions`` — ``True`` when the wrapper supports training partitions, as V1, HOTOSM, and Open Cities do. When ``False``, ``get_datasets`` warns and ignores a non-default ``input.partition``.
+* ``supports_partitions`` — ``True`` when the wrapper supports training partitions, as V1, HOTOSM, and Open Cities do. When ``False``, a non-default ``input.partition`` is an error.
 
 The ``get_dataset`` method takes ``split`` (``"train"``, ``"val"``, or
 ``"test"``) plus the keyword-only arguments ``partition``, ``bands`` (the

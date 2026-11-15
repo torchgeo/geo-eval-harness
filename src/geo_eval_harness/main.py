@@ -978,9 +978,12 @@ def _cache_segmentation_loaders(
         return loaders
     from geo_eval_harness.datasets.sample_cache import cache_loader
 
+    num_classes = get_bench_dataset_class(ds_name).num_classes
+
     def cached(loader: DataLoader, split: str) -> DataLoader:
         identity: dict[str, object] = {
             "dataset": ds_name,
+            "num_classes": num_classes,
             "split": split,
             "partition": cfg.input.partition if split == "train" else "default",
             "bands": normalize_bands_value(cfg.input.bands),
@@ -1022,6 +1025,7 @@ def run_dataset(
             logger.info("[%s] Resume preflight: all requested work already complete", ds_name)
         return
 
+    torch.manual_seed(cfg.runtime.seed)
     if device is not None:
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
@@ -1097,10 +1101,7 @@ def main(cfg: RunConfig, *, strict: bool = False) -> None:
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
-    torch.manual_seed(cfg.runtime.seed)
-    if device.type == "cuda":
-        # One setting for the whole run keeps a result independent of dataset order and resume.
-        torch.set_float32_matmul_precision("high")
+    torch.set_float32_matmul_precision(cfg.runtime.matmul_precision)
     dataset_names = _expand_dataset_list(cfg.datasets)
 
     output_path = _resolve_output_path(cfg)

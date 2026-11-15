@@ -12,6 +12,7 @@ from .. import commands
 from ..config.presets import NORMALIZATIONS, resolve_run_config
 from ..config.run import RunConfig, validate_run_config
 from ..datasets import get_bench_dataset_class, list_datasets
+from ._common import setup_logging
 from ._config import (
     OUTPUT_FLAG_OVERRIDES,
     FlagOverride,
@@ -27,6 +28,7 @@ _FLAG_OVERRIDES = (
     FlagOverride("batch_size", ("runtime", "batch_size")),
     FlagOverride("workers", ("runtime", "workers")),
     FlagOverride("seed", ("runtime", "seed")),
+    FlagOverride("matmul_precision", ("runtime", "matmul_precision")),
     FlagOverride("verbose", ("runtime", "verbose")),
     FlagOverride("bands", ("input", "bands"), comma_separated_bands),
     FlagOverride("image_size", ("input", "image_size")),
@@ -57,6 +59,11 @@ def load_config(args: argparse.Namespace) -> RunConfig:
     for dataset in datasets if config.datasets == ["all"] else config.datasets:
         effective, preset = resolve_run_config(config, dataset)
         preset.validate_normalization(NORMALIZATIONS[effective.input.normalization])
+        partition = effective.input.partition
+        if partition != "default" and not get_bench_dataset_class(dataset).supports_partitions:
+            raise ValueError(
+                f"Dataset {dataset!r} supports only the default partition, got {partition!r}."
+            )
         if isinstance(effective.input.bands, str):
             if effective.input.bands not in {"rgb", "all"}:
                 raise ValueError("input.bands must be rgb, all, or a YAML list of band names")
@@ -74,4 +81,5 @@ def run(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         print(yaml.safe_dump(config.model_dump_yaml(), sort_keys=False), end="")
         return
+    setup_logging(verbose=config.runtime.verbose)
     commands._run_runtime.run(config)

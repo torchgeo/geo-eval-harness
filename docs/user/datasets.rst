@@ -2,7 +2,7 @@ Datasets
 ========
 
 ``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID (rehosted from Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
+V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID and Infra-Bench CLS (Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
 :class:`~geo_eval_harness.datasets.BenchDataset` interface and are
 registered by name so they can be selected without importing every loader.
 
@@ -38,6 +38,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``aid``
      - ``data/aid/``
      - Hugging Face ``isaaccorley/aid``, pinned commit + checksum-verified
+   * - ``infrabench-cls``
+     - ``data/infrabench_cls/``
+     - Pinned Hugging Face tiles and GitHub spatial split, both checksum-verified
    * - ``open_cities``
      - ``data/open_cities/<city>/``
      - source.coop ``open-cities/ai-challenge`` tier 1, checksum-verified; masks built locally
@@ -85,6 +88,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download eurosat                                  # torchgeo EuroSAT
    $ geo-eval-harness download resisc45                                 # torchgeo RESISC45
    $ geo-eval-harness download aid                                      # isaaccorley/aid rehost
+   $ geo-eval-harness download infrabench-cls
    $ geo-eval-harness download open_cities                              # source.coop, ~34 GB
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
@@ -98,7 +102,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download planteur                                 # PLANTEUR crop types
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
-Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
+Names that share another dataset's files, such as ``eurosat-spatial``, ``bright-post-sar-rgb``, and the ``planteur_loio_*`` folds, download that dataset. Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
 
 The default V2 download set is: ``benv2``, ``burn_scars``, ``caffe``,
 ``cloudsen12``, ``dynamic_earthnet``, ``flair2``, ``forestnet``,
@@ -198,7 +202,7 @@ CLI name           #cls   bands multilabel   sensor                             
 ``benv2``          19     14    **yes**      Sentinel-1 + Sentinel-2 (multi-modal)  :class:`~geo_eval_harness.datasets.BENV2`
 ``forestnet``      12     6     no           Sentinel-2                             :class:`~geo_eval_harness.datasets.Forestnet`
 ``so2sat``         17     12    no           Sentinel-1 + Sentinel-2                :class:`~geo_eval_harness.datasets.So2Sat`
-``treesatai``      13     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
+``treesatai``      15     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
 ================== ====== ===== ============ ====================================== =====================================
 
 V2 datasets are stored as a single ``.tortilla`` file each, hosted under
@@ -232,10 +236,10 @@ GeoBench V2 — segmentation
 ==================== ====== ===== ============================================ ==============================================================
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
-``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
+``burn_scars``       2      6     no-data (2) ignored                          :class:`~geo_eval_harness.datasets.BurnScars`
 ``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
-``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
+``dynamic_earthnet`` 7      16    Planet + Sentinel-2; needs a Planet band     :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
 ``fotw``             3      4     Fields of the World; unknown (3) ignored     :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
 ``kuro_siwo``        4      3     SAR ``vv`` / ``vh`` + DEM (no RGB triplet)   :class:`~geo_eval_harness.datasets.KuroSiwo`
@@ -254,6 +258,7 @@ CLI name                Class
 ``eurosat-spatial``     :class:`~geo_eval_harness.datasets.EuroSATSpatial`  (longitude-based split)
 ``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
 ``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
+``infrabench-cls``       :class:`~geo_eval_harness.datasets.InfraBenchCLS` (13 infrastructure classes, S2 + S1)
 
 ``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
 ``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
@@ -278,6 +283,8 @@ no geolocation, so it appears on the coverage map as an explicit gap rather
 than being silently omitted.
 
 ``aid`` contains 10,000 RGB scenes at 600x600 across 30 classes (Xia et al., 2017). With no official split, ``scripts/generate_aid_splits.py`` generates a deterministic, stratified 60/20/20 split. Downloads use the pinned, checksum-verified ``isaaccorley/aid`` rehost. Upstream specifies no license or image geolocation. Band subsets and ordering are applied before user transforms.
+
+``infrabench-cls`` contains 18,756 OpenStreetMap infrastructure tiles in 13 classes, with seven Sentinel-2 bands and Sentinel-1 VV/VH. The spatial split assigns 13,087 / 2,856 / 2,813 tiles by asset ID; duplicated border assets stay within one split. Images are resized bilinearly to 60x60 pixels. Sentinel-2 values use clipped 0--255 scaling, including the upstream L2A processing offset; Sentinel-1 backscatter is clipped to -30--10 dB. Labels come from OSM tags. The dataset is distributed under ODbL 1.0; see `Infra-Bench CLS <https://doi.org/10.5281/zenodo.22118891>`_.
 
 ``ucmerced`` contains 2,100 RGB aerial images across 21 land use classes, resized to 256x256 by torchgeo. Its published split files contain 1,260 training, 420 validation, and 420 test images. Normalization statistics use the training split only. The source resolution is 1 ft (0.3048 m); the shared ``aerial`` sensor tag uses an approximate 1 m GSD for resolution-aware models. Images have no georeferencing, which is recorded in the coverage map.
 
@@ -529,7 +536,7 @@ objects.  Three modes are supported:
 * ``--bands rgb`` *(default)* — only the bands listed in
   :attr:`~geo_eval_harness.datasets.BenchDataset.rgb_bands`.
 * ``--bands all`` — every band the dataset exposes.
-* ``--bands red,green,blue,nir`` — an explicit subset.
+* ``--bands red,green,blue,nir`` — an explicit subset. GeoBench V2 datasets with several sensors need each sensor's bands listed next to each other, and ``kuro_siwo`` needs ``dem`` last.
 
 The runner derives ``num_channels`` from the loaded tensor and constructs
 the matching ``list[BandSpec]`` so the model wrapper can size its input
@@ -552,7 +559,7 @@ set ``band_order_strategy = "by_sensor"`` and the V2 base class groups
 ``BandSpec`` entries by sensor before passing them to the upstream
 ``geobench_v2`` loader.  End users do not need to do anything special —
 set ``--bands all`` (or an explicit subset) and the right
-per-modality tensors are concatenated into a single ``image`` key.
+per-modality tensors are concatenated into a single ``image`` key. With ``--time-steps``, ``pastis`` returns ``(T, C, H, W)`` samples whose channels follow the selected bands; each sensor is sampled to ``T`` acquisitions independently, so frames from different sensors share an index, not a date.
 
 Model compatibility
 ^^^^^^^^^^^^^^^^^^^
@@ -569,7 +576,7 @@ Model compatibility
 Data partitions
 ---------------
 
-V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets ignore or reject non-default values.
+V1 datasets, ``hotosm_buildings``, and ``open_cities`` support ``--partition``. HOTOSM and Open Cities use fixed training subsets by default; ``full`` selects their complete training splits. For V1, ``--partition`` selects a distributed partition JSON file. Other datasets reject non-default values.
 
 .. code-block:: console
 

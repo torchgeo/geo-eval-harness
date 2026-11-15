@@ -163,13 +163,14 @@ def test_build_index_weights_continents_by_sample_count(tmp_path: Path) -> None:
         GeoRecord("a", "extracted", n=3, continents={"Europe": 100.0}),
         GeoRecord("b", "extracted", n=1, continents={"Asia": 100.0}),
         GeoRecord("c", "no_geo", reason="No coordinates"),
+        GeoRecord("d", "extracted", n=3, alias_of="a", continents={"Europe": 100.0}),
     ):
         write_record(record, tmp_path)
 
     index = build_index(tmp_path)
     assert index["totals"] == {
-        "datasets": 3,
-        "extracted": 2,
+        "datasets": 4,
+        "extracted": 3,
         "samples": 4,
         "continents": {"Europe": 75.0, "Asia": 25.0},
     }
@@ -258,7 +259,7 @@ def test_index_matches_the_records(store: dict[str, GeoRecord]) -> None:
 
     totals = index["totals"]
     assert totals["datasets"] == len(store)
-    assert totals["samples"] == sum(r.n for r in store.values())
+    assert totals["samples"] == sum(r.n for r in store.values() if r.alias_of is None)
 
 
 @pytest.mark.parametrize(

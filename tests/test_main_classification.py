@@ -147,10 +147,10 @@ def test_implicit_gpu_knn_fallback_reaches_evaluator_as_cpu(tmp_path: Path, monk
 
 
 @pytest.mark.parametrize(
-    ("requested", "expected_device"),
+    ("requested", "expected_device", "precision"),
     [
-        ("cuda", "cuda:1"),
-        ("auto", "cuda:1"),
+        ("cuda", "cuda:1", "high"),
+        ("auto", "cuda:1", "highest"),
     ],
 )
 def test_device_resolution_and_resume(
@@ -158,12 +158,13 @@ def test_device_resolution_and_resume(
     monkeypatch: pytest.MonkeyPatch,
     requested: str,
     expected_device: str,
+    precision: str,
 ) -> None:
     cfg = validate_run_config(
         {
             "model": {"name": "rcf"},
             "datasets": ["m-eurosat"],
-            "runtime": {"device": requested},
+            "runtime": {"device": requested, "matmul_precision": precision},
             "classification": {"methods": ["knn"]},
             "output": {"file": str(tmp_path / "out.csv")},
         }
@@ -189,7 +190,7 @@ def test_device_resolution_and_resume(
         ),
     ):
         main(cfg)
-        set_precision.assert_called_once_with("high")
+        set_precision.assert_called_once_with(precision)
         assert cfg.model_dump_json() == original
         assert build.return_value.to.call_args.args[0] == torch.device(expected_device)
         assert all(call.args[2] == torch.device(expected_device) for call in embed.call_args_list)
