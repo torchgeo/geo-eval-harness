@@ -7,6 +7,9 @@ Add models by implementing :meth:`LocationEncoder._encode` and selecting their c
 SinCos and MIND ship with the base install.
 
 SatCLIP, GeoCLIP, Climplicit, and SINR need ``pip install -e '.[coordbench]'``.
+
+Pretrained encoders read their default Hugging Face ``repo`` at a pinned commit. Pass ``revision``
+together with another ``repo``; ``revision=None`` follows that repository's default branch.
 """
 
 import logging
@@ -20,6 +23,12 @@ import torch
 from geo_eval_harness.devices import resolve_device
 
 logger = logging.getLogger(__name__)
+
+MIND_REVISION = "1437c4d85309e27b3aeca66f93bd5677e1a36ddf"
+CLIMPLICIT_REVISION = "fe3426016d96aa68a8799db31e6a095bb435feab"
+SINR_REVISION = "987fb4fe7c0ba4ee10c7916c58151967d83465ae"
+GEOCLIP_REVISION = "2532b10af1fa12b6ec19bbb765deed90b53f59ff"
+SATCLIP_REVISION = "6d6aac1f6b4b7935e5cf8084a29ba7451d69e345"
 
 
 class LocationEncoder(ABC):
@@ -101,6 +110,7 @@ class MINDLocationEncoder(LocationEncoder):
     Args:
         repo: HuggingFace repo id holding the weights.
         filename: Checkpoint file within the repo (``.safetensors`` or ``.pt``).
+        revision: Hugging Face commit of ``repo`` to read.
         dim: Embedding width to keep (Matryoshka prefix).
         feature: ``"pooled"`` (trunk) or ``"head"`` (projected output).
         default_year: Year supplied to year-conditioned checkpoints when a
@@ -113,6 +123,7 @@ class MINDLocationEncoder(LocationEncoder):
         self,
         repo: str = "isaaccorley/MIND",
         filename: str = "mind.safetensors",
+        revision: str | None = MIND_REVISION,
         dim: int = 64,
         feature: str = "pooled",
         default_year: int = 2021,
@@ -124,7 +135,9 @@ class MINDLocationEncoder(LocationEncoder):
 
         from geo_eval_harness.coordbench.mind import load_mind
 
-        self.model = load_mind(hf_hub_download(repo, filename), device=self.device)
+        self.model = load_mind(
+            hf_hub_download(repo, filename, revision=revision), device=self.device
+        )
         self.dim = int(dim)
         self.feature = feature
         self.default_year = default_year
@@ -185,6 +198,7 @@ class ClimplicitLocationEncoder(_RSHFEncoder):
     def __init__(
         self,
         repo: str = "Jobedo/climplicit",
+        revision: str | None = CLIMPLICIT_REVISION,
         device: str = "cpu",
         batch_size: int = 8192,
     ) -> None:
@@ -192,7 +206,9 @@ class ClimplicitLocationEncoder(_RSHFEncoder):
         from rshf.climplicit import Climplicit
 
         self.model = (
-            Climplicit.from_pretrained(repo, config={"return_chelsa": False}).to(self.device).eval()
+            Climplicit.from_pretrained(repo, revision=revision, config={"return_chelsa": False})
+            .to(self.device)
+            .eval()
         )
 
 
@@ -208,6 +224,7 @@ class SINRLocationEncoder(_RSHFEncoder):
     def __init__(
         self,
         repo: str = "MVRL/sinr-location-encoder-1000-cls",
+        revision: str | None = SINR_REVISION,
         device: str = "cpu",
         batch_size: int = 8192,
     ) -> None:
@@ -218,14 +235,16 @@ class SINRLocationEncoder(_RSHFEncoder):
         from huggingface_hub import hf_hub_download
         from rshf.sinr import SINR, SINRConfig
 
-        cfg = json.loads(Path(hf_hub_download(repo, "config.json")).read_text())
+        cfg = json.loads(Path(hf_hub_download(repo, "config.json", revision=revision)).read_text())
         conf = SINRConfig(
             num_inputs=cfg["num_inputs"],
             num_filts=cfg["num_filts"],
             depth=cfg["depth"],
             num_classes=cfg["num_classes"],
         )
-        self.model = SINR.from_pretrained(repo, config=conf).to(self.device).eval()
+        self.model = (
+            SINR.from_pretrained(repo, revision=revision, config=conf).to(self.device).eval()
+        )
 
     @override
     @torch.no_grad()
@@ -249,6 +268,7 @@ class GeoCLIPLocationEncoder(_RSHFEncoder):
     def __init__(
         self,
         repo: str = "MVRL/geoclip-location-encoder",
+        revision: str | None = GEOCLIP_REVISION,
         device: str = "cpu",
         batch_size: int = 8192,
     ) -> None:
@@ -262,7 +282,7 @@ class GeoCLIPLocationEncoder(_RSHFEncoder):
 
         # Build from config + weights explicitly: PyTorchModelHubMixin.from_pretrained
         # does not reconstruct the GeoCLIPConfig under recent huggingface_hub.
-        cfg = json.loads(Path(hf_hub_download(repo, "config.json")).read_text())
+        cfg = json.loads(Path(hf_hub_download(repo, "config.json", revision=revision)).read_text())
         config = GeoCLIPConfig(
             sigma=cfg["sigma"],
             input_size=cfg["input_size"],
@@ -270,7 +290,9 @@ class GeoCLIPLocationEncoder(_RSHFEncoder):
             dim=cfg["dim"],
         )
         model = GeoCLIP(config)
-        model.load_state_dict(load_file(hf_hub_download(repo, "model.safetensors")))
+        model.load_state_dict(
+            load_file(hf_hub_download(repo, "model.safetensors", revision=revision))
+        )
         self.model = model.to(self.device).eval()
 
 
@@ -288,10 +310,13 @@ class SatCLIPLocationEncoder(_RSHFEncoder):
     def __init__(
         self,
         repo: str = "MVRL/satclip-loc-enc-vit16-l40",
+        revision: str | None = SATCLIP_REVISION,
         device: str = "cpu",
         batch_size: int = 8192,
     ) -> None:
         super().__init__(device=device, batch_size=batch_size)
         from rshf.satclip import SatClip
 
-        self.model = SatClip.from_pretrained(repo).double().to(self.device).eval()
+        self.model = (
+            SatClip.from_pretrained(repo, revision=revision).double().to(self.device).eval()
+        )

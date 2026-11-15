@@ -9,7 +9,7 @@ random, spatial-block, or official held-out splits.
 The normalized benchmark tables stream from the
 `taylor-geospatial/coordbench <https://huggingface.co/datasets/taylor-geospatial/coordbench>`_
 dataset on Hugging Face. There is no separate download command and no local
-``data/`` layout to prepare.
+``data/`` layout to prepare. Each table is read at a pinned commit and checked against a packaged SHA-256 checksum.
 
 First run
 ---------
@@ -52,6 +52,8 @@ Install the optional reference encoders from PyPI with:
 
    $ pip install "geo-eval-harness[coordbench]"
 
+The pretrained presets read their Hugging Face repositories at pinned commits. To load another repository, set ``revision`` together with ``repo`` in ``model.kwargs``; ``revision: null`` follows that repository's default branch.
+
 For example, run SatCLIP on its five downstream benchmarks with random and
 spatial-block cross-validation:
 
@@ -82,7 +84,7 @@ because this track does not define a KNN regressor. ``evaluation.split``
 holdout:
 
 ``random``
-   Seeded k-fold cross-validation.
+   Seeded k-fold cross-validation. A task with fewer valid points than ``evaluation.folds`` is an error.
 ``spatial``
    K-fold cross-validation over geographic grid cells. ``evaluation.cell_deg`` (``--cell-deg``) sets the cell width in degrees. Each occupied cell is assigned to one fold, so a benchmark with fewer occupied cells than ``evaluation.folds`` uses one fold per cell; ``n_folds`` records the number used, and a single occupied cell is an error.
 ``both``

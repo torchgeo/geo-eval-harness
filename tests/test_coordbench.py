@@ -1,5 +1,8 @@
 """Tests for the CoordBench location-encoder track (network-free)."""
 
+import json
+import re
+import sys
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -20,8 +23,10 @@ from geo_eval_harness.coordbench import (
     spatial_fold_ids,
 )
 from geo_eval_harness.coordbench import datasets as cb_datasets
+from geo_eval_harness.coordbench import models as cb_models
 from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
 from geo_eval_harness.coordbench.run import _instantiate_encoder
+from geo_eval_harness.hub import load_checksums, sha256_file
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
@@ -170,6 +175,15 @@ def test_linear_and_knn_classification(points: tuple[np.ndarray, np.ndarray]) ->
     assert len(folds) == 5
 
 
+def test_random_folds_reject_fewer_valid_points_than_folds(rng: np.random.Generator) -> None:
+    feats = rng.normal(size=(6, 4)).astype(np.float32)
+    labels = np.array([1.0, 2.0, 3.0, np.nan, np.nan, np.nan])  # Three of six rows are nodata.
+    with pytest.raises(ValueError, match="needs at least 5 valid points, got 3"):
+        linear_probe_score(feats, labels, "regression", device="cpu")
+    with pytest.raises(ValueError, match="needs at least 5 valid points, got 3"):
+        knn_probe_score(feats, labels, device="cpu")
+
+
 def test_spatial_fold_ids_group_by_cell(points: tuple[np.ndarray, np.ndarray]) -> None:
     lon, lat = points
     fa = spatial_fold_ids(lat, lon, folds=5, cell_deg=10.0, seed=0)
@@ -316,6 +330,32 @@ def test_load_benchmarks_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     np.testing.assert_array_equal(single[0].tasks["bio1"], [10.0, 20.0])
 
 
+def test_load_config_reads_the_pinned_commit_and_verifies_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table = pd.DataFrame({"lon": [0.0, 1.0], "lat": [2.0, 3.0]})
+    path = tmp_path / "data.parquet"
+    table.to_parquet(path)
+    requested: dict[str, Any] = {}
+
+    def download(repo: str, filename: str, **kwargs: Any) -> str:
+        requested.update(kwargs, filename=filename)
+        return str(path)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", download)
+    monkeypatch.setitem(
+        load_checksums("coordbench.sha256"), "data/country/data.parquet", sha256_file(path)
+    )
+
+    pd.testing.assert_frame_equal(cb_datasets.load_config("country"), table)
+    assert re.fullmatch(r"[0-9a-f]{40}", requested.pop("revision"))
+    assert requested == {"filename": "data/country/data.parquet", "repo_type": "dataset"}
+
+    path.write_bytes(b"another revision")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        cb_datasets.load_config("country")
+
+
 def test_mind_load_roundtrip(tmp_path: Path) -> None:
     from safetensors.torch import save_file
 
@@ -344,9 +384,13 @@ def test_mind_encoder_dim_slice(monkeypatch: pytest.MonkeyPatch) -> None:
 
     model = mind_mod.ReSIRENLocationEncoder(embed_dim=32, out_dim=32, depth=2).eval()
     monkeypatch.setattr(mind_mod, "load_mind", lambda path, device="cpu": model)
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", lambda *a, **k: "dummy")
+    requested: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download", lambda *a, **k: requested.update(k) or "dummy"
+    )
 
     enc = MINDLocationEncoder(dim=8, feature="pooled", device="cpu")
+    assert requested == {"revision": cb_models.MIND_REVISION}
     out = enc.encode(np.array([1.0, 2.0]), np.array([37.0, 51.0]))
     assert out.shape == (2, 8)  # MIND's training permits using a prefix of the 32 features.
     assert out.dtype == np.float32
@@ -504,6 +548,33 @@ def test_rshf_encoders_name_the_missing_extra(monkeypatch: pytest.MonkeyPatch, m
     cfg = CoordConfig.model_validate({"model": {"name": model}})
     with pytest.raises(ImportError, match=r"pip install 'geo-eval-harness\[coordbench\]'"):
         _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
+
+
+@pytest.mark.parametrize("model", ["climplicit", "geoclip", "satclip", "sinr"])
+def test_rshf_encoders_read_their_pinned_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    config = tmp_path / "config.json"
+    keys = ("num_inputs", "num_filts", "depth", "num_classes", "sigma", "input_size")
+    config.write_text(json.dumps(dict.fromkeys((*keys, "encoded_size", "dim"), 1)))
+    rshf = mock.MagicMock()
+    monkeypatch.setitem(sys.modules, "rshf", rshf)
+    monkeypatch.setitem(sys.modules, f"rshf.{model}", rshf)
+    monkeypatch.setattr(cb_models, "find_spec", lambda name: rshf)
+    monkeypatch.setattr("safetensors.torch.load_file", lambda path: {})
+    downloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download", lambda *a, **k: downloads.append(k) or str(config)
+    )
+
+    cfg = CoordConfig.model_validate({"model": {"name": model}})
+    _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
+
+    loads = [call.kwargs for call in rshf.mock_calls if call[0].endswith("from_pretrained")]
+    revisions = {kwargs.get("revision") for kwargs in downloads + loads}
+    pinned = getattr(cb_models, f"{model.upper()}_REVISION")
+    assert re.fullmatch(r"[0-9a-f]{40}", pinned)
+    assert revisions == {pinned}
 
 
 def test_rejects_non_location_custom_target() -> None:

@@ -15,6 +15,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 # https://huggingface.co/datasets/taylor-geospatial/coordbench
 COORDBENCH_REPO = os.environ.get("COORDBENCH_REPO", "taylor-geospatial/coordbench")
+COORDBENCH_REVISION = "defc7c5cb6279eed025e27dd91456bba4fce6392"
 
 # canonical (non-task) schema columns, excluded when scanning for task columns
 _CANONICAL_EXTRA = frozenset({"timestamp", "timestamp_end", "split", "id"})
@@ -79,10 +81,18 @@ class CoordBenchmark:
 
 
 def load_config(config: str) -> pd.DataFrame:
-    """Read one CoordBench config's normalized parquet table from HuggingFace."""
+    """Read one CoordBench config's parquet table at the pinned commit after a SHA-256 check."""
     from huggingface_hub import hf_hub_download
 
-    path = hf_hub_download(COORDBENCH_REPO, f"data/{config}/data.parquet", repo_type="dataset")
+    from geo_eval_harness.hub import load_checksums, verify_checksums
+
+    filename = f"data/{config}/data.parquet"
+    path = Path(
+        hf_hub_download(
+            COORDBENCH_REPO, filename, repo_type="dataset", revision=COORDBENCH_REVISION
+        )
+    )
+    verify_checksums(path.parent, {path.name: load_checksums("coordbench.sha256")[filename]})
     return pd.read_parquet(path)
 
 
