@@ -48,6 +48,7 @@ Evaluation and results
 * Non-finite backbone features are counted and skipped during training; an epoch fails if more than 5% of batches are skipped. Evaluation rejects non-finite features and logits.
 * Sample caches store preprocessed segmentation samples on disk, in host memory, or on the training device.
 * Result rows record label counts and segmentation setup columns. The ranking explorer separates adaptation, decoder, pyramid, input size, and training settings; Native bands views allow incomplete dataset coverage.
+* ``load_results`` keeps a train-only linear probe separate from one refit on train plus validation; the ranking explorer ranks only the refit rows.
 * The results explorer dictionary-encodes repeated data and enforces a 50 MB limit for generated pages and snapshots.
 
 Datasets

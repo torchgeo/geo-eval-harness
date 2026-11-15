@@ -167,7 +167,7 @@ Column                       Value on a segmentation row
 ``early_stopping_patience``  ``segmentation.early_stopping_patience``; empty when off.
 ============================ ==========================================================
 
-The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Resume uses the configuration hash.
+The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Linear-probe rows with ``merge_val`` false also remain distinct from rows refit on train plus validation, and the ranking explorer ranks only the refit rows. Resume uses the configuration hash.
 
 .. _segmentation-epoch-metrics:
 
