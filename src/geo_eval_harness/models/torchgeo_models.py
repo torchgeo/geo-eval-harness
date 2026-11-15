@@ -517,12 +517,17 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
         return self.backbone(images)
 
 
+_SCALEMAE_PATCH_SIZE = 16
+
+
 class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
     """Wrapper for torchgeo ScaleMAE-Large.
 
     ``forward_features()`` returns ``(B, N+1, D)`` tokens; ``pool`` selects
     between CLS and mean-pooled post-normalization patch tokens. ``res`` is the
     scale supplied to Scale-MAE's resolution-conditioned positional embedding.
+    ``image_size`` must be a multiple of 16 because the stride-16 patch embedding
+    would otherwise drop the trailing pixels.
     """
 
     weights_input_unit = "uint8_div255"
@@ -556,6 +561,13 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
             raise ValueError("Scale-MAE pool must be 'cls' or 'mean'.")
 
         image_size = image_size or target_size or 224
+        _validate_fixed_img_size(
+            "Scale-MAE",
+            image_size,
+            _SCALEMAE_PATCH_SIZE,
+            auto_resize=auto_resize,
+            target_size=image_size,
+        )
         super().__init__(
             bands=bands,
             factory=factory,
@@ -567,6 +579,7 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
             **_kwargs,
         )
         self.image_size = image_size
+        self.probe_input_size = image_size
         self.res = float(res)
         self.pool = pool
 
@@ -996,7 +1009,9 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
 
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
-        x_opt, _ = map_to_model_bands(images, self.bands, _CROMA_S2_12)
+        x_opt, _ = map_to_model_bands(
+            images, self.bands, _CROMA_S2_12, policy=BandMappingPolicy(preferred_sensors=("s2",))
+        )
         encodings = self.backbone.s2_encoder(imgs=x_opt, attn_bias=self.backbone.attn_bias)
         return self.backbone.s2_GAP_FFN(encodings.mean(dim=1))
 

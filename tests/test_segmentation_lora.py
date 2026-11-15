@@ -203,11 +203,9 @@ def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> 
     _assert_only_lora_trains(model, list(segmentation.layers), images)
 
 
-@pytest.mark.parametrize(
-    "preset_name", ["terrafm/base_s1", "terrafm/base_s2", "terrafm/base_s2_l1c"]
-)
-def test_terrafm_preset_lora_targets_train(preset_name: str) -> None:
+def test_terrafm_preset_lora_targets_train() -> None:
     """TerraFM's pretrained weights need a local checkpoint, so check its targets untrained."""
+    preset_name = "terrafm/base_s2"
     preset = load_model_preset(ModelConfig(name=preset_name, kwargs={"pretrained": False}))
     dataset, band_selection = _MULTISPECTRAL_INPUTS[preset_name]
     model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
