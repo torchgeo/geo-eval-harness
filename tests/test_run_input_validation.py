@@ -33,6 +33,8 @@ from geo_eval_harness.models import RCFBench
         ("rcf", "caffe", "rgb", "minmax_zscore"),
         ("timm/resnet50", "m-eurosat", "red,green,blue", "model"),
         ("torchgeo/scalemae_large_fmow", "m-eurosat", "rgb", "model"),
+        ("torchgeo/resnet18_s2rgb_seco", "m-eurosat", "rgb", "model"),
+        ("torchgeo/resnet50_s2rgb_seco", "m-so2sat", "rgb", "model"),
         ("torchgeo/deo_rgb", "m-eurosat", "rgb", "model"),
         ("torchgeo/deo_s2", "m-eurosat", "all", "model"),
         ("olmoearth_nano", "m-eurosat", "all", "model"),

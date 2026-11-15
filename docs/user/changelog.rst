@@ -28,6 +28,7 @@ Models
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
+* SeCo ResNet model normalization converts RGB inputs to its 8-bit image scale, applies per-band quantiles, and standardizes with ImageNet statistics.
 * torchgeo wrappers apply their model-native normalization out of place, so forwarding the same batch again gives the same features.
 * UniverSat supports segmentation and LoRA through ``universat_base_seg`` and pins its pretrained weights to a Hugging Face revision.
 * timm models built with ``global_pool: ""`` average channels-last feature maps over their spatial axes and exclude register tokens from the patch average; ``use_cls_token`` is rejected for backbones without a class token.
