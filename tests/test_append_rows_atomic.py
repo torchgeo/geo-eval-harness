@@ -71,6 +71,16 @@ def test_reordered_columns_keep_values_associated_with_names(tmp_path: Path) -> 
     ]
 
 
+def test_rows_missing_existing_columns_append_without_rewriting(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "out.csv"
+    path.write_text("a,b,c\n1,2.50,first\n")
+    append_rows_atomic(str(path), [{"c": "second", "a": 3}])
+    assert path.read_text() == "a,b,c\n1,2.50,first\n3,,second\n"
+    assert "schema drift" not in caplog.text
+
+
 def test_read_failure_preserves_file_and_releases_lock(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
