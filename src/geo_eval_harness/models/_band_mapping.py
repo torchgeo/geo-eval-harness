@@ -1,7 +1,7 @@
 """Map dataset BandSpec lists onto pretrained-model band slots."""
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import cast
 
 import torch
@@ -113,6 +113,19 @@ def canonical_band_name(name: str) -> str:
     if head in _BAND_ALIASES:
         return _BAND_ALIASES[head]
     return _BAND_ALIASES.get(key, key)
+
+
+def hls_band_specs(bands: list[BandSpec]) -> list[BandSpec]:
+    """Name Landsat's NIR band ``nir_narrow``, the band it shares with Sentinel-2 B8A in HLS.
+
+    Landsat OLI B5 is centred at 0.865 um, like B8A; ``nir`` otherwise means the broad B08.
+    """
+    return [
+        replace(b, name="nir_narrow")
+        if b.sensor == "landsat" and canonical_band_name(b.name) == "nir"
+        else b
+        for b in bands
+    ]
 
 
 def resolve_src_indices(

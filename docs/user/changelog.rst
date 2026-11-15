@@ -40,7 +40,8 @@ Models
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
 * OlmoEarth and SAM 3 weights download from pinned Hugging Face commits and are SHA-256 verified before loading; local SAM 3 and Clay v1.5 checkpoints are verified against the same digests.
 * OlmoEarth fills missing bands as upstream does for each version: v1 copies the nearest present band and v1.1 and later set them to 0 after normalization.
-* OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands and normalizes SAR in an undeclared unit with dataset statistics.
+* OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands, rejects a sensor whose selected bands fill none of its channels, and normalizes SAR in an undeclared unit with dataset statistics.
+* Prithvi-EO reads Landsat's NIR band as its narrow-NIR input, so ``m-forestnet`` and ``forestnet`` use all six pretrained bands.
 
 Evaluation and results
 ^^^^^^^^^^^^^^^^^^^^^^

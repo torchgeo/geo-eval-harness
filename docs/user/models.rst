@@ -430,7 +430,8 @@ The ``version`` parameter selects the weight family:
    unit (for example So2Sat and OpenEarthMap-SAR) also use ``BandSpec``
    stats unless ``sar_log_scale`` is set. Only VV and VH backscatter bands fill
    the Sentinel-1 channels; complex parts, covariance cross-terms and VV/VH
-   ratios are dropped. Supply constructor-specific settings in YAML
+   ratios are dropped, and a sensor whose selected bands fill no channel is
+   rejected. Supply constructor-specific settings in YAML
    ``model.kwargs``, not as positional overrides.
 
 .. note::

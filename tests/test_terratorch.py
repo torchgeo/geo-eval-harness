@@ -8,6 +8,7 @@ import pytest
 import torch
 import torch.nn as nn
 
+from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
@@ -105,6 +106,15 @@ def test_prithvi_rgb_selects_pretrained_band_subset(mock_registry: dict[str, Any
     images = torch.arange(3.0).view(1, 3, 1, 1).expand(2, 3, 224, 224)
     out = model.forward_patch_features(images)
     assert out.shape == (2, 8)
+    torch.testing.assert_close(model.backbone.last_forward_input, images)
+
+
+def test_prithvi_feeds_landsat_nir_to_its_narrow_nir_slot(mock_registry: dict[str, Any]) -> None:
+    bands = get_bench_dataset_class("m-forestnet").resolve_band_specs("all")
+    model = TerraTorchPrithviBench(bands=bands, normalization="identity")
+    assert "bands" not in mock_registry["build_calls"][0][1]
+    images = torch.arange(6.0).view(1, 6, 1, 1).expand(1, 6, 224, 224)
+    model.forward_patch_features(images)
     torch.testing.assert_close(model.backbone.last_forward_input, images)
 
 
