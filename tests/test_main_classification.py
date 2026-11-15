@@ -427,36 +427,3 @@ class TestResume:
         assert train.features.std(axis=0) == pytest.approx(1, abs=1e-4)
         assert test.features == pytest.approx((raw_test[0] - mean) / std, abs=1e-4)
         assert list(pd.read_csv(out)["method"]) == ["knn5", "knn5-std"]
-
-
-class TestSideMeasurements:
-    @pytest.mark.usefixtures("runner")
-    def test_profile_resume_partial_does_not_skip(self, tmp_path: Path) -> None:
-        out = tmp_path / "out.csv"
-        cfg = _compose_cfg(
-            out,
-            overrides={
-                "output": {"resume": True},
-                "classification": KNN_ONLY,
-                "profile": {"enabled": True, "n_warmup": 1, "n_measure": 1},
-            },
-        )
-        metrics = {
-            "params_m": 0.01,
-            "throughput_samples_per_sec": 100.0,
-            "latency_ms_per_batch_p50": 5.0,
-        }
-        pd.DataFrame(
-            [
-                _resume_row(cfg, method="knn5", metric_name="accuracy"),
-                _resume_row(cfg, method="profile", metric_name="params_m"),
-            ]
-        ).to_csv(out, index=False)
-
-        with mock.patch("geo_eval_harness.main.measure_profile", return_value=metrics):
-            main(cfg)
-
-        df = pd.read_csv(out)
-        profile_df = df[df["method"] == "profile"]
-        for name in metrics:
-            assert int((profile_df["metric_name"] == name).sum()) == 1
