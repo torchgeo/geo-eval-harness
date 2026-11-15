@@ -10,6 +10,7 @@ import pytest
 from geo_eval_harness.config.presets import ModelPreset, merge_settings, resolve_run_config
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.results import append_rows_atomic, load_results
 from geo_eval_harness.resume import (
     ResumeState,
     load_completed,
@@ -421,3 +422,15 @@ def test_load_completed_canonicalizes_csv_numbers_and_legacy_columns(tmp_path: P
         "accuracy": {("m-eurosat", "224", "")},
         "micro_mAP": {("m-forestnet", "", "")},
     }
+
+
+def test_numeric_looking_config_hash_is_read_as_text(tmp_path: Path) -> None:
+    config_hash = "36e0288988649564"
+    path = str(tmp_path / "results.csv")
+    row = {"dataset": "m-eurosat", "config_hash": config_hash}
+    append_rows_atomic(path, [row])
+    completed, _ = load_completed(path, ("dataset", "config_hash"))
+    assert completed == {("m-eurosat", config_hash)}
+    assert load_results(tmp_path)["config_hash"].tolist() == [config_hash]
+    append_rows_atomic(path, [{**row, "bands": "rgb"}])
+    assert pd.read_csv(path, dtype=str)["config_hash"].tolist() == [config_hash, config_hash]

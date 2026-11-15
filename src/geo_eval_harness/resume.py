@@ -205,7 +205,7 @@ def load_completed(
     output_path: str, key_cols: Sequence[str] = KEY_COLS
 ) -> tuple[set[tuple[str, ...]], dict[str, set[tuple[str, ...]]]]:
     """Read an existing results CSV into resume-key sets (overall and per-metric)."""
-    existing_df = pd.read_csv(output_path)
+    existing_df = pd.read_csv(output_path, dtype={"config_hash": str})
     for col in key_cols:
         if col not in existing_df.columns:
             existing_df[col] = ""
