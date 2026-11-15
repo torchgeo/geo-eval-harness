@@ -58,8 +58,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     ``weight_decay``, ``head_dropout``, ``lora_last_blocks``, ``full_finetune`` (with its
     ``backbone_learning_rate``), ``early_stopping_patience``, ``feature_standardize`` (both tasks),
     ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
-    ``fp16``, and ``neck_norm`` only when a neck uses it, so a run that leaves them unset
-    matches rows stored without them.
+    ``fp16``, ``runtime.matmul_precision`` only when not ``highest``, and ``neck_norm`` only when
+    a neck uses it, so a run that leaves them unset matches rows stored without them.
     ``task`` comes from the resolved dataset class. Only segmentation hashes cover the
     ``segmentation`` section and the best-validation model-selection protocol, so segmentation
     settings such as a preset's ``segmentation.layers`` never change the hash of classification,
@@ -68,6 +68,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     classification_exclude = {"methods"}
     if not config.classification.feature_standardize:
         classification_exclude.add("feature_standardize")
+    runtime_fields = {"seed", "batch_size"}
+    if config.runtime.matmul_precision != "highest":
+        runtime_fields.add("matmul_precision")
     payload = {
         "schema_version": config.schema_version,
         "model": {
@@ -79,9 +82,7 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         "classification": config.classification.model_dump(
             mode="json", exclude=classification_exclude
         ),
-        "runtime": config.runtime.model_dump(
-            mode="json", include={"seed", "batch_size", "matmul_precision"}
-        ),
+        "runtime": config.runtime.model_dump(mode="json", include=runtime_fields),
     }
     # Stored hashes include a null KNN device, so the key stays in the payload.
     payload["classification"]["knn_device"] = None
