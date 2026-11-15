@@ -65,6 +65,7 @@ Datasets
 * HOTOSM buildings and Open Cities use fixed training subsets of 5,000 tiles and 10,000 chips, respectively. ``--partition full`` selects their complete training splits.
 * A non-default ``--partition`` is an error for datasets without training partitions.
 * OpenEarthMap-SAR provides eight-class SAR segmentation and optional ``vv``/``vh`` aliases for its single input band.
+* Multi-sensor GeoBench V2 datasets reject explicit band lists whose order the loader cannot return.
 * So2Sat maps its stored Sentinel-1 channels in VH, VV order.
 * CaFFe and ``bright-post-sar-rgb`` expose grayscale SAR as three identical RGB channels for RGB model inputs.
 * AID, NWPU-RESISC45, and UC Merced provide RGB scene classification with fixed splits and training-split statistics.
