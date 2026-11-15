@@ -102,7 +102,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download planteur                                 # PLANTEUR crop types
    $ geo-eval-harness download geobench_v2 --output-dir /scratch/data   # custom root
 
-Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
+Names that share another dataset's files, such as ``eurosat-spatial``, ``bright-post-sar-rgb``, and the ``planteur_loio_*`` folds, download that dataset. Do not mix collection aliases and individual names in one invocation. ``--datasets`` applies only to a collection alias. ``--output-dir`` changes the download destination, not the runner's fixed ``data/`` location; link the downloaded root to ``data/`` before loading it from another working directory.
 
 The default V2 download set is: ``benv2``, ``burn_scars``, ``caffe``,
 ``cloudsen12``, ``dynamic_earthnet``, ``flair2``, ``forestnet``,
@@ -236,10 +236,10 @@ GeoBench V2 — segmentation
 ==================== ====== ===== ============================================ ==============================================================
 CLI name             #cls   bands notes                                        Class
 ==================== ====== ===== ============================================ ==============================================================
-``burn_scars``       3      6                                                  :class:`~geo_eval_harness.datasets.BurnScars`
+``burn_scars``       2      6     no-data (2) ignored                          :class:`~geo_eval_harness.datasets.BurnScars`
 ``caffe``            4      3     grayscale SAR repeated as red/green/blue     :class:`~geo_eval_harness.datasets.CaFFe`
 ``cloudsen12``       4      12                                                 :class:`~geo_eval_harness.datasets.CloudSEN12`
-``dynamic_earthnet`` 7      16                                                 :class:`~geo_eval_harness.datasets.DynamicEarthNet`
+``dynamic_earthnet`` 7      16    Planet + Sentinel-2; needs a Planet band     :class:`~geo_eval_harness.datasets.DynamicEarthNet`
 ``flair2``           13     5     aerial + Sentinel-2                          :class:`~geo_eval_harness.datasets.FLAIR2`
 ``fotw``             3      4     Fields of the World; unknown (3) ignored     :class:`~geo_eval_harness.datasets.FieldsOfTheWorld`
 ``kuro_siwo``        4      3     SAR ``vv`` / ``vh`` + DEM (no RGB triplet)   :class:`~geo_eval_harness.datasets.KuroSiwo`

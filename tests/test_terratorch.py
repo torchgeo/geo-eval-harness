@@ -1,5 +1,6 @@
 """Unit tests for TerraTorch model wrappers with mocked registry backbones."""
 
+import sys
 from importlib.util import find_spec
 from typing import Any
 
@@ -12,6 +13,7 @@ from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
+    _build_backbone,
     _sar_to_db,
 )
 
@@ -72,6 +74,15 @@ def mock_registry(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr("geo_eval_harness.models.terratorch_models._build_backbone", _fake_build)
     return state
+
+
+@pytest.mark.parametrize("name", ["prithvi_eo_v2_300", "clay_v1_5_large"])
+def test_missing_terratorch_names_the_installation_guide(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setitem(sys.modules, "terratorch", None)
+    with pytest.raises(ModuleNotFoundError, match=r"installation\.html#terratorch-models"):
+        _build_backbone(name)
 
 
 def test_prithvi_input_shape_accepted(mock_registry: dict[str, Any]) -> None:

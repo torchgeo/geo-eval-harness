@@ -410,7 +410,14 @@ def test_download_datasets_dispatches_only_selected_names(tmp_path: Path) -> Non
 
 
 @pytest.mark.parametrize(
-    "names", [[], ["m-eurosat", "not-a-dataset"], ["eurosat", "unknown"], ["ucmerced", "unknown"]]
+    "names",
+    [
+        [],
+        ["m-eurosat", "not-a-dataset"],
+        ["eurosat", "unknown"],
+        ["ucmerced", "unknown"],
+        ["planteur_loio_unknown"],
+    ],
 )
 def test_download_datasets_validates_every_name_before_dispatch(
     tmp_path: Path, names: list[str]
@@ -436,5 +443,22 @@ def test_download_datasets_validates_every_name_before_dispatch(
 def test_download_datasets_deduplicates_names(tmp_path: Path, name: str) -> None:
     with mock.patch(f"geo_eval_harness.download.download_{name}") as download:
         download_datasets([name, name], tmp_path)
+
+    download.assert_called_once_with(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("names", "downloader"),
+    [
+        (["eurosat-spatial", "eurosat"], "eurosat"),
+        (["bright-post-sar-rgb"], "bright_post_sar"),
+        (["planteur_loio_mayotte", "planteur_loio_guyane"], "planteur"),
+    ],
+)
+def test_download_datasets_accepts_names_that_share_a_download(
+    tmp_path: Path, names: list[str], downloader: str
+) -> None:
+    with mock.patch(f"geo_eval_harness.download.download_{downloader}") as download:
+        download_datasets(names, tmp_path)
 
     download.assert_called_once_with(tmp_path)

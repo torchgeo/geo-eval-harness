@@ -5,13 +5,12 @@ from pathlib import Path
 from typing import Literal
 
 import torch
-from huggingface_hub import hf_hub_download
 from torch import nn
 from torch.utils.checkpoint import checkpoint
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
 from geo_eval_harness.errors import UnsupportedNormalizationError
-from geo_eval_harness.hub import load_checksums, verify_checksums
+from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
 from ._band_mapping import BandMappingPolicy, map_to_model_bands
 from ._input_units import InputUnit, detect_input_unit, to_s2_dn
@@ -64,17 +63,13 @@ def load_student(variant: str, checkpoint_path: str | Path | None = None) -> Pix
         raise ValueError(f"Unknown Tessera V2 student {variant!r}; choose {tuple(STUDENTS)}.")
     suffix, revision, latent, layers, ffn = STUDENTS[variant]
     filename = f"student_{variant}.pt"
-    path = (
-        Path(checkpoint_path)
-        if checkpoint_path is not None
-        else Path(
-            hf_hub_download(
-                f"geotessera/TESSERA-V-2.0-2B-{suffix}", f"ckpt/{filename}", revision=revision
-            )
-        )
+    path = fetch_pinned_file(
+        f"geotessera/TESSERA-V-2.0-2B-{suffix}",
+        f"ckpt/{filename}",
+        revision,
+        load_checksums("tessera_v2.sha256")[filename],
+        local_path=checkpoint_path,
     )
-    digest = load_checksums("tessera_v2.sha256")[filename]
-    verify_checksums(path.parent, {path.name: digest})
     payload = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(payload, dict) or set(payload) != {"args", "model"}:
         raise ValueError("Tessera student checkpoint must contain exactly 'args' and 'model'.")
