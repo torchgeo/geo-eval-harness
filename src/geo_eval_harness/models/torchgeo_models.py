@@ -147,7 +147,10 @@ _DEO_TARGET_SIZE = 224
 
 
 def _extract_normalize_transforms(weights) -> nn.Sequential | None:
-    """Extract only the ``Normalize`` layers from a torchgeo weights transform."""
+    """Copy the ``Normalize`` layers of a torchgeo weights transform as out-of-place layers.
+
+    torchgeo's layers normalize in place, which would overwrite the caller's batch.
+    """
     if not hasattr(weights, "transforms") or weights.transforms is None:
         return None
     transform = weights.transforms
@@ -157,7 +160,11 @@ def _extract_normalize_transforms(weights) -> nn.Sequential | None:
         return None
     if not isinstance(transform, Iterable):
         return None
-    norms = [t for t in transform if isinstance(t, (NormalizeV1, NormalizeV2))]
+    norms = [
+        type(t)(mean=t.mean, std=t.std)
+        for t in transform
+        if isinstance(t, (NormalizeV1, NormalizeV2))
+    ]
     if not norms:
         return None
     return nn.Sequential(*norms)
@@ -337,13 +344,7 @@ class _TorchGeoBackboneBench(BenchModel):
             if source_channels not in (1, in_chans):
                 mean = [mean[i % source_channels] for i in range(in_chans)]
                 std = [std[i % source_channels] for i in range(in_chans)]
-            layers.append(
-                type(inner)(
-                    mean=mean,
-                    std=std,
-                    inplace=getattr(inner, "inplace", False),
-                )
-            )
+            layers.append(type(inner)(mean=mean, std=std))
         if not layers:
             return None
         tiled = nn.Sequential(*layers)

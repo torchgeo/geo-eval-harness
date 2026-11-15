@@ -728,6 +728,34 @@ def test_weights_normalize_only_applies_under_model_native(
     assert torch.allclose(native, torch.full_like(native, 500.0))
 
 
+@pytest.mark.parametrize("channels", [3, 6])
+def test_model_native_normalization_leaves_the_input_batch_unchanged(
+    monkeypatch: pytest.MonkeyPatch, channels: int
+) -> None:
+    """torchgeo weight transforms normalize in place; six channels use the tiled chain."""
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    class _FakeWeights:
+        meta: ClassVar[dict[str, Any]] = {}
+        transforms = nn.Sequential(Normalize(mean=[0.0] * 3, std=[2.0] * 3, inplace=True))
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinyConvNet()
+    )
+    monkeypatch.setattr(
+        tg_models,
+        "_resolve_torchgeo_weights",
+        lambda _weights_class, _weights_member: _FakeWeights(),
+    )
+    model = TorchGeoResNetBench(bands=(_dn_bands() * 2)[:channels], normalization="model_native")
+    images = torch.full((1, channels, 4, 4), 1000.0)
+    original = images.clone()
+
+    model.forward_patch_features(images)
+
+    assert torch.equal(images, original)
+
+
 def test_expected_input_unit_is_derived_per_instance(monkeypatch: pytest.MonkeyPatch) -> None:
     """Derived units must neither mutate classes nor overwrite declared units."""
     import geo_eval_harness.models.torchgeo_models as tg_models
