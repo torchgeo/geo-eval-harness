@@ -63,6 +63,24 @@ def test_cached_batches_are_bitwise_identical(tmp_path, mode: str, *, shuffle: b
         assert not torch.equal(expected[0][0][0], expected[1][0][0])
 
 
+def test_building_a_cache_leaves_the_global_rng_untouched(tmp_path) -> None:
+    loader = DataLoader(ToySegmentation(), batch_size=4, shuffle=True, num_workers=0)
+    torch.manual_seed(0)
+    expected = torch.rand(1)
+
+    torch.manual_seed(0)
+    cache_loader(
+        loader,
+        mode="host",
+        identity=IDENTITY,
+        cache_dir=tmp_path,
+        device=torch.device("cpu"),
+        num_workers=0,
+    )
+
+    assert torch.equal(torch.rand(1), expected)
+
+
 def test_cached_samples_accept_tensor_images_with_numpy_masks() -> None:
     images = torch.arange(24, dtype=torch.float32).reshape(2, 3, 2, 2)
     masks = np.arange(8, dtype=np.int16).reshape(2, 2, 2)
@@ -161,14 +179,17 @@ def test_sample_cache_does_not_change_the_config_hash() -> None:
 
 
 @pytest.mark.parametrize("mode", ["none", "host", "disk"])
-def test_run_wraps_every_segmentation_split_in_the_sample_cache(tmp_path, mode: str) -> None:
+def test_run_wraps_every_segmentation_split_in_the_sample_cache(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
     from geo_eval_harness.config.run import RunConfig
+    from geo_eval_harness.datasets.caffe import CaFFe
     from geo_eval_harness.main import LoaderSplits, _cache_segmentation_loaders
 
     config = RunConfig.model_validate(
         {
             "model": {"name": "rcf"},
-            "datasets": ["m-eurosat"],
+            "datasets": ["caffe"],
             "runtime": {
                 "device": "cpu",
                 "workers": 0,
@@ -181,13 +202,20 @@ def test_run_wraps_every_segmentation_split_in_the_sample_cache(tmp_path, mode: 
         *(DataLoader(ToySegmentation(n), batch_size=4, num_workers=0) for n in (9, 5, 6))
     )
 
-    cached = _cache_segmentation_loaders(config, "toy", loaders)
+    cached = _cache_segmentation_loaders(config, "caffe", loaders)
 
     for split in ("train", "val", "test"):
         loader, served = getattr(loaders, split), getattr(cached, split)
         assert (served is loader) == (mode == "none")
         assert [b["image"].tolist() for b in served] == [b["image"].tolist() for b in loader]
     assert any(tmp_path.iterdir()) == (mode == "disk")
+
+    monkeypatch.setattr(CaFFe, "num_classes", 5)
+    for loader in (loaders.train, loaders.val, loaders.test):
+        loader.dataset.masks[1] = 4
+    refreshed = _cache_segmentation_loaders(config, "caffe", loaders)
+    for loader in (refreshed.train, refreshed.val, refreshed.test):
+        assert torch.all(next(iter(loader))["mask"][1] == 4)
 
 
 def test_lock_left_by_an_exited_build_is_removed(tmp_path) -> None:
