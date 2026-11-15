@@ -72,18 +72,13 @@ class PatchLinearHead(nn.Module):
         self.conv: nn.Conv2d | None = None
         self.patch_size: int | None = None
 
-    def _ensure_conv(
-        self,
-        patch_size: int,
-        device: torch.device,
-        dtype: torch.dtype,
-    ) -> nn.Conv2d:
+    def _ensure_conv(self, patch_size: int, device: torch.device) -> nn.Conv2d:
         if patch_size <= 0:
             raise ValueError(f"Patch size must be positive, got {patch_size}.")
 
         if self.conv is None:
             conv = nn.Conv2d(self.in_channels, self.num_classes * patch_size**2, kernel_size=1)
-            self.conv = conv.to(device=device, dtype=dtype)
+            self.conv = conv.to(device=device, dtype=self.norm.norm.weight.dtype)
             self.patch_size = patch_size
             return self.conv
 
@@ -93,8 +88,8 @@ class PatchLinearHead(nn.Module):
                 f"but got patch_size={patch_size}."
             )
 
-        if self.conv.weight.device != device or self.conv.weight.dtype != dtype:
-            self.conv = self.conv.to(device=device, dtype=dtype)
+        if self.conv.weight.device != device:
+            self.conv = self.conv.to(device)
         return self.conv
 
     def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
@@ -109,8 +104,8 @@ class PatchLinearHead(nn.Module):
                 f"Got input=({input_h}, {input_w}) and grid=({grid_h}, {grid_w})."
             )
 
-        conv = self._ensure_conv(patch_h, feat.device, feat.dtype)
-        logits = conv(self.norm(feat))
+        conv = self._ensure_conv(patch_h, feat.device)
+        logits = conv(self.norm(feat.to(conv.weight.dtype)))
         logits = F.pixel_shuffle(logits, patch_h)
         if logits.shape[-2:] != (input_h, input_w):
             logits = F.interpolate(

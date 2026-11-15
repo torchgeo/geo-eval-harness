@@ -49,7 +49,7 @@ def _rgb_first_permutation(bands: list[BandSpec]) -> list[int] | None:
 
 
 def _model_size_kwargs(
-    model_name: str, img_size: int | None, *, dynamic_img_size: bool
+    model_name: str, img_size: int | None, *, dynamic_img_size: bool, dynamic_img_pad: bool
 ) -> dict[str, Any]:
     """Translate the wrapper's image-grid policy to the registered timm backend."""
     options: dict[str, Any] = {} if img_size is None else {"img_size": img_size}
@@ -58,7 +58,25 @@ def _model_size_kwargs(
             options["strict_img_size"] = False
         else:
             options["dynamic_img_size"] = True
+    if dynamic_img_pad:
+        options["dynamic_img_pad"] = True
     return options
+
+
+def _create_backbone(model_name: str, global_pool: str | None, **options: Any) -> torch.nn.Module:
+    """Create a headless timm model whose parameters match its checkpoint.
+
+    timm builds a pooled ViT with its final norm behind the pool, which renames the checkpoint's
+    norm weights and drops them on load. ViTs therefore keep their own layout and switch pooling
+    after construction.
+    """
+    if global_pool is None or not is_model_in_modules(model_name, {"vision_transformer", "deit"}):
+        return timm.create_model(model_name, num_classes=0, global_pool=global_pool, **options)
+    backbone: Any = timm.create_model(model_name, num_classes=0, **options)
+    backbone.reset_classifier(0, global_pool)
+    if backbone.global_pool != global_pool:
+        raise ValueError(f"{model_name} does not support global_pool={global_pool!r}.")
+    return backbone
 
 
 class TimmPatchBenchModel(BenchModel):
@@ -71,8 +89,8 @@ class TimmPatchBenchModel(BenchModel):
         pretrained: Load pretrained weights when available.
         normalize: If ``True``, L2-normalize the output embedding.
         global_pool: Global pooling strategy for timm headless models.
-        use_cls_token: For ViT-family models, use the CLS token instead of
-            averaging spatial tokens.
+        use_cls_token: Use the class token instead of averaging patch tokens; rejected for
+            backbones without a class token.
         auto_resize: If ``True``, bilinearly resize each batch to ``target_size``.
         target_size: Square target size; defaults to ``img_size`` when that is set, else
             auto-inferred from ``backbone.default_cfg["input_size"]``. Flexible backbones may
@@ -82,6 +100,7 @@ class TimmPatchBenchModel(BenchModel):
             run at a size other than their pretrained one; ``None`` keeps timm's default.
         dynamic_img_size: Use the backend's dynamic transformer grid handling. Swin pads
             attention windows; other supported transformers interpolate position embeddings.
+        dynamic_img_pad: Pad partial patches for supported ViTs; use with ``dynamic_img_size``.
         input_normalization: One of ``"bands_zscore"`` (default; per-channel
             z-score using :class:`BandSpec` statistics — correct for raw
             remote-sensing data of any channel count), ``"imagenet"``
@@ -114,6 +133,7 @@ class TimmPatchBenchModel(BenchModel):
         target_size: int | None = None,
         img_size: int | None = None,
         dynamic_img_size: bool = False,
+        dynamic_img_pad: bool = False,
         use_cls_token: bool = False,
         input_normalization: str = "bands_zscore",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
@@ -142,17 +162,22 @@ class TimmPatchBenchModel(BenchModel):
         if self.use_cls_token and global_pool != "":
             global_pool = ""
 
-        size_kwargs = _model_size_kwargs(model_name, img_size, dynamic_img_size=dynamic_img_size)
-        self.backbone = timm.create_model(
+        size_kwargs = _model_size_kwargs(
+            model_name, img_size, dynamic_img_size=dynamic_img_size, dynamic_img_pad=dynamic_img_pad
+        )
+        self.backbone = _create_backbone(
             model_name,
+            global_pool,
             pretrained=pretrained,
             in_chans=self.num_channels,
-            num_classes=0,
-            global_pool=global_pool,
             **size_kwargs,
         )
         if getattr(self.backbone, "output_fmt", None) == "NHWC":
             self.feature_layout = "nhwc"
+        has_cls_token = getattr(self.backbone, "cls_token", None) is not None
+        if use_cls_token and not has_cls_token:
+            raise ValueError(f"{model_name} has no class token, so use_cls_token is unsupported.")
+        self._num_prefix_tokens = getattr(self.backbone, "num_prefix_tokens", int(has_cls_token))
 
         # timm.models._manipulate.adapt_input_conv tiles [R, G, B] weights for extra channels.
         # Put physical RGB first to match the weights; native S2 order is blue/green/red.
@@ -281,26 +306,18 @@ class TimmPatchBenchModel(BenchModel):
                 )
         x = self.backbone(images)
 
-        # timm returns (B, C) for pooled models, (B, C, h, w) or (B, N, C) otherwise.
+        # timm returns (B, C) for pooled models, a 4D feature map or (B, N, C) tokens otherwise.
         if x.ndim == 4:
+            if self.feature_layout == "nhwc":
+                x = x.permute(0, 3, 1, 2)
             x = F.adaptive_avg_pool2d(x, 1).flatten(1)
         elif x.ndim == 3:
-            if self.use_cls_token and self._has_cls_token_like():
-                x = x[:, 0, :]
-            elif x.shape[1] > 1:
-                x = x[:, 1:, :] if self._has_cls_token_like() else x
-                x = x.mean(dim=1)
-            else:
-                x = x.squeeze(1)
+            x = x[:, 0] if self.use_cls_token else x[:, self._num_prefix_tokens :].mean(dim=1)
 
         if self.normalize:
             x = F.normalize(x, p=2, dim=-1)
 
         return x
-
-    def _has_cls_token_like(self) -> bool:
-        """Cheap heuristic for ViT/DeiT/MAE-style backbones with a CLS token."""
-        return any(hasattr(self.backbone, attr) for attr in ("cls_token", "dist_token"))
 
 
 @dataclass(frozen=True)
@@ -316,11 +333,19 @@ class TimmModelSettings:
     target_size: int | None = None
     img_size: int | None = None
     dynamic_img_size: bool = False
+    dynamic_img_pad: bool = False
     use_cls_token: bool = False
 
     def __post_init__(self) -> None:
         """Validate settings before importing or constructing a backbone."""
-        for name in ("pretrained", "normalize", "auto_resize", "dynamic_img_size", "use_cls_token"):
+        for name in (
+            "pretrained",
+            "normalize",
+            "auto_resize",
+            "dynamic_img_size",
+            "dynamic_img_pad",
+            "use_cls_token",
+        ):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be a boolean")
         if not self.model_name:

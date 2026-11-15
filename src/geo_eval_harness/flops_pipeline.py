@@ -48,6 +48,54 @@ logger = logging.getLogger(__name__)
 # TerraMind's modality selects its tokenizer, band table, and normalization.
 _MODALITY_FOR_BAND_CONFIG = {"rgb": "RGB", "s2": "S2L2A"}
 
+# Appending rows with other names or another order rewrites an existing compute_cost.csv.
+_COLUMNS = (
+    "model",
+    "name",
+    "band_config",
+    "n_channels",
+    "image_size",
+    "num_classes",
+    "task",
+    "head_type",
+    "gflops_backbone",
+    "gflops_head",
+    "gflops_probe",
+    "gflops_total",
+    "params_backbone_m",
+    "params_head_m",
+    "params_probe_m",
+    "feature_dim",
+    "pool",
+    "n_tokens",
+    "throughput_samples_per_sec",
+    "latency_ms_per_batch_p50",
+    "peak_gpu_mem_gb",
+    "reserved_gpu_mem_gb",
+    "timing_batch_size",
+    "lenient_grad_hooks",
+    "measured_at",
+    "config_hash",
+    "band_source",
+    "model_preset",
+    "normalization",
+    "device",
+    "gpu_name",
+    "torch_version",
+    "source_hash",
+    "package_versions",
+    "precision",
+    "flops_convention",
+    "flops_coverage",
+    "warmup",
+    "measurements",
+    "measurement_variant",
+    "neck",
+    "neck_norm",
+    "layers",
+    "feature_shapes",
+)
+
 
 def _load_completed(path: str) -> frozenset[tuple]:
     """Return complete measurement identities, including resolution and settings."""
@@ -189,30 +237,18 @@ def _flops_row(
     head_type: str = "",
     **values: object,
 ) -> dict:
-    """Build a compute_cost.csv row, leaving unmeasured metrics as None."""
-    row = {
-        **base_meta,
-        "task": task,
-        "head_type": head_type,
-        "gflops_backbone": None,
-        "gflops_head": None,
-        "gflops_probe": None,
-        "gflops_total": None,
-        "params_backbone_m": None,
-        "params_head_m": None,
-        "params_probe_m": None,
-        "feature_dim": None,
-        "pool": getattr(model, "pool", None),
-        "n_tokens": _n_tokens(model, image_size),
-        "throughput_samples_per_sec": None,
-        "latency_ms_per_batch_p50": None,
-        "peak_gpu_mem_gb": None,
-        "reserved_gpu_mem_gb": None,
-        "timing_batch_size": None,
-        "lenient_grad_hooks": False,
-        "measured_at": _now(),
-    }
-    row.update(values)
+    """Build a compute_cost.csv row, leaving unmeasured columns as None."""
+    row: dict[str, Any] = dict.fromkeys(_COLUMNS)
+    row.update(
+        base_meta,
+        task=task,
+        head_type=head_type,
+        pool=getattr(model, "pool", None),
+        n_tokens=_n_tokens(model, image_size),
+        lenient_grad_hooks=False,
+        measured_at=_now(),
+        **values,
+    )
     return row
 
 

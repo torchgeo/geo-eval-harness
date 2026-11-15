@@ -11,6 +11,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
+MAX_SDIST_BYTES = 5_000_000
 
 
 def check_metadata(data: bytes, project: dict) -> None:
@@ -39,6 +40,8 @@ def check_distributions(directory: Path, *, tag: str | None = None) -> None:
     stem = f"geo_eval_harness-{project['version']}"
     wheel_path = directory / f"{stem}-py3-none-any.whl"
     sdist_path = directory / f"{stem}.tar.gz"
+    if (size := sdist_path.stat().st_size) > MAX_SDIST_BYTES:
+        raise ValueError(f"Source distribution is {size} bytes; the limit is {MAX_SDIST_BYTES}")
     with zipfile.ZipFile(wheel_path) as wheel, tarfile.open(sdist_path) as sdist:
         info = f"{stem}.dist-info"
         check_metadata(wheel.read(f"{info}/METADATA"), project)

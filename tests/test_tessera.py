@@ -12,6 +12,7 @@ from urllib.request import urlopen
 import numpy as np
 import pytest
 import torch
+from huggingface_hub import hf_hub_download
 from torch import nn
 from torch.utils.data import DataLoader
 
@@ -341,7 +342,7 @@ def test_real_checkpoint_and_official_inference_parity(official_reference, varia
     raw = images(1, 2, 3)
     dates = torch.tensor([260])
     suffix, revision, *_ = tessera.STUDENTS[variant]
-    path = tessera.hf_hub_download(
+    path = hf_hub_download(
         f"geotessera/TESSERA-V-2.0-2B-{suffix}", f"ckpt/student_{variant}.pt", revision=revision
     )
     official_model = importlib.import_module("tessera_reference.model").load_model(
