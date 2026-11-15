@@ -1125,7 +1125,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=13" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.3" },
     { name = "pyarrow", specifier = ">=14" },
-    { name = "pydantic", specifier = ">=2" },
+    { name = "pydantic", specifier = ">=2.10" },
     { name = "pydata-sphinx-theme", marker = "extra == 'docs'", specifier = ">=0.15" },
     { name = "pyproject-fmt", marker = "extra == 'dev'", specifier = ">=2.21" },
     { name = "pyrefly", marker = "extra == 'dev'", specifier = "==1.4.1" },

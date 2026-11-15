@@ -453,8 +453,9 @@ def _replace_csv(path: str, contents: str) -> None:
 def append_rows_atomic(path: str, rows: list[dict]) -> None:
     """Append CSV rows under a file lock, extending the schema when needed.
 
-    Write the header for an empty or new file. Append when column names and order match.
-    Otherwise, stage and atomically replace the file with all old and new columns.
+    Write the header for an empty or new file. Append in the file's column order when it
+    already has every column of the rows, leaving its other columns empty. Otherwise, stage
+    and atomically replace the file with all old and new columns.
 
     Args:
         path: Output CSV path; created if missing.
@@ -478,8 +479,10 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
             else:
                 f.seek(0)
                 existing_df = pd.read_csv(f)
-                if list(existing_df.columns) == list(df_local.columns):
-                    df_local.to_csv(buf, header=False, index=False)
+                if set(df_local.columns) <= set(existing_df.columns):
+                    df_local.reindex(columns=existing_df.columns).to_csv(
+                        buf, header=False, index=False
+                    )
                     f.seek(0, os.SEEK_END)
                     f.write(buf.getvalue())
                 else:

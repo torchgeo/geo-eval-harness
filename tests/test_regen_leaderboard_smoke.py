@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from geo_eval_harness.datasets import get_bench_dataset_class, list_datasets
 from scripts import regen_leaderboard as rl
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -107,7 +108,10 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
             pd.DataFrame(
                 [
                     _row("native_full_cls", "d1", "linear", "rgb", 0.5, "bandspec_zscore"),
-                    _row("native_full_lsat_x", "d1", "linear", "rgb", 0.5, "bandspec_zscore"),
+                    _row("olmoearth_v1_nano_naip_rgb", "d1", "linear", "rgb", 0.5, "model_native"),
+                    _row(
+                        "tgeo_swinv2b_naip_satlas_mi", "d1", "linear", "rgb", 0.5, "bandspec_zscore"
+                    ),
                     _row("native_full", "m-pv4ger", "linear", "rgb", 0.5, "bandspec_zscore"),
                 ]
             ),
@@ -116,7 +120,8 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     )
     out = rl.harmonize(raw)
     assert "cls-token" in set(out["pooling"])
-    assert not out["base_model"].str.contains("_lsat_").any()
+    assert "olmoearth_v1_nano_naip_rgb" not in set(out["base_model"])
+    assert "tgeo_swinv2b_naip_satlas_mi" in set(out["base_model"])
     assert "m-pv4ger" not in set(out["dataset"])
 
 
@@ -134,6 +139,15 @@ def test_rgb_only_datasets_are_never_multispectral() -> None:
     raw = pd.DataFrame([_row("native_full", "resisc45", "linear", "all", 0.5, "bandspec_zscore")])
     out = rl.harmonize(raw)
     assert set(out["bandclass"]) == {"RGB"}
+
+
+def test_rgb_only_datasets_match_the_registry() -> None:
+    rgb_only = {
+        name
+        for name in list_datasets()
+        if {band.name for band in get_bench_dataset_class(name).bands} <= rl.RGB_BAND_NAMES
+    }
+    assert rgb_only == rl.RGB_ONLY_DATASETS
 
 
 def test_terramind_alias_applies_during_harmonization() -> None:
@@ -187,6 +201,21 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     multispectral_rows = out[out["bandclass"] == "Multispectral"]
     assert set(multispectral_rows["source_model"]) == {"tt_terramind_v1_base"}
     assert multispectral_rows["score"].iloc[0] == pytest.approx(0.7)
+
+
+def test_landsat_substitution_applies_only_to_landsat_datasets() -> None:
+    raw = pd.DataFrame(
+        [
+            _row("peer", "m-forestnet", "linear", "all", 0.5, "model_native"),
+            _row("peer_landsat_as_s2", "m-forestnet", "linear", "all", 0.6, "model_native"),
+            _row("peer", "resisc45", "linear", "rgb", 0.8, "model_native"),
+            _row("peer_landsat_as_s2", "resisc45", "linear", "rgb", 0.7, "model_native"),
+        ]
+    )
+    out = rl.harmonize(raw)
+    assert set(out["base_model"]) == {"peer"}
+    scores = out.set_index("dataset")["score"].to_dict()
+    assert scores == pytest.approx({"m-forestnet": 0.6, "resisc45": 0.8})
 
 
 def test_missing_normalization_is_rejected() -> None:

@@ -978,9 +978,12 @@ def _cache_segmentation_loaders(
         return loaders
     from geo_eval_harness.datasets.sample_cache import cache_loader
 
+    num_classes = get_bench_dataset_class(ds_name).num_classes
+
     def cached(loader: DataLoader, split: str) -> DataLoader:
         identity: dict[str, object] = {
             "dataset": ds_name,
+            "num_classes": num_classes,
             "split": split,
             "partition": cfg.input.partition if split == "train" else "default",
             "bands": normalize_bands_value(cfg.input.bands),
