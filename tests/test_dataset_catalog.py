@@ -1,5 +1,6 @@
 """Regression tests for the shared, lightweight dataset catalog."""
 
+import json
 import os
 import subprocess
 import sys
@@ -107,15 +108,14 @@ def test_dry_run_accepts_registered_dataset(
     assert yaml.safe_load(capsys.readouterr().out)["datasets"] == [registered_dataset.name]
 
 
-@pytest.mark.parametrize("name", list_datasets())
-def test_catalog_task_matches_registered_wrapper(
-    name: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    main(["datasets", name])
-    assert yaml.safe_load(capsys.readouterr().out) == {
-        "name": name,
-        "task": get_bench_dataset_class(name).task,
-    }
+def test_catalog_task_matches_registered_wrapper(capsys: pytest.CaptureFixture[str]) -> None:
+    mismatches = {}
+    for name in list_datasets():
+        main(["datasets", name])
+        shown = yaml.safe_load(capsys.readouterr().out)
+        if shown != {"name": name, "task": get_bench_dataset_class(name).task}:
+            mismatches[name] = shown
+    assert not mismatches
 
 
 _CLASSIFICATION = [name for name in list_datasets() if get_dataset_task(name) == "classification"]
@@ -159,18 +159,16 @@ def test_unknown_dataset_task_raises() -> None:
         get_dataset_task("unregistered-dataset")
 
 
-@pytest.mark.parametrize("name", list_datasets())
-def test_public_export_matches_registry(name: str) -> None:
+def test_public_export_matches_registry() -> None:
     from geo_eval_harness import datasets
 
-    cls = get_bench_dataset_class(name)
-    assert cls.__name__ in datasets.__all__
-    assert getattr(datasets, cls.__name__) is cls
+    classes = [get_bench_dataset_class(name) for name in list_datasets()]
+    assert not {cls.__name__ for cls in classes} - set(datasets.__all__)
+    assert not [cls.__name__ for cls in classes if getattr(datasets, cls.__name__) is not cls]
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
+def test_catalog_queries_do_not_import_wrappers_or_ml() -> None:
+    queries = [
         ["--help"],
         ["run", "--help"],
         ["datasets"],
@@ -185,27 +183,28 @@ def test_public_export_matches_registry(name: str) -> None:
         ["run", "--model", "rcf", "--dataset", "catalog-test", "--device", "cpu", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "openearthmap-sar", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "open_cities", "--dry-run"],
-    ],
-)
-def test_catalog_queries_do_not_import_wrappers_or_ml(arguments: list[str]) -> None:
+    ]
     code = """
+import json
 import sys
 from geo_eval_harness.cli import main
 from geo_eval_harness.datasets.loading import _REGISTRY_SPEC
 _REGISTRY_SPEC['catalog-test'] = ('_unimportable', 'TinyDataset', 'segmentation')
-try:
-    main(sys.argv[1:])
-except SystemExit as error:  # allow-except: argparse help exits successfully
-    assert error.code == 0
-assert not {'torch', 'torchgeo', 'timm', 'numpy', 'pandas', 'geobench_v2'} & sys.modules.keys()
-assert not any(name.startswith('geo_eval_harness.models') for name in sys.modules)
-assert not any(
-    f'geo_eval_harness.datasets.{spec[0]}' in sys.modules
-    for spec in _REGISTRY_SPEC.values()
-)
+for arguments in json.loads(sys.argv[1]):
+    print('query:', arguments, file=sys.stderr, flush=True)
+    try:
+        main(arguments)
+    except SystemExit as error:  # allow-except: argparse help exits successfully
+        assert error.code == 0
+    assert not {'torch', 'torchgeo', 'timm', 'numpy', 'pandas', 'geobench_v2'} & sys.modules.keys()
+    assert not any(name.startswith('geo_eval_harness.models') for name in sys.modules)
+    assert not any(
+        f'geo_eval_harness.datasets.{spec[0]}' in sys.modules
+        for spec in _REGISTRY_SPEC.values()
+    )
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, *arguments],
+        [sys.executable, "-c", code, json.dumps(queries)],
         env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
         capture_output=True,
         text=True,
