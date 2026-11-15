@@ -202,7 +202,7 @@ CLI name           #cls   bands multilabel   sensor                             
 ``benv2``          19     14    **yes**      Sentinel-1 + Sentinel-2 (multi-modal)  :class:`~geo_eval_harness.datasets.BENV2`
 ``forestnet``      12     6     no           Sentinel-2                             :class:`~geo_eval_harness.datasets.Forestnet`
 ``so2sat``         17     12    no           Sentinel-1 + Sentinel-2                :class:`~geo_eval_harness.datasets.So2Sat`
-``treesatai``      13     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
+``treesatai``      15     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
 ================== ====== ===== ============ ====================================== =====================================
 
 V2 datasets are stored as a single ``.tortilla`` file each, hosted under
