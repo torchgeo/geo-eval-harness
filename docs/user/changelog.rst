@@ -48,6 +48,7 @@ Evaluation and results
 
 * CoordBench evaluates location encoders on random, spatial-block, and official holdouts with KNN and ridge-linear probes. It reads its benchmark tables and pretrained encoders from Hugging Face at pinned commits and checks the tables against packaged SHA-256 checksums. The ``mind`` preset reads ``taylor-geospatial/MIND``, and ``mind-small`` is removed because its weights are no longer published.
 * The ``flops`` command measures backbone, decoder, and probe compute, and the ``profile`` command measures execution on a fixed dataset batch. FLOP counts include scaled dot-product attention on CPU and ``nn.MultiheadAttention`` and ``nn.TransformerEncoderLayer`` modules in evaluation mode.
+* ``flops`` rows record ``measurement_variant``: ``catalog`` for a packaged preset without ``model.target`` or ``model.kwargs``, and ``custom`` otherwise.
 * Segmentation supports frozen backbones, LoRA, and full fine-tuning, with configurable weight decay, head dropout, AMP, gradient checkpointing, and adapter block selection. ViT necks build feature pyramids for dense decoders, and UPerNet can use frozen AnyUp upsampling guided by RGB inputs.
 * Segmentation evaluates the test split with the epoch that has the highest validation mIoU, and optional early stopping uses the same criterion. Patch-linear sweeps train one head per learning-rate and weight-decay pair and keep the best validation head and epoch.
 * Segmentation reports Boundary IoU alongside mIoU and can write per-epoch training records to JSON Lines.
