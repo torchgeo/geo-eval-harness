@@ -2,11 +2,13 @@
 
 This companion adds CLS-pooling rows to the mean-pooling refresh in PR #927. Existing mean and segmentation rows remain unchanged. Evaluation source is `4c8693320629fec9df030bbb04062ebdde6a6f3c`, using the refresh's installed AWS environment, dataset copies, and checkpoint checksums.
 
-Generate configurations from the immutable refresh manifest and its coverage ledger:
+Generate configurations from the repository catalog and published coverage ledger:
 
 ```sh
-uv run python experiments/plan_classification_cls.py --refresh-manifest outputs/classification-refresh-20261114/manifest.json --coverage results/coverage/classification-refresh-20261114.csv --batch 1 --output outputs/classification-cls-20261115/batch1.json --output-coverage results/coverage/classification-cls-20261115-batch1.csv
+uv run python experiments/plan_classification_cls.py --coverage results/coverage/classification-refresh-20261114.csv --batch 1 --output outputs/classification-cls-20261115/batch1.json --output-coverage results/coverage/classification-cls-20261115-batch1.csv
 ```
+
+An optional `--refresh-manifest` reads the archived mean manifest instead of regenerating it. Every selected mean hash must match the published ledger; the evaluation source stays pinned independently of the planner checkout.
 
 Use `--batch 2` and corresponding output paths for the Prithvi batch. Batch 2 is launched only after Batch 1 is collected. The manifest stores the paired mean job ID; the coverage CSV uses the refresh ledger schema. Excluded mean inputs remain explicit exclusions, with the original reason. Both manifests retain the evaluation-source commit independently of the planner commit.
 

@@ -82,8 +82,10 @@ def build_companion(
     for mean in refresh["jobs"]:
         if mean["model"] not in models:
             continue
-        job = companion_job(mean, models[mean["model"]])
         state = states[mean["id"]]
+        if mean["config_hash"] != state["planned_config_hash"]:
+            raise ValueError(f"Mean configuration differs from published coverage: {mean['id']}")
+        job = companion_job(mean, models[mean["model"]])
         if state["state"] in {"complete", "partial"}:
             jobs.append(job)
         elif state["state"] == "excluded":
@@ -122,7 +124,7 @@ def write_coverage(manifest: dict[str, Any], path: Path) -> None:
 def main() -> None:
     """Generate immutable jobs and initial coverage without loading weights or data."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--refresh-manifest", required=True, type=Path)
+    parser.add_argument("--refresh-manifest", type=Path)
     parser.add_argument("--coverage", required=True, type=Path)
     parser.add_argument("--batch", required=True, type=int, choices=BATCHES)
     parser.add_argument("--output", required=True, type=Path)
@@ -130,7 +132,14 @@ def main() -> None:
     args = parser.parse_args()
     with args.coverage.open() as stream:
         coverage = list(csv.DictReader(stream))
-    manifest = build_companion(json.loads(args.refresh_manifest.read_text()), coverage, args.batch)
+    if args.refresh_manifest is None:
+        from plan_classification_refresh import build_manifest
+
+        refresh = build_manifest()
+        refresh["source_commit"] = SOURCE_COMMIT
+    else:
+        refresh = json.loads(args.refresh_manifest.read_text())
+    manifest = build_companion(refresh, coverage, args.batch)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(manifest, indent=2) + "\n")
     write_coverage(manifest, args.output_coverage)
