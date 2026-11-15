@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/torchgeo/geo-eval-harness/branch/main/graph/badge.svg)](https://codecov.io/gh/torchgeo/geo-eval-harness)
 [![PyPI version](https://img.shields.io/pypi/v/geo-eval-harness.svg)](https://pypi.org/project/geo-eval-harness/)
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/geo-eval-harness.svg)](https://pypi.org/project/geo-eval-harness/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/torchgeo/geo-eval-harness/blob/main/LICENSE)
 
 Evaluate geospatial image models and location encoders with classification, segmentation, and coordinate prediction tasks. Configure runs with CLI flags or validated YAML.
 
@@ -59,7 +59,7 @@ geo-eval-harness download eurosat
 geo-eval-harness download openearthmap-sar
 ```
 
-Hugging Face archive downloads use pinned commits and SHA-256 manifests in [`src/geo_eval_harness/checksums/`](src/geo_eval_harness/checksums). See the [dataset guide](https://torchgeo.org/geo-eval-harness/user/datasets.html) for download sources, splits, bands, and licenses.
+Hugging Face archive downloads use pinned commits and SHA-256 manifests in [`src/geo_eval_harness/checksums/`](https://github.com/torchgeo/geo-eval-harness/tree/main/src/geo_eval_harness/checksums). See the [dataset guide](https://torchgeo.org/geo-eval-harness/user/datasets.html) for download sources, splits, bands, and licenses.
 
 ## Run a basic experiment
 
@@ -88,7 +88,7 @@ geo-eval-harness run --config docs/examples/image-run.yaml --methods linear --de
 geo-eval-harness run --model rcf --dataset m-eurosat --dry-run
 ```
 
-The `docs/examples/` paths refer to a repository checkout. For an installed package, save a linked example locally and pass its path to `--config`. See [`image-run.yaml`](docs/examples/image-run.yaml) for an image configuration and `run --config-help` for the JSON schema. Omitted settings inherit
+The `docs/examples/` paths refer to a repository checkout. For an installed package, save a linked example locally and pass its path to `--config`. See [`image-run.yaml`](https://github.com/torchgeo/geo-eval-harness/blob/main/docs/examples/image-run.yaml) for an image configuration and `run --config-help` for the JSON schema. Omitted settings inherit
 model and dataset defaults; explicit YAML values override them, and supplied
 flags override YAML. This includes explicit `false`, `null`, and `[]`.
 
@@ -109,8 +109,8 @@ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
 `run`, `flops`, `coord`, and `profile` share `--output-dir` for a common output root and `--output` for an exact file path that takes precedence. Image runs retain their `models/`, `profiles/`, and `intrinsic_dim/` subdirectories. Standalone profiling writes `profile.json` beneath an explicit output root.
 
 Both accept `--config` and `--dry-run`. See
-[`docs/examples/profile.yaml`](docs/examples/profile.yaml),
-[`docs/examples/flops.yaml`](docs/examples/flops.yaml), and the
+[`docs/examples/profile.yaml`](https://github.com/torchgeo/geo-eval-harness/blob/main/docs/examples/profile.yaml),
+[`docs/examples/flops.yaml`](https://github.com/torchgeo/geo-eval-harness/blob/main/docs/examples/flops.yaml), and the
 [configuration reference](https://torchgeo.org/geo-eval-harness/user/configuration.html).
 Optional `profile` and `intrinsic_dim` passes within an image run retain their
 separate per-model CSVs unless `output.file` explicitly combines them.
@@ -184,7 +184,7 @@ and the runnable
   workflow, and troubleshooting.
 - **[AGENTS.md](https://github.com/torchgeo/geo-eval-harness/blob/main/AGENTS.md)**
   — contributor guide and house style.
-- **[Cleanlab analysis](projects/cleanlab/README.md)** — standalone dataset auditing, probability extraction, and review galleries, with separate dependencies.
+- **[Cleanlab analysis](https://github.com/torchgeo/geo-eval-harness/blob/main/projects/cleanlab/README.md)** — standalone dataset auditing, probability extraction, and review galleries, with separate dependencies.
 
 <!-- skip-on-docs-landing-end -->
 
@@ -204,4 +204,4 @@ To cite the software:
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/torchgeo/geo-eval-harness/blob/main/LICENSE).
