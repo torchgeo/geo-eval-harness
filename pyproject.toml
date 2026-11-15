@@ -52,7 +52,7 @@ dependencies = [
   "pillow>=13",
   # Required for CoordBench's Parquet files.
   "pyarrow>=14",
-  "pydantic>=2",
+  "pydantic>=2.10",
   "pyyaml>=6",
   "rasterio>=1.3",
   # Loads MIND's location-model weights.
@@ -118,7 +118,12 @@ urls.Repository = "https://github.com/torchgeo/geo-eval-harness"
 scripts.geo-eval-harness = "geo_eval_harness.cli:main"
 
 [tool.uv]
-build-backend.source-exclude = [ "/docs/_build" ]
+build-backend.source-exclude = [
+  "/docs/_build",
+  "/docs/_static",
+  "/docs/interesting-findings.md",
+  "/docs/plans",
+]
 build-backend.source-include = [ "docs/**" ]
 
 [tool.ruff]
@@ -138,7 +143,6 @@ extend-exclude = [
   "src/geo_eval_harness/cli.py",
   "src/geo_eval_harness/commands",
   "src/geo_eval_harness/config/schema.py",
-  "src/geo_eval_harness/preprocessing.py",
 ]
 lint.select = [
   "A",       # builtin shadowing

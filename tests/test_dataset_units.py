@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
+from geo_eval_harness.datasets.burn_scars import BurnScars
 from geo_eval_harness.datasets.eurosat import EuroSAT, EuroSATSpatial
 from geo_eval_harness.datasets.fotw import FieldsOfTheWorld as FOTW
 from geo_eval_harness.datasets.spacenet2 import SpaceNet2
@@ -38,6 +39,13 @@ class TestFOTWCanonicalize:
         result = FOTW().canonicalize_sample({"image": torch.zeros(3, 2, 4), "mask": mask})
         torch.testing.assert_close(result["mask"], torch.tensor([[0, 1, 2, 255], [255, 2, 1, 0]]))
         assert FOTW.num_classes == 3
+
+
+def test_burn_scars_no_data_is_ignored() -> None:
+    mask = torch.tensor([[0, 1, 2], [2, 1, 0]])
+    result = BurnScars().canonicalize_sample({"image": torch.zeros(6, 2, 3), "mask": mask})
+    torch.testing.assert_close(result["mask"], torch.tensor([[0, 1, 255], [255, 1, 0]]))
+    assert BurnScars.num_classes == 2
 
 
 @pytest.mark.parametrize("dataset_cls", [SpaceNet2, SpaceNet7])

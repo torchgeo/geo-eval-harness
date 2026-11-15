@@ -19,7 +19,6 @@ Face commit and checked against their sha256.
 """
 
 import functools
-import hashlib
 import logging
 import math
 from collections.abc import Callable, Iterable, Sequence
@@ -31,6 +30,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.hub import verify_checksums
 
 from ._band_mapping import canonical_band_name
 from ._hub_helpers import (
@@ -342,14 +342,6 @@ def _install_block_checkpointing(any_module: nn.Module) -> int:
     return len(blocks)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        for block in iter(lambda: f.read(1 << 24), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def _load_weights(
     any_module: nn.Module,
     *,
@@ -364,11 +356,7 @@ def _load_weights(
         weights_path = hf_hub_download(weights_repo, ANYSAT_WEIGHTS_FILE, revision=weights_revision)
     path = Path(weights_path).expanduser()
     if weights_sha256 is not None:
-        actual = _sha256(path)
-        if actual != weights_sha256:
-            raise RuntimeError(
-                f"AnySat weights {path} have sha256 {actual}, expected {weights_sha256}."
-            )
+        verify_checksums(path.parent, {path.name: weights_sha256})
     state = torch.load(path, map_location="cpu", weights_only=True)
     any_module.load_state_dict(state["state_dict"])
 
