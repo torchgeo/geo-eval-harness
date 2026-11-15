@@ -32,6 +32,7 @@ The aggregation choices answer different questions:
 The fixed methodology and coverage rules are:
 
 * Classification mean and CLS poolings occupy separate model rows. The recorded ``pool`` determines pooling; missing values fall back to the ``_cls`` preset suffix, then patch mean. CLS rows have a distinct identity even when their source model name is shared with mean rows, and each pooling must independently satisfy coverage and normalization requirements. Segmentation probes read feature maps and carry no pooling.
+* On RGB-only datasets, an explicit ``bands=rgb`` request takes priority over an otherwise matching ``bands=all`` request. Matching includes pooling, normalization, seed, resolution, and the other result identity fields; scores never decide this choice. Both requests remain in the result files.
 * A model is ranked only with a complete row across the eligible datasets in
   its ``(task, probe, bands)`` view.
 * The generator uses complete ``model_native`` results when available and otherwise uses complete ``bandspec_zscore`` results; it never combines the two. A model that records only ``identity`` results, because it applies no normalization, is ranked on those. ``imagestats_handcrafted_control`` repeats ImageStats for the handcrafted sweep and is never ranked.

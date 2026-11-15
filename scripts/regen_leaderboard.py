@@ -20,12 +20,14 @@ import pandas as pd
 
 from geo_eval_harness.compute_cost import classification_compute_reference
 from geo_eval_harness.results import (
+    DEDUP_KEY_COLS,
     NUMERIC_SETUP_COLS,
     SETUP_COLS,
     format_setup_value,
     load_results,
     train_only_linear_rows,
 )
+from geo_eval_harness.resume import _canonical_key_cell
 
 logger = logging.getLogger(__name__)
 
@@ -476,6 +478,21 @@ def _separate_pooling(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _prefer_explicit_rgb(df: pd.DataFrame) -> pd.DataFrame:
+    """Choose RGB requests over equivalent all-band requests on RGB-only datasets."""
+    columns = [column for column in DEDUP_KEY_COLS if column != "bands"]
+    keys = df.reindex(columns=columns).apply(lambda column: column.map(_canonical_key_cell))
+    explicit = pd.MultiIndex.from_frame(keys[df["bands"] == "rgb"])
+    duplicate = pd.MultiIndex.from_frame(keys).isin(explicit)
+    redundant = (
+        df["method"].isin(["knn5", "linear"])
+        & df["dataset"].isin(RGB_ONLY_DATASETS)
+        & (df["bands"] == "all")
+        & duplicate
+    )
+    return df[~redundant].copy()
+
+
 def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """Turn raw result rows into canonical quality rows.
 
@@ -487,7 +504,7 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
     # Linear views compare probes refit on train plus validation.
-    df = df[~train_only_linear_rows(df)]
+    df = _prefer_explicit_rgb(df[~train_only_linear_rows(df)])
     name = df["name"].astype(str)
 
     is_rgb_sweep = df["bands"].astype(str) == "rgb"

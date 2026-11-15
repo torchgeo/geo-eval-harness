@@ -167,10 +167,26 @@ def test_harmonize_drops_train_only_linear_probes() -> None:
     assert sorted(zip(out["probe"], out["score"], strict=True)) == [("knn5", 0.7), ("linear", 0.9)]
 
 
-def test_rgb_only_datasets_are_never_multispectral() -> None:
-    raw = pd.DataFrame([_row("native_full", "resisc45", "linear", "all", 0.5, "bandspec_zscore")])
+def test_rgb_only_requests_prefer_rgb_without_mixing_poolings() -> None:
+    raw = pd.DataFrame(
+        [
+            _row("native_full", "resisc45", "linear", "all", 0.99, "bandspec_zscore")
+            | {"pool": "mean"},
+            _row("native_full", "resisc45", "linear", "rgb", 0.5, "bandspec_zscore")
+            | {"pool": "mean"},
+            _row("native_full", "resisc45", "linear", "all", 0.7, "bandspec_zscore")
+            | {"pool": "cls"},
+        ]
+    )
     out = rl.harmonize(raw)
     assert set(out["bandclass"]) == {"RGB"}
+    selected, excluded = rl.select_view(out, "classification", "linear", "RGB")
+    assert selected is not None
+    assert not excluded
+    assert dict(zip(selected["model"], selected["score"], strict=True)) == {
+        "native_full": 0.5,
+        "native_full__pool_cls": 0.7,
+    }
 
 
 def test_rgb_only_datasets_match_the_registry() -> None:
