@@ -36,17 +36,27 @@ def test_append_same_schema_does_not_duplicate_header(tmp_path: Path) -> None:
     ]
 
 
-def test_schema_drift_added_column_rewrites_with_unioned_header(tmp_path: Path) -> None:
-    """Appending a new column must not put its values outside the CSV header."""
-    path = str(tmp_path / "out.csv")
-    append_rows_atomic(path, [{"a": 1, "b": 2}])
-    append_rows_atomic(path, [{"a": 3, "b": 4, "c": "rgb"}])
-
-    rows = _read_csv(path)
-    assert rows[0] == ["a", "b", "c"], "header must include the new column"
-    assert rows[1] == ["1", "2", ""], "legacy row gets empty value for new column"
-    assert rows[2] == ["3", "4", "rgb"], "new row is fully populated"
-    assert all(len(r) == len(rows[0]) for r in rows)
+def test_schema_drift_added_column_keeps_existing_cells_verbatim(tmp_path: Path) -> None:
+    path = tmp_path / "out.csv"
+    header = "model,timing_batch_size,gflops_backbone,package_versions"
+    old = [
+        'anysat_base,1,22.246588415999994,"{""timm"": ""1.0.27""}"',
+        "imagestats,,0.0,",
+    ]
+    path.write_text("\n".join([header, *old]) + "\n")
+    row = {
+        "model": "croma_base",
+        "timing_batch_size": 1,
+        "gflops_backbone": 122.77570764800001,
+        "package_versions": '{"torch": "2.14.1"}',
+        "neck": "rgb",
+    }
+    append_rows_atomic(str(path), [row])
+    assert path.read_text().splitlines() == [
+        f"{header},neck",
+        *(f"{line}," for line in old),
+        'croma_base,1,122.77570764800001,"{""torch"": ""2.14.1""}",rgb',
+    ]
 
 
 @pytest.mark.parametrize("existing", [False, True])

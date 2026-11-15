@@ -455,7 +455,8 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
 
     Write the header for an empty or new file. Append in the file's column order when it
     already has every column of the rows, leaving its other columns empty. Otherwise, stage
-    and atomically replace the file with all old and new columns.
+    and atomically replace the file with all old and new columns, copying existing cells
+    verbatim.
 
     Args:
         path: Output CSV path; created if missing.
@@ -478,7 +479,7 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
                 f.write(buf.getvalue())
             else:
                 f.seek(0)
-                existing_df = pd.read_csv(f, dtype={"config_hash": str})
+                existing_df = pd.read_csv(f, dtype=str, keep_default_na=False)
                 if set(df_local.columns) <= set(existing_df.columns):
                     df_local.reindex(columns=existing_df.columns).to_csv(
                         buf, header=False, index=False
@@ -488,9 +489,6 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
                 else:
                     extra = [c for c in existing_df.columns if c not in df_local.columns]
                     ordered = list(df_local.columns) + extra
-                    combined = pd.concat(
-                        [existing_df, df_local], ignore_index=True, sort=False
-                    ).reindex(columns=ordered)
                     logger.warning(
                         "CSV schema drift detected at %s: existing columns %s, "
                         "new columns %s. Rewriting with unioned schema %s.",
@@ -499,7 +497,10 @@ def append_rows_atomic(path: str, rows: list[dict]) -> None:
                         list(df_local.columns),
                         ordered,
                     )
-                    combined.to_csv(buf, header=True, index=False)
+                    existing_df.reindex(columns=ordered, fill_value="").to_csv(
+                        buf, header=True, index=False
+                    )
+                    df_local.reindex(columns=ordered).to_csv(buf, header=False, index=False)
                     # Windows requires the destination handle to close before replacement.
                     f.close()
                     _replace_csv(path, buf.getvalue())
