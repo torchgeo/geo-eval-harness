@@ -35,6 +35,7 @@ Models
 * ConvNeXt DINOv3 Tiny, Small, Base, and Large presets include segmentation layers and LoRA targets.
 * timm ViT and DeiT models keep their pretrained final normalization when patch tokens are pooled, so ``global_pool: avg`` averages the normalized patch tokens.
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
+* OlmoEarth fills missing bands as upstream does for each version: v1 copies the nearest present band and v1.1 and later set them to 0 after normalization.
 * OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands and normalizes SAR in an undeclared unit with dataset statistics.
 
 Evaluation and results
