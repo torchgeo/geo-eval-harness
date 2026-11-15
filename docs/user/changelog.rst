@@ -28,6 +28,7 @@ Models
 * Scale-MAE segmentation probes run at the constructed input size, and input sizes that are not multiples of 16 are rejected.
 * Scale-MAE accepts ordered RGB bands under any recognized band name, such as Planet's ``r``, ``g``, ``b``.
 * THOR Tiny, Small, Base, and Large presets support classification and segmentation with named band mapping and ground-resolution-aware input preparation.
+* THOR keeps each tile's native ground extent when a run resizes inputs.
 * CROMA reads the Sentinel-2 bands of datasets whose other sensors share band names with them, such as TreeSatAI.
 * Model constructors raise ``TypeError`` for keyword arguments they do not name, so a misspelled ``model.kwargs`` entry fails instead of being ignored.
 * AnySat v1 Base supports classification and segmentation with pinned code and weights, sensor-specific projectors, and optional LoRA.
