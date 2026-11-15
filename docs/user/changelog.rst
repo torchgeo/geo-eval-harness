@@ -80,5 +80,6 @@ Datasets
 * SpaceNet2 and SpaceNet7 use binary building masks. BENV2 maps its stored Sentinel-1 channels in VH, VV order.
 * Burn Scars has two classes, background and burn scar; no-data pixels are ignored in loss and metrics.
 * TreeSatAI maps its stored aerial channels in NIR, green, blue, red order, so ``bands: rgb`` selects the stored red, green, and blue channels.
+* TreeSatAI returns its Sentinel-1 ``vv`` and ``vh`` bands in dB, decoded from the stored ``uint16`` values, with no-data pixels set to the channel's mean over the sample's valid pixels.
 * Classification datasets declare class names in label-index order.
 * Band-statistics tools support excluding ignored segmentation pixels; geography extraction and coverage checks include the registered datasets.

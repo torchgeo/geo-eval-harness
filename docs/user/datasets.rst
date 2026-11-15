@@ -205,6 +205,12 @@ CLI name           #cls   bands multilabel   sensor                             
 ``treesatai``      15     19    **yes**      Aerial + S2 + S1 (multi-modal)         :class:`~geo_eval_harness.datasets.TreeSatAI`
 ================== ====== ===== ============ ====================================== =====================================
 
+``treesatai`` stores Sentinel-1 as whole-dB values wrapped into ``uint16``; the wrapper returns ``vv`` and ``vh`` as signed dB.
+
+The Sentinel-1 rasters mark no data with -9999 (stored wrapped as 55537) in parts of three training samples and one test sample. When loading, the wrapper replaces those pixels with the mean of the channel's valid pixels in the same sample. The ``vv`` and ``vh`` statistics are computed over the training split as loaded, with those pixels at their fill value, which is within 0.001 dB of leaving them out. Normalization statistics for these bands must exclude the marker itself: including it puts the VV standard deviation near 105 instead of 3.6.
+
+``vv_vh`` is a dummy band: the VV/VH quotient of the dB values truncated to an integer, which is 0 for 97.7% of training pixels and carries almost no information. ``--bands all`` includes it. To leave it out, list the bands by name, for example ``--bands vv,vh`` for Sentinel-1 alone or ``--bands nir,green,blue,red,b02,b03,b04,b08,b05,b06,b07,b8a,b11,b12,b01,b09,vv,vh`` for every other band. It remains available for models that require a third SAR channel.
+
 V2 datasets are stored as a single ``.tortilla`` file each, hosted under
 ``aialliance/<name>`` on the Hugging Face Hub. Download the selected datasets
 before running a benchmark, for example with

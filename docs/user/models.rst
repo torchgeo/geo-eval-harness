@@ -425,7 +425,7 @@ The ``version`` parameter selects the weight family:
    (``norm_from_pretrained="auto"``, the default): Landsat is normalized with
    dataset-specific ``BandSpec`` stats while Sentinel-2 and SAR declared in dB
    or linear power use the pretrained normalizer. SAR bands in an undeclared
-   unit (for example So2Sat, TreeSatAI and OpenEarthMap-SAR) also use ``BandSpec``
+   unit (for example So2Sat and OpenEarthMap-SAR) also use ``BandSpec``
    stats unless ``sar_log_scale`` is set. Only VV and VH backscatter bands fill
    the Sentinel-1 channels; complex parts, covariance cross-terms and VV/VH
    ratios are dropped. Supply constructor-specific settings in YAML
