@@ -271,7 +271,6 @@ Example fix-deltas:
 |---|---|---|---|
 | ``resnet50_s2rgb_moco × m-so2sat`` | 0.059 | **0.595** | +0.536 |
 | ``resnet50_s2rgb_moco × so2sat`` | 0.059 | **0.595** | +0.536 |
-| ``resnet50_s2_all_moco × so2sat`` | 0.059 | **0.357** | +0.298 |
 
 The previous "intrinsic dim ≈ 365" outlier on
 ``resnet50_s2rgb_moco × so2sat`` (vs typical 6-12) also resolved — it
