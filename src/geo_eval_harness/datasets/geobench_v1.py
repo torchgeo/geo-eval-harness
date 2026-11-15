@@ -60,6 +60,8 @@ class GeoBenchv1(Dataset):
 
         partition_file = self.dataset_dir / f"{partition}_partition.json"
         if not partition_file.exists():
+            if partition != "default":
+                raise ValueError(f"Unknown partition {partition!r}: {partition_file} not found")
             raise FileNotFoundError(f"Partition file not found: {partition_file}")
 
         with open(partition_file) as f:
