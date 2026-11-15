@@ -18,6 +18,7 @@ Models
 
 * Tessera V2 Nano, Small, Medium, and Large pixel students support Sentinel-2 snapshot classification, frozen segmentation, and LoRA. PASTIS supplies acquisition dates; undated inputs use the configured fallback day of year. See :doc:`models` for accepted datasets and input requirements.
 * Clay v1 Base and Clay v1.5 Large presets provide mean-patch and CLS-token embeddings.
+* CROMA and Clay segmentation features are the outputs of the configured transformer blocks.
 * TerraFM supports dataset normalization and its model-native scaling with pretraining or dataset statistics.
 * TerraFM's model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * SMARTIES Base and Large presets support optical and SAR bands with sensor-specific projections and pretraining normalization.

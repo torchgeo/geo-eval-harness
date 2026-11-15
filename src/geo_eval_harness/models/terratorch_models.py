@@ -209,6 +209,8 @@ class TerraTorchClayBench(_TerraTorchBench):
     # Clay's published mean/std (see _CLAY_PRETRAIN_MEAN_BY_BAND) are raw S2
     # digital numbers, not 0-1 reflectance.
     expected_input_unit = InputUnit.S2_DN
+    # Both Clay transformers run ``x = attn(x) + x; x = ff(x) + x``.
+    residual_branch_layers = r"clay_encoder\.transformer\.layers\.\d+\.[01]"
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
