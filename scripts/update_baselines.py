@@ -143,7 +143,9 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     paths = sorted(args.input.glob("*.csv")) if args.input.is_dir() else [args.input]
-    df = pd.concat([pd.read_csv(path) for path in paths], ignore_index=True)
+    df = pd.concat(
+        [pd.read_csv(path, dtype={"config_hash": str}) for path in paths], ignore_index=True
+    )
 
     old: pd.DataFrame | None = None
     if args.output.exists():
