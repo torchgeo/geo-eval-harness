@@ -23,6 +23,7 @@ from ..config.profile import ProfileConfig, resolve_profile_config
 from ..config.schema import resolve_output_path
 from ..datasets import BandSpec, get_bench_dataset_class, get_datasets
 from ..devices import resolve_device
+from ..errors import MissingDatasetError
 from ..model_profile import ProfileResult, profile_inference
 
 
@@ -120,7 +121,10 @@ def _record(
 
 
 def run(config: ProfileConfig) -> None:
-    """Load one real dataset batch, measure it, and write one JSON record."""
+    """Measure one real dataset batch and write one JSON record.
+
+    An unusable device or a dataset that is not downloaded exits without a traceback.
+    """
     config, preset = resolve_profile_config(config)
     try:
         device = resolve_device(config.runtime.device)
@@ -130,7 +134,10 @@ def run(config: ProfileConfig) -> None:
     np.random.seed(config.runtime.seed)  # noqa: NPY002 - Dataset transforms use NumPy's global RNG.
     # Upstream dataset/model constructors may print diagnostics; stdout is one JSON record.
     with redirect_stdout(sys.stderr):
-        train_dataset, batch, selected_bands = _load_batch(config)
+        try:
+            train_dataset, batch, selected_bands = _load_batch(config)
+        except MissingDatasetError as error:  # allow-except: dataset is not downloaded
+            raise SystemExit(f"error: {error}") from error
         model = (
             _build_model(preset, config, train_dataset, selected_bands, batch["image"].shape[-1])
             .to(device)

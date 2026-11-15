@@ -317,7 +317,7 @@ To keep every output from an image run outside the tracked reference results:
 
 The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
-``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. An explicit file takes precedence over the directory, even when the file comes from YAML; clear ``output.file`` to ``null`` to use the directory instead. For image runs, the explicit file combines all selected measurement kinds in one CSV. Each CLI flag overrides its corresponding YAML field, regardless of flag order.
+``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. ``--output`` takes precedence over any directory, regardless of flag order, and a YAML ``output.file`` takes precedence over a YAML ``output.directory``. ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``. For image runs, the explicit file combines all selected measurement kinds in one CSV.
 
 ``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 

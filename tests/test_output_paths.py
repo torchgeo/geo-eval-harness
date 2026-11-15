@@ -118,6 +118,8 @@ def test_output_flags_preserve_other_settings_and_round_trip(  # noqa: PLR0913 -
         arguments.extend([flag, "custom measurements"])
         field = "directory" if flag == "--output-dir" else "file"
         expected = expected.model_copy(update={field: "custom measurements"})
+    if flags == ["--output-dir"]:
+        expected = expected.model_copy(update={"file": None})
     main([command, "--config", str(config_path), *arguments, "--dry-run"])
     output = capsys.readouterr().out
     assert config_class.model_validate(yaml.safe_load(output)).output == expected

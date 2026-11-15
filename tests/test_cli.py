@@ -51,6 +51,7 @@ def test_run_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
             ["coord", "--model", "sincos", "--dataset", "country"],
             "INFO: progress\nWARNING: problem\n",
         ),
+        (["profile", "-m", "rcf", "-d", "m-eurosat"], "WARNING: problem\n"),
     ],
 )
 def test_commands_log_to_stderr_at_the_selected_level(
@@ -68,6 +69,7 @@ def test_commands_log_to_stderr_at_the_selected_level(
     level = root.level
     monkeypatch.setattr(root, "handlers", [])
     monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=runtime))
+    monkeypatch.setattr(commands, "_profile_runtime", SimpleNamespace(run=runtime))
     monkeypatch.setattr("geo_eval_harness.coordbench.run.run_coordbench", runtime)
     try:
         cli_main(argv)

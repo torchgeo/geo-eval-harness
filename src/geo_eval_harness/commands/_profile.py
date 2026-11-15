@@ -9,6 +9,7 @@ import yaml
 
 from .. import commands
 from ..config.profile import ProfileConfig, resolve_profile_config
+from ._common import setup_logging
 from ._config import load_config_or_exit
 from .profile_arguments import load_profile_config
 
@@ -25,4 +26,5 @@ def profile(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         print(yaml.safe_dump(config.model_dump_yaml(), sort_keys=False), end="")
         return
+    setup_logging(verbose=config.runtime.verbose)
     commands._profile_runtime.run(config)

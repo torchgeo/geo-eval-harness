@@ -131,11 +131,18 @@ def load_from_flags[ConfigT](
     fields: Iterable[FlagOverride],
     validate: Callable[[dict[str, Any]], ConfigT],
 ) -> ConfigT:
-    """Load YAML, apply explicit flags, and validate one command config."""
+    """Load YAML, apply explicit flags, and validate one command config.
+
+    ``--output-dir`` without ``--output`` drops a YAML ``output.file``, which would otherwise
+    take precedence over the requested directory.
+    """
     path = getattr(args, "config", None)
     base = load_yaml(path) if path is not None else {}
     overrides, replace_roots = flag_overrides(args, fields)
-    return validate(apply_flag_overrides(base, overrides, replace_roots=replace_roots))
+    values = apply_flag_overrides(base, overrides, replace_roots=replace_roots)
+    if hasattr(args, "output_dir") and not hasattr(args, "output"):
+        values["output"].pop("file", None)
+    return validate(values)
 
 
 def exit_config_error(error: BaseException, *, path: object | None = None) -> NoReturn:

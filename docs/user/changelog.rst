@@ -13,6 +13,7 @@ Package and configuration
 * Linux x86_64 installations use CUDA FAISS; other platforms use CPU FAISS.
 * TerraTorch models require the separate source installation documented in :doc:`installation`.
 * Image runs reject unknown ``intrinsic_dim.estimators`` names, ``max_samples`` below 2, and enabled estimators without ``torchid`` when the configuration is loaded.
+* ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``.
 
 Models
 ^^^^^^
