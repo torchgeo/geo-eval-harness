@@ -509,6 +509,32 @@ def test_dry_run_rejects_unsupported_method_and_band_selections(flags: list[str]
     assert error.value.code == 2
 
 
+@pytest.mark.parametrize(
+    ("intrinsic_dim", "diagnostic"),
+    [
+        ("{enabled: true, estimators: [TwoNN]}", "geo-eval-harness[id]"),
+        ("{estimators: [twonn]}", "intrinsic_dim.estimators"),
+        ("{max_samples: 1}", "intrinsic_dim.max_samples"),
+    ],
+)
+def test_dry_run_rejects_unusable_intrinsic_dim_settings(
+    intrinsic_dim: str,
+    diagnostic: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("geo_eval_harness.commands._run.find_spec", lambda name: None)
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"model: {{name: rcf}}\ndatasets: [m-eurosat]\nintrinsic_dim: {intrinsic_dim}\n"
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--config", str(path), "--dry-run"])
+    assert error.value.code == 2
+    assert diagnostic in capsys.readouterr().err
+
+
 def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
     path = tmp_path / "bands.yaml"
     path.write_text("model: {name: rcf}\ndatasets: [m-eurosat]\ninput:\n  bands: red,green\n")

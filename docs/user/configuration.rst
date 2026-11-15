@@ -293,11 +293,7 @@ Optional image measurements
      max_samples: 10000
      device: null
 
-These are additive passes within an image run, not the standalone
-``profile`` command. Intrinsic-dimension estimators require the ``id`` extra;
-``estimators: []`` requests only the dependency-free feature-spectrum
-diagnostics. ``splits`` accepts ``train``, ``val``, and ``test``.
-``max_samples: null`` removes the sample cap.
+These are additive passes within an image run, not the standalone ``profile`` command. ``estimators`` accepts ``lPCA``, ``TwoNN``, ``MLE``, ``CorrInt``, ``MiND_ML``, ``KNN``, ``DANCo``, and ``FisherS``. They require the ``id`` extra (Python ≥ 3.13); without it, an enabled pass that selects any estimator is a configuration error, so ``--dry-run`` reports it. ``estimators: []`` requests only the dependency-free feature-spectrum diagnostics. ``splits`` accepts ``train``, ``val``, and ``test``. ``max_samples`` must be at least 2; ``null`` removes the sample cap.
 
 Results and resume
 ^^^^^^^^^^^^^^^^^^
