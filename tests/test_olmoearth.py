@@ -10,8 +10,14 @@ import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness import flops_pipeline
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.datasets.loading import _ResizeTransform
+from geo_eval_harness.main import instantiate_dataset_model
 from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
 
 olmoearth_available = find_spec("olmoearth_pretrain_minimal") is not None
@@ -156,6 +162,44 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     assert tiny_olmoearth["encoder_kwargs"] == {"patch_size": 4, "input_res": 10, "fast_pass": True}
     assert tiny_olmoearth["loads"] == [("nano", True)]
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
+
+
+@pytest.mark.parametrize(("image_size", "input_res"), [(224, 10 * 512 / 224), (None, 10)])
+def test_input_res_is_the_ground_size_of_the_pixels_the_encoder_receives(
+    tiny_olmoearth: dict[str, Any], image_size: int | None, input_res: float
+) -> None:
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "olmoearth_nano"},
+            "datasets": ["cloudsen12"],
+            "input": {"bands": "rgb", "image_size": image_size},
+            "runtime": {"device": "cpu"},
+        }
+    )
+    config, preset = resolve_run_config(config, "cloudsen12")
+    sample = {"image": torch.zeros(3, 512, 512)}
+    if image_size is not None:
+        sample = _ResizeTransform(image_size, config.input.interpolation)(sample)
+    model = instantiate_dataset_model(
+        config, preset, get_bench_dataset_class("cloudsen12")(), [sample], torch.device("cpu")
+    )
+    model(sample["image"][None])
+    assert tiny_olmoearth["encoder_kwargs"] == {
+        "patch_size": 8,
+        "input_res": pytest.approx(input_res, rel=1e-12),
+        "fast_pass": True,
+    }
+
+
+def test_flops_measures_synthetic_tiles_as_native_pixels(tiny_olmoearth: dict[str, Any]) -> None:
+    config = FlopsConfig.model_validate(
+        {"model": {"name": "olmoearth_nano"}, "input": {"band_source": "cloudsen12"}}
+    )
+    _, preset = config.resolve()
+    bands = get_bench_dataset_class("cloudsen12").resolve_band_specs("rgb")
+    model = flops_pipeline._build_model(preset, bands, "bandspec_zscore", "rgb")
+    assert model is not None
+    assert model.input_res == 10
 
 
 @pytest.mark.parametrize(

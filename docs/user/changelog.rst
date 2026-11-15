@@ -39,6 +39,7 @@ Models
 * OlmoEarth v1, v1.1, v1.2, and v1.3 presets expose their supported encoder sizes and feature outputs.
 * OlmoEarth fills missing bands as upstream does for each version: v1 copies the nearest present band and v1.1 and later set them to 0 after normalization.
 * OlmoEarth fills its Sentinel-1 channels only from VV and VH backscatter bands and normalizes SAR in an undeclared unit with dataset statistics.
+* OlmoEarth encodes resized tiles at the ground size of the resized pixels: ``input_res`` is the sensor resolution times the tile side before the resize over the resized side.
 
 Evaluation and results
 ^^^^^^^^^^^^^^^^^^^^^^

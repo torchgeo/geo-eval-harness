@@ -334,7 +334,8 @@ class OlmoEarthBenchModel(BenchModel):
 
     ``input_res`` is auto-detected from the primary sensor's GSD: 10 m
     for S2/SAR, 30 m for Landsat.  Pass ``input_res`` explicitly to
-    override.
+    override.  The encoder receives ``input_res * gsd_scale``, the ground
+    size of the pixels a resizing run feeds it.
 
     Args:
         bands: Ordered ``BandSpec`` list describing the input channels.
@@ -349,8 +350,9 @@ class OlmoEarthBenchModel(BenchModel):
             Base with an AttentionPooler that reads the encoder tokens into a
             768-d location-token grid plus a detached 128-d student readout.
         patch_size: Patch size for the encoder (default 4).
-        input_res: Input resolution in meters.  ``None`` (default) lets
-            the wrapper auto-detect from the primary sensor GSD.
+        input_res: Ground resolution of the tiles' native pixels in meters.
+            ``None`` (default) lets the wrapper auto-detect from the primary
+            sensor GSD.
         time_steps: Temporal slots in the input.  Default 1 (single
             timestep — the native shape of these classification datasets).
             Values > 1 replicate the single input frame into that many
@@ -405,7 +407,13 @@ class OlmoEarthBenchModel(BenchModel):
             ``"zero"`` sets them to 0 after normalization, as band dropout did
             in v1.1+ pretraining.  ``None`` (default) selects ``"impute"`` for
             v1 and ``"zero"`` otherwise.
+        gsd_scale: Ground size of an input pixel relative to a native pixel:
+            the tile side before the run's resize over the resized side, which
+            the runner supplies.  1.0 for unresized tiles.
     """
+
+    #: The runner supplies ``gsd_scale`` so a resize changes ``input_res`` with the pixels.
+    wants_gsd_scale = True
 
     def __init__(  # noqa: PLR0913 - public YAML options
         self,
@@ -425,6 +433,7 @@ class OlmoEarthBenchModel(BenchModel):
         min_image_size: int | None = None,
         embedding: EmbeddingSource | None = None,
         missing_bands: MissingBands | None = None,
+        gsd_scale: float = 1.0,
         **_kwargs,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
@@ -475,7 +484,7 @@ class OlmoEarthBenchModel(BenchModel):
 
         self.model_size = model_size
         self.patch_size = patch_size
-        self.input_res = input_res
+        self.input_res = input_res * gsd_scale
         self.time_steps = time_steps
         self.std_multiplier = std_multiplier
         self.do_normalize = normalize

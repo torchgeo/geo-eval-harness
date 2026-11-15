@@ -910,7 +910,8 @@ def instantiate_dataset_model(
     device: torch.device,
 ) -> BenchModel:
     """Construct the model with bands matching the loaded tensor channels."""
-    sample = train_dataset[0]["image"]
+    first = train_dataset[0]
+    sample = first["image"]
     num_channels = sample.shape[-3]
     normalization = NORMALIZATIONS[cfg.input.normalization]
     ds_name = bench.name
@@ -929,7 +930,10 @@ def instantiate_dataset_model(
         # Empirical RCF whitens against real patches, so it needs the dataset.
         instantiate_kwargs["dataset"] = train_dataset
     model: BenchModel = build_model(
-        model_cfg, native_image_size=sample.shape[-1], **instantiate_kwargs
+        model_cfg,
+        native_image_size=sample.shape[-1],
+        resized_from=first.get("resized_from"),
+        **instantiate_kwargs,
     )
     model.to(device).eval()
 
