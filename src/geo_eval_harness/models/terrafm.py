@@ -16,6 +16,7 @@ import torch.nn as nn
 from einops import rearrange
 
 from geo_eval_harness.bands import BandSpec
+from geo_eval_harness.errors import UnsupportedNormalizationError
 
 from ._band_mapping import BandMappingPolicy, map_to_model_bands, resolve_src_indices
 from ._input_units import InputUnit, detect_input_unit, linear_power_to_db, to_s2_dn
@@ -302,6 +303,8 @@ class TerraFMBench(BenchModel):
         self.model_bands = list(TERRAFM_S2_12 if modality == "s2" else TERRAFM_S1_2)
         if modality == "s1":
             self.s1_indices = self._resolve_s1_indices(bands)
+            if self._native_pretrain:
+                self._require_s1_units()
 
         width, depth, heads = self._VARIANTS[variant]
         self.embed_dim = width
@@ -396,6 +399,14 @@ class TerraFMBench(BenchModel):
             )
         self.load_state_dict(encoder, strict=True)
         logger.info("Loaded TerraFM %s weights from %s", self.variant, path)
+
+    def _require_s1_units(self) -> None:
+        for band in (self.bands[i] for i in self.s1_indices):
+            if band.unit not in ("db", "linear_power"):
+                raise UnsupportedNormalizationError(
+                    f"TerraFM model normalization needs SAR band {band.name!r} to declare unit "
+                    f"'db' or 'linear_power', got {band.unit!r}. Use --normalization dataset."
+                )
 
     def interpolate_pos_encoding(self, x: torch.Tensor, w: int, h: int) -> torch.Tensor:
         """Bicubically resize the learned position embedding to the token grid."""

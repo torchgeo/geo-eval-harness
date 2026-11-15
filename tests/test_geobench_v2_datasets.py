@@ -128,8 +128,8 @@ class TestV2Loading:
         assert batch["mask"].shape == (2, 32, 32)
         assert batch["mask"].dtype == torch.long
 
-    def test_partition_warning(self, mock_v2_env: dict[str, MagicMock]) -> None:
-        with pytest.warns(UserWarning, match="does not support custom partitions"):
+    def test_unsupported_partition_is_rejected(self, mock_v2_env: dict[str, MagicMock]) -> None:
+        with pytest.raises(ValueError, match="supports only the default partition"):
             get_datasets(
                 dataset_name="benv2",
                 partition_name="0.10x_train",
@@ -185,6 +185,30 @@ class TestV2Loading:
             assert kwargs["data_normalizer"] is torch.nn.Identity
             if dataset_name == "benv2":
                 assert kwargs["return_stacked_image"] is True
+
+
+def test_treesatai_rgb_selects_stored_red_green_blue_channels() -> None:
+    """TreeSatAI aerial files store NIR, green, blue, red."""
+    from geobench_v2.datasets import GeoBenchTreeSatAI
+
+    bench = get_bench_dataset_class("treesatai")()
+    stored = torch.arange(4.0)[:, None, None]
+    selected = object.__new__(GeoBenchTreeSatAI).rearrange_bands(
+        {"aerial": stored}, bench.build_band_order(("red", "green", "blue", "nir"))
+    )
+    assert selected["image_aerial"].flatten().tolist() == [3, 1, 2, 0]
+    assert bench.rgb_bands == ["red", "green", "blue"]
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "bands"),
+    [("benv2", ("vv", "b04", "vh")), ("kuro_siwo", ("dem", "vv", "vh"))],
+)
+def test_band_orders_the_loader_cannot_return_are_rejected(
+    dataset_name: str, bands: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match=f"{dataset_name}.*{', '.join(bands)}"):
+        get_bench_dataset_class(dataset_name)().build_band_order(bands)
 
 
 class MockKuroSiwo:
@@ -316,6 +340,18 @@ class TestKuroSiwoLive:
         )
 
 
+def test_so2sat_sar_names_select_stored_polarizations() -> None:
+    """So2Sat Sentinel-1 files store VH, then VV."""
+    from geobench_v2.datasets import GeoBenchSo2Sat
+
+    bench = get_bench_dataset_class("so2sat")()
+    stored = torch.arange(2.0)[:, None, None]
+    selected = object.__new__(GeoBenchSo2Sat).rearrange_bands(
+        {"s1": stored}, bench.build_band_order(("vh", "vv"))
+    )
+    assert selected["image_s1"].flatten().tolist() == [0, 1]
+
+
 class MockPASTIS:
     """Stand-in for ``geobench_v2.datasets.GeoBenchPASTIS``.
 
@@ -427,3 +463,36 @@ class TestPASTISSampleConstruction:
     def test_time_steps_rejected_when_not_multi_temporal(self):
         with pytest.raises(ValueError, match="not multi-temporal"):
             BurnScars().get_dataset("train", time_steps=2)
+
+
+def test_dynamic_earthnet_s2_names_select_stored_bands() -> None:
+    """Dynamic EarthNet Sentinel-2 files store the 10 m bands, then the 20 m, then the 60 m."""
+    from geobench_v2.datasets import GeoBenchDynamicEarthNet
+
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    names = [band.name for band in bench.bands if band.sensor == "s2"]
+    stored = {"planet": torch.arange(4.0)[:, None, None], "s2": torch.arange(12.0)[:, None, None]}
+    selected = object.__new__(GeoBenchDynamicEarthNet).rearrange_bands(
+        stored, bench.build_band_order(None)
+    )
+    channels = selected["image_s2"].flatten().int().tolist()
+    assert dict(zip(names, channels, strict=True)) == {
+        "b02": 0,
+        "b03": 1,
+        "b04": 2,
+        "b08": 3,
+        "b05": 4,
+        "b06": 5,
+        "b07": 6,
+        "b8a": 7,
+        "b11": 8,
+        "b12": 9,
+        "b01": 10,
+        "b09": 11,
+    }
+
+
+def test_dynamic_earthnet_requires_a_planet_band() -> None:
+    bench = get_bench_dataset_class("dynamic_earthnet")()
+    with pytest.raises(ValueError, match="Planet band"):
+        bench.build_band_order(("b04", "b03", "b02"))

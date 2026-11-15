@@ -202,6 +202,11 @@ class _V2Dataset(BenchDataset):
         if self.band_order_strategy == "by_sensor":
             grouped: dict[str, list[str]] = {}
             for spec in specs:
+                if spec.sensor in grouped and next(reversed(grouped)) != spec.sensor:
+                    raise ValueError(
+                        f"{self.name} returns each sensor's bands together; list them next to "
+                        f"each other (got {', '.join(s.name for s in specs)})."
+                    )
                 grouped.setdefault(spec.sensor, []).append(spec.source_name)
             return grouped
         return [spec.source_name for spec in specs]

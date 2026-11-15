@@ -198,6 +198,20 @@ def test_build_seg_solver_uses_criterion_ignore_index(mock_backbone):
     assert solver.ignore_index == 7
 
 
+@pytest.mark.parametrize("ignore_index", [0, NUM_CLASSES - 1])
+def test_build_seg_solver_rejects_ignore_index_that_is_a_class_id(
+    mock_backbone, ignore_index: int
+) -> None:
+    config = SegmentationConfig(layers=["layer1"], head="linear", ignore_index=ignore_index)
+    with pytest.raises(ValueError, match="ignore_index"):
+        build_seg_probe_and_solver(
+            mock_backbone,
+            num_classes=NUM_CLASSES,
+            config=config,
+            device=torch.device("cpu"),
+        )
+
+
 def test_probe_dry_run_exception_handling():
     """Backbone failures during shape inference must remain visible."""
 
@@ -1123,6 +1137,20 @@ def test_patch_linear_head_infers_patch_geometry(
     assert torch.isfinite(logits).all()
 
 
+def test_patch_linear_head_keeps_parameter_dtype_for_float16_features() -> None:
+    from geo_eval_harness.models.segmentation_heads import PatchLinearHead
+
+    head = PatchLinearHead([8], num_classes=3)
+    head([torch.zeros(1, 8, 4, 4)], 64, 64)
+    params = list(head.parameters())
+
+    logits = head([torch.randn(2, 8, 4, 4).half()], 64, 64)
+
+    assert all(param.dtype == torch.float32 for param in params)
+    assert logits.dtype == torch.float32
+    assert torch.isfinite(logits).all()
+
+
 def test_patch_linear_head_ignores_extra_channels():
     """PatchLinearHead uses only the first feature map when extra layers are passed."""
     from geo_eval_harness.models.segmentation_heads import PatchLinearHead
@@ -1283,6 +1311,34 @@ def test_gpu_tensor_cache_from_cached_cpu(mock_backbone, dummy_data, monkeypatch
     assert gpu_cache.layer_tensors[0].dtype == torch.float32  # CPU path uses float32
     assert gpu_cache.masks.dtype == torch.long
     assert gpu_cache.masks.shape == (len(cache), 64, 64)
+
+
+@pytest.mark.parametrize("amp", [True, False])
+def test_host_feature_cache_trains_and_evaluates_without_cuda(
+    mock_backbone, dummy_data, monkeypatch: pytest.MonkeyPatch, *, amp: bool
+) -> None:
+    cache = _make_cpu_cache(mock_backbone, dummy_data)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda device: (0, 8 * 2**30))
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 0)
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 0)
+
+    staged = GPUTensorCache.from_cached(cache, "cuda:0", amp=amp)
+    dtype = torch.float16 if amp else torch.float32
+    assert staged.device == torch.device("cpu")
+    for actual, expected in zip(staged.layer_tensors, cache.layer_tensors, strict=True):
+        torch.testing.assert_close(actual, expected.to(dtype=dtype))
+    torch.testing.assert_close(staged.masks, cache.masks)
+
+    probe = make_probe(mock_backbone, ["layer1", "layer2"])
+    solver = SegmentationSolver(model=probe, num_classes=NUM_CLASSES, device="cpu")
+    before = [parameter.detach().clone() for parameter in probe.head.parameters()]
+    score = solver.fit_cached(staged, val_cache=staged, batch_size=2, epochs=1, verbose=False)
+    assert isinstance(score, float)
+    assert 0 <= score <= 1
+    assert any(
+        not torch.equal(old, new) for old, new in zip(before, probe.head.parameters(), strict=True)
+    )
+    assert solver.epoch_history[0].train_steps > 0
 
 
 def test_gpu_tensor_cache_shuffling_keeps_features_paired_with_masks() -> None:
@@ -1656,6 +1712,7 @@ def test_probe_anyup_upsamples_before_the_classifier(monkeypatch) -> None:
 
 
 def test_anyup_guidance_bands_follow_wavelengths() -> None:
+    from geo_eval_harness.datasets import get_bench_dataset_class
     from geo_eval_harness.datasets.base import BandSpec
     from geo_eval_harness.models.anyup import anyup_guidance, rgb_guidance_indices
 
@@ -1665,6 +1722,10 @@ def test_anyup_guidance_bands_follow_wavelengths() -> None:
     s2 = [band("b02", 0.49), band("b03", 0.56), band("b04", 0.665), band("b08", 0.842)]
     assert rgb_guidance_indices(s2) == (2, 1, 0)
     assert rgb_guidance_indices([band("vv", None, "sar"), band("vh", None, "sar")]) == (0, 0, 0)
+    coastal_first = get_bench_dataset_class("cloudsen12").resolve_band_specs("all")
+    assert rgb_guidance_indices(coastal_first) == (3, 2, 1)
+    aerial = get_bench_dataset_class("loveda").resolve_band_specs("all")
+    assert rgb_guidance_indices(aerial) == (0, 1, 2)
     guide = anyup_guidance(torch.rand(2, 4, 8, 8) * 1000, (2, 1, 0))
     assert guide.shape == (2, 3, 8, 8)
     assert guide.abs().max() < 3
