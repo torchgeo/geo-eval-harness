@@ -15,3 +15,5 @@ The environment uses the repository's lockfile with the `dev` and `olmoearth` ex
 TerraFM uses `TerraFM-B.pth` from Hugging Face `MBZUAI/TerraFM` at revision `3631173fec2c3a445a71e15985e0f3d5aaf4ecb3`, verified against SHA-256 `8bdb6a4cfd707a09d79f4790119daa9d76bb316b6ea756c6eb305f99d1797a06`. The run configuration supplies its local checkpoint path and MD5 `4f38e4ad30f908c0aa8534d473e99f3f`.
 
 Configurations projected to exceed 20 hours on the selected AWS GPUs are deferred. The initial deferred cases are OlmoEarth nano six-frame on AID and UniverSat on m-brick-kiln, each with RGB and all-band inputs. The manifest and coverage ledger retain these four configurations with explicit deferral reasons.
+
+ImageStats rows record `identity` normalization because the encoder returns raw statistics regardless of the requested normalization. Collection applies this metadata correction to the fresh AWS rows; scores and configuration hashes retain their original values.

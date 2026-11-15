@@ -34,9 +34,7 @@ The fixed methodology and coverage rules are:
 * Classification features are each model's canonical embedding, which for most models is the mean of its patch tokens. A result row's ``pool`` value, where recorded, labels its pooling, and a ranked model whose rows record anything other than the patch mean shows the label under its name. Scale-MAE large uses its CLS embedding, except on ``forestnet`` and ``treesatai``, where it uses the patch mean; SMARTIES and TerraFM use their CLS embedding. Rows that record no ``pool`` are labelled from the model name, as CLS for a ``_cls`` preset and as patch mean otherwise. AnySat uses its class token through a separate option that result rows do not record, so it carries no label. ``_cls`` presets are pooling ablations of a listed model and are never ranked. Segmentation probes read feature maps, so their rows carry no pooling.
 * A model is ranked only with a complete row across the eligible datasets in
   its ``(task, probe, bands)`` view.
-* The generator uses complete ``model_native`` results when available and
-  otherwise uses complete ``bandspec_zscore`` results; it never combines the
-  two.
+* The generator uses complete ``model_native`` results when available and otherwise uses complete ``bandspec_zscore`` results; it never combines the two. A model that records only ``identity`` results, because it applies no normalization, is ranked on those. ``imagestats_handcrafted_control`` repeats ImageStats for the handcrafted sweep and is never ranked.
 * Models without a complete row are named below the table.
 * Exception: segmentation **Native bands** views (below) rank each model on the
   datasets it has.
