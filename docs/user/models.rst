@@ -53,7 +53,7 @@ Clay v1 Base
 
 ``terratorch/clay_v1`` and ``terratorch/clay_v1_cls`` load TerraTorch's ``timm_clay_v1_base`` backbone, the 92,102,144-parameter Clay v1 Base encoder from ``made-with-clay/Clay-legacy`` (``v1/clay-v1-base.ckpt``). Mean-patch and CLS-token pooling use the same weights. The Clay v1.5 checkpoint is a separate, larger encoder.
 
-Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching. Use ``python scripts/migrations/migrate_clay_v1.py`` to relabel a separate results checkout.
+Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical values, source fingerprints, and original configuration hashes are retained. New runs hash the canonical preset name for resume matching.
 
 Clay v1.5 Large
 ^^^^^^^^^^^^^^^
@@ -298,7 +298,7 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
-Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size.
+Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
 
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
@@ -337,9 +337,11 @@ the patch tokens into a 768-d location-token grid, with a detached linear
 student projecting it to the 128-d vectors behind AI2's published embeddings.
 The ``embedding`` kwarg selects which output is mean-pooled:
 ``location_tokens`` (default for v1.3, as in AI2's evals), ``patch_tokens``
-(the v1.x readout) or ``student``.  v1.3 also sets channels missing from the
-input to 0 after normalization (``missing_bands: zero``), the value band
-dropout used during pretraining, instead of copying a spectral neighbour.
+(the v1.x readout) or ``student``.  Channels missing from the input are filled
+as upstream's ``Normalizer`` fills them: v1.1, v1.2 and v1.3 set them to 0 after
+normalization (``missing_bands: zero``), the value band dropout used during
+pretraining, and v1 copies the present band nearest in wavelength
+(``missing_bands: impute``).
 The ``version`` parameter selects the weight family:
 
 .. list-table::
@@ -419,8 +421,12 @@ The ``version`` parameter selects the weight family:
    [0, 255], a scale OlmoEarth's pretrained Landsat statistics (fit on real
    DN) can't match.  OlmoEarth therefore selects normalization per sensor
    (``norm_from_pretrained="auto"``, the default): Landsat is normalized with
-   dataset-specific ``BandSpec`` stats while Sentinel-2 / SAR use the
-   pretrained normalizer. Supply constructor-specific settings in YAML
+   dataset-specific ``BandSpec`` stats while Sentinel-2 and SAR declared in dB
+   or linear power use the pretrained normalizer. SAR bands in an undeclared
+   unit (for example So2Sat, TreeSatAI and OpenEarthMap-SAR) also use ``BandSpec``
+   stats unless ``sar_log_scale`` is set. Only VV and VH backscatter bands fill
+   the Sentinel-1 channels; complex parts, covariance cross-terms and VV/VH
+   ratios are dropped. Supply constructor-specific settings in YAML
    ``model.kwargs``, not as positional overrides.
 
 .. note::

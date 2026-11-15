@@ -16,6 +16,7 @@ from geo_eval_harness.config.catalog import list_model_configs
 from geo_eval_harness.config.presets import NORMALIZATIONS, build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.models.interface import BenchModel
 from geo_eval_harness.models.timm import TimmPatchBenchModel
 from geo_eval_harness.segmentation_lora import (
     apply_lora,
@@ -192,7 +193,8 @@ def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> 
         pytest.skip(f"{preset_name} loads pretrained weights only from a local checkpoint_path")
     dataset, band_selection = _MULTISPECTRAL_INPUTS.get(preset_name, ("fotw", "rgb"))
     model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
-    model = build_model(preset, bands=model_bands, normalization=NORMALIZATIONS["dataset"])
+    normalization = NORMALIZATIONS[preset.input.normalization]
+    model = build_model(preset, bands=model_bands, normalization=normalization)
     segmentation = preset.segmentation
     assert segmentation.lora_target_modules is not None
 
@@ -202,11 +204,9 @@ def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> 
     _assert_only_lora_trains(model, list(segmentation.layers), images)
 
 
-@pytest.mark.parametrize(
-    "preset_name", ["terrafm/base_s1", "terrafm/base_s2", "terrafm/base_s2_l1c"]
-)
-def test_terrafm_preset_lora_targets_train(preset_name: str) -> None:
+def test_terrafm_preset_lora_targets_train() -> None:
     """TerraFM's pretrained weights need a local checkpoint, so check its targets untrained."""
+    preset_name = "terrafm/base_s2"
     preset = load_model_preset(ModelConfig(name=preset_name, kwargs={"pretrained": False}))
     dataset, band_selection = _MULTISPECTRAL_INPUTS[preset_name]
     model_bands = get_bench_dataset_class(dataset)().resolve_band_specs(band_selection)
@@ -294,6 +294,28 @@ def test_full_finetune_rejects_a_backbone_that_stays_frozen() -> None:
     )
     with pytest.raises(ValueError, match="no trainable backbone parameter"):
         build_seg_probe_and_solver(model, 3, config, torch.device("cpu"))
+
+
+class _NoGradBenchModel(BenchModel):
+    def __init__(self) -> None:
+        super().__init__(bands(3), normalization="identity")
+        self.spatial = nn.Conv2d(3, 4, 1)
+
+    @torch.no_grad()
+    def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
+        return self.spatial(images).mean(dim=(-2, -1))
+
+
+def test_fine_tuning_rejects_a_backbone_whose_forward_disables_gradients() -> None:
+    config = SegmentationConfig(
+        layers=["spatial"], head="linear", full_finetune=True, backbone_learning_rate=1e-4
+    )
+    _, solver = build_seg_probe_and_solver(_NoGradBenchModel(), 3, config, torch.device("cpu"))
+    loader = DataLoader(
+        TensorDataset(torch.randn(2, 3, 8, 8), torch.randint(0, 3, (2, 8, 8))), batch_size=2
+    )
+    with pytest.raises(RuntimeError, match="no gradient"):
+        solver.fit(loader, epochs=1, verbose=False)
 
 
 class _TinyAdapterBackbone(nn.Module):

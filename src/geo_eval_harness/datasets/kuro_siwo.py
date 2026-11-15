@@ -39,6 +39,16 @@ class KuroSiwo(_V2Dataset):
     ]
     # fmt: on
 
+    def build_band_order(self, bands: tuple[str, ...] | None) -> object:
+        """Group bands by sensor, rejecting DEM before SAR because samples join SAR first."""
+        specs = self.select_band_specs(bands)
+        if specs[0].sensor == "dem" and specs[-1].sensor != "dem":
+            raise ValueError(
+                f"{self.name} returns SAR before DEM; list dem last "
+                f"(got {', '.join(spec.name for spec in specs)})."
+            )
+        return super().build_band_order(bands)
+
     def canonicalize_sample(self, sample: dict) -> dict:
         """Join post-event SAR and optional DEM into a ``(C, H, W)`` image.
 

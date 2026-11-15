@@ -89,6 +89,8 @@ class GeoBenchv1Sharded(Dataset):
             )
 
         partition_file = self.dataset_dir / f"{partition}_partition.json"
+        if partition != "default" and not partition_file.exists():
+            raise ValueError(f"Unknown partition {partition!r}: {partition_file} not found")
         with open(partition_file) as f:
             partition_data = json.load(f)
         if split not in partition_data:

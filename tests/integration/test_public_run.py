@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +17,9 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize("temperature_scaling", [False, True], ids=["multisensor", "calibrated"])
-def test_public_classification_and_resume(tmp_path: Path, *, temperature_scaling: bool) -> None:
+def test_public_classification_and_resume(
+    tmp_path: Path, cli_main: Callable[..., None], *, temperature_scaling: bool
+) -> None:
     write_classification_files(tmp_path, "m-eurosat", (2, 7), all_bands=True)
     datasets = ["m-eurosat"]
     bands = ["red", "green", "blue"] if temperature_scaling else "all"
@@ -47,9 +50,13 @@ def test_public_classification_and_resume(tmp_path: Path, *, temperature_scaling
             }
         )
     )
-    completed = run_public_cli("run", "--config", str(config), cwd=tmp_path)
-    assert completed.returncode == 0, cli_output(completed)
-    assert output.is_file(), cli_output(completed)
+    arguments = ["run", "--config", str(config)]
+    if temperature_scaling:
+        cli_main(arguments)
+    else:
+        # One case keeps the installed console script and a separate process in the loop.
+        completed = run_public_cli(*arguments, cwd=tmp_path)
+        assert completed.returncode == 0, cli_output(completed)
     rows = pd.read_csv(output)
     assert len(rows) == 2 * len(datasets)
     assert set(rows["dataset"]) == set(datasets)
@@ -79,10 +86,7 @@ def test_public_classification_and_resume(tmp_path: Path, *, temperature_scaling
 
     before = output.read_bytes()
     shutil.rmtree(tmp_path / "data")
-    resumed = run_public_cli(
-        "run", "--config", str(config), "--resume", "--workers", "8", cwd=tmp_path
-    )
-    assert resumed.returncode == 0, cli_output(resumed)
+    cli_main([*arguments, "--resume", "--workers", "8"])
     assert output.read_bytes() == before
 
 

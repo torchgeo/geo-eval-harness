@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from geo_eval_harness.datasets import get_bench_dataset_class, list_datasets
 from scripts import regen_leaderboard as rl
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -124,10 +125,29 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     assert "m-pv4ger" not in set(out["dataset"])
 
 
+def test_harmonize_drops_train_only_linear_probes() -> None:
+    rows = [
+        _row("native_full", "d1", "linear", "rgb", 0.9, "bandspec_zscore") | {"merge_val": True},
+        _row("native_full", "d1", "linear", "rgb", 0.8, "bandspec_zscore") | {"merge_val": False},
+        _row("native_full", "d1", "knn5", "rgb", 0.7, "bandspec_zscore") | {"merge_val": False},
+    ]
+    out = rl.harmonize(pd.DataFrame(rows))
+    assert sorted(zip(out["probe"], out["score"], strict=True)) == [("knn5", 0.7), ("linear", 0.9)]
+
+
 def test_rgb_only_datasets_are_never_multispectral() -> None:
     raw = pd.DataFrame([_row("native_full", "resisc45", "linear", "all", 0.5, "bandspec_zscore")])
     out = rl.harmonize(raw)
     assert set(out["bandclass"]) == {"RGB"}
+
+
+def test_rgb_only_datasets_match_the_registry() -> None:
+    rgb_only = {
+        name
+        for name in list_datasets()
+        if {band.name for band in get_bench_dataset_class(name).bands} <= rl.RGB_BAND_NAMES
+    }
+    assert rgb_only == rl.RGB_ONLY_DATASETS
 
 
 def test_terramind_alias_applies_during_harmonization() -> None:
