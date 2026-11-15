@@ -154,7 +154,7 @@ def test_program_fails_when_any_requested_data_is_unavailable(
         r"Required files for 'm-forestnet' are missing\. "
         "Run `geo-eval-harness download geobench_v1 --datasets m-forestnet`"
     )
-    with pytest.raises(FileNotFoundError, match=message):
+    with pytest.raises(SystemExit, match=message):
         cli_main(classification_arguments(output, dataset_names=dataset_names))
     if dataset_names[0] == "m-eurosat":
         rows = pd.read_csv(output)
