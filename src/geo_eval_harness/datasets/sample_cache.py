@@ -112,7 +112,14 @@ def cache_key(dataset: Dataset, identity: dict[str, object]) -> str:
 
 
 def _iterate(dataset: Dataset, num_workers: int) -> Iterator[dict[str, torch.Tensor]]:
-    loader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=num_workers)
+    # A private generator supplies the loader's base seed, so building leaves the global RNG alone.
+    loader = DataLoader(
+        dataset,
+        batch_size=16,
+        shuffle=False,
+        num_workers=num_workers,
+        generator=torch.Generator(),
+    )
     if num_workers:
         for batch in loader:
             yield batch
