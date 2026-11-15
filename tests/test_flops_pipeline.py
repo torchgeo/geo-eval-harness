@@ -5,6 +5,7 @@ Fast tests run on CPU without downloads; use ``-m slow`` for real pretrained bac
 
 import math
 from pathlib import Path
+from typing import get_args
 
 import pytest
 import torch
@@ -18,6 +19,7 @@ from geo_eval_harness.config.presets import ModelPreset, build_model, load_model
 from geo_eval_harness.config.schema import ModelConfig, SegmentationConfig
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.flops_identity import MeasurementVariant
 from geo_eval_harness.flops_pipeline import (
     _MODALITY_FOR_BAND_CONFIG,
     _build_model,
@@ -311,6 +313,14 @@ def test_load_completed_rejects_invalid_schema(tmp_path: Path) -> None:
     path.write_text("this,is not\na valid;;csv\n")
     with pytest.raises(KeyError, match="name"):
         _load_completed(str(path))
+
+
+def test_committed_compute_rows_use_defined_measurement_variants() -> None:
+    import pandas as pd
+
+    path = Path(__file__).parents[1] / "results" / "compute_cost.csv"
+    stored = pd.read_csv(path, usecols=["measurement_variant"], keep_default_na=False)
+    assert set(stored.measurement_variant) <= set(get_args(MeasurementVariant.__value__))
 
 
 def test_build_model_skips_explicit_band_incompatibility(monkeypatch, caplog):

@@ -364,15 +364,20 @@ def test_packaged_flops_yaml_uses_the_typed_schema() -> None:
     assert resolved.segmentation.heads == ["fpn", "dpt"]
 
 
-def test_real_rcf_synthetic_cpu_csv_and_resume(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("model_arguments", "variant"),
+    [([], "catalog"), (["--model-kwargs", "{features: 8}"], "custom")],
+)
+def test_real_rcf_synthetic_cpu_csv_and_resume(
+    tmp_path: Path, model_arguments: list[str], variant: str
+) -> None:
     import pandas as pd
 
     output = tmp_path / "synthetic.csv"
     arguments = [
         "--model",
         "rcf",
-        "--model-kwargs",
-        "{features: 8}",
+        *model_arguments,
         "--device",
         "cpu",
         "--image-size",
@@ -398,6 +403,7 @@ def test_real_rcf_synthetic_cpu_csv_and_resume(tmp_path: Path) -> None:
     assert (rows["gflops_total"] > 0).all()
     assert (rows["throughput_samples_per_sec"] > 0).all()
     assert rows["peak_gpu_mem_gb"].isna().all()
+    assert rows["measurement_variant"].tolist() == [variant, variant]
     before = output.read_bytes()
     _flops.run(parser().parse_args(arguments))
     assert output.read_bytes() == before

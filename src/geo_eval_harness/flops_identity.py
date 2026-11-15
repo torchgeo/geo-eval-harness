@@ -5,7 +5,7 @@ import json
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -13,6 +13,11 @@ from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.presets import ModelPreset
 
 KEY_COLUMNS = ("name", "band_config", "image_size", "task", "head_type", "config_hash")
+
+# flops writes catalog or custom. The curated results/compute_cost.csv also labels rows without
+# a config_hash legacy_unverified, and AnySat classification with an 80 m Sentinel-2 patch
+# s2_patch80_reference.
+type MeasurementVariant = Literal["catalog", "custom", "legacy_unverified", "s2_patch80_reference"]
 
 
 @cache
@@ -55,6 +60,9 @@ def measurement_metadata(
         "source_hash": source_fingerprint(),
     }
     digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    variant: MeasurementVariant = (
+        "catalog" if config.model.target is None and not config.model.kwargs else "custom"
+    )
     return {
         "config_hash": digest,
         "band_source": config.input.band_source,
@@ -70,6 +78,7 @@ def measurement_metadata(
         "flops_coverage": "registered operators only; total coverage unverified",
         "warmup": config.timing.n_warmup,
         "measurements": config.timing.n_measure,
+        "measurement_variant": variant,
     }
 
 
