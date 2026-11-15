@@ -195,6 +195,19 @@ def test_terramind_alias_applies_during_harmonization() -> None:
     assert set(out["base_model"]) == {"tt_terramind_v1_base"}
 
 
+def test_terramind_sar_and_optical_results_keep_separate_cells() -> None:
+    raw = pd.DataFrame(
+        [
+            _row(model, dataset, "linear", "all", score, "bandspec_zscore")
+            for model, score in [("tt_terramind_v1_base", 0.8), ("tt_terramind_v1_base_s1", 0.6)]
+            for dataset in DATASETS
+        ]
+    )
+    out = rl.harmonize(raw)
+    assert set(out["base_model"]) == {"tt_terramind_v1_base", "tt_terramind_v1_base_s1"}
+    rl.build_view(out, "classification", "linear", "Multispectral")
+
+
 def test_alias_collision_raises_before_coverage_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     # A synthetic alias, because both TerraMind directions are dropped as off-modality first.
     monkeypatch.setattr(rl, "MODEL_ALIASES", {"peer_variant": "peer"})
@@ -213,7 +226,8 @@ def test_alias_collision_raises_before_coverage_selection(monkeypatch: pytest.Mo
         rl.build_view(rl.harmonize(pd.DataFrame(rows)), "classification", "linear", "Multispectral")
 
 
-def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
+@pytest.mark.parametrize("dataset", ["d1", "aid"])
+def test_terramind_off_modality_rgb_rows_are_dropped(dataset: str) -> None:
     """Each TerraMind config's sweep outside its own modality is an off-modality artifact.
 
     The plain config's ``bands=rgb`` row and the ``_rgb`` config's ``bands=all`` row are
@@ -221,11 +235,11 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     """
     raw = pd.DataFrame(
         [
-            _row("tt_terramind_v1_base", "d1", "linear", "rgb", 0.5, "model_native"),
-            _row("tt_terramind_v1_base_rgb", "d1", "linear", "rgb", 0.8, "model_native"),
-            _row("tt_terramind_v1_base", "d1", "linear", "all", 0.7, "model_native"),
-            _row("tt_terramind_v1_base_rgb", "d1", "linear", "all", 0.6, "model_native"),
-            _row("tt_terramind_v1_large", "d1", "linear", "rgb", 0.4, "model_native"),
+            _row("tt_terramind_v1_base", dataset, "linear", "rgb", 0.5, "model_native"),
+            _row("tt_terramind_v1_base_rgb", dataset, "linear", "rgb", 0.8, "model_native"),
+            _row("tt_terramind_v1_base", dataset, "linear", "all", 0.7, "model_native"),
+            _row("tt_terramind_v1_base_rgb", dataset, "linear", "all", 0.6, "model_native"),
+            _row("tt_terramind_v1_large", dataset, "linear", "rgb", 0.4, "model_native"),
         ]
     )
     out = rl.harmonize(raw)
@@ -233,6 +247,9 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     assert set(rgb_rows["source_model"]) == {"tt_terramind_v1_base_rgb"}
     assert rgb_rows["score"].iloc[0] == pytest.approx(0.8)
     multispectral_rows = out[out["bandclass"] == "Multispectral"]
+    if dataset == "aid":
+        assert multispectral_rows.empty
+        return
     assert set(multispectral_rows["source_model"]) == {"tt_terramind_v1_base"}
     assert multispectral_rows["score"].iloc[0] == pytest.approx(0.7)
 

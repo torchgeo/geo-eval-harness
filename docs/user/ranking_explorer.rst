@@ -36,6 +36,7 @@ The fixed methodology and coverage rules are:
   its ``(task, probe, bands)`` view.
 * The generator uses complete ``model_native`` results when available and otherwise uses complete ``bandspec_zscore`` results; it never combines the two. A model that records only ``identity`` results, because it applies no normalization, is ranked on those. ``imagestats_handcrafted_control`` repeats ImageStats for the handcrafted sweep and is never ranked.
 * Models without a complete row are named below the table.
+* TerraMind RGB views use its RGB configuration, including on RGB-only datasets requested with ``bands=all``. Its SAR and optical configurations remain separate outside segmentation Native views.
 * Exception: segmentation **Native bands** views (below) rank each model on the
   datasets it has.
 

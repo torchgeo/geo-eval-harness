@@ -157,18 +157,17 @@ NATIVE_MODEL_ALIASES = {
     "tgeo_deo_swin_s2": "tgeo_deo_swin",
     "terrafm_base_s1": "terrafm_base",
     "terrafm_base_s2": "terrafm_base",
+    "tt_terramind_v1_base_s1": "tt_terramind_v1_base",
+    "tt_terramind_v1_large_s1": "tt_terramind_v1_large",
 }
 # Aggregations that need a complete score matrix are not offered on Native views.
 NATIVE_AGGREGATIONS = ("avg_rank", "improvability")
 
-# ``*_rgb`` and ``*_s1`` are band-specific TerraMind configurations (the same
-# checkpoint fed its RGB or Sentinel-1 GRD modality), not different models.
-# Apply aliases before any coverage or duplicate validation.
+# RGB views use TerraMind's dedicated RGB configuration. SAR configurations stay
+# separate from optical ones except in Native views, which compare each model's modalities.
 MODEL_ALIASES = {
     "tt_terramind_v1_base_rgb": "tt_terramind_v1_base",
     "tt_terramind_v1_large_rgb": "tt_terramind_v1_large",
-    "tt_terramind_v1_base_s1": "tt_terramind_v1_base",
-    "tt_terramind_v1_large_s1": "tt_terramind_v1_large",
 }
 
 # Base ``name`` slug -> (display name, is_baseline).  Family is deliberately
@@ -481,7 +480,8 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     name = df["name"].astype(str)
 
     is_rgb_sweep = df["bands"].astype(str) == "rgb"
-    off_modality = (name.isin(TERRAMIND_OFF_MODALITY) & is_rgb_sweep) | (
+    rgb_input = is_rgb_sweep | df["dataset"].isin(RGB_ONLY_DATASETS)
+    off_modality = (name.isin(TERRAMIND_OFF_MODALITY) & rgb_input) | (
         name.isin(TERRAMIND_RGB_CONFIGS) & ~is_rgb_sweep
     )
     df = df[~off_modality].copy()
