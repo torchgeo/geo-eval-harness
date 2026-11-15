@@ -120,10 +120,38 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     return effective, preset.model_copy(update={"input": effective.input})
 
 
+def _gsd_scale(preset: ModelPreset, resized_from: tuple[int, int] | None) -> float:
+    """Return the ground size of an input pixel relative to a pixel of the unresized tile."""
+    image_size = preset.input.image_size
+    if image_size is None:
+        return 1.0
+    if resized_from is None:
+        raise ValueError(
+            f"{preset.name!r} needs the tiles' size before the resize to {image_size} px to know "
+            "the ground size of its input pixels; pass resized_from to build_model."
+        )
+    height, width = resized_from
+    if height != width:
+        raise ValueError(
+            f"{preset.name!r} cannot give {height}x{width} tiles resized to {image_size} px one "
+            "ground resolution; use --image-size none."
+        )
+    return height / image_size
+
+
 def build_model(
-    preset: ModelPreset, *, native_image_size: int | None = None, **runtime_options: Any
+    preset: ModelPreset,
+    *,
+    native_image_size: int | None = None,
+    resized_from: tuple[int, int] | None = None,
+    **runtime_options: Any,
 ) -> Any:
-    """Construct one model; nested target-like kwargs remain ordinary mappings."""
+    """Construct one model; nested target-like kwargs remain ordinary mappings.
+
+    ``resized_from`` is the ``(height, width)`` the tiles had before the run's resize, as the
+    resize transform records it on each sample. Constructors declaring ``wants_gsd_scale`` receive
+    ``gsd_scale``, that size over ``input.image_size`` (1.0 for unresized tiles).
+    """
     options = {**preset.kwargs, **runtime_options}
     preset.validate_normalization(options.get("normalization", NORMALIZATIONS["dataset"]))
     module, _, symbol = preset.target.rpartition(".")
@@ -133,6 +161,8 @@ def build_model(
         if image_size is None and getattr(constructor, "wants_native_image_size", False):
             image_size = native_image_size
         options["image_size"] = image_size
+    if getattr(constructor, "wants_gsd_scale", False):
+        options["gsd_scale"] = _gsd_scale(preset, resized_from)
     validated = getattr(constructor, "validated_settings", None)
     if validated is not None:
         bands = options.pop("bands")

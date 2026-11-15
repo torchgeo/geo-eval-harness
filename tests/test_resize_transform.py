@@ -26,6 +26,7 @@ def test_temporal_images_and_singleton_masks_keep_their_axes_and_values() -> Non
     torch.testing.assert_close(resized["image"], expected_image)
     torch.testing.assert_close(resized["mask"], mask[:, 1::2, 1::2])
     assert resized["mask"].dtype == torch.long
+    assert resized["resized_from"] == (8, 8)
 
 
 @pytest.mark.parametrize("mode", ["bilinear", "bicubic"])

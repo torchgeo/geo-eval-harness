@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 import torch
 from torch import nn
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset
 
 from geo_eval_harness import commands
 from geo_eval_harness.commands import _profile_runtime
@@ -26,6 +26,7 @@ from geo_eval_harness.commands.profile_arguments import add_profile_arguments, l
 from geo_eval_harness.config.presets import NORMALIZATIONS, ModelPreset, build_model
 from geo_eval_harness.config.profile import ProfileConfig
 from geo_eval_harness.config.schema import ModelConfig
+from geo_eval_harness.datasets.loading import _ResizeTransform
 from tests.support.torchgeo_models import install_tiny_scalemae_factory
 
 
@@ -261,6 +262,19 @@ class TestProfileCommand:
         assert record["model_config"]["kwargs"]["seed"] == 23
         assert "dataset" not in record["model_config"]["kwargs"]
         assert record["profile"]["throughput_samples_per_sec"] > 0
+
+    def test_profile_passes_the_tile_size_before_the_resize_to_the_model(
+        self, profile_config: ProfileConfig, profile_runtime: _Runtime
+    ) -> None:
+        resize = _ResizeTransform(8, "bilinear")
+        samples = [resize({"image": torch.ones(3, 16, 16)}) for _ in range(4)]
+        profile_runtime.load.return_value = (None, DataLoader(samples, batch_size=4), None, None)
+
+        profile_runtime.record(profile_config)
+
+        options = profile_runtime.build.call_args.kwargs
+        assert options["resized_from"] == (16, 16)
+        assert options["native_image_size"] == 8
 
     @pytest.mark.parametrize("normalization", list(NORMALIZATIONS))
     def test_profile_preserves_custom_constructor_and_normalization_metadata(

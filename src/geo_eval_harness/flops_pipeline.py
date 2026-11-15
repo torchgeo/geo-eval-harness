@@ -133,8 +133,15 @@ def _build_model(
                 f"{band_config!r} ({len(band_specs)} channels, expects {expected!r}). "
                 f"Measuring this pair would map through the wrong band table."
             )
+    size = preset.input.image_size
     try:
-        return build_model(preset, bands=band_specs, normalization=normalization)
+        # Synthetic tiles are generated at the measured size; nothing resizes them.
+        return build_model(
+            preset,
+            bands=band_specs,
+            normalization=normalization,
+            resized_from=None if size is None else (size, size),
+        )
     except BandCompatibilityError as exc:  # allow-except: Skip explicitly unsupported bands.
         logger.warning(
             "Skipping %s/%s: model is incompatible with this band config: %s",

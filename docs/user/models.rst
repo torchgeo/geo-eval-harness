@@ -446,6 +446,8 @@ The ``version`` parameter selects the weight family:
    Explicit run YAML also overrides the preset. The effective size is recorded in the CSV and
    in the resume cache key.
 
+   OlmoEarth's position encodings take the ground resolution of the input pixels, ``input_res``: 10 m for Sentinel-2 and Sentinel-1, 30 m for Landsat and 1 m for aerial imagery, unless ``model.kwargs.input_res`` sets the resolution of the native pixels. A run that resizes tiles multiplies it by the tile side before the resize over the resized side, so 512 px Sentinel-2 tiles resized to 224 px are encoded at about 22.9 m. The side is read from the first training tile, and tiles that are not square before the resize are rejected; evaluate those with ``--image-size none``.
+
 SAM 3 vision encoder
 ^^^^^^^^^^^^^^^^^^^^
 
