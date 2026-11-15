@@ -73,6 +73,10 @@ def _fold_indices(
                 "use a smaller cell_deg"
             )
         return [g for g in groups if g.size > 0]
+    if n < folds:
+        raise ValueError(
+            f"{folds}-fold cross-validation needs at least {folds} valid points, got {n}"
+        )
     perm = np.random.default_rng(seed).permutation(n)
     return [perm[i::folds] for i in range(folds)]
 
