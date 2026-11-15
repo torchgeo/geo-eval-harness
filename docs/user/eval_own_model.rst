@@ -128,6 +128,7 @@ Extract the metadata you need from ``bands`` in ``__init__``, then use it in ``_
            self,
            bands: list[BandSpec],
            *,
+           pretrained: bool = True,
            normalization: str = "bandspec_zscore",
            **kwargs: object,
        ) -> None:
@@ -164,7 +165,7 @@ The preset identifies your importable class and its result name. Add any constru
    kwargs:
      pretrained: true
 
-Only ``kwargs`` are passed as constructor options. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings.
+Only ``kwargs`` are passed as constructor options, and an option the constructor does not name raises ``TypeError``. Keep input and evaluation defaults in the preset's ``input``, ``classification``, and ``segmentation`` sections, not inside ``kwargs``. Dataset-specific defaults belong in ``dataset_overrides``. These are Pydantic-validated mappings.
 
 .. note::
 

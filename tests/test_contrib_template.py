@@ -51,7 +51,7 @@ def images(bands: list[BandSpec]) -> torch.Tensor:
 def test_copied_template_default_forward(
     copied_model: type[BenchModel], bands: list[BandSpec], images: torch.Tensor
 ) -> None:
-    model = copied_model(bands=bands, pretrained=False, name="new_model").eval()
+    model = copied_model(bands=bands, pretrained=False).eval()
     mean = torch.tensor([band.mean for band in bands]).view(1, -1, 1, 1)
     std = torch.tensor([band.std for band in bands]).view(1, -1, 1, 1)
     normalized = (images - mean) / std
