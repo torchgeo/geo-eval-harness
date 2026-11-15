@@ -150,7 +150,7 @@ def test_model_normalization_converts_linear_sar_to_db() -> None:
         (_bands("spacenet2", "rgb"), "8-bit RGB"),
         (_rgb("s2"), "DN or reflectance"),
         (_bands("m-forestnet", ["nir"]), "8-bit RGB"),
-        (_bands("pastis", ["vv_asc"]), "unit"),
+        (_bands("so2sat", ["vv"]), "unit"),
     ],
     ids=["worldview-11bit", "s2-uint8", "landsat-nir", "sar-without-unit"],
 )
