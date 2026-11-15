@@ -5,6 +5,7 @@ from torch import nn
 
 from geo_eval_harness.config.schema import NECK_HEADS, SegmentationConfig
 from geo_eval_harness.model_profile import _count_gflops
+from geo_eval_harness.models import anyup
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
@@ -80,4 +81,10 @@ def _seg_head_gflops(
             return self.head(feats, image_size, image_size)
 
     wrapper = _HeadOnly(probe.head).to(device).eval()
-    return _count_gflops(wrapper, features)
+    if probe._anyup is None:
+        return _count_gflops(wrapper, features)
+    probe._anyup.guidance = anyup.anyup_guidance(x, probe._anyup_rgb)
+    try:
+        return _count_gflops(wrapper, features)
+    finally:
+        probe._anyup.guidance = None

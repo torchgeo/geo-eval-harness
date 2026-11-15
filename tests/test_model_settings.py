@@ -6,6 +6,7 @@
 from typing import Any, cast
 
 import pytest
+import timm
 import torch
 
 from geo_eval_harness.config.presets import build_model, load_model_preset
@@ -68,6 +69,26 @@ def test_timm_transformer_builder_constructs_without_checkpoint() -> None:
     assert torch.equal(features, expected_features)
 
 
+@pytest.mark.parametrize(
+    "model_name",
+    ["vit_tiny_patch16_224", "deit_tiny_patch16_224", "vit_little_patch16_reg4_gap_256"],
+)
+def test_timm_vit_pooling_keeps_checkpoint_norm_layout(model_name: str) -> None:
+    model = TimmModelSettings(model_name=model_name, pretrained=False).build(_bands(3))
+    checkpoint_keys = {
+        key for key in timm.create_model(model_name).state_dict() if not key.startswith("head.")
+    }
+
+    assert set(model.backbone.state_dict()) == checkpoint_keys
+    assert model.backbone.global_pool == "avg"
+
+
+def test_timm_vit_rejects_pooling_the_backbone_ignores() -> None:
+    settings = TimmModelSettings(model_name="deit_tiny_distilled_patch16_224", pretrained=False)
+    with pytest.raises(ValueError, match="global_pool='avg'"):
+        settings.build(_bands(3))
+
+
 def test_instantiate_routes_timm_preset_to_explicit_builder() -> None:
     preset = load_model_preset(ModelConfig(name="timm/resnet18", kwargs={"pretrained": False}))
     model = build_model(preset, bands=_bands(3), normalization="identity")
@@ -110,6 +131,7 @@ def test_model_config_rejects_unknown_fields() -> None:
         {"model_name": "resnet18", "pretrained": 1},
         {"model_name": "resnet18", "auto_resize": 1},
         {"model_name": "resnet18", "dynamic_img_size": 1},
+        {"model_name": "resnet18", "dynamic_img_pad": 1},
         {"model_name": "resnet18", "target_size": "224"},
     ],
 )
@@ -163,3 +185,54 @@ def test_timm_swin_dynamic_grid_pads_partial_attention_windows() -> None:
     with torch.inference_mode():
         features = model(torch.rand(1, 3, 224, 224))
     assert features.shape == (1, 768)
+
+
+def test_timm_vit_dynamic_grid_pads_partial_patches() -> None:
+    config = TimmModelSettings(
+        model_name="vit_tiny_patch16_224",
+        pretrained=False,
+        input_normalization="none",
+        dynamic_img_size=True,
+        dynamic_img_pad=True,
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    inputs = torch.rand(1, 3, 120, 120)
+    with torch.inference_mode():
+        features = model(inputs)
+        expected = model(torch.nn.functional.pad(inputs, (0, 8, 0, 8)))
+        patches = model.backbone.forward_features(inputs)
+    assert features.shape == (1, 192)
+    assert patches.shape == (1, 65, 192)
+    torch.testing.assert_close(features, expected)
+
+
+def test_timm_unpooled_channels_last_backbone_pools_spatial_axes() -> None:
+    config = TimmModelSettings(
+        model_name="swin_tiny_patch4_window7_224", pretrained=False, global_pool=""
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    with torch.inference_mode():
+        features = model(torch.rand(1, 3, 224, 224))
+    assert features.shape == (1, 768)
+
+
+def test_timm_unpooled_tokens_average_patches_without_register_tokens() -> None:
+    config = TimmModelSettings(
+        model_name="vit_little_patch16_reg4_gap_256", pretrained=False, global_pool=""
+    )
+    model = config.build(_bands(3), normalization="identity").eval()
+    inputs = torch.rand(1, 3, 256, 256)
+    with torch.inference_mode():
+        tokens = model.backbone(inputs)
+        features = model(inputs)
+    assert tokens.shape[1] == 4 + 16 * 16
+    torch.testing.assert_close(features, tokens[:, 4:].mean(dim=1))
+
+
+@pytest.mark.parametrize(
+    "model_name", ["swin_tiny_patch4_window7_224", "vit_little_patch16_reg4_gap_256"]
+)
+def test_timm_rejects_cls_token_for_backbones_without_one(model_name: str) -> None:
+    config = TimmModelSettings(model_name=model_name, pretrained=False, use_cls_token=True)
+    with pytest.raises(ValueError, match="has no class token"):
+        config.build(_bands(3))

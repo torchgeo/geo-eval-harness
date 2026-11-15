@@ -6,7 +6,7 @@ from functools import cache
 from importlib.resources import files
 from pathlib import Path
 
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download, snapshot_download
 
 
 @cache
@@ -14,6 +14,12 @@ def load_checksums(manifest: str) -> dict[str, str]:
     """Read ``checksums/<manifest>`` in ``sha256sum`` format into ``{relative path: digest}``."""
     text = files("geo_eval_harness").joinpath("checksums", manifest).read_text()
     return {name: digest for digest, name in (line.split() for line in text.splitlines())}
+
+
+def sha256_file(path: Path) -> str:
+    """Return the SHA-256 hex digest of the file at ``path``."""
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
 def verify_checksums(
@@ -33,9 +39,7 @@ def verify_checksums(
             raise ValueError(f"Unexpected files in {root}: {sorted(extra)}")
     for name, expected in checksums.items():
         path = root / name
-        with path.open("rb") as stream:
-            actual = hashlib.file_digest(stream, "sha256").hexdigest()
-        if actual != expected:
+        if sha256_file(path) != expected:
             raise ValueError(f"SHA-256 checksum mismatch: {path}. Remove it and download again.")
 
 
@@ -69,3 +73,24 @@ def fetch_pinned(  # noqa: PLR0913 - snapshot_download options stay explicit
         cache_dir=cache_dir,
     )
     verify_checksums(local_dir, checksums, complete_glob=complete_glob)
+
+
+def fetch_pinned_file(
+    repo_id: str, filename: str, revision: str, sha256: str, *, local_path: str | Path | None = None
+) -> Path:
+    """Return one model repository file at an exact commit after verifying its SHA-256 digest.
+
+    Args:
+        repo_id: Hugging Face model repository.
+        filename: Path of the file in the repository.
+        revision: Full commit hash, never a branch or tag.
+        sha256: Expected digest of the file.
+        local_path: An existing copy to verify and return instead of downloading.
+    """
+    path = (
+        Path(hf_hub_download(repo_id, filename, revision=revision))
+        if local_path is None
+        else Path(local_path).expanduser()
+    )
+    verify_checksums(path.parent, {path.name: sha256})
+    return path
