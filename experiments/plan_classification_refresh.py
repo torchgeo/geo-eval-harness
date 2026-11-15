@@ -74,10 +74,8 @@ def input_variants(model: str) -> list[dict[str, str]]:
     norms = ["dataset", "model"]
     if model.startswith("olmoearth"):
         norms = ["model"]
-    elif model.startswith(("anysat", "universat")):
+    elif model.startswith(("anysat", "universat")) or model == "imagestats":
         norms = ["dataset"]
-    elif model == "imagestats":
-        norms = ["dataset", "none"]
     return [{"bands": band, "normalization": norm} for band in ["rgb", "all"] for norm in norms]
 
 

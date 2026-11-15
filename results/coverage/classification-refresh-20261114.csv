@@ -69,65 +69,65 @@ a6fb4de12c30a3c50c07,handcrafted_level3,so2sat,all,none,d0aa7d901919399a,d0aa7d9
 4c7ca9dfafdc010a2966,handcrafted_level3,treesatai,all,none,d0aa7d901919399a,d0aa7d901919399a,64,complete,
 353ceef3a82e8f54a54f,handcrafted_level3,ucmerced,all,none,d0aa7d901919399a,d0aa7d901919399a,64,complete,
 cc58a2feef60c45e5974,imagestats,aid,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-3eb3bea29a8cdb6d8c46,imagestats,aid,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+3eb3bea29a8cdb6d8c46,imagestats,aid,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 84ff87282a6f631da02c,imagestats,aid,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-a71febb998469fc7ca4f,imagestats,aid,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+a71febb998469fc7ca4f,imagestats,aid,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 9693e676dbfb4178dbea,imagestats,benv2,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-57f36f62ead643da4be8,imagestats,benv2,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+57f36f62ead643da4be8,imagestats,benv2,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 c6a82539fb0a445fee38,imagestats,benv2,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-b90da05b449ce8ea441f,imagestats,benv2,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+b90da05b449ce8ea441f,imagestats,benv2,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 544f125d46b9a9cf1705,imagestats,eurosat,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-2e3abee1745c3b9f9836,imagestats,eurosat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+2e3abee1745c3b9f9836,imagestats,eurosat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 393d0c6cb6299a936cdf,imagestats,eurosat,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-7cfd68361510b98e31fd,imagestats,eurosat,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+7cfd68361510b98e31fd,imagestats,eurosat,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 f2f63f99f2ee2927229d,imagestats,eurosat-spatial,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-29f8128bd7446ffc9402,imagestats,eurosat-spatial,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+29f8128bd7446ffc9402,imagestats,eurosat-spatial,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 65be1639a836dbdea459,imagestats,eurosat-spatial,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-da1ebdeef20fd5d363dc,imagestats,eurosat-spatial,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+da1ebdeef20fd5d363dc,imagestats,eurosat-spatial,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 7c02918a465ff72bf24f,imagestats,forestnet,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-78647a770c8fe95bfc25,imagestats,forestnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+78647a770c8fe95bfc25,imagestats,forestnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 639e05e3ea6d779bc9aa,imagestats,forestnet,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-6a7311893e872b80f090,imagestats,forestnet,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+6a7311893e872b80f090,imagestats,forestnet,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 7f050ba2ac930b6bc509,imagestats,m-bigearthnet,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-dce27638f60339cb969e,imagestats,m-bigearthnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+dce27638f60339cb969e,imagestats,m-bigearthnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 8c04c129d76670b3b470,imagestats,m-bigearthnet,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-c3b4d27fa13080b15799,imagestats,m-bigearthnet,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+c3b4d27fa13080b15799,imagestats,m-bigearthnet,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 b99049e7c23eb6a38a80,imagestats,m-brick-kiln,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-77aedf2b400f9242f309,imagestats,m-brick-kiln,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+77aedf2b400f9242f309,imagestats,m-brick-kiln,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 2eb1a2547c293d84c205,imagestats,m-brick-kiln,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-7671e4416f529f85ce32,imagestats,m-brick-kiln,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+7671e4416f529f85ce32,imagestats,m-brick-kiln,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 ee25e4cd57541dd5b986,imagestats,m-eurosat,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-a5b43b621d40636f4a21,imagestats,m-eurosat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+a5b43b621d40636f4a21,imagestats,m-eurosat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 6a3eecd3e5d1406e80ee,imagestats,m-eurosat,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-cbf79e7ee5f371832f74,imagestats,m-eurosat,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+cbf79e7ee5f371832f74,imagestats,m-eurosat,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 697a2e214034cc822f3f,imagestats,m-forestnet,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-fb63a973eccbd75c535e,imagestats,m-forestnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+fb63a973eccbd75c535e,imagestats,m-forestnet,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 188b4f7a5d82e575ebe3,imagestats,m-forestnet,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-c59e54df0ec5edf350c9,imagestats,m-forestnet,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+c59e54df0ec5edf350c9,imagestats,m-forestnet,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 9f60d08e20d85c3a9e50,imagestats,m-pv4ger,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-de72dd3b16a7d1380228,imagestats,m-pv4ger,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+de72dd3b16a7d1380228,imagestats,m-pv4ger,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 761c6e6be7c78ed6e6a9,imagestats,m-pv4ger,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-01f7578e8a0da11b05db,imagestats,m-pv4ger,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+01f7578e8a0da11b05db,imagestats,m-pv4ger,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 6bce3678629193eeef5c,imagestats,m-so2sat,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-371918e535ae933ddf0a,imagestats,m-so2sat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+371918e535ae933ddf0a,imagestats,m-so2sat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 7065d091023e050d3627,imagestats,m-so2sat,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-3224faad33050d01fb2c,imagestats,m-so2sat,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+3224faad33050d01fb2c,imagestats,m-so2sat,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 1228da2bbcd7f540478f,imagestats,resisc45,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-7c8c62380012a5abe2ea,imagestats,resisc45,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+7c8c62380012a5abe2ea,imagestats,resisc45,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 fa230ad49b885ab846d2,imagestats,resisc45,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-57f8b5aeacdd3ee6d0a0,imagestats,resisc45,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+57f8b5aeacdd3ee6d0a0,imagestats,resisc45,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 5200cd193707981e1908,imagestats,so2sat,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-4b64edc8a22151b1c3ff,imagestats,so2sat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+4b64edc8a22151b1c3ff,imagestats,so2sat,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 04768800378c80e127e1,imagestats,so2sat,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-b236b3d98a9996d48ac6,imagestats,so2sat,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+b236b3d98a9996d48ac6,imagestats,so2sat,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 423f93ffe6ad1fec89d3,imagestats,treesatai,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-60a6f05f49bf0201e957,imagestats,treesatai,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+60a6f05f49bf0201e957,imagestats,treesatai,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 af97bebd0acc19e99b2f,imagestats,treesatai,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-e778aae1affc933a842c,imagestats,treesatai,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+e778aae1affc933a842c,imagestats,treesatai,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 e09d84d4359850cff9fb,imagestats,ucmerced,rgb,dataset,c339141b1ddbc311,c339141b1ddbc311,64,complete,
-4b55b6e9b580074db6d6,imagestats,ucmerced,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,complete,
+4b55b6e9b580074db6d6,imagestats,ucmerced,rgb,none,792bcbf10dc4c1aa,792bcbf10dc4c1aa,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 acf61c6c5712cce4542a,imagestats,ucmerced,all,dataset,7412544db2322c50,7412544db2322c50,64,complete,
-5926787152db5715f5eb,imagestats,ucmerced,all,none,078423da0ddb178b,078423da0ddb178b,64,complete,
+5926787152db5715f5eb,imagestats,ucmerced,all,none,078423da0ddb178b,078423da0ddb178b,64,excluded,Redundant ImageStats normalization request; raw identity features are retained under the default dataset-normalization configuration.
 ebc18182b91e9b18165e,olmoearth_base,aid,rgb,model,02d4a00930d6ace0,99592f3147d00a25,32,complete,
 2185dac6479e998dffbc,olmoearth_base,aid,all,model,adad6a8a04f9a3b7,a83c21947f51b510,32,complete,
 5b6d718adfa15c75592d,olmoearth_base,benv2,rgb,model,02d4a00930d6ace0,02d4a00930d6ace0,64,complete,

@@ -3,7 +3,10 @@
 from experiments.plan_classification_refresh import build_manifest
 from geo_eval_harness.config.presets import resolve_run_config
 from geo_eval_harness.config.run import RunConfig
-from geo_eval_harness.datasets import get_dataset_task, list_datasets
+from geo_eval_harness.datasets import get_bench_dataset_class, get_dataset_task, list_datasets
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.results import DEDUP_KEY_COLS
+from geo_eval_harness.resume import _canonical_key_cell
 
 
 def test_refresh_covers_current_datasets_with_fresh_outputs():
@@ -16,9 +19,21 @@ def test_refresh_covers_current_datasets_with_fresh_outputs():
         for name in list_datasets()
         if get_dataset_task(name) == "classification" and name != "infrabench-cls"
     }
+    result_keys = set()
     for job in jobs:
         assert "output" not in job["config"]
         assert job["config"]["classification"]["methods"] == ["knn", "linear"]
+        config, preset = resolve_run_config(RunConfig.model_validate(job["config"]), job["dataset"])
+        dataset = get_bench_dataset_class(job["dataset"])
+        metadata = dataset_metadata(config, job["dataset"], dataset, preset, job["config_hash"])
+        for method in (config.classification.knn_method, config.classification.linear_method):
+            row = metadata | {
+                "method": method,
+                "metric_name": "micro_mAP" if dataset.multilabel else "accuracy",
+            }
+            key = tuple(_canonical_key_cell(row.get(column)) for column in DEDUP_KEY_COLS)
+            assert key not in result_keys, (job["model"], job["dataset"], method)
+            result_keys.add(key)
     selected = {job["model"]: job for job in jobs}
     assert {
         "torchgeo/panopticon",
