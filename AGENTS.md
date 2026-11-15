@@ -36,7 +36,7 @@ data/                      # Datasets always live here (relative to CWD, untrack
   ├── geobenchv2/          # GeoBench V2
   └── eurosat/             # torchgeo EuroSAT
 docs/                      # Documentation sources, including runnable examples/
-experiments/               # Runnable benchmark studies, their analysis, and the shared GPU runner
+experiments/               # Runnable benchmark studies, their analysis, and the shared GPU runners
 projects/                  # Standalone sub-projects (currently cleanlab)
 results/                   # Benchmark result CSVs
 scripts/                   # Maintenance, dataset preparation, diagnostics, and results generation
@@ -47,7 +47,7 @@ pyproject.toml             # Project config, dependencies, tool settings
 
 ### Where scripts belong
 
-`experiments/` holds runnable benchmark studies and the analysis specific to them, along with the GPU job runner they share (`_runner.py`). A study imports its runner as a plain sibling module (`from _runner import ...`) and is invoked as a file, for example `python experiments/run_main_experiments.py --devices 0 1`.
+`experiments/` holds runnable benchmark studies and the analysis specific to them, along with the GPU job runners they share (`_runner.py` for the classification studies, `_seg_sweep_common.py` for the segmentation sweeps). A study imports its runner as a plain sibling module (`from _runner import ...`) and is invoked as a file, for example `python experiments/run_main_experiments.py --devices 0 1`.
 
 `scripts/` holds everything that maintains the repository rather than producing benchmark numbers: dataset preparation, diagnostics, and results generation. These are standalone entry points run as `python scripts/<name>.py`. One-time result-format migrations live in `scripts/migrations/` so they are not mistaken for tools that are still run regularly.
 
@@ -370,7 +370,7 @@ class TestGeoBenchDatasetBasics:
 
 ## Key Dependencies
 
-Core (see `pyproject.toml` for the authoritative list): `torch>=2`, `torchvision>=0.15`, `numpy>=1.24`, `scikit-learn>=1.3`, `timm>=0.9`, `torchgeo>=0.10`, `torchmetrics>=1.4`, `pydantic>=2.10`, `pyyaml>=6`, `h5py>=3.8`, `faissknn` (CPU or CUDA variant, picked by platform), `huggingface-hub>=0.20`, `geobenchv2>=0.9`, `pandas>=2`, `pyarrow>=14`, `safetensors>=0.4`, `filelock>=3.12`, `lazy-loader>=0.4`, `tqdm>=4.66`, `transformers>=5.14` (SAM 3 encoder and the DPT segmentation head).
+Core (see `pyproject.toml` for the authoritative list): `torch>=2.6`, `torchvision>=0.21`, `numpy>=1.24`, `scikit-learn>=1.3`, `timm>=1.0.20`, `torchgeo>=0.10`, `torchmetrics>=1.4`, `pydantic>=2.10`, `pyyaml>=6`, `h5py>=3.8`, `faissknn` (CPU or CUDA variant, picked by platform), `huggingface-hub>=0.20`, `geobenchv2>=0.9`, `pandas>=2`, `pyarrow>=14`, `safetensors>=0.4`, `filelock>=3.12`, `lazy-loader>=0.4`, `tqdm>=4.66`, `transformers>=5.14` (SAM 3 encoder and the DPT segmentation head).
 
 Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
 

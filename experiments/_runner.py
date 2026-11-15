@@ -67,7 +67,7 @@ def default_output(script_file: str | Path) -> str:
     """Choose a results CSV name from the experiment script's filename.
 
     Drops the ``run_`` prefix and ``.py`` suffix. For example,
-    ``run_main_experiments.py`` becomes ``results/main_experiments.csv``.
+    ``run_cls_token_experiment.py`` becomes ``results/cls_token_experiment.csv``.
     """
     stem = Path(script_file).stem.removeprefix("run_")
     return f"results/{stem}.csv"

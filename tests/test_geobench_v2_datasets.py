@@ -127,8 +127,8 @@ class TestV2Loading:
         assert batch["mask"].shape == (2, 32, 32)
         assert batch["mask"].dtype == torch.long
 
-    def test_partition_warning(self, mock_v2_env: dict[str, MagicMock]) -> None:
-        with pytest.warns(UserWarning, match="does not support custom partitions"):
+    def test_unsupported_partition_is_rejected(self, mock_v2_env: dict[str, MagicMock]) -> None:
+        with pytest.raises(ValueError, match="supports only the default partition"):
             get_datasets(
                 dataset_name="benv2",
                 partition_name="0.10x_train",
@@ -197,6 +197,17 @@ def test_treesatai_rgb_selects_stored_red_green_blue_channels() -> None:
     )
     assert selected["image_aerial"].flatten().tolist() == [3, 1, 2, 0]
     assert bench.rgb_bands == ["red", "green", "blue"]
+
+
+@pytest.mark.parametrize(
+    ("dataset_name", "bands"),
+    [("benv2", ("vv", "b04", "vh")), ("kuro_siwo", ("dem", "vv", "vh"))],
+)
+def test_band_orders_the_loader_cannot_return_are_rejected(
+    dataset_name: str, bands: tuple[str, ...]
+) -> None:
+    with pytest.raises(ValueError, match=f"{dataset_name}.*{', '.join(bands)}"):
+        get_bench_dataset_class(dataset_name)().build_band_order(bands)
 
 
 class MockKuroSiwo:

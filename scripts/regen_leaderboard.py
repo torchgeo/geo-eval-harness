@@ -24,6 +24,7 @@ from geo_eval_harness.results import (
     SETUP_COLS,
     format_setup_value,
     load_results,
+    train_only_linear_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -462,6 +463,8 @@ def harmonize(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
     df = df[~df["dataset"].isin(DROPPED_DATASETS)]
+    # Linear views compare probes refit on train plus validation.
+    df = df[~train_only_linear_rows(df)]
     name = df["name"].astype(str)
 
     is_rgb_sweep = df["bands"].astype(str) == "rgb"

@@ -121,6 +121,12 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return state
 
 
+def test_missing_package_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "olmoearth_pretrain_minimal", None)
+    with pytest.raises(ModuleNotFoundError, match=r"pip install 'geo-eval-harness\[olmoearth\]'"):
+        OlmoEarthBenchModel(bands=_rgb_bands())
+
+
 def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     tiny_olmoearth: dict[str, Any],
 ) -> None:
