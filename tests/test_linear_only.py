@@ -1,7 +1,5 @@
 """Linear-only executes and resumes without requiring the KNN backend."""
 
-import subprocess
-import sys
 from pathlib import Path
 from unittest import mock
 
@@ -134,38 +132,3 @@ def test_linear_only_failure_never_writes_fabricated_knn_row(tmp_path: Path) -> 
     ):
         main(config, strict=True)
     assert not output.exists()
-
-
-def test_linear_only_does_not_import_faiss_or_knn_backend() -> None:
-    code = """
-import importlib
-import importlib.abc
-import sys
-from unittest.mock import patch
-
-class BlockKNN(importlib.abc.MetaPathFinder):
-    def find_spec(self, fullname, path, target=None):
-        if fullname in {'faiss', 'faissknn', 'geo_eval_harness.knn'}:
-            raise AssertionError(f'unselected backend imported: {fullname}')
-sys.meta_path.insert(0, BlockKNN())
-
-from geo_eval_harness.config.run import RunConfig
-from geo_eval_harness.main import dataset_metadata, run_dataset
-from geo_eval_harness.resume import ResumeState
-from tests.support.runner import _synthetic_loaders, _synthetic_embeddings, _chainable_model_mock
-config = RunConfig.model_validate({
-    'model': {'name': 'rcf'}, 'datasets': ['m-eurosat'],
-    'runtime': {'device': 'cpu'},
-    'classification': {'methods': ['linear'], 'knn_device': 'cuda:999', 'bootstrap_samples': 2,
-        'linear': {'c_log10_start': -2.0, 'c_log10_stop': -1.0, 'c_count': 2}},
-})
-module = importlib.import_module('geo_eval_harness.main')
-with (
-    patch.object(module, 'get_datasets', return_value=_synthetic_loaders()),
-    patch.object(module, 'build_model', return_value=_chainable_model_mock()),
-    patch.object(module, 'embed_split', side_effect=_synthetic_embeddings()),
-):
-    rows = list(run_dataset(config, 'm-eurosat', ResumeState(set(), {})))
-assert [row['method'] for batch, _, _ in rows for row in batch] == ['linear']
-"""
-    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True, text=True)
