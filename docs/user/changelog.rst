@@ -41,6 +41,7 @@ Model fixes
 * OlmoEarth and THOR encode resized tiles at their true ground size. OlmoEarth scales ``input_res`` by the resize factor, and THOR keeps each tile's native ground extent.
 * TerraFM model normalization with pretraining statistics rejects Sentinel-1 bands that do not declare unit ``db`` or ``linear_power``.
 * Prithvi-EO reads Landsat's NIR band as its narrow-NIR input, so ``m-forestnet`` and ``forestnet`` use all six pretrained bands.
+* ImageStats computes its statistics from the raw inputs and records ``identity`` normalization whatever ``--normalization`` requests, so ``--resume`` matches its rows and the ranking explorer ranks them.
 * OlmoEarth and SAM 3 weights download from pinned Hugging Face commits and are verified with SHA-256 before loading. Local SAM 3 and Clay v1.5 checkpoints are verified against the same digests.
 
 Evaluation and results

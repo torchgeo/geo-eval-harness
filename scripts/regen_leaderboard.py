@@ -36,11 +36,12 @@ TEMPLATE_PATH = ROOT / "scripts" / "ranking_explorer.template.html"
 HTML_PATH = ROOT / "docs" / "_static" / "ranking_explorer.html"
 
 # Rows whose ``name`` starts with any of these are single-dataset / experimental
-# OlmoEarth ablations, not benchmark entries.
+# OlmoEarth ablations or the handcrafted sweep's rerun of ImageStats, not benchmark entries.
 ABLATION_PREFIXES = (
     "olmoearth_v1_nano_lsat_",
     "olmoearth_v1_nano_naip_",
     "olmoearth_v1_nano_sar_",
+    "imagestats_handcrafted_control",
 )
 
 # ``<base>_landsat_as_s2`` rows feed a Landsat dataset's bands through the
@@ -628,7 +629,8 @@ def select_view(
 
     The dataset/metric universe is established before choosing a normalization.
     A model uses ``model_native`` only when that *entire* row is complete;
-    otherwise it uses its complete ``bandspec_zscore`` row.  Partial native
+    otherwise it uses its complete ``bandspec_zscore`` row, or its ``identity``
+    row when it records no other normalization.  Partial native
     measurements cannot displace or mix with a z-score row.  Returns the
     selected ``model, dataset, metric, score, score_sd, n_seeds, pooling`` cells.
     """
@@ -649,17 +651,20 @@ def select_view(
     for model in sorted(sub["base_model"].unique()):
         model_rows = sub[sub["base_model"] == model]
         native = model_rows[model_rows["normalization"] == "model_native"]
-        zscore = model_rows[model_rows["normalization"] == "bandspec_zscore"]
+        fallback_norm = (
+            "identity" if set(model_rows["normalization"]) == {"identity"} else "bandspec_zscore"
+        )
+        fallback = model_rows[model_rows["normalization"] == fallback_norm]
         if _complete_rows(native, universe):
             selected.append(native)
-        elif _complete_rows(zscore, universe):
-            selected.append(zscore)
+        elif _complete_rows(fallback, universe):
+            selected.append(fallback)
         else:
             excluded.append(
                 {
                     "model": model,
                     "display": resolve_meta(model)[0],
-                    "n_tasks": int(max(native["dataset"].nunique(), zscore["dataset"].nunique())),
+                    "n_tasks": int(max(native["dataset"].nunique(), fallback["dataset"].nunique())),
                 }
             )
 

@@ -63,7 +63,7 @@ and ``none`` to ``identity``.
    * - ``minmax_zscore``
      - Min-max scaling, then z-scoring with the correspondingly scaled dataset mean/std.
    * - ``identity``
-     - No rescaling (for models whose forward owns normalisation).
+     - No rescaling (for models that use raw inputs or whose forward owns normalisation).
 
 Method values
 -------------

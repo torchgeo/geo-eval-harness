@@ -1,9 +1,16 @@
 """Tests for ImageStatsBench model."""
 
+from pathlib import Path
+
+import pandas as pd
 import torch
 
+from geo_eval_harness.config.presets import build_model
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.main import main
 from geo_eval_harness.models.image_stats import ImageStatsBench
+from tests.support.runner import RunnerMocks, _compose_cfg
+from tests.support.runner import runner as runner
 
 
 def _bands(n: int = 4) -> list[BandSpec]:
@@ -27,6 +34,25 @@ def test_normalize_inputs_is_identity() -> None:
     x = torch.arange(2 * 3 * 16 * 16, dtype=torch.float32).reshape(2, 3, 16, 16)
     out = model.normalize_inputs(x)
     assert out is x
+
+
+def test_resume_matches_rows_recorded_as_identity(tmp_path: Path, runner: RunnerMocks) -> None:
+    out = tmp_path / "out.csv"
+    cfg = _compose_cfg(
+        out,
+        overrides={
+            "model": {"name": "imagestats"},
+            "classification": {"methods": ["knn"]},
+            "output": {"resume": True},
+        },
+    )
+    runner.build.side_effect = build_model
+
+    main(cfg)
+    main(cfg)
+
+    runner.knn.assert_called_once()
+    assert pd.read_csv(out)["normalization"].tolist() == ["identity"]
 
 
 def test_output_stats_values() -> None:
