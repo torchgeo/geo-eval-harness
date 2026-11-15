@@ -13,7 +13,7 @@ from statistics import median
 
 import torch
 from torch import nn
-from torch.utils.flop_counter import FlopCounterMode
+from torch.utils.flop_counter import FlopCounterMode, sdpa_flop_count
 
 from geo_eval_harness.devices import resolve_device
 from geo_eval_harness.models.interface import forward_model_batch
@@ -54,28 +54,6 @@ class ProfileResult:
     measurements: int
     input_shape: tuple[int, ...]
 
-    def as_dict(self) -> dict[str, float | int | str | None]:
-        """Return a flat representation suitable for result storage."""
-        return {
-            "params_m": self.params_m,
-            "throughput_samples_per_sec": self.throughput_samples_per_sec,
-            "latency_ms_per_batch_p50": self.latency_ms_per_batch_p50,
-            "peak_gpu_mem_gb": self.peak_gpu_mem_gb,
-            "reserved_gpu_mem_gb": self.reserved_gpu_mem_gb,
-            "gflops": self.flops.gflops,
-            "gflops_status": self.flops.status,
-            "gflops_reason": self.flops.reason,
-            "gflops_counter": self.flops.counter,
-            "gflops_convention": self.flops.convention,
-            "gflops_coverage": self.flops.coverage,
-            "batch_size": self.batch_size,
-            "device": self.device,
-            "precision": self.precision,
-            "warmup": self.warmup,
-            "measurements": self.measurements,
-            "input_shape": str(self.input_shape),
-        }
-
 
 @dataclass(frozen=True, kw_only=True)
 class ProfileTiming:
@@ -110,6 +88,34 @@ def _with_dates(model: nn.Module, sample: torch.Tensor, doy: torch.Tensor | None
     return _DatedModel(model, doy.to(sample.device))
 
 
+def _sdpa_cpu_flop(
+    query_shape: list[int],
+    key_shape: list[int],
+    value_shape: list[int],
+    *_args: object,
+    **_kwargs: object,
+) -> int:
+    """CPU flash attention has the same cost as the registered CUDA kernels."""
+    return sdpa_flop_count(query_shape, key_shape, value_shape)
+
+
+# Formulas for operators that torch's registry lacks but benchmark models execute.
+EXTRA_FLOP_FORMULAS = {
+    torch.ops.aten._scaled_dot_product_flash_attention_for_cpu: _sdpa_cpu_flop,
+}
+
+
+@contextlib.contextmanager
+def _attention_slow_path() -> Iterator[None]:
+    """Run attention modules as separate operators; their fused inference kernels are opaque."""
+    enabled = torch.backends.mha.get_fastpath_enabled()
+    torch.backends.mha.set_fastpath_enabled(False)
+    try:
+        yield
+    finally:
+        torch.backends.mha.set_fastpath_enabled(enabled)
+
+
 def _count_params(model: nn.Module) -> float:
     """Return the number of model parameters in millions."""
     return sum(parameter.numel() for parameter in model.parameters()) / 1e6
@@ -135,7 +141,8 @@ def _count_gflops(
         torch.inference_mode(False),
         torch.no_grad(),
         _precision_context(actual_device, precision),
-        FlopCounterMode(display=False) as counter,
+        _attention_slow_path(),
+        FlopCounterMode(display=False, custom_mapping=EXTRA_FLOP_FORMULAS) as counter,
     ):
         torch.func.functional_call(model, parameters, (inputs,))
     return float(counter.get_total_flops()) / 1e9

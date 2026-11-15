@@ -51,6 +51,7 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "ucmerced": ("ucmerced", "UCMerced", "classification"),
     # other classification
     "aid": ("aid", "AID", "classification"),
+    "infrabench-cls": ("infrabench_cls", "InfraBenchCLS", "classification"),
     # other segmentation
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
     "openearthmap-sar": ("openearthmap_sar", "OpenEarthMapSAR", "segmentation"),
@@ -110,20 +111,28 @@ def get_dataset_task(name: str) -> Literal["classification", "segmentation"]:
     return _REGISTRY_SPEC[name][2]
 
 
+def download_name(name: str) -> str:
+    """Return the dataset name whose download provides *name*."""
+    if name == "bright-post-sar-rgb":
+        return "bright-post-sar"
+    if name == "eurosat-spatial":
+        return "eurosat"
+    if name.startswith("planteur_loio_") and name in _REGISTRY_SPEC:
+        return "planteur"
+    return name
+
+
 def download_command(name: str) -> str:
     """Return the command that downloads one registered dataset."""
-    if name == "bright-post-sar-rgb":
-        name = "bright-post-sar"
+    name = download_name(name)
     if name.startswith("m-"):
         return f"geo-eval-harness download geobench_v1 --datasets {name}"
-    if name.startswith("planteur"):
-        return "geo-eval-harness download planteur"
     if name in {
         "eurosat",
-        "eurosat-spatial",
         "resisc45",
         "ucmerced",
         "aid",
+        "infrabench-cls",
         "hotosm_buildings",
         "openearthmap-sar",
         "open_cities",
@@ -133,8 +142,9 @@ def download_command(name: str) -> str:
         "sen1floods11-s2",
         "bright-post-sar",
         "oscd-post",
+        "planteur",
     }:
-        return f"geo-eval-harness download {name.removesuffix('-spatial')}"
+        return f"geo-eval-harness download {name}"
     return f"geo-eval-harness download geobench_v2 --datasets {name}"
 
 

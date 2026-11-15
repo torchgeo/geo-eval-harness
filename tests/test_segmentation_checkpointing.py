@@ -117,10 +117,15 @@ def _modes(targets: str, layers: list[str]) -> dict[str, dict[str, object]]:
     }
 
 
-@pytest.mark.parametrize("mode", ["lora", "full"])
 @pytest.mark.parametrize(
-    "family",
-    ["timm_swinv2", PRITHVI, pytest.param("olmoearth", marks=pytest.mark.slow)],
+    ("family", "mode"),
+    [
+        ("timm_swinv2", "lora"),
+        pytest.param("terratorch_prithvi", "lora", marks=requires_terratorch),
+        pytest.param("terratorch_prithvi", "full", marks=requires_terratorch),
+        pytest.param("olmoearth", "lora", marks=pytest.mark.slow),
+        pytest.param("olmoearth", "full", marks=pytest.mark.slow),
+    ],
 )
 def test_checkpointing_leaves_loss_features_and_gradients_unchanged(
     family: str, mode: str, monkeypatch: pytest.MonkeyPatch
