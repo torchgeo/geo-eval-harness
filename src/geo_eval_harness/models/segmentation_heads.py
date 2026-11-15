@@ -12,6 +12,13 @@ if TYPE_CHECKING:
     from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
 
 
+def _resize_bilinear(x: torch.Tensor, size: tuple[int, int]) -> torch.Tensor:
+    """Bilinearly resize ``(B, C, h, w)`` maps to *size*, returning *x* when it already matches."""
+    if x.shape[-2:] == size:
+        return x
+    return F.interpolate(x, size=size, mode="bilinear", align_corners=False)
+
+
 class LinearHead(nn.Module):
     """Per-layer BN + 1x1 conv heads with learned scale-weighted fusion.
 
@@ -40,11 +47,7 @@ class LinearHead(nn.Module):
         """Upsample and sum per-layer logits."""
         total_logits: torch.Tensor | int = 0
         for idx, (feat, head) in enumerate(zip(features, self.heads, strict=True)):
-            logits = head(feat)
-            if logits.shape[-2:] != (input_h, input_w):
-                logits = F.interpolate(
-                    logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-                )
+            logits = _resize_bilinear(head(feat), (input_h, input_w))
             if len(self.heads) == 1:
                 return logits
             total_logits = total_logits + logits * self.scale_weights[idx]
@@ -107,11 +110,7 @@ class PatchLinearHead(nn.Module):
         conv = self._ensure_conv(patch_h, feat.device)
         logits = conv(self.norm(feat.to(conv.weight.dtype)))
         logits = F.pixel_shuffle(logits, patch_h)
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
-        return logits
+        return _resize_bilinear(logits, (input_h, input_w))
 
 
 class SweepPatchLinearHead(nn.Module):
@@ -202,10 +201,7 @@ class SweepPatchLinearHead(nn.Module):
         logits = torch.einsum("bhwd,nod->nbohw", x_hat, weight_eff)
         logits = logits + bias_eff[:, None, :, None, None].to(logits.dtype)
         logits = F.pixel_shuffle(logits.flatten(0, 1), patch_h)
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
+        logits = _resize_bilinear(logits, (input_h, input_w))
         return logits.unflatten(0, (self.n_heads, bsz))
 
     def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
@@ -324,20 +320,10 @@ class ConvBlockHead(nn.Module):
         if target_h <= 1:
             target_h, target_w = 16, 16
 
-        aligned = []
-        for f in proj_feats:
-            if f.shape[-2:] != (target_h, target_w):
-                f = F.interpolate(
-                    f, size=(target_h, target_w), mode="bilinear", align_corners=False
-                )
-            aligned.append(f)
+        aligned = [_resize_bilinear(f, (target_h, target_w)) for f in proj_feats]
 
         logits = self.head(torch.cat(aligned, dim=1))
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
-        return logits
+        return _resize_bilinear(logits, (input_h, input_w))
 
 
 class FPNHead(nn.Module):
@@ -399,18 +385,10 @@ class FPNHead(nn.Module):
         fpn_outs = [conv(p) for p, conv in zip(laterals, self.fpn_convs, strict=True)]
 
         finest_size = fpn_outs[-1].shape[-2:]
-        aligned = []
-        for f in fpn_outs:
-            if f.shape[-2:] != finest_size:
-                f = F.interpolate(f, size=finest_size, mode="bilinear", align_corners=False)
-            aligned.append(f)
+        aligned = [_resize_bilinear(f, finest_size) for f in fpn_outs]
 
         logits = self.fpn_head(torch.cat(aligned, dim=1))
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
-        return logits
+        return _resize_bilinear(logits, (input_h, input_w))
 
 
 _INTERPOLATION_MATRICES: dict[tuple[int, int, torch.device], torch.Tensor] = {}
@@ -530,11 +508,7 @@ class UPerNetHead(nn.Module):
     def forward(self, features: list[torch.Tensor], input_h: int, input_w: int) -> torch.Tensor:
         """Decode coarse-to-fine feature maps into logits at the input resolution."""
         logits = self.decoder(list(reversed(features)))
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
-        return logits
+        return _resize_bilinear(logits, (input_h, input_w))
 
 
 class UNetHead(nn.Module):
@@ -592,11 +566,7 @@ class UNetHead(nn.Module):
             )
         fine_to_coarse = list(reversed(features))
         logits = self.classifier(self.decoder([fine_to_coarse[0], *fine_to_coarse]))
-        if logits.shape[-2:] != (input_h, input_w):
-            logits = F.interpolate(
-                logits, size=(input_h, input_w), mode="bilinear", align_corners=False
-            )
-        return logits
+        return _resize_bilinear(logits, (input_h, input_w))
 
 
 # The fusion cascade is the reference implementation from
@@ -709,9 +679,7 @@ class DPTHead(nn.Module):
             out = layer(out, feat)
 
         out = self.out_conv(out)
-        if out.shape[-2:] != (input_h, input_w):
-            out = F.interpolate(out, size=(input_h, input_w), mode="bilinear", align_corners=False)
-        return out
+        return _resize_bilinear(out, (input_h, input_w))
 
 
 class ViTNeck(nn.Module):
@@ -784,10 +752,7 @@ class ViTNeck(nn.Module):
         if self.native_finest:
             grid = normed[0].shape[-2:]
             finest_size = (4 * grid[0], 4 * grid[1])
-            if normed[-1].shape[-2:] != finest_size:
-                normed[-1] = F.interpolate(
-                    normed[-1], size=finest_size, mode="bilinear", align_corners=False
-                )
+            normed[-1] = _resize_bilinear(normed[-1], finest_size)
         return list(reversed(self.fpn(normed[::-1])))
 
 
