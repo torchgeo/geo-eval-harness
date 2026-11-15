@@ -58,7 +58,7 @@ Saved Clay v1 measurements use the canonical v1 identifiers. Their numerical val
 Clay v1.5 Large
 ^^^^^^^^^^^^^^^
 
-``terratorch/clay_v1_5`` and ``terratorch/clay_v1_5_cls`` use the 311M-parameter Clay v1.5 Large encoder with mean-patch and CLS-token pooling respectively. The official checkpoint is pinned and SHA-256 verified. Segmentation reads blocks 5, 11, 17, and 23.
+``terratorch/clay_v1_5`` and ``terratorch/clay_v1_5_cls`` use the 311M-parameter Clay v1.5 Large encoder with mean-patch and CLS-token pooling respectively. The official checkpoint is pinned and SHA-256 verified, whether downloaded or supplied as a local ``checkpoint_path``. Segmentation reads blocks 5, 11, 17, and 23.
 
 Inputs default to 256 pixels and must be square with sides divisible by eight. Set ``--image-size`` to change the input size or ``model.kwargs.checkpoint_path`` to load a local checkpoint containing the complete ``model.encoder.*`` weights.
 
@@ -305,7 +305,9 @@ Scale-MAE constructs its positional grid at the resolved input size. With ``--im
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
 
-:class:`~geo_eval_harness.models.OlmoEarthBenchModel`.  Requires the
+:class:`~geo_eval_harness.models.OlmoEarthBenchModel`.  Each checkpoint's
+config and weights download from a pinned commit of its ``allenai/OlmoEarth-*``
+Hub repository and are SHA-256 verified before loading.  Requires the
 optional ``olmoearth`` extra:
 
 .. code-block:: console
@@ -449,7 +451,8 @@ SAM 3 vision encoder
 :class:`~geo_eval_harness.models.SAM3Encoder`.  Weights come from the gated Hub
 repo `facebook/sam3 <https://huggingface.co/facebook/sam3>`_: accept the terms on
 the model page, run ``hf auth login`` once, and the checkpoint downloads into the
-HuggingFace cache on first use.
+HuggingFace cache on first use.  The download is pinned to one commit and
+SHA-256 verified before loading, as is a local copy passed as ``checkpoint_path``.
 
 .. code-block:: console
 

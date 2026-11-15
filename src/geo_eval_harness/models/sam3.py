@@ -11,11 +11,12 @@ dynamically at forward time, so overriding ``image_size`` causes no weight-shape
 conflict on load.
 
 Checkpoint:
-    Defaults to the Hub repo ``facebook/sam3``, which is gated: accept the terms
-    on the model page and authenticate (``hf auth login``) once, after which the
-    weights download into the standard HuggingFace cache automatically.  Set
-    ``checkpoint_path`` to load from a local HuggingFace-format directory
-    (``model.safetensors`` + ``config.json``) instead.
+    ``config.json`` and ``model.safetensors`` come from a pinned commit of the Hub
+    repo ``facebook/sam3`` and are verified against ``checksums/sam3.sha256``
+    before loading.  The repo is gated: accept the terms on the model page and
+    authenticate (``hf auth login``) once, after which the files download into
+    the standard HuggingFace cache automatically.  Set ``checkpoint_path`` to
+    verify and load a local directory holding copies of the two files instead.
 
     ``facebook/sam3.1`` is deliberately *not* used: it ships only an
     original-format ``.pt`` with no transformers integration, and its Object
@@ -34,17 +35,22 @@ Layer naming for SegmentationProbe:
 """
 
 import logging
+from pathlib import Path
 from typing import cast
 
 import torch
 from transformers import Sam3Config, Sam3Model, Sam3VisionConfig
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
 from ._input_units import InputUnit
 from .interface import BenchModel
 
 logger = logging.getLogger(__name__)
+
+SAM3_REPO = "facebook/sam3"
+SAM3_REVISION = "3c879f39826c281e95690f02c7821c4de09afae7"
 
 #: ``transformers`` IMAGENET_STANDARD_MEAN / IMAGENET_STANDARD_STD.
 _STANDARD_MEAN = [0.5, 0.5, 0.5]
@@ -66,10 +72,8 @@ class SAM3Encoder(BenchModel):
             (RGB only).
         image_size: Side length the encoder is built for. Supplied
             automatically from the resolved ``input.image_size``; required.
-        checkpoint_path: Path to a local HuggingFace-format checkpoint
-            directory containing ``model.safetensors`` and ``config.json``.
-        model_name_or_path: HuggingFace Hub model ID. Used only if
-            ``checkpoint_path`` is not set.
+        checkpoint_path: Local directory holding copies of the pinned
+            ``model.safetensors`` and ``config.json``, used instead of downloading.
     """
 
     #: SAM3 bakes RoPE into each ViT layer at construction, so it needs the resolved size.
@@ -86,7 +90,6 @@ class SAM3Encoder(BenchModel):
         *,
         image_size: int | None = None,
         checkpoint_path: str | None = None,
-        model_name_or_path: str = "facebook/sam3",
         **_kwargs,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
@@ -102,20 +105,25 @@ class SAM3Encoder(BenchModel):
                 "construction. Set input.image_size (it is currently null)."
             )
 
-        source = checkpoint_path or model_name_or_path
-        local_files_only = checkpoint_path is not None
-        logger.info("Loading SAM3 from %r at %dx%d …", source, image_size, image_size)
+        files = [
+            fetch_pinned_file(
+                SAM3_REPO,
+                name,
+                SAM3_REVISION,
+                digest,
+                local_path=None if checkpoint_path is None else Path(checkpoint_path) / name,
+            )
+            for name, digest in load_checksums("sam3.sha256").items()
+        ]
+        source = files[0].parent
+        logger.info("Loading SAM3 from %s at %dx%d …", source, image_size, image_size)
 
-        config = Sam3Config.from_pretrained(source, local_files_only=local_files_only)
+        config = Sam3Config.from_pretrained(source, local_files_only=True)
         # ``Sam3Config`` types its sub-configs as ``dict | PreTrainedConfig | None``;
         # ``__post_init__`` has already turned this one into a ``Sam3VisionConfig``.
         vision_config = cast(Sam3VisionConfig, config.vision_config)
         vision_config.image_size = image_size
-        full_model = Sam3Model.from_pretrained(
-            source,
-            config=config,
-            local_files_only=local_files_only,
-        )
+        full_model = Sam3Model.from_pretrained(source, config=config, local_files_only=True)
 
         self.backbone = full_model.vision_encoder
         del full_model

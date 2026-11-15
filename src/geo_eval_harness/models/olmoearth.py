@@ -10,6 +10,7 @@ Reference implementations (canonical first):
 
 import logging
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
@@ -18,6 +19,7 @@ import torch.nn.functional as F
 
 from geo_eval_harness.datasets.base import BandSpec
 
+from ..hub import fetch_pinned_file, load_checksums
 from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
 from ._optional import require_package
 from .interface import BenchModel
@@ -194,6 +196,22 @@ _VERSION_SIZES: dict[str, frozenset[str]] = {
     "v1_3": frozenset({"base"}),
 }
 
+#: Pinned Hugging Face commit of each released checkpoint repository under ``allenai/``.
+CHECKPOINT_REVISIONS: dict[str, str] = {
+    "OlmoEarth-v1-Nano": "529248a4dc3c54014c56b7504641cec98de31d1c",
+    "OlmoEarth-v1-Tiny": "885784437d4e2d632b7bf51b4233426c6f4479dc",
+    "OlmoEarth-v1-Base": "4bd1392a4539404d2c74276c39f3cb4cfff466cc",
+    "OlmoEarth-v1-Large": "b2c9f41de3d8454cb37f0cd9cc3e79ec7c4af435",
+    "OlmoEarth-v1_1-Nano": "6c16c7da0d05a1c4f32c2a7f9233e07c9ebfa61a",
+    "OlmoEarth-v1_1-Tiny": "74fab5714f763d6b94f8b1536bdd3300d77f45e8",
+    "OlmoEarth-v1_1-Base": "4ef31d45f80c1d4fcce18f9cde40c1b5e4d96cf4",
+    "OlmoEarth-v1_2-Nano": "e1f693ae2a7d5b57871a978e9d09e22d05206747",
+    "OlmoEarth-v1_2-Tiny": "12a9fdbfeff905d7e147e7497f9f7a95c518eefc",
+    "OlmoEarth-v1_2-Small": "5dd894799741b60f59dc4b1dbbb758d8afd89062",
+    "OlmoEarth-v1_2-Base": "2e99a734a30e9aeb993aaa39946c6dcf554739e0",
+    "OlmoEarth-v1_3-Base": "9e9e918a369701c105dde7ef56789b0ff1d47f50",
+}
+
 # Checkpoints whose encoder ends in an AttentionPooler that emits location tokens and a
 # detached low-dim student readout of them.
 _ATTENTION_POOLER_VERSIONS: frozenset[str] = frozenset({"v1_3"})
@@ -269,6 +287,19 @@ def _build_sensor_groups(bands: list[BandSpec]) -> list[dict[str, Any]]:
                 "Select one sensor or add an explicit fusion policy."
             )
     return result
+
+
+def _fetch_checkpoint(version: str, model_size: str) -> Path:
+    """Return the directory holding a checkpoint's pinned, SHA-256 verified config and weights."""
+    name = f"OlmoEarth-{version}-{model_size.capitalize()}"
+    checksums = load_checksums("olmoearth.sha256")
+    paths = [
+        fetch_pinned_file(
+            f"allenai/{name}", filename, CHECKPOINT_REVISIONS[name], checksums[f"{name}/{filename}"]
+        )
+        for filename in ("config.json", "weights.pth")
+    ]
+    return paths[0].parent
 
 
 def _resolve_version_options(
@@ -434,7 +465,7 @@ class OlmoEarthBenchModel(BenchModel):
 
         # Lazy imports so the package is only needed when this model is used.
         require_package("olmoearth_pretrain_minimal", "pip install 'geo-eval-harness[olmoearth]'")
-        from olmoearth_pretrain_minimal import ModelID, Normalizer, load_model_from_id
+        from olmoearth_pretrain_minimal import Normalizer, load_model_from_path
         from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
         # Quiet down the package's INFO-level ModalitySpec dumps.
@@ -484,8 +515,7 @@ class OlmoEarthBenchModel(BenchModel):
         self.norm_from_pretrained = norm_from_pretrained
         self.min_image_size = min_image_size
 
-        model_id = getattr(ModelID, f"OLMOEARTH_{version.upper()}_{model_size.upper()}")
-        pretrained = load_model_from_id(model_id, load_weights=True)
+        pretrained = load_model_from_path(_fetch_checkpoint(version, model_size))
         # Preserve segmentation tap paths while retaining only the inference encoder.
         self.encoder_model: Any = torch.nn.Module()
         self.encoder_model.add_module("encoder", cast(torch.nn.Module, pretrained.encoder))
