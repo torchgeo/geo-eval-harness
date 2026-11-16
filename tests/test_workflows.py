@@ -22,6 +22,37 @@ def test_checks_cover_every_pull_request_base(name: str) -> None:
     assert "branches" not in selection
     assert "branches-ignore" not in selection
     assert events["push"]["branches"] == ["main"]
+    if name == "ci":
+        assert config["concurrency"] == {
+            "group": "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+            "cancel-in-progress": "true",
+        }
+
+
+@pytest.mark.parametrize("name", ["test", "install"])
+def test_results_only_checks_preserve_names_without_platform_runners(name: str) -> None:
+    config = yaml.load((WORKFLOWS / "ci.yaml").read_text(), Loader=yaml.BaseLoader)
+    job = config["jobs"][name]
+    assert job["needs"] == "changes"
+    assert "matrix.os" in job["name"]
+    assert job["runs-on"] == (
+        "${{ needs.changes.outputs.results_only == 'true' && 'ubuntu-latest' || matrix.os }}"
+    )
+    assert job["strategy"]["matrix"]["os"] == [
+        "ubuntu-latest",
+        "macos-latest",
+        "windows-latest",
+    ]
+    if name == "install":
+        assert job["env"]["RUN_INSTALL"] == "${{ needs.changes.outputs.results_only != 'true' }}"
+        skip, *installation = job["steps"]
+        assert skip["if"] == "env.RUN_INSTALL != 'true'"
+        assert all("env.RUN_INSTALL == 'true'" in step["if"] for step in installation)
+    else:
+        assert job["env"]["RUN_RESULTS_TESTS"] == (
+            "${{ needs.changes.outputs.results_only == 'true' && "
+            "matrix.os == 'ubuntu-latest' && matrix.python-version == '3.13' }}"
+        )
 
 
 def test_pull_requests_cannot_deploy_documentation() -> None:
