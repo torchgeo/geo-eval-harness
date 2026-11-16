@@ -1,0 +1,361 @@
+job_id,model,dataset,bands,normalization,planned_config_hash,effective_config_hash,batch_size,state,reason
+7b61ddf964bfdfa099c4,smarties/base,aid,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+aa4b9f6a198fb1ca9d2e,smarties/base,aid,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+eb679ad32b43d2c56c87,smarties/base,aid,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+0e3d9c39989614397599,smarties/base,aid,all,model,3e91a44da17a530c,3e91a44da17a530c,64,complete,
+854545bb9c59bd9d6391,smarties/base,benv2,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+0de6f8df1d2e7207cad8,smarties/base,benv2,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+5c1f4f0d663a60288ed7,smarties/base,eurosat,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+af478637695281045952,smarties/base,eurosat,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+162f3c6c117596322c76,smarties/base,eurosat,all,dataset,f07b6f4b7f5078e0,f07b6f4b7f5078e0,64,complete,
+c3cc1d8bdf4be8639746,smarties/base,eurosat,all,model,7f8e1a8716b24748,7f8e1a8716b24748,64,complete,
+7efc58a2147cec3d6e16,smarties/base,eurosat-spatial,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+66a060f8b7f0f44e397c,smarties/base,eurosat-spatial,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+9a1e845ef1bb0f5d85bf,smarties/base,eurosat-spatial,all,dataset,f07b6f4b7f5078e0,f07b6f4b7f5078e0,64,complete,
+b6bd460bdb91d33368d1,smarties/base,eurosat-spatial,all,model,7f8e1a8716b24748,7f8e1a8716b24748,64,complete,
+6457d30e28f37ddafa81,smarties/base,forestnet,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+e0e82e50837afbf85ac7,smarties/base,forestnet,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+b95979a96c6edeb68421,smarties/base,forestnet,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+21fa1957a3d2f74c1fb3,smarties/base,m-bigearthnet,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+7e99aefe9d347407599a,smarties/base,m-bigearthnet,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+8342ba5ef933978cacb2,smarties/base,m-bigearthnet,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+a1b9da16c450ed85a346,smarties/base,m-bigearthnet,all,model,3e91a44da17a530c,3e91a44da17a530c,64,complete,
+0a200410bd7489a7e741,smarties/base,m-brick-kiln,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+c29142434a1abe2cfd04,smarties/base,m-brick-kiln,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+c6036487fcea503fabc7,smarties/base,m-brick-kiln,all,dataset,f07b6f4b7f5078e0,f07b6f4b7f5078e0,64,complete,
+bf0e1033991dcc205cf7,smarties/base,m-brick-kiln,all,model,7f8e1a8716b24748,7f8e1a8716b24748,64,complete,
+798d5022c2f05bff7d8c,smarties/base,m-eurosat,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+92d7579f2fb6be545628,smarties/base,m-eurosat,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+a5c6269b3297db10a0c0,smarties/base,m-eurosat,all,dataset,f07b6f4b7f5078e0,f07b6f4b7f5078e0,64,complete,
+1e0dc3d35eac7193f68d,smarties/base,m-eurosat,all,model,7f8e1a8716b24748,7f8e1a8716b24748,64,complete,
+18c00592d9902b929ba7,smarties/base,m-forestnet,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+25da126824f6358d64ac,smarties/base,m-forestnet,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+395288b69a63a197a9d1,smarties/base,m-forestnet,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+adf894424b405643df66,smarties/base,m-pv4ger,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+f04e64bdeb6e4b705085,smarties/base,m-pv4ger,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+0fa3af341c6545062f23,smarties/base,m-pv4ger,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+44cac845288ae69e79ef,smarties/base,m-pv4ger,all,model,3e91a44da17a530c,3e91a44da17a530c,64,complete,
+76ae6ce025ee9bef3f8f,smarties/base,m-so2sat,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+03ec546ab57c40bfd729,smarties/base,m-so2sat,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+1bcafc2882debac69247,smarties/base,resisc45,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+f1d47714972236e958f4,smarties/base,resisc45,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+261d48f2291ef3a20fed,smarties/base,resisc45,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+ff3334920e73f1a76cb4,smarties/base,resisc45,all,model,3e91a44da17a530c,3e91a44da17a530c,64,complete,
+9ca9fb63aa1c946d28e9,smarties/base,so2sat,rgb,dataset,92c5643a35ed86a1,92c5643a35ed86a1,64,complete,
+2926833db631db9e9eaa,smarties/base,so2sat,rgb,model,61422529a19fe5b7,61422529a19fe5b7,64,complete,
+5243fb77088ce05e2e77,smarties/base,treesatai,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+fed25bf83b361744105a,smarties/base,treesatai,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+fac5aa1218763f59f675,smarties/base,ucmerced,rgb,dataset,ba0b505e7f069bc7,ba0b505e7f069bc7,64,complete,
+2fc710dd6ce3e4ac52a0,smarties/base,ucmerced,rgb,model,b84dfbaf84d6ae27,b84dfbaf84d6ae27,64,complete,
+0916163b6b61ccae8ece,smarties/base,ucmerced,all,dataset,4873334bb83a7eef,4873334bb83a7eef,64,complete,
+0461b985887105b897e2,smarties/base,ucmerced,all,model,3e91a44da17a530c,3e91a44da17a530c,64,complete,
+920ad69b3afcb135c216,smarties/large,aid,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+2aa3a60cb0a1c54497d0,smarties/large,aid,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+b4b19e2aac9b93a079a1,smarties/large,aid,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+a8af887e9d2b5b82b470,smarties/large,aid,all,model,2b9eb6814e025b20,2b9eb6814e025b20,64,complete,
+a1fe7646718116918e12,smarties/large,benv2,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+b625cde7c21b9983b323,smarties/large,benv2,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+d77107408518f13bbc5c,smarties/large,eurosat,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+90acc4bbbb89b5dd8ebf,smarties/large,eurosat,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+9f586be5843a6d2a37ab,smarties/large,eurosat,all,dataset,19858c9273147ace,19858c9273147ace,64,complete,
+89170ebaaa208e6e05b3,smarties/large,eurosat,all,model,f3baab3b81a32520,f3baab3b81a32520,64,complete,
+89ff4cf9e667a074e0b1,smarties/large,eurosat-spatial,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+13bdb6cf1631a8ec8b1e,smarties/large,eurosat-spatial,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+8630d617234ba121fc57,smarties/large,eurosat-spatial,all,dataset,19858c9273147ace,19858c9273147ace,64,complete,
+785be14c56e1158a1268,smarties/large,eurosat-spatial,all,model,f3baab3b81a32520,f3baab3b81a32520,64,complete,
+40a31a82d3e4a443ba16,smarties/large,forestnet,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+abb5889341f190739e80,smarties/large,forestnet,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+613d6780970d68a6d56e,smarties/large,forestnet,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+45c5c159441a7a639e43,smarties/large,m-bigearthnet,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+3e1b1a2b1aca3b453d02,smarties/large,m-bigearthnet,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+2a18705dcc2acbec6fbd,smarties/large,m-bigearthnet,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+dd00387fc22df4cc8f7e,smarties/large,m-bigearthnet,all,model,2b9eb6814e025b20,2b9eb6814e025b20,64,complete,
+d5cd117ad75881eed09a,smarties/large,m-brick-kiln,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+37917d058939ad6e578a,smarties/large,m-brick-kiln,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+faaf6b9e1b5de6f3dcef,smarties/large,m-brick-kiln,all,dataset,19858c9273147ace,19858c9273147ace,64,complete,
+d2558368a57526cf01f7,smarties/large,m-brick-kiln,all,model,f3baab3b81a32520,f3baab3b81a32520,64,complete,
+1160222d369f60c66bf7,smarties/large,m-eurosat,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+57277bb223c6d1a763ec,smarties/large,m-eurosat,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+016d456a7167be694398,smarties/large,m-eurosat,all,dataset,19858c9273147ace,19858c9273147ace,64,complete,
+5ead7f66cd7aef8f00ac,smarties/large,m-eurosat,all,model,f3baab3b81a32520,f3baab3b81a32520,64,complete,
+d8b792f16cb11bb92e44,smarties/large,m-forestnet,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+dfcd60349fc1559cf6bf,smarties/large,m-forestnet,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+384b2958465e60e80520,smarties/large,m-forestnet,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+bc53df1b1a93ffcd7790,smarties/large,m-pv4ger,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+2e80dfb437daa4d0764a,smarties/large,m-pv4ger,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+eb0a29291fda3cd6eea9,smarties/large,m-pv4ger,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+e895972174bdeafd2e60,smarties/large,m-pv4ger,all,model,2b9eb6814e025b20,2b9eb6814e025b20,64,complete,
+139f58fec8811ac5300e,smarties/large,m-so2sat,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+2a7ef9d131cba24bd722,smarties/large,m-so2sat,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+9644bf4eb8369b06f18d,smarties/large,resisc45,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+fdc517b3e56d3e8d13a6,smarties/large,resisc45,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+029c8d8f144a50282d21,smarties/large,resisc45,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+ea0179c9ed554b35684d,smarties/large,resisc45,all,model,2b9eb6814e025b20,2b9eb6814e025b20,64,complete,
+01c24bb427e915051b1c,smarties/large,so2sat,rgb,dataset,d37d1e1997c75e15,d37d1e1997c75e15,64,complete,
+8819f0b31be63504f625,smarties/large,so2sat,rgb,model,a487dad9ae4a21ad,a487dad9ae4a21ad,64,complete,
+04c2d05375d4acddf7da,smarties/large,treesatai,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+197858eefd6d21dd4559,smarties/large,treesatai,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+9a359e64334d00ced9a2,smarties/large,ucmerced,rgb,dataset,fbeaa1d93c94dd4e,fbeaa1d93c94dd4e,64,complete,
+2065f5fb1acefae7af48,smarties/large,ucmerced,rgb,model,4af98d7a79ab1a84,4af98d7a79ab1a84,64,complete,
+93612620c119083c8b41,smarties/large,ucmerced,all,dataset,65b0d8e17a9916a1,65b0d8e17a9916a1,64,complete,
+0648329d732d42c31cd9,smarties/large,ucmerced,all,model,2b9eb6814e025b20,2b9eb6814e025b20,64,complete,
+2b39836dbbcc9b3a3dcb,terrafm/base_s2,benv2,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+e4382522864c2852ce98,terrafm/base_s2,benv2,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+0d4e09902a79dddf46eb,terrafm/base_s2,eurosat,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+89e2784ab99164009e5b,terrafm/base_s2,eurosat,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+de055a36546a76ed65c1,terrafm/base_s2,eurosat-spatial,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+735398315fb488f36772,terrafm/base_s2,eurosat-spatial,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+9fca978eb40006c3931e,terrafm/base_s2,m-bigearthnet,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+ed891eb04becd0e417a3,terrafm/base_s2,m-bigearthnet,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+90da3cf1bce709fbc4b2,terrafm/base_s2,m-brick-kiln,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+02a38bf777754f1d313c,terrafm/base_s2,m-brick-kiln,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+c07cc2284d74209a25f0,terrafm/base_s2,m-eurosat,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+616c48b29703dd36766a,terrafm/base_s2,m-eurosat,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+7f872b024a3de1bbcb22,terrafm/base_s2,treesatai,all,dataset,b21703cd91b5637f,b21703cd91b5637f,64,complete,
+f374959affb7eb2ee894,terrafm/base_s2,treesatai,all,model,fe02052025632a12,fe02052025632a12,64,complete,
+fc5a6436ae9207a9b76f,terratorch/clay_v1_cls,aid,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+cfd446849b6526694b76,terratorch/clay_v1_cls,aid,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+a39684bce04798dec164,terratorch/clay_v1_cls,aid,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+856d05aed0b2e4405a60,terratorch/clay_v1_cls,aid,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+28a87a31529908571d87,terratorch/clay_v1_cls,benv2,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+919b3b25ec3f459f7309,terratorch/clay_v1_cls,benv2,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+96a5406921192bdb562b,terratorch/clay_v1_cls,benv2,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+801e59a8bbeea82b15f9,terratorch/clay_v1_cls,eurosat,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+3fca71feae3c58e4e9c5,terratorch/clay_v1_cls,eurosat,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+9678e8624461c60996bd,terratorch/clay_v1_cls,eurosat,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+3ebf4151b6f201608018,terratorch/clay_v1_cls,eurosat,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+f4177fbde546b8e1a12b,terratorch/clay_v1_cls,eurosat-spatial,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+e4ad362c2e4ae53c3033,terratorch/clay_v1_cls,eurosat-spatial,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+bcf69104d402242d35f5,terratorch/clay_v1_cls,eurosat-spatial,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+e99869f1f77e85a75be0,terratorch/clay_v1_cls,eurosat-spatial,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+8004042137bcabbeb0dd,terratorch/clay_v1_cls,forestnet,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+31a1677b23407c1c0047,terratorch/clay_v1_cls,forestnet,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+34d686dc118685b7930f,terratorch/clay_v1_cls,forestnet,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+8834edaa511a9e89e5fe,terratorch/clay_v1_cls,forestnet,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+4de8fd57799aee5c5366,terratorch/clay_v1_cls,m-bigearthnet,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+68ea5d7ece68b7a988d0,terratorch/clay_v1_cls,m-bigearthnet,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+29efa12126233120a8cf,terratorch/clay_v1_cls,m-bigearthnet,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+825853c89995c991b68e,terratorch/clay_v1_cls,m-bigearthnet,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+909e5ea49cb5d0bf90cb,terratorch/clay_v1_cls,m-brick-kiln,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+6e009b1f4543115980ee,terratorch/clay_v1_cls,m-brick-kiln,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+638e09c451ba78a55efb,terratorch/clay_v1_cls,m-brick-kiln,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+fd74d4bcb44496aab9f3,terratorch/clay_v1_cls,m-brick-kiln,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+12a206a4bc3ba729c880,terratorch/clay_v1_cls,m-eurosat,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+7b2b7890be1cfa048d31,terratorch/clay_v1_cls,m-eurosat,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+93d099b75fbb3a0219d3,terratorch/clay_v1_cls,m-eurosat,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+57f5fe5b333635cb1d35,terratorch/clay_v1_cls,m-eurosat,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+1268b814feb34963ba69,terratorch/clay_v1_cls,m-forestnet,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+57ce5ae9c51be3a3b67e,terratorch/clay_v1_cls,m-forestnet,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+d23e93b7fde965571a51,terratorch/clay_v1_cls,m-forestnet,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+2a327cfb84102cd1ce64,terratorch/clay_v1_cls,m-forestnet,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+4fe4187b9103bfa4aee8,terratorch/clay_v1_cls,m-pv4ger,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+c3d5012c4e27e855a33d,terratorch/clay_v1_cls,m-pv4ger,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+74d3ea8a1266a6e75e1b,terratorch/clay_v1_cls,m-pv4ger,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+a18c1217df39e30bb0d1,terratorch/clay_v1_cls,m-pv4ger,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+8dde7e747cda75c62867,terratorch/clay_v1_cls,m-so2sat,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+f04643b31539801661a9,terratorch/clay_v1_cls,m-so2sat,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+fe9f4dfe0e4fe97c1707,terratorch/clay_v1_cls,m-so2sat,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+53a7525e5267769a3c39,terratorch/clay_v1_cls,resisc45,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+324ee488b6b8942f648f,terratorch/clay_v1_cls,resisc45,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+ec227b4bd983ca09a564,terratorch/clay_v1_cls,resisc45,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+fb39f3aaaa2fbbdd1588,terratorch/clay_v1_cls,resisc45,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+e85af8e0999fb15decef,terratorch/clay_v1_cls,so2sat,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+0a9e55818a5cfba18386,terratorch/clay_v1_cls,so2sat,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+f7a8441766a74ab31438,terratorch/clay_v1_cls,so2sat,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+64653ecf7aef1e8a0e6a,terratorch/clay_v1_cls,treesatai,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+d4fa3dd4219bb623242c,terratorch/clay_v1_cls,treesatai,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+4c6644be5fcb0da616d0,terratorch/clay_v1_cls,treesatai,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+e6c9650beb448a014e92,terratorch/clay_v1_cls,ucmerced,rgb,dataset,5d86b09de9b9f9d2,5d86b09de9b9f9d2,64,complete,
+2abb4cb0daffdc42ec7d,terratorch/clay_v1_cls,ucmerced,rgb,model,c41536e67f3823d4,c41536e67f3823d4,64,complete,
+987cc16cb1c5334c3b49,terratorch/clay_v1_cls,ucmerced,all,dataset,130558ef82b46ae7,130558ef82b46ae7,64,complete,
+5e7d551e3b2560a6f760,terratorch/clay_v1_cls,ucmerced,all,model,0838fd91ce943d34,0838fd91ce943d34,64,complete,
+b7aa90c887bc0f5a8f53,terratorch/clay_v1_5_cls,aid,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+5b3d36bfb168e3f81104,terratorch/clay_v1_5_cls,aid,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+81d2fad5e04e9f35f623,terratorch/clay_v1_5_cls,aid,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+2010b894aa72217fb439,terratorch/clay_v1_5_cls,aid,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+268692f35732639bf925,terratorch/clay_v1_5_cls,benv2,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+fae5c87d679783b8e138,terratorch/clay_v1_5_cls,benv2,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+d7a41e6c35629dedb185,terratorch/clay_v1_5_cls,benv2,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+b41ebafc2576e4a2f588,terratorch/clay_v1_5_cls,eurosat,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+6c4b41e495808305cd61,terratorch/clay_v1_5_cls,eurosat,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+2fec89e297e1065472c0,terratorch/clay_v1_5_cls,eurosat,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+c316b8d100a1e1786997,terratorch/clay_v1_5_cls,eurosat,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+6c0a4e8e50582831cb79,terratorch/clay_v1_5_cls,eurosat-spatial,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+e32b617488a841255371,terratorch/clay_v1_5_cls,eurosat-spatial,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+8e95aa36ab0a6c5bae44,terratorch/clay_v1_5_cls,eurosat-spatial,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+777d9933974a9fe79ade,terratorch/clay_v1_5_cls,eurosat-spatial,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+c2194fe5e97c8eec649a,terratorch/clay_v1_5_cls,forestnet,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+b916a4164bdf960ecbea,terratorch/clay_v1_5_cls,forestnet,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+ccb8f94ce32c9e3ff17e,terratorch/clay_v1_5_cls,forestnet,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+9b3277ff50ade793e98b,terratorch/clay_v1_5_cls,forestnet,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+61a84f30c45eb9cf7539,terratorch/clay_v1_5_cls,m-bigearthnet,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+70e2127581363c2dd1e2,terratorch/clay_v1_5_cls,m-bigearthnet,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+3d91420db8f2e4b827eb,terratorch/clay_v1_5_cls,m-bigearthnet,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+70fdfea613f44ca310fc,terratorch/clay_v1_5_cls,m-bigearthnet,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+87fb16c095bad8e6093a,terratorch/clay_v1_5_cls,m-brick-kiln,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+f363d287980f02979a0e,terratorch/clay_v1_5_cls,m-brick-kiln,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+05a61fef48851f9155be,terratorch/clay_v1_5_cls,m-brick-kiln,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+3db98627d7791ca9b07a,terratorch/clay_v1_5_cls,m-brick-kiln,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+3a8eaa859649c8723209,terratorch/clay_v1_5_cls,m-eurosat,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+668031998b232683c162,terratorch/clay_v1_5_cls,m-eurosat,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+531170ba013e89ee49a6,terratorch/clay_v1_5_cls,m-eurosat,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+ce9a665408653d442028,terratorch/clay_v1_5_cls,m-eurosat,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+3c13d943a628f5ff95f0,terratorch/clay_v1_5_cls,m-forestnet,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+5e963f62373741321ce5,terratorch/clay_v1_5_cls,m-forestnet,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+0981409dd09869319b21,terratorch/clay_v1_5_cls,m-forestnet,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+603cdeef290ae1261fa9,terratorch/clay_v1_5_cls,m-forestnet,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+0e05b87bab2a2aa8c3a1,terratorch/clay_v1_5_cls,m-pv4ger,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+a55ca327e260d4023147,terratorch/clay_v1_5_cls,m-pv4ger,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+ce24fd89f51b700caeb6,terratorch/clay_v1_5_cls,m-pv4ger,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+3f61f861a8094d61dc34,terratorch/clay_v1_5_cls,m-pv4ger,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+6cecefb02415776c0251,terratorch/clay_v1_5_cls,m-so2sat,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+beaff0f1b5f914c322a1,terratorch/clay_v1_5_cls,m-so2sat,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+046411556a59f68fbbbe,terratorch/clay_v1_5_cls,m-so2sat,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+44ef48bda7c27b3ffc10,terratorch/clay_v1_5_cls,resisc45,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+7fbc5b3708d6e3ab621f,terratorch/clay_v1_5_cls,resisc45,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+278f6506589ef76f41eb,terratorch/clay_v1_5_cls,resisc45,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+a53ca6134fadd156dac1,terratorch/clay_v1_5_cls,resisc45,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+33f2f02055a073c03292,terratorch/clay_v1_5_cls,so2sat,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+3a6af21509e2cf2c99f4,terratorch/clay_v1_5_cls,so2sat,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+0046e81a0eb27b087075,terratorch/clay_v1_5_cls,so2sat,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+0920b88518481a914a8f,terratorch/clay_v1_5_cls,treesatai,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+724526d2b2453f047fcc,terratorch/clay_v1_5_cls,treesatai,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+f0fb84490392ceb979ea,terratorch/clay_v1_5_cls,treesatai,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+8919bbf184a9c8361fa2,terratorch/clay_v1_5_cls,ucmerced,rgb,dataset,fe773b0ce74d727e,fe773b0ce74d727e,64,complete,
+6a6127ac80b9729fc70c,terratorch/clay_v1_5_cls,ucmerced,rgb,model,898e7786f3e94acc,898e7786f3e94acc,64,complete,
+6347194932f6466b1025,terratorch/clay_v1_5_cls,ucmerced,all,dataset,467c6a100ced9523,467c6a100ced9523,64,complete,
+76d789c2acff1d267a74,terratorch/clay_v1_5_cls,ucmerced,all,model,4f72a6598efeb472,4f72a6598efeb472,64,complete,
+c492bcb29a5e1b750578,torchgeo/scalemae_large_fmow_cls,aid,rgb,dataset,f682dbae925394b9,f682dbae925394b9,64,complete,
+ea09fd4bc994463dbfe2,torchgeo/scalemae_large_fmow_cls,aid,rgb,model,615f11ec9b1a44dc,615f11ec9b1a44dc,64,complete,
+531e535957dc044d6007,torchgeo/scalemae_large_fmow_cls,aid,all,dataset,eb092c34a9b85c2e,eb092c34a9b85c2e,64,complete,
+170ed35eff7252c51f70,torchgeo/scalemae_large_fmow_cls,aid,all,model,8e7e9e1584a53adb,8e7e9e1584a53adb,64,complete,
+7ee9c0d40cc534d2f0d8,torchgeo/scalemae_large_fmow_cls,benv2,rgb,dataset,82acd3487a484c1c,82acd3487a484c1c,64,complete,
+c886806cfeb5d270678d,torchgeo/scalemae_large_fmow_cls,benv2,rgb,model,0caaf7fae4d8d020,0caaf7fae4d8d020,64,complete,
+4e3fd4d634666e1b4adc,torchgeo/scalemae_large_fmow_cls,eurosat,rgb,dataset,f682dbae925394b9,f682dbae925394b9,64,complete,
+2da2cc6d17caa70793d1,torchgeo/scalemae_large_fmow_cls,eurosat,rgb,model,615f11ec9b1a44dc,615f11ec9b1a44dc,64,complete,
+f7ead2b9f9d4684c17dd,torchgeo/scalemae_large_fmow_cls,eurosat-spatial,rgb,dataset,ba498981fc6032b6,ba498981fc6032b6,64,complete,
+b16a833e726d5e456062,torchgeo/scalemae_large_fmow_cls,eurosat-spatial,rgb,model,671b5da8ba4f8ddd,671b5da8ba4f8ddd,64,complete,
+b36d7d5bb74fb64da363,torchgeo/scalemae_large_fmow_cls,forestnet,rgb,dataset,525538ec0cfc6611,525538ec0cfc6611,64,complete,
+3dc12f656a52a60ebcf3,torchgeo/scalemae_large_fmow_cls,forestnet,rgb,model,7dcbbf39dc54d8d4,7dcbbf39dc54d8d4,64,complete,
+b452f0eb0afee5aac7b9,torchgeo/scalemae_large_fmow_cls,m-bigearthnet,rgb,dataset,82acd3487a484c1c,82acd3487a484c1c,64,complete,
+76a08792baf6cf4fcd75,torchgeo/scalemae_large_fmow_cls,m-bigearthnet,rgb,model,0caaf7fae4d8d020,0caaf7fae4d8d020,64,complete,
+a5f3587f4276469cded2,torchgeo/scalemae_large_fmow_cls,m-brick-kiln,rgb,dataset,851ec1fd5d931d50,851ec1fd5d931d50,64,complete,
+7ed3e361b055423b0b7b,torchgeo/scalemae_large_fmow_cls,m-brick-kiln,rgb,model,e201af71b94fb428,e201af71b94fb428,64,complete,
+f8caea971745c7c47d91,torchgeo/scalemae_large_fmow_cls,m-eurosat,rgb,dataset,ba498981fc6032b6,ba498981fc6032b6,64,complete,
+53050efde7d302c8865c,torchgeo/scalemae_large_fmow_cls,m-eurosat,rgb,model,671b5da8ba4f8ddd,671b5da8ba4f8ddd,64,complete,
+b4e3fe0d02e8a9466875,torchgeo/scalemae_large_fmow_cls,m-forestnet,rgb,dataset,3983dae8ed985a92,3983dae8ed985a92,64,complete,
+5ba9e43b87bc3421e929,torchgeo/scalemae_large_fmow_cls,m-forestnet,rgb,model,d95f57c9c796fbd8,d95f57c9c796fbd8,64,complete,
+7268e59f1754b6a5de0d,torchgeo/scalemae_large_fmow_cls,m-pv4ger,rgb,dataset,5cc88e7f767aef05,5cc88e7f767aef05,64,complete,
+d1b1aedd6f8e8364060d,torchgeo/scalemae_large_fmow_cls,m-pv4ger,rgb,model,d3daa6a99bc8bf5d,d3daa6a99bc8bf5d,64,complete,
+182ce7e3230bd8753488,torchgeo/scalemae_large_fmow_cls,m-so2sat,rgb,dataset,4d3b2c5f1f9f70d2,4d3b2c5f1f9f70d2,64,complete,
+eb397b4428c415a48534,torchgeo/scalemae_large_fmow_cls,m-so2sat,rgb,model,f91efcea76d872a7,f91efcea76d872a7,64,complete,
+c3296e6091bc655d01ef,torchgeo/scalemae_large_fmow_cls,resisc45,rgb,dataset,f682dbae925394b9,f682dbae925394b9,64,complete,
+2fcfa03ee125b243c254,torchgeo/scalemae_large_fmow_cls,resisc45,rgb,model,615f11ec9b1a44dc,615f11ec9b1a44dc,64,complete,
+1f6c03fff4ad29387a99,torchgeo/scalemae_large_fmow_cls,resisc45,all,dataset,eb092c34a9b85c2e,eb092c34a9b85c2e,64,complete,
+64df7662fee4d7553998,torchgeo/scalemae_large_fmow_cls,resisc45,all,model,8e7e9e1584a53adb,8e7e9e1584a53adb,64,complete,
+60e5716247c6944cc716,torchgeo/scalemae_large_fmow_cls,so2sat,rgb,dataset,4d3b2c5f1f9f70d2,4d3b2c5f1f9f70d2,64,complete,
+3b3e45bf8e6ce626d2a3,torchgeo/scalemae_large_fmow_cls,so2sat,rgb,model,f91efcea76d872a7,f91efcea76d872a7,64,complete,
+adf5b96aad5780aa8aab,torchgeo/scalemae_large_fmow_cls,treesatai,rgb,dataset,329254c5836ad43e,329254c5836ad43e,64,complete,
+ede17e35c590c95015af,torchgeo/scalemae_large_fmow_cls,treesatai,rgb,model,02817f871c46b19a,02817f871c46b19a,64,complete,
+ef489dfb6f4779d52f68,torchgeo/scalemae_large_fmow_cls,ucmerced,rgb,dataset,f682dbae925394b9,f682dbae925394b9,64,complete,
+0d5b68371a61d9c115ae,torchgeo/scalemae_large_fmow_cls,ucmerced,rgb,model,615f11ec9b1a44dc,615f11ec9b1a44dc,64,complete,
+695d2accc925af2b0cc7,torchgeo/scalemae_large_fmow_cls,ucmerced,all,dataset,eb092c34a9b85c2e,eb092c34a9b85c2e,64,complete,
+673fb41974586ab08c5f,torchgeo/scalemae_large_fmow_cls,ucmerced,all,model,8e7e9e1584a53adb,8e7e9e1584a53adb,64,complete,
+4e5678aa9748a3203def,smarties/base,benv2,all,dataset,4873334bb83a7eef,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+13c21a398b840d3fce91,smarties/base,benv2,all,model,3e91a44da17a530c,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+08693f762c5555f77357,smarties/base,forestnet,all,model,3e91a44da17a530c,,64,excluded,Mean counterpart excluded: SMARTIES native normalization only declares pretrained statistics for 8-bit RGB; this sensor/band selection requires dataset normalization.
+7d80397ea7059fefecf5,smarties/base,m-forestnet,all,model,3e91a44da17a530c,,64,excluded,Mean counterpart excluded: SMARTIES native normalization only declares pretrained statistics for 8-bit RGB; this sensor/band selection requires dataset normalization.
+7a424b181d108b3018de,smarties/base,m-so2sat,all,dataset,f07b6f4b7f5078e0,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+e45ce6d6df8795700cdf,smarties/base,m-so2sat,all,model,7f8e1a8716b24748,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+06b5e21cd0b578a3f79d,smarties/base,so2sat,all,dataset,f07b6f4b7f5078e0,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+366563b66bc614625539,smarties/base,so2sat,all,model,7f8e1a8716b24748,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+529bb30d19a4e964b5ec,smarties/base,treesatai,all,dataset,4873334bb83a7eef,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+3f8efe23e71c68fc2f73,smarties/base,treesatai,all,model,3e91a44da17a530c,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+f5f93e5e37f0d044f25f,smarties/large,benv2,all,dataset,65b0d8e17a9916a1,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+ffbf9b45988c90cecc6f,smarties/large,benv2,all,model,2b9eb6814e025b20,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+da9964bab4c129704137,smarties/large,forestnet,all,model,2b9eb6814e025b20,,64,excluded,Mean counterpart excluded: SMARTIES native normalization only declares pretrained statistics for 8-bit RGB; this sensor/band selection requires dataset normalization.
+2ee3d981991aad14fa28,smarties/large,m-forestnet,all,model,2b9eb6814e025b20,,64,excluded,Mean counterpart excluded: SMARTIES native normalization only declares pretrained statistics for 8-bit RGB; this sensor/band selection requires dataset normalization.
+3961442edcc2c03e36e1,smarties/large,m-so2sat,all,dataset,19858c9273147ace,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+d753a426ce3a8015e213,smarties/large,m-so2sat,all,model,f3baab3b81a32520,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+4336a53843f2905bb1bd,smarties/large,so2sat,all,dataset,19858c9273147ace,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+38eb8887bb129b00e707,smarties/large,so2sat,all,model,f3baab3b81a32520,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+fc0a6613288c0ced2797,smarties/large,treesatai,all,dataset,65b0d8e17a9916a1,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+965211e1043ac40eeb12,smarties/large,treesatai,all,model,2b9eb6814e025b20,,64,excluded,Mean counterpart excluded: SMARTIES requires a single sensor; the all-band input combines Sentinel-1 and Sentinel-2.
+5b82f477837defcf065a,terrafm/base_s2,aid,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+3f97c2f246dbd426b873,terrafm/base_s2,aid,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+55e2fef153d33dd8a3c7,terrafm/base_s2,aid,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+959efc339e430b90264e,terrafm/base_s2,aid,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+b917adf69543eef54a3f,terrafm/base_s2,benv2,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+9be4a8a2fb5f04b55421,terrafm/base_s2,benv2,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+bb84c844c30e3168be75,terrafm/base_s2,eurosat,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+90cdfefd6e4618de427a,terrafm/base_s2,eurosat,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+c49cec138ce16981e519,terrafm/base_s2,eurosat-spatial,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+433573fcf18b387ee6b9,terrafm/base_s2,eurosat-spatial,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+95249d0648e096080fe8,terrafm/base_s2,forestnet,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+be7a96d7d304c4363720,terrafm/base_s2,forestnet,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+b920d3a605fd12598d2f,terrafm/base_s2,forestnet,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+8e7d1d18592d070a2286,terrafm/base_s2,forestnet,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+6c6a6615f992e43b9224,terrafm/base_s2,m-bigearthnet,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+3c24ebeeb09da88966d6,terrafm/base_s2,m-bigearthnet,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+5f860efd9cef212e50e9,terrafm/base_s2,m-brick-kiln,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+aaa89b2b34ff651065d0,terrafm/base_s2,m-brick-kiln,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+0c33f63d41f7784abc11,terrafm/base_s2,m-eurosat,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+7ca859788e891c8354c0,terrafm/base_s2,m-eurosat,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+b7b7c5717998c7108b37,terrafm/base_s2,m-forestnet,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+1555fc305373c253d32a,terrafm/base_s2,m-forestnet,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+acdd6a7965fde11c9132,terrafm/base_s2,m-forestnet,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+cb9c740b0f6f4d4b0b5c,terrafm/base_s2,m-forestnet,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+2088e91df9c5045fb97c,terrafm/base_s2,m-pv4ger,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+3379871653c7f04a9448,terrafm/base_s2,m-pv4ger,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+140ea51753af5e85c8ff,terrafm/base_s2,m-pv4ger,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+7d5aeeeb1974b09544a3,terrafm/base_s2,m-pv4ger,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+62e41d47f5d9f021ae8d,terrafm/base_s2,m-so2sat,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+95a8ca0490ad4fa6ef8c,terrafm/base_s2,m-so2sat,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+94778688a8129f16b6b0,terrafm/base_s2,m-so2sat,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+b7b54f2565377cc4fae9,terrafm/base_s2,m-so2sat,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+3893c5863d1295bad324,terrafm/base_s2,resisc45,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+4ab23102f811532c93d3,terrafm/base_s2,resisc45,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+78f8aae267df862739ae,terrafm/base_s2,resisc45,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+643afb0e2b8560332829,terrafm/base_s2,resisc45,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+697ee92ce44ac3dfb9de,terrafm/base_s2,so2sat,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+964b14ab1ca919356bc8,terrafm/base_s2,so2sat,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+1a268f6962924d3efab1,terrafm/base_s2,so2sat,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+062a87f3a48c347ba599,terrafm/base_s2,so2sat,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+f81c2e2c21045ec2d722,terrafm/base_s2,treesatai,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+4e6d6453cc9c1f4be352,terrafm/base_s2,treesatai,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+1f8d03d94aad581aafb4,terrafm/base_s2,ucmerced,rgb,dataset,59eef6c9b3871685,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+2a8973dcfd68a564b6c5,terrafm/base_s2,ucmerced,rgb,model,aef81cdc62d53c61,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+9028df9f92e4b50a7ebd,terrafm/base_s2,ucmerced,all,dataset,b21703cd91b5637f,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+5653723f9ca2823ac536,terrafm/base_s2,ucmerced,all,model,fe02052025632a12,,64,excluded,Mean counterpart excluded: The selected inputs lack a required pretrained model band; zero-fill ablations are outside this sweep.
+b9feef1e8912d54c4317,terratorch/clay_v1_cls,benv2,all,model,0838fd91ce943d34,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+63005c093e45a1efd27a,terratorch/clay_v1_cls,m-so2sat,all,model,0838fd91ce943d34,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+dbed79460c6fdeddb9cb,terratorch/clay_v1_cls,so2sat,all,model,0838fd91ce943d34,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+1ea683e182b1ce176582,terratorch/clay_v1_cls,treesatai,all,model,0838fd91ce943d34,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+5e83043d4dda4059bb94,terratorch/clay_v1_5_cls,benv2,all,model,4f72a6598efeb472,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+9671bd0b176dbbec5be5,terratorch/clay_v1_5_cls,m-so2sat,all,model,4f72a6598efeb472,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+89832b2fbe6e13c9afab,terratorch/clay_v1_5_cls,so2sat,all,model,4f72a6598efeb472,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+1df350012d4c9bfa771e,terratorch/clay_v1_5_cls,treesatai,all,model,4f72a6598efeb472,,64,excluded,Mean counterpart excluded: Native normalization rejects the selected mixture of optical and SAR input scales.
+7cb58e11a7af23e109ca,torchgeo/scalemae_large_fmow_cls,benv2,all,dataset,81287b7d9b48be89,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+bd8339859627e80dfcbb,torchgeo/scalemae_large_fmow_cls,benv2,all,model,7aeaba7419276db6,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+3b377fa5e7e79d7ed8b8,torchgeo/scalemae_large_fmow_cls,eurosat,all,dataset,eb092c34a9b85c2e,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+f45b2ce17c26fc7e92a6,torchgeo/scalemae_large_fmow_cls,eurosat,all,model,8e7e9e1584a53adb,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+a3fd8aeb6816aa11901e,torchgeo/scalemae_large_fmow_cls,eurosat-spatial,all,dataset,51e63b755538bb19,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+f544fa18df00c8c15ec1,torchgeo/scalemae_large_fmow_cls,eurosat-spatial,all,model,ad530d69c0cc9d55,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+1bf93dc2a3e4b925afd9,torchgeo/scalemae_large_fmow_cls,forestnet,all,dataset,619ffff216da6379,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+e218ce6570fd47eb7d6f,torchgeo/scalemae_large_fmow_cls,forestnet,all,model,f70792d51023b7ca,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+ddfb5675d5fa924ce970,torchgeo/scalemae_large_fmow_cls,m-bigearthnet,all,dataset,81287b7d9b48be89,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+dd76b2e7ea0e6659bad3,torchgeo/scalemae_large_fmow_cls,m-bigearthnet,all,model,7aeaba7419276db6,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+81ac2813c0ebe0a18a1a,torchgeo/scalemae_large_fmow_cls,m-brick-kiln,all,dataset,5c4d7c69f86dee0b,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+df65ecc27f7a415ea4ed,torchgeo/scalemae_large_fmow_cls,m-brick-kiln,all,model,6f785e70d063fcdc,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+4e0891ef4f410c08db7e,torchgeo/scalemae_large_fmow_cls,m-eurosat,all,dataset,51e63b755538bb19,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+4c3a4f6a53662360efaa,torchgeo/scalemae_large_fmow_cls,m-eurosat,all,model,ad530d69c0cc9d55,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+91e8fdd87574f790c453,torchgeo/scalemae_large_fmow_cls,m-forestnet,all,dataset,f399bc7c03e0bb70,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+6156a519496b2bd1920f,torchgeo/scalemae_large_fmow_cls,m-forestnet,all,model,a5e03c3adf163db7,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+accd345e09161097b288,torchgeo/scalemae_large_fmow_cls,m-pv4ger,all,dataset,0072d80af5ea3a17,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+eba7ab9acca8e1d7bc79,torchgeo/scalemae_large_fmow_cls,m-pv4ger,all,model,03e5a3c7bf6b026b,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+8d73279aa774ec895f50,torchgeo/scalemae_large_fmow_cls,m-so2sat,all,dataset,be993acdb3fd5ebe,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+25346d19445ee8868e4a,torchgeo/scalemae_large_fmow_cls,m-so2sat,all,model,7dcd72076353b4e3,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+f9999e0fb0ed859ca118,torchgeo/scalemae_large_fmow_cls,so2sat,all,dataset,be993acdb3fd5ebe,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+963bbf2bc3eece4ef3ff,torchgeo/scalemae_large_fmow_cls,so2sat,all,model,7dcd72076353b4e3,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+ed95d633ad5dbeb3f053,torchgeo/scalemae_large_fmow_cls,treesatai,all,dataset,17d652d8f644726a,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.
+039fecd2754e47e229f2,torchgeo/scalemae_large_fmow_cls,treesatai,all,model,ed6379069c9ee47a,,64,excluded,Mean counterpart excluded: Scale-MAE FMOW RGB weights require exactly three ordered RGB channels; the all-band input contains additional channels.

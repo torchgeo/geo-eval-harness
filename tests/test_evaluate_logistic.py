@@ -49,7 +49,9 @@ class _StubModel:
         self._n_classes = 3
 
     def fit(self, x, y):
-        del x, y
+        del x
+        self._multi_label = y.ndim == 2
+        self.classes_ = np.arange(self._n_classes)
 
     def predict_proba(self, x):
         n = x.shape[0]
@@ -59,7 +61,10 @@ class _StubModel:
         return rng.uniform(size=(n, self._n_classes)).astype(np.float32)
 
     def predict(self, x):
-        return (self.predict_proba(x) > 0.5).astype(np.int64)
+        probs = self.predict_proba(x)
+        if self._multi_label:
+            return (probs > 0.5).astype(np.int64)
+        return self.classes_[probs.argmax(axis=1)]
 
 
 def test_nan_candidate_c_does_not_crash_sweep(
@@ -98,10 +103,14 @@ class _AlwaysDivergesModel(_StubModel):
         return np.full((x.shape[0], self._n_classes), np.nan, dtype=np.float32)
 
 
+@pytest.mark.parametrize("multi_label", [False, True])
 def test_total_divergence_raises_named_error_not_bare_assert(
-    feature_splits: FeatureSplits[np.ndarray], probe_config: RunConfig
+    feature_splits: FeatureSplits[np.ndarray], probe_config: RunConfig, *, multi_label: bool
 ) -> None:
     """A dedicated error lets the runner skip failed probes without hiding unrelated failures."""
+    if not multi_label:
+        for split in (feature_splits.train, feature_splits.val, feature_splits.test):
+            split.labels = split.labels.argmax(axis=1)
     with (
         mock.patch("geo_eval_harness.main.LogisticRegression", _AlwaysDivergesModel),
         pytest.raises(LinearProbeDivergedError),
@@ -124,3 +133,24 @@ def test_unexpected_fit_errors_are_not_treated_as_divergence(
     ):
         evaluate_logistic(feature_splits, c_values=[0.1, 1.0], cfg=probe_config)
     assert caught.value is error
+
+
+def test_refit_divergence_rejects_test_scores(
+    feature_splits: FeatureSplits[np.ndarray], probe_config: RunConfig
+) -> None:
+    probe_config.classification.linear.refit_train_val = True
+
+    class RefitDiverges(_StubModel):
+        def fit(self, x, y):
+            self._refit = len(x) > len(feature_splits.train.features)
+
+        def predict_proba(self, x):
+            if self._refit:
+                return np.full((len(x), self._n_classes), np.nan, dtype=np.float32)
+            return super().predict_proba(x)
+
+    with (
+        mock.patch("geo_eval_harness.main.LogisticRegression", RefitDiverges),
+        pytest.raises(LinearProbeDivergedError, match="refitted"),
+    ):
+        evaluate_logistic(feature_splits, c_values=[0.1], cfg=probe_config)

@@ -125,38 +125,36 @@ def test_harmonize_filters_cls_ablation_and_dropped_dataset_rows() -> None:
     assert "m-pv4ger" not in set(out["dataset"])
 
 
-def test_pooling_label_follows_the_recorded_pool_and_leaves_the_roster_alone() -> None:
-    raw = _raw_df().assign(pool="")
-    raw.loc[raw["name"] == "native_full", "pool"] = "cls"
-    raw.loc[raw["name"] == "zscore_only", "pool"] = "cls"
-    raw.loc[(raw["name"] == "zscore_only") & (raw["dataset"] == "d1"), "pool"] = "mean"
-    ablation = raw[raw["name"] == "rcf"].assign(name="rcf_cls")
-    out = rl.harmonize(pd.concat([raw, ablation], ignore_index=True))
-    assert set(out.loc[out["base_model"] == "native_full", "pooling"]) == {"cls-token"}
-    # A blank ``pool`` is labelled from the name suffix.
-    rcf = out[out["base_model"] == "rcf"]
-    assert set(rcf.loc[rcf["cls_ablation"], "pooling"]) == {"cls-token"}
-    assert set(rcf.loc[~rcf["cls_ablation"], "pooling"]) == {"patch-mean"}
-
-    rankings, _sensitivity, _default = rl.assemble(out, n_bootstrap=0)
+def test_pooling_rows_are_separate_for_shared_names_and_cls_presets() -> None:
+    raw = _raw_df().assign(pool="mean")
+    companions = raw[raw["name"].isin(["native_full", "rcf"])].copy()
+    companions["pool"] = "cls"
+    companions.loc[companions["name"] == "rcf", "name"] = "rcf_cls"
+    companions["metric_value"] -= 0.1
+    out = rl.harmonize(pd.concat([raw, companions], ignore_index=True))
+    selected, _ = rl.select_view(out, "classification", "linear", "RGB")
+    assert selected is not None
+    assert set(selected["model"]) == set(MODELS) | {"native_full__pool_cls", "rcf__pool_cls"}
+    scores = selected.set_index(["model", "dataset"])["score"]
+    for base in ("native_full", "rcf"):
+        for dataset in DATASETS:
+            assert scores[base, dataset] - scores[base + "__pool_cls", dataset] == pytest.approx(
+                0.1
+            )
+    rankings, _, _ = rl.assemble(out, n_bootstrap=0)
     rows = _view_block(rankings)["avg_rank"]["rows"]
-    assert {row["model"]: row["pooling"] for row in rows} == {
-        "native_full": "cls-token",
-        "partial_native": "patch-mean",
-        "zscore_only": "cls-token, patch-mean",
-        "rcf": "patch-mean",
-        "imagestats": "patch-mean",
-    }
-    baseline, _, _ = rl.assemble(_harmonized(), n_bootstrap=0)
-    assert [(row["model"], row["overall"], row["per_task"]) for row in rows] == [
-        (row["model"], row["overall"], row["per_task"])
-        for row in _view_block(baseline)["avg_rank"]["rows"]
-    ]
-
+    assert len(rows) == len(MODELS) + 2
+    assert rl.resolve_meta("rcf__pool_cls")[0].endswith("(CLS)")
+    partial = companions[companions["dataset"] != "d1"]
+    selected, excluded = rl.select_view(
+        rl.harmonize(pd.concat([raw, partial])), "classification", "linear", "RGB"
+    )
+    assert selected is not None
+    assert set(selected["model"]) == set(MODELS)
+    assert {row["model"] for row in excluded} >= {"native_full__pool_cls", "rcf__pool_cls"}
     segmentation = rl.harmonize(_seg_raw_df().assign(pool="cls"))
     assert segmentation["pooling"].isna().all()
-    seg_rows = rl.assemble(segmentation, n_bootstrap=0)[0]["segmentation"][FROZEN]["RGB"]
-    assert all(row["pooling"] is None for row in seg_rows["avg_rank"]["rows"])
+    assert not segmentation["base_model"].str.endswith("__pool_cls").any()
 
 
 def test_harmonize_drops_train_only_linear_probes() -> None:
@@ -169,10 +167,26 @@ def test_harmonize_drops_train_only_linear_probes() -> None:
     assert sorted(zip(out["probe"], out["score"], strict=True)) == [("knn5", 0.7), ("linear", 0.9)]
 
 
-def test_rgb_only_datasets_are_never_multispectral() -> None:
-    raw = pd.DataFrame([_row("native_full", "resisc45", "linear", "all", 0.5, "bandspec_zscore")])
+def test_rgb_only_requests_prefer_rgb_without_mixing_poolings() -> None:
+    raw = pd.DataFrame(
+        [
+            _row("native_full", "resisc45", "linear", "all", 0.99, "bandspec_zscore")
+            | {"pool": "mean"},
+            _row("native_full", "resisc45", "linear", "rgb", 0.5, "bandspec_zscore")
+            | {"pool": "mean"},
+            _row("native_full", "resisc45", "linear", "all", 0.7, "bandspec_zscore")
+            | {"pool": "cls"},
+        ]
+    )
     out = rl.harmonize(raw)
     assert set(out["bandclass"]) == {"RGB"}
+    selected, excluded = rl.select_view(out, "classification", "linear", "RGB")
+    assert selected is not None
+    assert not excluded
+    assert dict(zip(selected["model"], selected["score"], strict=True)) == {
+        "native_full": 0.5,
+        "native_full__pool_cls": 0.7,
+    }
 
 
 def test_rgb_only_datasets_match_the_registry() -> None:
@@ -195,6 +209,19 @@ def test_terramind_alias_applies_during_harmonization() -> None:
     assert set(out["base_model"]) == {"tt_terramind_v1_base"}
 
 
+def test_terramind_sar_and_optical_results_keep_separate_cells() -> None:
+    raw = pd.DataFrame(
+        [
+            _row(model, dataset, "linear", "all", score, "bandspec_zscore")
+            for model, score in [("tt_terramind_v1_base", 0.8), ("tt_terramind_v1_base_s1", 0.6)]
+            for dataset in DATASETS
+        ]
+    )
+    out = rl.harmonize(raw)
+    assert set(out["base_model"]) == {"tt_terramind_v1_base", "tt_terramind_v1_base_s1"}
+    rl.build_view(out, "classification", "linear", "Multispectral")
+
+
 def test_alias_collision_raises_before_coverage_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     # A synthetic alias, because both TerraMind directions are dropped as off-modality first.
     monkeypatch.setattr(rl, "MODEL_ALIASES", {"peer_variant": "peer"})
@@ -213,7 +240,8 @@ def test_alias_collision_raises_before_coverage_selection(monkeypatch: pytest.Mo
         rl.build_view(rl.harmonize(pd.DataFrame(rows)), "classification", "linear", "Multispectral")
 
 
-def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
+@pytest.mark.parametrize("dataset", ["d1", "aid"])
+def test_terramind_off_modality_rgb_rows_are_dropped(dataset: str) -> None:
     """Each TerraMind config's sweep outside its own modality is an off-modality artifact.
 
     The plain config's ``bands=rgb`` row and the ``_rgb`` config's ``bands=all`` row are
@@ -221,11 +249,11 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     """
     raw = pd.DataFrame(
         [
-            _row("tt_terramind_v1_base", "d1", "linear", "rgb", 0.5, "model_native"),
-            _row("tt_terramind_v1_base_rgb", "d1", "linear", "rgb", 0.8, "model_native"),
-            _row("tt_terramind_v1_base", "d1", "linear", "all", 0.7, "model_native"),
-            _row("tt_terramind_v1_base_rgb", "d1", "linear", "all", 0.6, "model_native"),
-            _row("tt_terramind_v1_large", "d1", "linear", "rgb", 0.4, "model_native"),
+            _row("tt_terramind_v1_base", dataset, "linear", "rgb", 0.5, "model_native"),
+            _row("tt_terramind_v1_base_rgb", dataset, "linear", "rgb", 0.8, "model_native"),
+            _row("tt_terramind_v1_base", dataset, "linear", "all", 0.7, "model_native"),
+            _row("tt_terramind_v1_base_rgb", dataset, "linear", "all", 0.6, "model_native"),
+            _row("tt_terramind_v1_large", dataset, "linear", "rgb", 0.4, "model_native"),
         ]
     )
     out = rl.harmonize(raw)
@@ -233,6 +261,9 @@ def test_terramind_off_modality_rgb_rows_are_dropped() -> None:
     assert set(rgb_rows["source_model"]) == {"tt_terramind_v1_base_rgb"}
     assert rgb_rows["score"].iloc[0] == pytest.approx(0.8)
     multispectral_rows = out[out["bandclass"] == "Multispectral"]
+    if dataset == "aid":
+        assert multispectral_rows.empty
+        return
     assert set(multispectral_rows["source_model"]) == {"tt_terramind_v1_base"}
     assert multispectral_rows["score"].iloc[0] == pytest.approx(0.7)
 
