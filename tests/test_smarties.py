@@ -309,3 +309,43 @@ def test_released_base_weights_match_upstream_features(monkeypatch: pytest.Monke
     expected = torch.tensor([-0.3611, -0.39675, 0.05615, 0.05174, -0.15415, 0.5256])
     assert torch.allclose(cls[:6], expected, atol=1e-4)
     assert cls.norm().item() == pytest.approx(14.97476, abs=1e-3)
+
+
+@pytest.mark.parametrize("img_size", [256, 512])
+def test_img_size_builds_native_token_grid(img_size: int) -> None:
+    model = SmartiesBench(_rgb(), pretrained=False, img_size=img_size).eval()
+    grid = img_size // 16
+    assert model.pos_embed.shape == (1, 1 + grid * grid, TINY[0])
+    assert torch.equal(model.pos_embed, smarties._sincos_pos_embed(TINY[0], grid))
+    probe = SegmentationProbe(model, ["blocks.1", "blocks.0"], num_classes=5, head_type="fpn")
+    assert probe.feature_hw_list == [(grid, grid)] * 2
+    x = torch.rand(1, 3, img_size, img_size) * 255
+    assert probe(x).shape == (1, 5, img_size, img_size)
+    with pytest.raises(ValueError, match=f"built for {img_size}x{img_size}"):
+        model(torch.rand(1, 3, 224, 224))
+
+
+@pytest.mark.parametrize("img_size", [0, 250, True, 256.0])
+def test_img_size_rejects_sizes_off_the_patch_grid(img_size: object) -> None:
+    with pytest.raises(ValueError, match="img_size"):
+        SmartiesBench(_rgb(), pretrained=False, img_size=img_size)  # type: ignore[arg-type]
+
+
+def test_img_size_recomputes_the_released_224_position_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = SmartiesBench(_rgb(), pretrained=False)
+    with torch.no_grad():
+        source.cls_token.fill_(0.25)
+    path = _write_checkpoint(tmp_path, source.state_dict())
+    monkeypatch.setattr(SmartiesBench, "_download_checkpoint", staticmethod(lambda _v: path))
+
+    loaded = SmartiesBench(_rgb(), pretrained=True, img_size=512)
+    expected = smarties._sincos_pos_embed(TINY[0], 32)
+    for key, value in source.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], expected if key == "pos_embed" else value)
+
+    learned = {**source.state_dict(), "pos_embed": source.pos_embed + 0.1}
+    _write_checkpoint(tmp_path, learned)
+    with pytest.raises(ValueError, match="sin-cos"):
+        SmartiesBench(_rgb(), pretrained=True, img_size=512)

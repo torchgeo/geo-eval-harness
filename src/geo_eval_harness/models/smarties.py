@@ -317,6 +317,17 @@ def build_smarties_normalizer(
     return normalize
 
 
+def _validate_img_size(img_size: int) -> None:
+    """Reject an ``img_size`` that SMARTIES' 16 px patch grid cannot tile."""
+    if isinstance(img_size, bool) or not isinstance(img_size, int) or img_size <= 0:
+        raise ValueError(f"SMARTIES img_size must be a positive integer, got {img_size!r}.")
+    if img_size % SMARTIES_PATCH_SIZE:
+        raise ValueError(
+            f"SMARTIES img_size must be a multiple of the patch size {SMARTIES_PATCH_SIZE}, "
+            f"got {img_size}."
+        )
+
+
 def _sincos_pos_embed(embed_dim: int, grid_size: int) -> torch.Tensor:
     """Return MAE's fixed 2-D sin-cos embedding with a zero CLS slot, ``(1, 1 + G*G, D)``."""
     omega = 1.0 / 10000 ** (np.arange(embed_dim // 4, dtype=float) / (embed_dim / 4.0))
@@ -368,8 +379,9 @@ class SmartiesBench(BenchModel):
 
     Each input feeds one sensor: Sentinel-2, Sentinel-1 VV/VH, or another optical sensor whose
     RGB uses the Maxar RGB projections and whose NIR/SWIR uses the Sentinel-2 projections.
-    Inputs are resized to 224 px. ``model`` normalization applies SMARTIES' pretraining
-    percentile clipping and standardization; other strategies use the shared normalizers.
+    Inputs are resized to 224 px unless ``img_size`` is set. ``model`` normalization applies
+    SMARTIES' pretraining percentile clipping and standardization; other strategies use the
+    shared normalizers.
 
     Args:
         bands: Ordered :class:`BandSpec` list describing the dataset channels.
@@ -379,6 +391,10 @@ class SmartiesBench(BenchModel):
             ``"cls"``.
         s2_level: Sentinel-2 processing level whose pretraining statistics ``model``
             normalization uses (``"l2a"`` or ``"l1c"``).
+        img_size: Build the fixed sin-cos position grid for this input size (a multiple of 16)
+            instead of 224. The released position embedding is that same analytic table at 224,
+            so it is recomputed, not interpolated; all learned weights load unchanged. The model
+            then accepts only ``img_size`` inputs. ``None`` keeps the 224 behaviour.
         **kwargs: Forwarded to :class:`BenchModel` (e.g. ``normalization``).
     """
 
@@ -390,7 +406,7 @@ class SmartiesBench(BenchModel):
     handles_own_normalization = True
     num_prefix_tokens: int = 1
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - public YAML options
         self,
         bands: list[BandSpec],
         *,
@@ -398,8 +414,11 @@ class SmartiesBench(BenchModel):
         pretrained: bool = True,
         pool: str = "cls",
         s2_level: Literal["l2a", "l1c"] = "l2a",
+        img_size: int | None = None,
         **kwargs: Any,
     ) -> None:
+        if img_size is not None:
+            _validate_img_size(img_size)
         if variant not in self._VARIANTS:
             raise ValueError(f"Unknown SMARTIES variant {variant!r}; choose base or large.")
         if s2_level not in ("l2a", "l1c"):
@@ -416,7 +435,11 @@ class SmartiesBench(BenchModel):
 
         width, depth, heads = self._VARIANTS[variant]
         self.embed_dim = width
-        grid = SMARTIES_INPUT_SIZE // SMARTIES_PATCH_SIZE
+        self.img_size = img_size
+        self.input_size = img_size or SMARTIES_INPUT_SIZE
+        # The segmentation probe sizes its channel dry run with this (None -> 224).
+        self.probe_input_size = img_size
+        grid = self.input_size // SMARTIES_PATCH_SIZE
         self.spectrum_projection = _SpectrumAwareProjection(SMARTIES_PATCH_SIZE, width)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, width))
         self.pos_embed = nn.Parameter(_sincos_pos_embed(width, grid), requires_grad=False)
@@ -443,6 +466,8 @@ class SmartiesBench(BenchModel):
         from safetensors.torch import load_file
 
         state = load_file(str(path))
+        if self.img_size is not None and "pos_embed" in state:
+            state["pos_embed"] = self._regridded_pos_embed(state["pos_embed"], path)
         expected = self.state_dict()
         unexpected = sorted(
             k for k in state if k not in expected and not k.startswith(_DECODER_PREFIXES)
@@ -458,8 +483,26 @@ class SmartiesBench(BenchModel):
         self.load_state_dict(encoder, strict=True)
         logger.info("Loaded SMARTIES %s weights from %s", self.variant, path)
 
+    def _regridded_pos_embed(self, released: torch.Tensor, path: str | Path) -> torch.Tensor:
+        """Return this model's ``img_size`` table once ``released`` is the analytic 224 table.
+
+        Raises:
+            ValueError: The released embedding is not the fixed 224 sin-cos table, so it
+                cannot be recomputed for another grid.
+        """
+        grid = SMARTIES_INPUT_SIZE // SMARTIES_PATCH_SIZE
+        analytic = _sincos_pos_embed(self.embed_dim, grid)
+        if released.shape != analytic.shape or not torch.allclose(
+            released.float(), analytic, atol=1e-5
+        ):
+            raise ValueError(
+                f"SMARTIES {self.variant} checkpoint {path} has no fixed {grid}x{grid} sin-cos "
+                "pos_embed, so img_size cannot rebuild it for another grid."
+            )
+        return self.pos_embed.detach().clone()
+
     def embed_patches(self, images: torch.Tensor) -> torch.Tensor:
-        """Project prepared ``(B, C, 224, 224)`` inputs to ``(B, N, D)`` spectrum-aware tokens.
+        """Project prepared ``(B, C, H, W)`` inputs to ``(B, N, D)`` spectrum-aware tokens.
 
         Equivalent to upstream's per-band loop: ``12 * mean_c(W_c @ patch_c + b_c)``, with each
         16x16 patch flattened row-major.
@@ -479,7 +522,12 @@ class SmartiesBench(BenchModel):
 
     def forward_tokens(self, images: torch.Tensor) -> torch.Tensor:
         """Return the normed ``(B, 1 + N, D)`` token sequence for normalized inputs."""
-        x = _auto_resize(images[:, self.plan.keep], SMARTIES_INPUT_SIZE)
+        if self.img_size is not None and tuple(images.shape[-2:]) != (self.img_size,) * 2:
+            raise ValueError(
+                f"SMARTIES was built for {self.img_size}x{self.img_size} inputs, "
+                f"got {tuple(images.shape[-2:])}."
+            )
+        x = _auto_resize(images[:, self.plan.keep], self.input_size)
         x = self.embed_patches(x)
         x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x), dim=1) + self.pos_embed
         for block in self.blocks:
