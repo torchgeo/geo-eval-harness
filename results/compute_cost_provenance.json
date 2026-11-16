@@ -27,8 +27,8 @@
     "unsupported_bands": 156,
     "unsupported_modality": 24
   },
-  "combined_data_sha256": "aad750f665c8ec5073a521455698806145b259aa9f625227897a10ebc3a06f03",
-  "combined_rows": 3216,
+  "combined_data_sha256": "943556055e200576f981cb0558c17c336f3ac6c2f623b8e72c6e3345cf2658bb",
+  "combined_rows": 3224,
   "data_sha256": "da95509a4a277a5a0e11f87c94a8fc79c42aead34331b29bddbfec5f519a1232",
   "flops_convention": "One multiply-add is two operations; registered PyTorch operators only; coverage unverified.",
   "generated_at": "2026-11-12T19:32:02.836292+00:00",
@@ -209,6 +209,58 @@
   "source_hashes": [
     "4e6aa38e4e5f9ea508856de97733734673d4390ec8b17c70ed61b2796312f821",
     "568f1c8c1a11e9a472466f1ee3e9bf1262994669385766c12a26d8acf298e628"
+  ],
+  "supplemental_runs": [
+    {
+      "artifacts_s3": "s3://ftw-outlines-676206917878/experiments/geo-eval-harness/smarties-clay-compute-20261115",
+      "band_configs": [
+        "rgb",
+        "all"
+      ],
+      "data_sha256": "a70c7e23e5487ee52338f184ae29708865c82f0b1be3c1e01cea52878ba7f2c4",
+      "environment_manifest_sha256": "6fd34829e49cf1c918f29099189030366183f14ad4f7cdf7c8b293570f13b403",
+      "gpu_name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+      "image_size": 224,
+      "instance_type": "g7e.2xlarge",
+      "measurement_window_utc": {
+        "first": "2026-11-16T05:35:29+00:00",
+        "last": "2026-11-16T05:38:39+00:00"
+      },
+      "measurements": 20,
+      "models": [
+        "smarties/base",
+        "smarties/large",
+        "tt_clay_v1_5_large",
+        "tt_clay_v1_5_large_cls"
+      ],
+      "package_versions": {
+        "olmoearth-pretrain-minimal": null,
+        "terratorch": "1.2.13",
+        "timm": "1.0.27",
+        "torch": "2.14.1",
+        "torchgeo": "0.10.1",
+        "transformers": "5.17.0"
+      },
+      "precision": "float32",
+      "previous_combined_data_sha256": "0c2706644ab2d038dcacfdbeb6d0a3e8337321736fda60e3386e642934fa0555",
+      "previous_rows_preserved": 3216,
+      "region": "us-east-1",
+      "rows": 8,
+      "run_id": "smarties-clay-compute-20261115",
+      "source_archive_sha256": "0be6e753d34d8e56576bfc732a559438596ab353f4c6f3c49f6fea937ad9639b",
+      "source_commit": "495f4184e90a901c41f8acedcf11033cc9e4e882",
+      "source_hash": "d71432085035d121639562ba3ff190108c95461c21523ff04ea471f67e390f15",
+      "task": "classification",
+      "timing_batch_size": 1,
+      "validation": {
+        "all_previous_rows_preserved": true,
+        "classification_reference_rows": 8,
+        "finite_metrics": true,
+        "same_mean_cls_clay_flops": true,
+        "unique_identities": true
+      },
+      "warmup": 5
+    }
   ],
   "validated_rows": 2708,
   "validation": {
