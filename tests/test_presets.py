@@ -38,6 +38,10 @@ def test_packaged_preset_is_typed_and_omits_schema_defaults(name: str) -> None:
     assert "interpolation" not in preset.kwargs
     assert "${" not in str(preset.model_dump())
 
+    for settings in (preset, *preset.dataset_overrides.values()):
+        linear = settings.classification.linear
+        assert (linear.c_log10_start, linear.c_log10_stop, linear.c_count) == (-6.0, 4.0, 40)
+
     raw = load_yaml(model_config_path(name))
     preset = ModelPreset.model_validate(raw)
     expected = preset.model_dump(mode="json", exclude_defaults=True)
@@ -248,22 +252,23 @@ def test_explicit_constructor_options_override_dataset_defaults() -> None:
         assert preset.kwargs["res"] == 1.25
 
 
-def test_explicit_default_values_override_preset_lr_layers_and_range() -> None:
+def test_explicit_values_override_preset_settings_and_linear_grid() -> None:
     omitted = RunConfig.model_validate(
         {"model": {"name": "torchgeo/croma_large"}, "datasets": ["m-eurosat"]}
     )
     effective, _ = resolve_run_config(omitted, "m-eurosat")
-    assert effective.classification.linear.c_log10_stop != 4.0
+    assert effective.classification.linear.c_log10_stop == 4.0
     explicit = RunConfig.model_validate(
         {
             **omitted.model_dump_yaml(),
-            "classification": {"linear": {"c_log10_stop": 4.0}},
+            "classification": {"linear": {"c_log10_stop": 2.0, "c_count": 20}},
             "segmentation": {"learning_rate": 0.001, "layers": [], "cache_features": False},
             "input": {"image_size": None},
         }
     )
     effective, _ = resolve_run_config(explicit, "m-eurosat")
-    assert effective.classification.linear.c_log10_stop == 4.0
+    assert effective.classification.linear.c_log10_stop == 2.0
+    assert effective.classification.linear.c_count == 20
     assert effective.segmentation.learning_rate == 0.001
     assert effective.segmentation.layers == []
     assert effective.segmentation.cache_features is False

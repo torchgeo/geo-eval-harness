@@ -5,10 +5,6 @@ kwargs:
   pretrained: true
   target_size: 224
   pool: cls
-classification:
-  linear:
-    c_log10_stop: 5.0
-    c_count: 60
 segmentation:
   layers:
     - blocks.31
