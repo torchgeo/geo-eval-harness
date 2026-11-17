@@ -22,3 +22,7 @@ We aim to verify the checksums of all remote datasets and model checkpoints that
 3. Click **Submit report** to send it privately to the maintainers.
 
 If you are unsure whether an issue is in scope, please use the private reporting form.
+
+## Timeline
+
+This is an entirely volunteer-driven project, so we cannot guarantee a response timeline.
