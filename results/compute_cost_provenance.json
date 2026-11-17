@@ -27,8 +27,8 @@
     "unsupported_bands": 156,
     "unsupported_modality": 24
   },
-  "combined_data_sha256": "943556055e200576f981cb0558c17c336f3ac6c2f623b8e72c6e3345cf2658bb",
-  "combined_rows": 3224,
+  "combined_data_sha256": "83fc52a370d2488aaa98db770f6301b8cc58074ffb41f9bad210633d09d344da",
+  "combined_rows": 3272,
   "data_sha256": "da95509a4a277a5a0e11f87c94a8fc79c42aead34331b29bddbfec5f519a1232",
   "flops_convention": "One multiply-add is two operations; registered PyTorch operators only; coverage unverified.",
   "generated_at": "2026-11-12T19:32:02.836292+00:00",
@@ -260,6 +260,109 @@
         "unique_identities": true
       },
       "warmup": 5
+    },
+    {
+      "artifacts_s3": "s3://geh-cls-676206917878-20261114/compute-20261117/",
+      "environment_manifest_sha256": "1d45a28ce70e9a8f081182f437b97f9890e72e2c7079ecb18bf792772272a45a",
+      "hardware": {
+        "default_math_policy": {
+          "cuda_matmul_allow_tf32": false,
+          "cudnn_allow_tf32": true,
+          "cudnn_benchmark": false,
+          "torch_float32_matmul_precision": "highest"
+        },
+        "gpu_count": 1,
+        "gpu_names": [
+          "NVIDIA RTX PRO 6000 Blackwell Server Edition"
+        ],
+        "nvidia_smi": "NVIDIA RTX PRO 6000 Blackwell Server Edition, 595.112.07, 97887 MiB\n",
+        "torch_cuda_version": "13.0",
+        "torch_version": "2.14.1+cu130"
+      },
+      "hardware_manifest_sha256": "5ab28ec8270227c8c407ff2e905bbbaf1f1eb4d88fa8ae2e9b05e6bb4880a5b1",
+      "instance_type": "g7e.4xlarge",
+      "measurement_window_utc": {
+        "first": "2026-11-17T06:39:10+00:00",
+        "last": "2026-11-17T06:41:13+00:00"
+      },
+      "models": [
+        "smarties/base",
+        "smarties/large"
+      ],
+      "package_versions": [
+        {
+          "olmoearth-pretrain-minimal": null,
+          "terratorch": "1.2.13",
+          "timm": "1.0.27",
+          "torch": "2.14.1",
+          "torchgeo": "0.10.1",
+          "transformers": "5.17.0"
+        }
+      ],
+      "postprocessing": {
+        "curated_measurement_variant": "catalog",
+        "raw_measurement_variants": [
+          "custom"
+        ],
+        "reason": "Catalog presets with reference image-grid adaptations; no measured values or run identities modified.",
+        "scripts_sha256": {
+          "append-compute.py": "bc48db9c352202f69491d7f55d79cad840a3a7e0223b40465f449245c3da65fe",
+          "validate-compute.py": "bb7370b9a6ebb053e739ac636b85b0ed960a277cfc3c0381b25bb5090cba563f"
+        }
+      },
+      "previous_combined_data_sha256": "943556055e200576f981cb0558c17c336f3ac6c2f623b8e72c6e3345cf2658bb",
+      "previous_rows_preserved": 3224,
+      "raw_data_sha256": {
+        "smarties_base": "62f509d6aadca4ba0e618eb8afed88c5d7e9ee6eb73ec9d5b388d86549a3a288",
+        "smarties_large": "5936e8617be9bdadcff6b236159cdc5f08f71fce61a542333f1c811736f2f93a"
+      },
+      "region": "eu-central-1",
+      "rows": 48,
+      "run_id": "smarties-compute-20261117",
+      "runtime_source": {
+        "base_commit": "cdd7fe739ea159a4e02aa60a16cdc93f61d9ead4",
+        "protocol": {
+          "band_source": "cloudsen12",
+          "bands": [
+            "rgb",
+            "all"
+          ],
+          "batch_size": 1,
+          "classes_segmentation": 4,
+          "gpu": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "heads": [
+            "linear",
+            "upernet",
+            "unet"
+          ],
+          "image_sizes": [
+            224,
+            256,
+            512
+          ],
+          "measurements": 20,
+          "precision": "float32",
+          "warmup": 5
+        },
+        "ramen_archive_sha256": "76a98a4f16e6759d79c12a0599a7982141b4e5e881f865d97fa64e400c0e6a66",
+        "ramen_commit": "8acb45d24600bf084afb4bce34e814bc2d387fdf",
+        "ramen_pr": 928,
+        "smarties_patch_sha256": "44273c14d5222712519faea469d7c012c3381ee818ee118f259815fe9f54c421"
+      },
+      "source_commit": "cdd7fe739ea159a4e02aa60a16cdc93f61d9ead4",
+      "source_hashes": [
+        "319f2e26b77b36cdbd77292512b33973f0bac27e29d58c798a352ae2c8ac8747"
+      ],
+      "validation": {
+        "all_previous_rows_preserved": true,
+        "complete_reference_grid": true,
+        "expected_feature_geometry": true,
+        "finite_metrics": true,
+        "matching_backbone_flops_across_heads": true,
+        "nondecreasing_flops_with_image_size": true,
+        "unchanged_decoder_parameters_across_sizes": true,
+        "unique_measurement_identities": true
+      }
     }
   ],
   "validated_rows": 2708,
