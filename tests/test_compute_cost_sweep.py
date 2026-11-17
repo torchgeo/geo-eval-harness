@@ -131,10 +131,12 @@ def test_sweep_overrides_inferred_resize_and_fixed_encoder_grid(tmp_path: Path) 
         sweep.Job("timm/vit/vit_base_patch16_224", 512, "rgb", "cloudsen12", ()), args
     )
     croma = sweep.job_config(sweep.Job("torchgeo/croma_base", 512, "all", "cloudsen12", ()), args)
+    smarties = sweep.job_config(sweep.Job("smarties/base", 512, "all", "cloudsen12", ()), args)
     assert cnn.resolve()[1].kwargs["target_size"] == 512
     assert "img_size" not in cnn.model.kwargs
     assert vit.resolve()[1].kwargs["img_size"] == 512
     assert croma.resolve()[1].kwargs["factory_kwargs"]["image_size"] == 512
+    assert smarties.resolve()[1].kwargs["img_size"] == 512
     swin = sweep.job_config(
         sweep.Job("timm/vit/swinv2_large_window12to16_192to256", 224, "rgb", "cloudsen12", ()),
         args,
