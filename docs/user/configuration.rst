@@ -167,10 +167,7 @@ Linear-only runs do not require a KNN result. ``--knn-k``,
 fields. A null KNN device inherits the feature-extraction device; the backend
 logs a CPU fallback if GPU KNN is unavailable.
 
-The linear probe selects regularization on validation data from ``c_count``
-log-spaced values between the two log10 endpoints. It then optionally refits
-on train plus validation. ``--refit-train-val`` /
-``--no-refit-train-val`` control that final refit. Temperature scaling
+The linear probe selects regularization on validation data from ``c_count`` log-spaced values between the two log10 endpoints. All packaged image-model presets use 40 values from 10⁻⁶ to 10⁴; an explicit ``classification.linear`` section in the run YAML can override this grid for a study. The probe then optionally refits on train plus validation. ``--refit-train-val`` / ``--no-refit-train-val`` control that final refit. Temperature scaling
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
 ``refit_train_val: false`` so validation logits stay held out.
 ``n_bins_knn: null`` uses ``knn_k + 1`` calibration bins.

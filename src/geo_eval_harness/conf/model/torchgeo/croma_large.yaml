@@ -6,10 +6,6 @@ kwargs:
   weights_member: CROMA_VIT
   auto_resize: true
   target_size: 120
-classification:
-  linear:
-    c_log10_stop: 5.0
-    c_count: 60
 segmentation:
   lora_target_modules: 's2_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[03])'
   layers:

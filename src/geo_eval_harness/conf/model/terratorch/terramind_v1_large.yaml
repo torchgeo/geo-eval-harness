@@ -5,10 +5,6 @@ kwargs:
   pretrained: true
   target_size: 224
   modality: S2L2A
-classification:
-  linear:
-    c_log10_stop: 5.0
-    c_count: 60
 segmentation:
   lora_target_modules: 'encoder\.\d+\.(attn\.(qkv|proj)|mlp\.fc[123])'
   layers:
