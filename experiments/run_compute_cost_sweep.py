@@ -126,6 +126,7 @@ def resolution_kwargs(preset: ModelPreset, size: int) -> dict[str, Any]:
         if pretrained is not None and pretrained.fixed_input_size:
             kwargs["img_size"] = size
     elif preset.target in {
+        "geo_eval_harness.models.SmartiesBench",
         "geo_eval_harness.models.TorchGeoDOFABench",
         "geo_eval_harness.models.TorchGeoPanopticonBench",
     }:
