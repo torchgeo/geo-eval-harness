@@ -497,3 +497,56 @@ def test_clay_forward_backpropagates_into_backbone(
     model.forward_patch_features(torch.rand(2, 3, 64, 64)).sum().backward()
 
     assert all(p.grad is not None for p in trainable.values())
+
+
+def test_clay_v15_uses_all_ten_sentinel2_bands_with_clay_wavelengths(
+    mock_registry: dict[str, Any],
+) -> None:
+    names = ["b02", "b03", "b04", "b05", "b06", "b07", "b08", "b8a", "b11", "b12"]
+    model = TerraTorchClayBench(
+        bands=_bands(names), normalization="identity", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == [
+        "blue", "green", "red", "rededge1", "rededge2", "rededge3",
+        "nir", "nir_narrow", "swir1", "swir2",
+    ]  # fmt: skip
+    model.forward_patch_features(torch.zeros(1, 10, 256, 256))
+    waves = mock_registry["instances"][-1].last_forward_kwargs["waves"]
+    torch.testing.assert_close(
+        waves,
+        torch.tensor([0.493, 0.560, 0.665, 0.704, 0.740, 0.783, 0.842, 0.865, 1.610, 2.190]),
+    )
+
+
+def test_clay_v15_feeds_a_datasets_b8a_as_its_0865_um_band(mock_registry: dict[str, Any]) -> None:
+    """HLS-style datasets carry B8A but not B08; Clay must still receive a NIR band."""
+    names = ["b02", "b03", "b04", "b8a", "b11", "b12"]
+    model = TerraTorchClayBench(
+        bands=_bands(names), normalization="identity", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == ["blue", "green", "red", "nir_narrow", "swir1", "swir2"]
+    x = torch.arange(6.0).view(1, 6, 1, 1).expand(1, 6, 256, 256)
+    model.forward_patch_features(x)
+    instance = mock_registry["instances"][-1]
+    assert float(instance.last_forward_kwargs["waves"][3]) == pytest.approx(0.865)
+    torch.testing.assert_close(instance.last_forward_input, x)
+
+
+def test_clay_v15_pretrain_stats_follow_clay_metadata(mock_registry: dict[str, Any]) -> None:
+    bands = _bands(["b8a", "b05"])
+    model = TerraTorchClayBench(bands=bands, backbone_name="clay_v1_5_large")
+    assert model.pretrain_mean == [2785.0, 1887.0]
+    assert model.pretrain_std == [1648.0, 1870.0]
+
+
+def test_clay_core6_band_set_is_still_available(mock_registry: dict[str, Any]) -> None:
+    names = ["b02", "b05", "b8a", "b11"]
+    model = TerraTorchClayBench(
+        bands=_bands(names),
+        normalization="identity",
+        backbone_name="clay_v1_5_large",
+        band_set="core6",
+    )
+    assert model.model_bands == ["blue", "swir1"]
+    with pytest.raises(ValueError, match="band_set"):
+        TerraTorchClayBench(bands=_bands(["b02"]), band_set="s2_20")

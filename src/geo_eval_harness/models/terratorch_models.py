@@ -190,6 +190,59 @@ _CLAY_WAVELENGTH_BY_BAND: dict[str, float] = dict(
     zip(CLAY_BANDS, _CLAY_WAVELENGTHS_UM, strict=True)
 )
 
+# Clay v1.5's full Sentinel-2 L2A band set, in the order of its metadata.yaml: blue, green, red,
+# rededge1-3, nir (B08), nir08 (B8A, here ``nir_narrow``), swir16, swir22. Clay v1.5 was pretrained
+# on all ten; a dataset that lacks some of them simply passes fewer bands, as the wavelength
+# hypernetwork allows. ``band_set="core6"`` keeps the earlier six-band behaviour.
+CLAY_BANDS_S2_10: list[str] = [
+    "blue",
+    "green",
+    "red",
+    "rededge1",
+    "rededge2",
+    "rededge3",
+    "nir",
+    "nir_narrow",
+    "swir1",
+    "swir2",
+]
+_CLAY_S2_10_WAVELENGTHS_UM: list[float] = [
+    0.493,
+    0.560,
+    0.665,
+    0.704,
+    0.740,
+    0.783,
+    0.842,
+    0.865,
+    1.610,
+    2.190,
+]
+_CLAY_S2_10_MEAN: list[float] = [
+    1105.0,
+    1355.0,
+    1552.0,
+    1887.0,
+    2422.0,
+    2630.0,
+    2743.0,
+    2785.0,
+    2388.0,
+    1835.0,
+]
+_CLAY_S2_10_STD: list[float] = [
+    1809.0,
+    1757.0,
+    1888.0,
+    1870.0,
+    1732.0,
+    1697.0,
+    1742.0,
+    1648.0,
+    1470.0,
+    1379.0,
+]
+
 # Sentinel-2-L2A per-band pretraining stats, raw DN scale, from Clay's own
 # https://github.com/Clay-foundation/model/blob/main/configs/metadata.yaml
 # (nir/swir16/swir22 renamed to this file's nir/swir1/swir2).
@@ -204,8 +257,10 @@ _CLAY_PRETRAIN_STD_BY_BAND: dict[str, float] = dict(
 class TerraTorchClayBench(_TerraTorchBench):
     """Clay v1 Base or v1.5 Large, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
-    Input mapping and ``waves`` use available ``CLAY_BANDS`` in pretrained order.
-    RGB inputs use three channels and wavelengths; full S2 inputs use all six. The
+    Input mapping and ``waves`` use the available bands of the band set in pretrained order: all
+    ten Sentinel-2 bands for Clay v1.5 (``band_set="s2_10"``), six for Clay v1 (``"core6"``).
+    RGB inputs use three channels and wavelengths; a dataset's B8A reaches Clay as its 0.865 um
+    ``nir08`` band. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
     """
 
@@ -225,18 +280,34 @@ class TerraTorchClayBench(_TerraTorchBench):
         target_size: int | None = 256,
         modality: str = "sentinel-2-l2a",  # noqa: ARG002 - Clay uses Sentinel-2 inputs
         gsd: float = 10.0,
+        band_set: str | None = None,
         **kwargs: Any,
     ) -> None:
+        # Clay v1.5 reads all ten Sentinel-2 bands; Clay v1 keeps its six-band mapping.
+        if band_set is None:
+            band_set = "s2_10" if backbone_name == "clay_v1_5_large" else "core6"
+        if band_set == "s2_10":
+            names, waves = CLAY_BANDS_S2_10, _CLAY_S2_10_WAVELENGTHS_UM
+            means, stds = _CLAY_S2_10_MEAN, _CLAY_S2_10_STD
+        elif band_set == "core6":
+            names, waves = CLAY_BANDS, _CLAY_WAVELENGTHS_UM
+            means = [_CLAY_PRETRAIN_MEAN_BY_BAND[n] for n in CLAY_BANDS]
+            stds = [_CLAY_PRETRAIN_STD_BY_BAND[n] for n in CLAY_BANDS]
+        else:
+            raise ValueError(f"band_set must be 'core6' or 's2_10', got {band_set!r}.")
+        wave_by_band = dict(zip(names, waves, strict=True))
+        mean_by_band = dict(zip(names, means, strict=True))
+        std_by_band = dict(zip(names, stds, strict=True))
         # Reject incompatible bands before downloading the checkpoint.
-        indices, model_bands = select_src_bands(bands, CLAY_BANDS, preferred_sensors=("s2",))
+        indices, model_bands = select_src_bands(bands, names, preferred_sensors=("s2",))
         self.backbone_name = backbone_name
         # model_native normalizes dataset channels before band mapping.
         # Unused channels keep mean 0 / std 1 until mapping drops them.
         mean = [0.0] * len(bands)
         std = [1.0] * len(bands)
         for name, ds_idx in zip(model_bands, indices, strict=True):
-            mean[ds_idx] = _CLAY_PRETRAIN_MEAN_BY_BAND[name]
-            std[ds_idx] = _CLAY_PRETRAIN_STD_BY_BAND[name]
+            mean[ds_idx] = mean_by_band[name]
+            std[ds_idx] = std_by_band[name]
         self.pretrain_mean, self.pretrain_std = mean, std
         backbone_kwargs: dict[str, Any] = {"pretrained": pretrained}
         if target_size is not None:
@@ -255,7 +326,7 @@ class TerraTorchClayBench(_TerraTorchBench):
         self.register_buffer(
             "_clay_waves",
             torch.tensor(
-                [_CLAY_WAVELENGTH_BY_BAND[name] for name in model_bands],
+                [wave_by_band[name] for name in model_bands],
                 dtype=torch.float32,
             ),
         )
