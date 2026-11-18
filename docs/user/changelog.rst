@@ -1,13 +1,13 @@
 Changelog
 =========
 
-Unreleased
-----------
+0.5.0 (2026-11-23)
+------------------
 
 Package and configuration
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* The distribution and CLI are named ``geo-eval-harness``, and the Python namespace is ``geo_eval_harness``.
+* The distribution and CLI are renamed from ``torchgeo-bench`` to ``geo-eval-harness``, and the Python namespace from ``torchgeo_bench`` to ``geo_eval_harness``. Versions 0.1.0 to 0.4.0 are on PyPI as ``torchgeo-bench``.
 * Commands take explicit flags and Pydantic-validated YAML, and model presets keep constructor options separate from input and evaluation settings. Model constructors raise ``TypeError`` for keyword arguments they do not name, so a misspelled ``model.kwargs`` entry fails instead of being ignored.
 * ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``.
 * Image runs check ``intrinsic_dim`` settings when the configuration loads and reject unknown estimator names, ``max_samples`` below 2, and enabled estimators when ``torchid`` is not installed.

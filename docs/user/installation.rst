@@ -1,9 +1,7 @@
 Installation
 ============
 
-``geo-eval-harness`` targets Python 3.12 or newer.  We recommend installing
-inside a fresh virtual environment using `uv`_, which is the project's
-canonical workflow.
+``geo-eval-harness`` targets Python 3.12 or newer. Install the released package from PyPI to run benchmarks, or install from source to contribute. We recommend a fresh virtual environment, and source checkouts use `uv`_, which is the project's canonical workflow.
 
 .. _uv: https://docs.astral.sh/uv/
 
@@ -13,8 +11,28 @@ canonical workflow.
    x86_64 it automatically includes GPU-accelerated FAISS KNN (CUDA 12,
    driver R525+); other platforms get CPU FAISS.
 
-uv (recommended)
-----------------
+PyPI
+----
+
+Install the released package with ``pip`` or ``uv``:
+
+.. code-block:: console
+
+   $ pip install geo-eval-harness
+   $ # or
+   $ uv pip install geo-eval-harness
+
+The install puts the ``geo-eval-harness`` console script on your ``PATH``. Use ``--help`` to list commands or ``--version`` to print the installed version:
+
+.. code-block:: console
+
+   $ geo-eval-harness --help
+   $ geo-eval-harness --version
+
+See `Optional extras`_ to add features such as CoordBench location encoders or OlmoEarth.
+
+From source with uv
+-------------------
 
 Clone the repository and let ``uv`` create the environment and install all
 development dependencies:
@@ -35,8 +53,8 @@ The ``geo-eval-harness`` console script is then available via ``uv run``. Use ``
    $ uv run geo-eval-harness --help
    $ uv run geo-eval-harness --version
 
-pip
----
+From source with pip
+--------------------
 
 If you prefer ``pip`` (e.g. inside a conda environment), install the
 project in editable mode:
@@ -50,10 +68,13 @@ project in editable mode:
 Optional extras
 ---------------
 
-Install optional dependencies for the features you need. Combine extras as follows:
+Install optional dependencies for the features you need. Combine extras in one command:
 
 .. code-block:: console
 
+   $ # released package
+   $ pip install "geo-eval-harness[coordbench,olmoearth]"
+   $ # source checkout
    $ uv sync --extra docs --extra dev
    $ # or
    $ pip install -e ".[docs,dev]"
