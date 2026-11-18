@@ -550,3 +550,42 @@ def test_clay_core6_band_set_is_still_available(mock_registry: dict[str, Any]) -
     assert model.model_bands == ["blue", "swir1"]
     with pytest.raises(ValueError, match="band_set"):
         TerraTorchClayBench(bands=_bands(["b02"]), band_set="s2_20")
+
+
+@pytest.mark.parametrize(
+    ("sensor", "names", "expected"),
+    [
+        ("s2", ["b02", "b03", "b04"], 10.0),
+        ("landsat", ["blue", "green", "red"], 30.0),
+        ("aerial", ["red", "green", "blue"], 1.0),
+    ],
+)
+def test_clay_gsd_follows_the_datasets_sensor(
+    mock_registry: dict[str, Any], sensor: str, names: list[str], expected: float
+) -> None:
+    model = TerraTorchClayBench(bands=_bands(names, sensor=sensor), normalization="identity")
+    model.forward_patch_features(torch.zeros(1, 3, 256, 256))
+    assert float(mock_registry["instances"][-1].last_forward_kwargs["gsd"]) == expected
+
+
+def test_clay_gsd_accounts_for_the_pipelines_resize(mock_registry: dict[str, Any]) -> None:
+    """A 64 px Sentinel-2 tile resized to 256 px has 2.5 m pixels; an explicit gsd is scaled too."""
+    bands = _bands(["b02", "b03", "b04"])
+    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd_scale=64 / 256)
+    assert model.gsd == pytest.approx(2.5)
+    explicit = TerraTorchClayBench(
+        bands=bands, normalization="identity", gsd=0.3, gsd_scale=512 / 224
+    )
+    assert explicit.gsd == pytest.approx(0.3 * 512 / 224)
+    assert TerraTorchClayBench.wants_gsd_scale
+
+
+def test_clay_preset_receives_gsd_scale_from_the_resize(mock_registry: dict[str, Any]) -> None:
+    from geo_eval_harness.config.presets import build_model, load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="terratorch/clay_v1_5"))
+    model = build_model(
+        preset, bands=_bands(["b02", "b03", "b04"]), normalization="identity", resized_from=(64, 64)
+    )
+    assert model.gsd == pytest.approx(2.5)

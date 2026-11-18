@@ -261,13 +261,28 @@ _CLAY_PRETRAIN_STD_BY_BAND: dict[str, float] = dict(
 )
 
 
+# Nominal GSD (m) Clay was pretrained with per sensor, from its metadata.yaml (NAIP 1 m for
+# aerial). ``model.kwargs.gsd`` overrides it for a dataset with another native resolution.
+_CLAY_SENSOR_GSD_M: dict[str, float] = {
+    "s2": 10.0,
+    "s1": 10.0,
+    "s1_asc": 10.0,
+    "s1_desc": 10.0,
+    "sar": 10.0,
+    "landsat": 30.0,
+    "aerial": 1.0,
+    "planet": 5.0,
+}
+
+
 class TerraTorchClayBench(_TerraTorchBench):
     """Clay v1 Base or v1.5 Large, conditioned on per-band ``waves`` (µm) and ``gsd``.
 
     Input mapping and ``waves`` use the available bands of the band set in pretrained order: all
     ten Sentinel-2 bands for Clay v1.5 (``band_set="s2_10"``), six for Clay v1 (``"core6"``).
     RGB inputs use three channels and wavelengths; a dataset's B8A reaches Clay as its 0.865 um
-    ``nir08`` band. The
+    ``nir08`` band. ``gsd`` defaults to Clay's nominal GSD for the dataset's sensor, multiplied by
+    ``gsd_scale`` when the pipeline resized the tiles; pass ``gsd`` for another native resolution. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
 
     Args:
@@ -281,6 +296,8 @@ class TerraTorchClayBench(_TerraTorchBench):
         **kwargs: Additional keyword arguments forwarded to ``_TerraTorchBench``.
     """
 
+    #: The runner supplies ``gsd_scale`` so a resize changes the declared GSD with the pixels.
+    wants_gsd_scale = True
     # Clay's published mean/std (see _CLAY_PRETRAIN_MEAN_BY_BAND) are raw S2
     # digital numbers, not 0-1 reflectance.
     expected_input_unit = InputUnit.S2_DN
@@ -296,7 +313,8 @@ class TerraTorchClayBench(_TerraTorchBench):
         checkpoint_path: str | None = None,
         target_size: int | None = 256,
         modality: str = "sentinel-2-l2a",  # noqa: ARG002 - Clay uses Sentinel-2 inputs
-        gsd: float = 10.0,
+        gsd: float | None = None,
+        gsd_scale: float = 1.0,
         band_set: str | None = None,
         **kwargs: Any,
     ) -> None:
@@ -338,7 +356,13 @@ class TerraTorchClayBench(_TerraTorchBench):
             backbone_kwargs=backbone_kwargs,
             **kwargs,
         )
-        self.gsd = gsd
+        if gsd is None:
+            sensor = bands[indices[0]].sensor
+            if sensor not in _CLAY_SENSOR_GSD_M:
+                logger.warning("No Clay GSD for sensor %r; assuming 10 m.", sensor)
+            gsd = _CLAY_SENSOR_GSD_M.get(sensor, 10.0)
+        # The tile may have been resized: each input pixel then spans ``gsd_scale`` native pixels.
+        self.gsd = gsd * gsd_scale
         self.model_bands = model_bands
         self.register_buffer(
             "_clay_waves",
