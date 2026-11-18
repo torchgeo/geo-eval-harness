@@ -330,15 +330,14 @@ class TerraTorchClayBench(_TerraTorchBench):
         sar = False
         try:
             indices, model_bands = select_src_bands(bands, names, preferred_sensors=("s2",))
-        except BandCompatibilityError as optical_error:
-            # A dataset with no optical band can still feed Clay v1.5 its Sentinel-1 VV/VH.
+        except BandCompatibilityError as optical_error:  # allow-except: try Sentinel-1 VV/VH
             try:
                 if backbone_name != "clay_v1_5_large":
                     raise
                 indices, model_bands = select_src_bands(
                     bands, CLAY_BANDS_S1, preferred_sensors=("s1", "sar")
                 )
-            except BandCompatibilityError:
+            except BandCompatibilityError:  # allow-except: report the optical error
                 raise optical_error from None
             sar = True
             wave_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_WAVELENGTHS_UM, strict=True))
