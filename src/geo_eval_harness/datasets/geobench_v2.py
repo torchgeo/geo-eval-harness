@@ -77,13 +77,18 @@ class _ChainedTransform:
     def __init__(self, canonicalize: Callable[[dict], dict], transform: Callable | None) -> None:
         self.canonicalize = canonicalize
         self.transform = transform
+        #: ``resized_from`` of the latest sample. Upstream loaders that stack sensors rebuild
+        #: the sample after the transform and drop extra keys, so the dataset re-attaches it.
+        self.last_resized_from: tuple[int, int] | None = None
 
     def __call__(self, sample: dict) -> dict:
         sample = self.canonicalize(sample)
         if self.transform is None:
             return sample
         if "image" in sample:
-            return self.transform(sample)
+            sample = self.transform(sample)
+            self.last_resized_from = sample.get("resized_from")
+            return sample
         image_keys = [k for k in sample if k.startswith("image_")]
         for index, key in enumerate(image_keys):
             wrapped = {"image": sample[key]}
@@ -91,6 +96,8 @@ class _ChainedTransform:
                 wrapped["mask"] = sample["mask"]
             wrapped = self.transform(wrapped)
             sample[key] = wrapped["image"]
+            if index == 0:
+                self.last_resized_from = wrapped.get("resized_from")
             if "mask" in wrapped:
                 sample["mask"] = wrapped["mask"]
         return sample
@@ -149,6 +156,7 @@ class GeoBenchv2(Dataset):
         forward.update(kwargs)
 
         self._inner: Dataset = cls(**forward)
+        self._chained = transforms if isinstance(transforms, _ChainedTransform) else None
         self.dataset_name = dataset_name
         self.split = split
 
@@ -156,7 +164,15 @@ class GeoBenchv2(Dataset):
         return len(self._inner)  # type: ignore[arg-type]
 
     def __getitem__(self, index: int) -> dict:
-        return self._inner[index]
+        sample = self._inner[index]
+        if (
+            self._chained is not None
+            and self._chained.last_resized_from is not None
+            and "resized_from" not in sample
+        ):
+            # Models that scale their GSD by the resize read this from the sample.
+            sample["resized_from"] = self._chained.last_resized_from
+        return sample
 
 
 class _TimeFirstDataset(Dataset):
