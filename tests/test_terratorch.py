@@ -197,9 +197,9 @@ def test_clay_wavelengths_come_from_clay_table_not_bandspec(mock_registry: dict[
 
 
 def test_clay_without_any_clay_band_raises(mock_registry: dict[str, Any]) -> None:
-    """Reject SAR-only inputs before fetching a checkpoint because Clay has no matching bands."""
+    """Reject inputs with neither optical nor VV/VH bands before fetching a checkpoint."""
     with pytest.raises(ValueError, match="none of the target bands"):
-        TerraTorchClayBench(bands=_bands(["vv", "vh"], sensor="sar"), normalization="identity")
+        TerraTorchClayBench(bands=_bands(["dem"], sensor="dem"), normalization="identity")
     assert mock_registry["build_calls"] == []
 
 
@@ -497,3 +497,148 @@ def test_clay_forward_backpropagates_into_backbone(
     model.forward_patch_features(torch.rand(2, 3, 64, 64)).sum().backward()
 
     assert all(p.grad is not None for p in trainable.values())
+
+
+def test_clay_v15_uses_all_ten_sentinel2_bands_with_clay_wavelengths(
+    mock_registry: dict[str, Any],
+) -> None:
+    names = ["b02", "b03", "b04", "b05", "b06", "b07", "b08", "b8a", "b11", "b12"]
+    model = TerraTorchClayBench(
+        bands=_bands(names), normalization="identity", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == [
+        "blue", "green", "red", "rededge1", "rededge2", "rededge3",
+        "nir", "nir_narrow", "swir1", "swir2",
+    ]  # fmt: skip
+    model.forward_patch_features(torch.zeros(1, 10, 256, 256))
+    waves = mock_registry["instances"][-1].last_forward_kwargs["waves"]
+    torch.testing.assert_close(
+        waves,
+        torch.tensor([0.493, 0.560, 0.665, 0.704, 0.740, 0.783, 0.842, 0.865, 1.610, 2.190]),
+    )
+
+
+def test_clay_v15_feeds_a_datasets_b8a_as_its_0865_um_band(mock_registry: dict[str, Any]) -> None:
+    """HLS-style datasets carry B8A but not B08; Clay must still receive a NIR band."""
+    names = ["b02", "b03", "b04", "b8a", "b11", "b12"]
+    model = TerraTorchClayBench(
+        bands=_bands(names), normalization="identity", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == ["blue", "green", "red", "nir_narrow", "swir1", "swir2"]
+    x = torch.arange(6.0).view(1, 6, 1, 1).expand(1, 6, 256, 256)
+    model.forward_patch_features(x)
+    instance = mock_registry["instances"][-1]
+    assert float(instance.last_forward_kwargs["waves"][3]) == pytest.approx(0.865)
+    torch.testing.assert_close(instance.last_forward_input, x)
+
+
+def test_clay_v15_pretrain_stats_follow_clay_metadata(mock_registry: dict[str, Any]) -> None:
+    bands = _bands(["b8a", "b05"])
+    model = TerraTorchClayBench(bands=bands, backbone_name="clay_v1_5_large")
+    assert model.pretrain_mean == [2785.0, 1887.0]
+    assert model.pretrain_std == [1648.0, 1870.0]
+
+
+def test_clay_core6_band_set_is_still_available(mock_registry: dict[str, Any]) -> None:
+    names = ["b02", "b05", "b8a", "b11"]
+    model = TerraTorchClayBench(
+        bands=_bands(names),
+        normalization="identity",
+        backbone_name="clay_v1_5_large",
+        band_set="core6",
+    )
+    assert model.model_bands == ["blue", "swir1"]
+    with pytest.raises(ValueError, match="band_set"):
+        TerraTorchClayBench(bands=_bands(["b02"]), band_set="s2_20")
+
+
+@pytest.mark.parametrize(
+    ("sensor", "names", "expected"),
+    [
+        ("s2", ["b02", "b03", "b04"], 10.0),
+        ("landsat", ["blue", "green", "red"], 30.0),
+        ("aerial", ["red", "green", "blue"], 1.0),
+    ],
+)
+def test_clay_gsd_follows_the_datasets_sensor(
+    mock_registry: dict[str, Any], sensor: str, names: list[str], expected: float
+) -> None:
+    model = TerraTorchClayBench(bands=_bands(names, sensor=sensor), normalization="identity")
+    model.forward_patch_features(torch.zeros(1, 3, 256, 256))
+    assert float(mock_registry["instances"][-1].last_forward_kwargs["gsd"]) == expected
+
+
+def test_clay_gsd_accounts_for_the_pipelines_resize(mock_registry: dict[str, Any]) -> None:
+    """A 64 px Sentinel-2 tile resized to 256 px has 2.5 m pixels; an explicit gsd is scaled too."""
+    bands = _bands(["b02", "b03", "b04"])
+    model = TerraTorchClayBench(bands=bands, normalization="identity", gsd_scale=64 / 256)
+    assert model.gsd == pytest.approx(2.5)
+    explicit = TerraTorchClayBench(
+        bands=bands, normalization="identity", gsd=0.3, gsd_scale=512 / 224
+    )
+    assert explicit.gsd == pytest.approx(0.3 * 512 / 224)
+    assert TerraTorchClayBench.wants_gsd_scale
+
+
+def test_clay_preset_receives_gsd_scale_from_the_resize(mock_registry: dict[str, Any]) -> None:
+    from geo_eval_harness.config.presets import build_model, load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name="terratorch/clay_v1_5"))
+    model = build_model(
+        preset, bands=_bands(["b02", "b03", "b04"]), normalization="identity", resized_from=(64, 64)
+    )
+    assert model.gsd == pytest.approx(2.5)
+
+
+def _sar_bands(unit: str | None, sensor: str = "s1") -> list[BandSpec]:
+    return [
+        BandSpec(sensor, name, name.upper(), mean=-12.0, std=4.0, min=-60.0, max=20.0, unit=unit)
+        for name in ("vv", "vh")
+    ]
+
+
+def test_clay_v15_takes_sentinel1_vv_vh_with_clay_pseudo_wavelengths(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchClayBench(
+        bands=_sar_bands("db"), normalization="bandspec_zscore", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == ["vv", "vh"]
+    assert model.gsd == 10.0
+    model.forward_patch_features(torch.zeros(1, 2, 256, 256))
+    waves = mock_registry["instances"][-1].last_forward_kwargs["waves"]
+    torch.testing.assert_close(waves, torch.tensor([3.5, 4.0]))
+
+
+def test_clay_v15_sentinel1_model_native_converts_power_to_db_then_uses_clay_stats(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchClayBench(
+        bands=_sar_bands("linear_power", sensor="sar"),
+        normalization="model_native",
+        backbone_name="clay_v1_5_large",
+    )
+    x = torch.full((1, 2, 4, 4), 0.1)  # -10 dB
+    out = model.normalize_inputs(x)
+    expected = (-10.0 - torch.tensor([-12.113, -18.673])) / torch.tensor([8.314, 8.017])
+    torch.testing.assert_close(out[0, :, 0, 0], expected)
+
+
+def test_clay_v15_sentinel1_rejects_unusable_units(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="use --normalization model"):
+        TerraTorchClayBench(
+            bands=_sar_bands("linear_power"),
+            normalization="bandspec_zscore",
+            backbone_name="clay_v1_5_large",
+        )
+    with pytest.raises(ValueError, match="declare unit"):
+        TerraTorchClayBench(
+            bands=_sar_bands(None), normalization="bandspec_zscore", backbone_name="clay_v1_5_large"
+        )
+    assert mock_registry["build_calls"] == []
+
+
+def test_clay_v1_still_rejects_sar(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="none of the target bands"):
+        TerraTorchClayBench(bands=_sar_bands("db"), normalization="bandspec_zscore")
