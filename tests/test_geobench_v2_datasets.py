@@ -527,8 +527,8 @@ def test_stacking_loader_still_reports_resized_from() -> None:
             return {"image": torch.cat([out["image_s2"], out["image_s1"]]), "mask": out["mask"]}
 
     dataset = object.__new__(GeoBenchv2)
-    dataset._inner = _Stacking()  # noqa: SLF001
-    dataset._chained = chained  # noqa: SLF001
+    dataset._inner = _Stacking()
+    dataset._chained = chained
     sample = dataset[0]
     assert sample["resized_from"] == (128, 128)
     assert sample["image"].shape == (5, 224, 224)

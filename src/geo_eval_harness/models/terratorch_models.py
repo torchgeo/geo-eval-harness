@@ -283,8 +283,9 @@ class TerraTorchClayBench(_TerraTorchBench):
     ten Sentinel-2 bands for Clay v1.5 (``band_set="s2_10"``), six for Clay v1 (``"core6"``).
     RGB inputs use three channels and wavelengths; a dataset's B8A reaches Clay as its 0.865 um
     ``nir08`` band. A dataset without optical bands feeds Clay v1.5 its Sentinel-1 VV/VH in dB
-    (pseudo-wavelengths 3.5 and 4.0 um). ``gsd`` defaults to Clay's nominal GSD for the dataset's sensor, multiplied by
-    ``gsd_scale`` when the pipeline resized the tiles; pass ``gsd`` for another native resolution. The
+    (pseudo-wavelengths 3.5 and 4.0 um). ``gsd`` defaults to Clay's nominal GSD for the
+    dataset's sensor, multiplied by ``gsd_scale`` when the pipeline resized the tiles; pass
+    ``gsd`` for another native resolution. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
     """
 
@@ -296,7 +297,7 @@ class TerraTorchClayBench(_TerraTorchBench):
     # Both Clay transformers run ``x = attn(x) + x; x = ff(x) + x``.
     residual_branch_layers = r"clay_encoder\.transformer\.layers\.\d+\.[01]"
 
-    def __init__(  # noqa: PLR0913 - public YAML options
+    def __init__(  # noqa: C901, PLR0912, PLR0913, PLR0915 - public YAML options, one pass over band rules
         self,
         bands: list[BandSpec],
         *,
@@ -344,9 +345,13 @@ class TerraTorchClayBench(_TerraTorchBench):
             mean_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_MEAN, strict=True))
             std_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_STD, strict=True))
             units = {bands[i].unit for i in indices}
-            if units == {"linear_power"} and NormalizationStrategy(
-                kwargs.get("normalization", NormalizationStrategy.BANDSPEC_ZSCORE)
-            ) is not NormalizationStrategy.MODEL_NATIVE:
+            if (
+                units == {"linear_power"}
+                and NormalizationStrategy(
+                    kwargs.get("normalization", NormalizationStrategy.BANDSPEC_ZSCORE)
+                )
+                is not NormalizationStrategy.MODEL_NATIVE
+            ):
                 raise ValueError(
                     "Clay reads Sentinel-1 in dB. This dataset stores linear power, so its "
                     "dataset statistics do not apply; use --normalization model."
