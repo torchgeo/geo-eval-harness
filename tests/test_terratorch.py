@@ -197,9 +197,9 @@ def test_clay_wavelengths_come_from_clay_table_not_bandspec(mock_registry: dict[
 
 
 def test_clay_without_any_clay_band_raises(mock_registry: dict[str, Any]) -> None:
-    """Reject SAR-only inputs before fetching a checkpoint because Clay has no matching bands."""
+    """Reject inputs with neither optical nor VV/VH bands before fetching a checkpoint."""
     with pytest.raises(ValueError, match="none of the target bands"):
-        TerraTorchClayBench(bands=_bands(["vv", "vh"], sensor="sar"), normalization="identity")
+        TerraTorchClayBench(bands=_bands(["dem"], sensor="dem"), normalization="identity")
     assert mock_registry["build_calls"] == []
 
 
@@ -589,3 +589,56 @@ def test_clay_preset_receives_gsd_scale_from_the_resize(mock_registry: dict[str,
         preset, bands=_bands(["b02", "b03", "b04"]), normalization="identity", resized_from=(64, 64)
     )
     assert model.gsd == pytest.approx(2.5)
+
+
+def _sar_bands(unit: str | None, sensor: str = "s1") -> list[BandSpec]:
+    return [
+        BandSpec(sensor, name, name.upper(), mean=-12.0, std=4.0, min=-60.0, max=20.0, unit=unit)
+        for name in ("vv", "vh")
+    ]
+
+
+def test_clay_v15_takes_sentinel1_vv_vh_with_clay_pseudo_wavelengths(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchClayBench(
+        bands=_sar_bands("db"), normalization="bandspec_zscore", backbone_name="clay_v1_5_large"
+    )
+    assert model.model_bands == ["vv", "vh"]
+    assert model.gsd == 10.0
+    model.forward_patch_features(torch.zeros(1, 2, 256, 256))
+    waves = mock_registry["instances"][-1].last_forward_kwargs["waves"]
+    torch.testing.assert_close(waves, torch.tensor([3.5, 4.0]))
+
+
+def test_clay_v15_sentinel1_model_native_converts_power_to_db_then_uses_clay_stats(
+    mock_registry: dict[str, Any],
+) -> None:
+    model = TerraTorchClayBench(
+        bands=_sar_bands("linear_power", sensor="sar"),
+        normalization="model_native",
+        backbone_name="clay_v1_5_large",
+    )
+    x = torch.full((1, 2, 4, 4), 0.1)  # -10 dB
+    out = model.normalize_inputs(x)
+    expected = (-10.0 - torch.tensor([-12.113, -18.673])) / torch.tensor([8.314, 8.017])
+    torch.testing.assert_close(out[0, :, 0, 0], expected)
+
+
+def test_clay_v15_sentinel1_rejects_unusable_units(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="use --normalization model"):
+        TerraTorchClayBench(
+            bands=_sar_bands("linear_power"),
+            normalization="bandspec_zscore",
+            backbone_name="clay_v1_5_large",
+        )
+    with pytest.raises(ValueError, match="declare unit"):
+        TerraTorchClayBench(
+            bands=_sar_bands(None), normalization="bandspec_zscore", backbone_name="clay_v1_5_large"
+        )
+    assert mock_registry["build_calls"] == []
+
+
+def test_clay_v1_still_rejects_sar(mock_registry: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="none of the target bands"):
+        TerraTorchClayBench(bands=_sar_bands("db"), normalization="bandspec_zscore")

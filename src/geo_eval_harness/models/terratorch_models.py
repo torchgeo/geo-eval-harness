@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import BandMappingPolicy, hls_band_specs, map_to_model_bands, select_src_bands
@@ -261,6 +262,13 @@ _CLAY_PRETRAIN_STD_BY_BAND: dict[str, float] = dict(
 )
 
 
+# Clay v1.5 Sentinel-1 RTC convention (metadata.yaml ``sentinel-1-rtc``, paper section 2): VV and VH
+# backscatter in dB, with the pseudo-wavelengths 3.5 and 4.0 um, and these dB statistics.
+CLAY_BANDS_S1: list[str] = ["vv", "vh"]
+_CLAY_S1_WAVELENGTHS_UM: list[float] = [3.5, 4.0]
+_CLAY_S1_MEAN: list[float] = [-12.113, -18.673]
+_CLAY_S1_STD: list[float] = [8.314, 8.017]
+
 # Nominal GSD (m) Clay was pretrained with per sensor, from its metadata.yaml (NAIP 1 m for
 # aerial). ``model.kwargs.gsd`` overrides it for a dataset with another native resolution.
 _CLAY_SENSOR_GSD_M: dict[str, float] = {
@@ -281,7 +289,8 @@ class TerraTorchClayBench(_TerraTorchBench):
     Input mapping and ``waves`` use the available bands of the band set in pretrained order: all
     ten Sentinel-2 bands for Clay v1.5 (``band_set="s2_10"``), six for Clay v1 (``"core6"``).
     RGB inputs use three channels and wavelengths; a dataset's B8A reaches Clay as its 0.865 um
-    ``nir08`` band. ``gsd`` defaults to Clay's nominal GSD for the dataset's sensor, multiplied by
+    ``nir08`` band. A dataset without optical bands feeds Clay v1.5 its Sentinel-1 VV/VH in dB
+    (pseudo-wavelengths 3.5 and 4.0 um). ``gsd`` defaults to Clay's nominal GSD for the dataset's sensor, multiplied by
     ``gsd_scale`` when the pipeline resized the tiles; pass ``gsd`` for another native resolution. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
 
@@ -334,7 +343,36 @@ class TerraTorchClayBench(_TerraTorchBench):
         mean_by_band = dict(zip(names, means, strict=True))
         std_by_band = dict(zip(names, stds, strict=True))
         # Reject incompatible bands before downloading the checkpoint.
-        indices, model_bands = select_src_bands(bands, names, preferred_sensors=("s2",))
+        sar = False
+        try:
+            indices, model_bands = select_src_bands(bands, names, preferred_sensors=("s2",))
+        except BandCompatibilityError as optical_error:
+            # A dataset with no optical band can still feed Clay v1.5 its Sentinel-1 VV/VH.
+            try:
+                if backbone_name != "clay_v1_5_large":
+                    raise
+                indices, model_bands = select_src_bands(
+                    bands, CLAY_BANDS_S1, preferred_sensors=("s1", "sar")
+                )
+            except BandCompatibilityError:
+                raise optical_error from None
+            sar = True
+            wave_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_WAVELENGTHS_UM, strict=True))
+            mean_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_MEAN, strict=True))
+            std_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_STD, strict=True))
+            units = {bands[i].unit for i in indices}
+            if units == {"linear_power"} and NormalizationStrategy(
+                kwargs.get("normalization", NormalizationStrategy.BANDSPEC_ZSCORE)
+            ) is not NormalizationStrategy.MODEL_NATIVE:
+                raise ValueError(
+                    "Clay reads Sentinel-1 in dB. This dataset stores linear power, so its "
+                    "dataset statistics do not apply; use --normalization model."
+                ) from None
+            if not units <= {"db", "linear_power"} or len(units) != 1:
+                raise ValueError(
+                    f"Clay Sentinel-1 input needs VV/VH bands that all declare unit 'db' or "
+                    f"'linear_power'; got {sorted(map(str, units))}."
+                ) from None
         self.backbone_name = backbone_name
         # model_native normalizes dataset channels before band mapping.
         # Unused channels keep mean 0 / std 1 until mapping drops them.
@@ -356,6 +394,19 @@ class TerraTorchClayBench(_TerraTorchBench):
             backbone_kwargs=backbone_kwargs,
             **kwargs,
         )
+        self._sar = sar
+        if sar and self.normalization is NormalizationStrategy.MODEL_NATIVE:
+            # Convert linear power to dB, then standardize with Clay's Sentinel-1 statistics.
+            to_db = _sar_to_db(self.bands, indices)
+            n = len(self.bands)
+            mean_t = torch.tensor(self.pretrain_mean).view(1, n, 1, 1)
+            std_t = torch.tensor(self.pretrain_std).view(1, n, 1, 1)
+
+            def _clay_s1_normalize(x: torch.Tensor) -> torch.Tensor:
+                x = to_db(x)
+                return (x - mean_t.to(x.device, x.dtype)) / std_t.to(x.device, x.dtype)
+
+            self._normalizer = _clay_s1_normalize
         if gsd is None:
             sensor = bands[indices[0]].sensor
             if sensor not in _CLAY_SENSOR_GSD_M:
