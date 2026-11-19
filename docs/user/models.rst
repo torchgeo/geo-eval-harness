@@ -465,6 +465,53 @@ The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
 
+For segmentation, the default reads blocks 7, 15, 23, and 31 of SAM 3's Perception Encoder-derived vision transformer and applies the harness's ``vit`` neck. These global-attention blocks each return 1,024 channels on the same 14-pixel patch grid. The neck builds four pyramid levels for the segmentation head; the frozen encoder does not use text prompts. Classification retains the pooled built-in FPN embedding.
+
+The frozen UPerNet results below use 30 epochs, seeds 0/1/2, RGB inputs, dataset z-score normalization, batch size 16, head learning rate 0.001, zero weight decay, and best-validation-mIoU checkpoint selection. Values are test mIoU percentages, reported as mean +/- sample standard deviation. Both configurations use the same pinned checkpoint and input sizes. The ViT configuration improves the mean on 12 of these 13 datasets; the comparison changes the feature taps, neck, and channel capacity together.
+
+.. csv-table:: SAM 3 frozen UPerNet results
+   :header: "Dataset", "Input size (px)", "Built-in FPN", "ViT blocks + ViT neck"
+   :widths: 34, 16, 25, 25
+
+   "BRIGHT SAR RGB", "224", "31.53 +/- 0.19", "38.01 +/- 0.86"
+   "Burn Scars", "224", "71.16 +/- 1.36", "77.61 +/- 0.52"
+   "CAFFE", "224", "55.27 +/- 0.94", "59.49 +/- 1.11"
+   "CloudSEN12", "224", "61.85 +/- 0.31", "66.85 +/- 0.20"
+   "FLAIR2", "224", "45.25 +/- 0.85", "49.84 +/- 0.66"
+   "FOTW", "256", "54.06 +/- 0.04", "56.96 +/- 0.04"
+   "HOTOSM buildings", "224", "64.80 +/- 0.83", "65.46 +/- 1.13"
+   "LEVIR-CD post", "224", "77.41 +/- 0.28", "79.22 +/- 0.26"
+   "LoveDA", "512", "49.62 +/- 0.86", "49.15 +/- 0.40"
+   "OpenCities", "224", "82.06 +/- 0.16", "82.56 +/- 0.21"
+   "Sen1Floods11 S2", "224", "65.08 +/- 0.80", "72.74 +/- 0.49"
+   "SpaceNet2", "512", "85.68 +/- 0.03", "86.10 +/- 0.04"
+   "SpaceNet7", "512", "51.70 +/- 0.57", "53.18 +/- 0.47"
+
+The per-seed rows in ``results/models/sam3_encoder.csv`` distinguish the configurations through ``neck=none`` and ``neck=vit``, and retain their original config hashes and input sizes. Burn Scars uses two classes, so those rows are not comparable with three-class Burn Scars results. Coverage is limited to these 13 datasets; native-SAR tasks are excluded.
+
+For example, use the following run YAML for a ViT-block run on SpaceNet2:
+
+.. code-block:: yaml
+
+   model:
+     name: sam3_encoder
+   datasets: [spacenet2]
+   input:
+     bands: rgb
+     image_size: 512
+     normalization: dataset
+   segmentation:
+     head: upernet
+     epochs: 30
+     batch_size: 16
+     learning_rate: 0.001
+     cache_features: false
+   runtime:
+     batch_size: 16
+     seed: 0
+
+To select the built-in FPN instead, explicitly set both ``segmentation.neck: none`` and ``segmentation.layers: [neck.fpn_layers.3, neck.fpn_layers.2, neck.fpn_layers.1, neck.fpn_layers.0]`` in the run YAML. Heads that do not support the ViT neck also require ``segmentation.neck: none``.
+
 AnySat
 ^^^^^^
 

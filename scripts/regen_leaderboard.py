@@ -19,6 +19,9 @@ from pathlib import Path
 import pandas as pd
 
 from geo_eval_harness.compute_cost import classification_compute_reference
+from geo_eval_harness.config.catalog import list_model_configs
+from geo_eval_harness.config.presets import load_model_preset
+from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.results import (
     DEDUP_KEY_COLS,
     NUMERIC_SETUP_COLS,
@@ -727,14 +730,31 @@ def build_view(
     return _load_bench(frame), excluded
 
 
+def _declared_default_pyramids(models: set[str]) -> dict[str, str]:
+    """Read explicit model neck defaults without loading model weights."""
+    defaults: dict[str, str] = {}
+    for name in list_model_configs():
+        preset = load_model_preset(ModelConfig(name=name))
+        model = NATIVE_MODEL_ALIASES.get(preset.name, preset.name)
+        if model not in models or "neck" not in preset.segmentation.model_fields_set:
+            continue
+        pyramid = segmentation_pyramid(
+            {"neck": preset.segmentation.neck, "upsampler": preset.segmentation.upsampler}
+        )
+        if model in defaults and defaults[model] != pyramid:
+            raise ValueError(f"Conflicting default pyramids in presets for {model!r}")
+        defaults[model] = pyramid
+    return defaults
+
+
 def native_band_rows(harmonized: pd.DataFrame) -> pd.DataFrame:
     """Return the segmentation cells of the Native band class.
 
     Every segmentation cell, RGB or multispectral, is copied into
     :data:`NATIVE_BANDCLASS` under its :data:`NATIVE_MODEL_ALIASES` identity.
     Cells on the ``native`` or ``vit`` pyramid are copied once more under the
-    ``default`` pyramid.  A model with both pyramids in one setup has no single
-    default and is rejected.
+    ``default`` pyramid, respecting explicit neck choices in model presets.
+    A model with both pyramids but no declared choice is rejected.
     """
     seg = harmonized[(harmonized["task"] == "segmentation") & ~harmonized["cls_ablation"]]
     if seg.empty:
@@ -745,7 +765,10 @@ def native_band_rows(harmonized: pd.DataFrame) -> pd.DataFrame:
     )
     parts = seg["probe"].str.split(SEG_PROBE_SEP)
     pyramid = parts.str[2]
-    default = seg[pyramid.isin(SEG_DEFAULT_PYRAMID_SOURCES)].copy()
+    declared = seg["base_model"].map(_declared_default_pyramids(set(seg["base_model"])))
+    default = seg[
+        pyramid.isin(SEG_DEFAULT_PYRAMID_SOURCES) & (declared.isna() | pyramid.eq(declared))
+    ].copy()
     default_parts = parts[default.index]
     default["probe"] = [
         SEG_PROBE_SEP.join([*part[:2], SEG_DEFAULT_PYRAMID, *part[3:]]) for part in default_parts
