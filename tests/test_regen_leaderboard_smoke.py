@@ -902,6 +902,23 @@ def test_two_pyramids_in_one_setup_have_no_default() -> None:
         rl.native_band_rows(rl.harmonize(raw))
 
 
+def test_sam3_default_uses_preset_neck_and_preserves_fpn_results() -> None:
+    raw = pd.DataFrame(
+        [
+            _seg_row("sam3_encoder", "burn_scars", 0.5),
+            _seg_row("sam3_encoder", "burn_scars", 0.9, neck="none"),
+            _seg_row("sam3_encoder", "loveda", 0.8, epochs="30", neck="none"),
+        ]
+    )
+    native = rl.native_band_rows(rl.harmonize(raw))
+    default = rl.select_native_view(native, FROZEN_DEFAULT)
+    assert default["dataset"].tolist() == ["burn_scars"]
+    assert default["score"].tolist() == [pytest.approx(0.5)]
+    explicit = native[native["probe"].str.contains("/native/")]
+    assert set(explicit["dataset"]) == {"burn_scars", "loveda"}
+    assert sorted(explicit["score"]) == [0.8, 0.9]
+
+
 def test_native_view_prefers_model_native_over_a_better_zscore_cell() -> None:
     raw = pd.DataFrame(
         [

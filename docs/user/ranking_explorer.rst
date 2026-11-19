@@ -50,7 +50,7 @@ Segmentation views are built from the setup columns of each result row (see
   or AnyUp upsampling (``upsampler: anyup``). **Default** is each model's own
   pyramid (native features for hierarchical backbones, the ViT neck for ViTs),
   so hierarchical and ViT backbones share one view; it exists only with Native
-  bands. A model with both pyramids in one setup stops the generator.
+  bands. An explicit ``segmentation.neck`` in the model preset selects its default pyramid; other pyramids remain available in their own views. Without an explicit choice, a model with both pyramids in one setup stops the generator.
 * **Bands** adds **Native bands** for segmentation: each model is ranked on its
   own input bands per dataset (RGB, multispectral or SAR), so models that mix
   modalities across datasets keep one row. Per-modality configurations of one
