@@ -212,7 +212,7 @@ The Sentinel-1 rasters mark no data with -9999 (stored wrapped as 55537) in part
 ``vv_vh`` is a dummy band: the VV/VH quotient of the dB values truncated to an integer, which is 0 for 97.7% of training pixels and carries almost no information. ``--bands all`` includes it. To leave it out, list the bands by name, for example ``--bands vv,vh`` for Sentinel-1 alone or ``--bands nir,green,blue,red,b02,b03,b04,b08,b05,b06,b07,b8a,b11,b12,b01,b09,vv,vh`` for every other band. It remains available for models that require a third SAR channel.
 
 V2 datasets are stored as a single ``.tortilla`` file each, hosted under
-``aialliance/<name>`` on the Hugging Face Hub. Download the selected datasets
+``aialliance/<name>`` on the Hugging Face Hub. Each ``.tortilla`` file carries per-sample metadata in a Parquet footer, readable with ``tacoreader.load(path)``. The available columns, such as ``lon``, ``lat``, or ``country``, are defined by the upstream GeoBench V2 release and vary by dataset. Download the selected datasets
 before running a benchmark, for example with
 ``geo-eval-harness download geobench_v2 --datasets benv2,burn_scars``.
 
@@ -534,6 +534,10 @@ evaluate every registered dataset. YAML accepts ``datasets: [m-eurosat, caffe]``
    $ geo-eval-harness run --model rcf --dataset m-eurosat
    $ geo-eval-harness run --model timm/resnet18 --dataset burn_scars --dataset pastis --dataset flair2
    $ geo-eval-harness run --model timm/resnet18 --dataset all
+
+For classification datasets, a single-label sample's ``label`` is an integer index into ``class_names``; for multilabel datasets it is a multi-hot vector of length ``num_classes``. Segmentation datasets return a ``mask`` instead.
+
+To check whether a dataset has coordinates, see :doc:`/api/geography`: ``geo_eval_harness.geography.NO_GEO`` lists the datasets without them, and the ``reason`` field of :func:`~geo_eval_harness.geography.load_geography` explains why.
 
 Bands selection
 ---------------
