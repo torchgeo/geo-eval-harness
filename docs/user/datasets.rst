@@ -535,7 +535,7 @@ evaluate every registered dataset. YAML accepts ``datasets: [m-eurosat, caffe]``
    $ geo-eval-harness run --model timm/resnet18 --dataset burn_scars --dataset pastis --dataset flair2
    $ geo-eval-harness run --model timm/resnet18 --dataset all
 
-For classification datasets, a single-label sample's ``label`` is an integer index into ``class_names``; for multilabel datasets it is a multi-hot vector of length ``num_classes``. Segmentation datasets return a ``mask`` instead.
+For classification datasets, a single-label sample's ``label`` is an integer index into ``class_names``; for multilabel datasets it is a multi-hot vector of length ``num_classes``.
 
 To check whether a dataset has coordinates, see :doc:`/api/geography`: ``geo_eval_harness.geography.NO_GEO`` lists the datasets without them, and the ``reason`` field of :func:`~geo_eval_harness.geography.load_geography` explains why.
 
