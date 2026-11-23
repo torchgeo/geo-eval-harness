@@ -1,8 +1,8 @@
 """Result rows, bootstrap CIs, atomic CSV writing, and per-model storage.
 
 ``EvaluationResult`` defines the CSV columns used by ``scripts/`` and ``experiments/``.
-Its field order is the header of every committed ``results/models/*.csv``. A new column
-needs a migration under ``scripts/migrations/`` that rewrites those headers.
+Its field order is the header of every committed ``results/models/*.csv``; adding a column
+requires rewriting those headers to match.
 
 Metrics go to ``results/models/<model name>.csv``, so rerunning a model touches only its own file.
 

@@ -1,9 +1,7 @@
-"""Tests for the segmentation setup columns, their dedup key and the CSV migration."""
+"""Tests for the segmentation setup columns and their dedup key."""
 
 import csv
 import dataclasses
-import importlib.util
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -25,17 +23,6 @@ from tests.support.runner import _resume_row
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = [field.name for field in dataclasses.fields(EvaluationResult)]
-
-
-def _load_migration():
-    path = ROOT / "scripts" / "migrations" / "migrate_setup_columns.py"
-    spec = importlib.util.spec_from_file_location("migrate_setup_columns", path)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
 
 
 @pytest.mark.parametrize(
@@ -228,28 +215,3 @@ def test_committed_results_match_the_result_header() -> None:
     for path in paths:
         with path.open(newline="") as fh:
             assert next(csv.reader(fh)) == HEADER, path.name
-
-
-def test_migration_appends_empty_columns_and_keeps_rows(tmp_path: Path) -> None:
-    migration = _load_migration()
-    old_header = [c for c in HEADER if c not in {*SETUP_COLS, "best_val_epoch", "best_val_miou"}]
-    old_header.append("custom")
-    rows = [
-        {**dict.fromkeys(old_header, ""), "dataset": "a", "bands": "B02,B03", "custom": "x"},
-        {**dict.fromkeys(old_header, ""), "dataset": "b", "res": "10.0"},
-    ]
-    path = tmp_path / "m.csv"
-    with path.open("w", newline="") as fh:
-        writer = csv.DictWriter(fh, fieldnames=old_header, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
-
-    assert migration.migrate(tmp_path) == (1, 1, 2)
-    with path.open(newline="") as fh:
-        reader = csv.DictReader(fh)
-        assert reader.fieldnames == [*HEADER, "custom"]
-        migrated = list(reader)
-    for old, new in zip(rows, migrated, strict=True):
-        assert {k: new[k] for k in old} == old
-        assert all(new[c] == "" for c in SETUP_COLS)
-    assert migration.migrate(tmp_path) == (1, 0, 2)
