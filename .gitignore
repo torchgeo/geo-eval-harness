@@ -1,16 +1,5 @@
 paper/
 results/*
-!results/contributed/
-results/contributed/*.csv
-# Track per-model results so model changes can include their benchmark data.
-!results/models/
-!results/models/*.csv
-!results/profiles/
-!results/profiles/*.csv
-!results/intrinsic_dim/
-!results/intrinsic_dim/*.csv
-!results/legacy/
-!results/legacy/*.csv
 figures/
 
 # Python
@@ -79,13 +68,12 @@ data/
 *.csv
 *.json
 # Keep the result and metadata files needed by the benchmark and docs.
+!results/README.md
 !results/compute_cost.csv
 !results/compute_cost.md
 !results/compute_cost_coverage.csv
 !results/compute_cost_provenance.json
 !results/c_sweep_experiment.csv
-!results/cls_token_diff_knn5.csv
-!results/cls_token_diff_linear.csv
 !results/cls_token_experiment.csv
 !results/coordbench_results.csv
 !results/effect_of_lbfgs_vs_adam.csv
@@ -105,8 +93,6 @@ data/
 !results/profiles/*.csv
 !results/intrinsic_dim/
 !results/intrinsic_dim/*.csv
-!results/legacy/
-!results/legacy/*.csv
 !docs/_static/_results_snapshots/*.json
 !src/geo_eval_harness/_static/_dataset_geography/*.json
 
