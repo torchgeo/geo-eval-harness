@@ -237,6 +237,9 @@ ignore_names = [
   "ClimplicitLocationEncoder",
   "construct_mapping",         # yaml.SafeLoader override, called by PyYAML
   "download_aid",
+  "download_bigearthnet_l",
+  "download_eurosat_l",
+  "download_lc100_l",
   "download_levir_cd_post",
   "download_loveda",
   "download_oscd_post",
@@ -254,6 +257,7 @@ ignore_names = [
   "mce_ts",
   "n_folds",
   "num_labels",
+  "readable",                  # io.RawIOBase override, called by io.BufferedReader
   "rms_ce",
   "rms_ce_ts",
   "SatCLIPLocationEncoder",

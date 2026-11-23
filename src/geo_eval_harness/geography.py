@@ -81,7 +81,9 @@ NO_GEO: dict[str, str] = {
 
 # Variants reuse coordinates from the dataset with the same imagery.
 GEO_ALIAS: dict[str, str] = {
+    "bigearthnet-l": "m-bigearthnet",
     "bright-post-sar-rgb": "bright-post-sar",
+    "eurosat-l": "m-eurosat",
     "eurosat-spatial": "m-eurosat",
     "eurosat": "m-eurosat",
     "sen1floods11-s2": "sen1floods11-s1",
@@ -412,6 +414,36 @@ def _extract_infrabench(directory: Path) -> dict:
     }
 
 
+def _extract_lc100_l(directory: Path) -> dict | None:
+    """Read lon/lat coordinates encoded in LC100-L split PIDs (``<id>_<lon>_<lat>``)."""
+    import pandas as pd
+
+    from .datasets.landsatbench import LC100_MISSING_PID
+
+    csv_dir = directory.parent if not (directory / "multilabel-train.csv").is_file() else directory
+    paths = [csv_dir / f"multilabel-{split}.csv" for split in ("train", "val", "test")]
+    if not all(path.is_file() for path in paths):
+        return None
+    pids = [
+        pid
+        for path in paths
+        for pid in pd.read_csv(path, usecols=["PID"])["PID"].astype(str)
+        if pid != LC100_MISSING_PID
+    ]
+    coords = [pid.split("_") for pid in pids]
+    lon = np.array([float(parts[1]) for parts in coords], dtype=float)
+    lat = np.array([float(parts[2]) for parts in coords], dtype=float)
+    valid = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lon) <= 180) & (np.abs(lat) <= 90)
+    if not valid.any():
+        return None
+    return {
+        "lon": lon[valid],
+        "lat": lat[valid],
+        "place": np.full(int(valid.sum()), None, dtype=object),
+        "version": "manifest",
+    }
+
+
 def _natural_earth_countries() -> str:
     """Locate the Natural Earth admin-0 shapefile, downloading if needed."""
     import cartopy.io.shapereader as shpreader
@@ -498,6 +530,13 @@ def _build_record(name: str, data: dict, continents: Counter) -> GeoRecord:
     )
 
 
+_NAMED_EXTRACTORS = {
+    "infrabench-cls": (_extract_infrabench, "manifests have no lon/lat coordinates"),
+    "lc100-l": (_extract_lc100_l, "split CSVs have no lon/lat coordinates"),
+    "oscd-post": (_extract_oscd, "city footprints have no coordinates"),
+}
+
+
 def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     """Read coordinates from downloaded dataset files, or return a ``no_geo`` record."""
     command = (
@@ -526,15 +565,12 @@ def _extract_files(name: str, workers: int) -> dict | GeoRecord:
     elif name == "hotosm_buildings" and all(path.is_file() for path in hotosm_splits):
         data = _extract_hotosm(hotosm_splits)
         reason = "split files have no lon/lat columns"
-    elif name == "infrabench-cls":
-        data = _extract_infrabench(directory)
-        reason = "manifests have no lon/lat coordinates"
     elif name == "planteur" and (directory / "metadata.csv").is_file():
         data = _extract_planteur(directory / "metadata.csv")
         reason = "metadata has no lon/lat columns"
-    elif name == "oscd-post":
-        data = _extract_oscd(directory)
-        reason = "city footprints have no coordinates"
+    elif name in _NAMED_EXTRACTORS:
+        extractor, reason = _NAMED_EXTRACTORS[name]
+        data = extractor(directory)
     elif geotiffs:
         data = extract_geotiffs(geotiffs)
         reason = "no image carries a usable GeoTIFF transform/crs"

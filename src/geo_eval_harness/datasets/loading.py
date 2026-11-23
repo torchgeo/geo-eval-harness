@@ -52,6 +52,9 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     # other classification
     "aid": ("aid", "AID", "classification"),
     "infrabench-cls": ("infrabench_cls", "InfraBenchCLS", "classification"),
+    "eurosat-l": ("landsatbench", "EuroSATL", "classification"),
+    "bigearthnet-l": ("landsatbench", "BigEarthNetL", "classification"),
+    "lc100-l": ("landsatbench", "LC100L", "classification"),
     # other segmentation
     "hotosm_buildings": ("hotosm_buildings", "HOTOSMBuildings", "segmentation"),
     "openearthmap-sar": ("openearthmap_sar", "OpenEarthMapSAR", "segmentation"),
@@ -133,6 +136,9 @@ def download_command(name: str) -> str:
         "ucmerced",
         "aid",
         "infrabench-cls",
+        "eurosat-l",
+        "bigearthnet-l",
+        "lc100-l",
         "hotosm_buildings",
         "openearthmap-sar",
         "open_cities",

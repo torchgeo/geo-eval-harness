@@ -33,6 +33,9 @@ def require_dataset_data(name: str) -> None:
     elif name in (
         "resisc45",
         "ucmerced",
+        "eurosat-l",
+        "bigearthnet-l",
+        "lc100-l",
         "hotosm_buildings",
         "openearthmap-sar",
         "open_cities",
