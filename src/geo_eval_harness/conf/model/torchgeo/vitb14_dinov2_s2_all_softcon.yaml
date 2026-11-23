@@ -1,0 +1,17 @@
+name: tgeo_vitb14_dinov2_s2all_softcon
+target: geo_eval_harness.models.TorchGeoViTBench
+kwargs:
+  factory: vit_base_patch14_dinov2
+  weights_class: ViTBase14_DINOv2_Weights
+  weights_member: SENTINEL2_ALL_SOFTCON
+  auto_resize: true
+  target_size: 224
+  pool: mean
+input:
+  bands: all
+segmentation:
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2

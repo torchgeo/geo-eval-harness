@@ -317,6 +317,17 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/panopticon --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
 
+   $ # Multispectral and SAR SSL backbones (DeCUR, SoftCon, FG-MAE, Satlas MI-MS, CLOSP/GeoCLOSP, SeCo-Eco)
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_decur --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/vitb14_dinov2_s2_all_softcon --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/vitb16_s2_all_fgmae --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/swinv2b_s2ms_satlas_mi --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_closp --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_seco_eco --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/vits14_dinov2_s1_grd_softcon --dataset sen1floods11-s1 --bands all
+
+:class:`~geo_eval_harness.models.TorchGeoViTBench` wraps ``torchgeo.models.vit_*`` timm Vision Transformers (SoftCon DINOv2 ViT-S/14 and ViT-B/14, FG-MAE ViT-S/16, ViT-B/16, ViT-L/16, and ViT-H/14, and CLOSP ViT-S/16 and ViT-L/16) with configurable token pooling (``pool: mean``, ``cls``, or ``both``) and standard ``blocks.*`` segmentation hooks. Multispectral Sentinel-2 checkpoints select their bands by canonical name (13-band L1C with optional zero-filled B10, 12-band L2A for SeCo-Eco, or 9-band Satlas MS), and Sentinel-1 GRD checkpoints (DeCUR, SoftCon, FG-MAE, CLOSP, and GeoCLOSP) select ``VV`` and ``VH`` and convert declared ``linear_power`` inputs to dB under ``--normalization model``.
+
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
