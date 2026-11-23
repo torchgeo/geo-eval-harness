@@ -1,6 +1,6 @@
 [build-system]
 build-backend = "uv_build"
-requires = [ "uv-build>=0.11.6,<0.12" ]
+requires = [ "uv-build>=0.11.6,<0.14" ]
 
 [project]
 name = "geo-eval-harness"
@@ -112,6 +112,7 @@ optional-dependencies.lora = [
 optional-dependencies.olmoearth = [
   "olmoearth-pretrain-minimal>=0.1.5", # OlmoEarth v1.3 weights require this version.
 ]
+urls.Changelog = "https://torchgeo.org/geo-eval-harness/user/changelog.html"
 urls.Documentation = "https://torchgeo.org/geo-eval-harness/"
 urls.Homepage = "https://github.com/torchgeo/geo-eval-harness"
 urls.Issues = "https://github.com/torchgeo/geo-eval-harness/issues"
