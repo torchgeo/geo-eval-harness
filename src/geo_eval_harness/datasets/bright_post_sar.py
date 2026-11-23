@@ -19,7 +19,12 @@ from .base import BandSpec, BenchDataset
 
 
 class BRIGHTSegmentationDataset(Dataset):
-    """Load post-event SAR tiles and four-class damage masks for one split."""
+    """Load post-event SAR tiles and four-class damage masks for one split.
+
+    Args:
+        paths: Sequence of ``(image_path, mask_path)`` pairs for the split.
+        transform: Optional callable applied to each sample dict.
+    """
 
     def __init__(
         self, paths: list[tuple[Path, Path]], transform: Callable[[Sample], Sample] | None

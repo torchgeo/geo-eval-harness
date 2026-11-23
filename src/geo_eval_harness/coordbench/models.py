@@ -185,6 +185,12 @@ class ClimplicitLocationEncoder(_RSHFEncoder):
     """Climplicit climate-specialist encoder (CHELSA, ReSIREN) -> 1024-d.
 
     Requires the ``coordbench`` extra (``rshf``).
+
+    Args:
+        repo: Hugging Face Hub repository ID.
+        revision: Git revision (commit SHA or tag) to load from the Hub.
+        device: Torch device string for inference.
+        batch_size: Number of coordinates encoded per forward batch.
     """
 
     name = "climplicit"
@@ -211,6 +217,12 @@ class SINRLocationEncoder(_RSHFEncoder):
     """SINR location encoder (Cole et al. 2023) -> 256-d features.
 
     Requires the ``coordbench`` extra (``rshf``).
+
+    Args:
+        repo: Hugging Face Hub repository ID.
+        revision: Git revision (commit SHA or tag) to load from the Hub.
+        device: Torch device string for inference.
+        batch_size: Number of coordinates encoded per forward batch.
     """
 
     name = "sinr"
@@ -255,6 +267,12 @@ class GeoCLIPLocationEncoder(_RSHFEncoder):
 
     Requires the ``coordbench`` extra (``rshf``). Note the weights expect (lat, lon)
     despite the upstream docstring's "Lon/Lat" example.
+
+    Args:
+        repo: Hugging Face Hub repository ID.
+        revision: Git revision (commit SHA or tag) to load from the Hub.
+        device: Torch device string for inference.
+        batch_size: Number of coordinates encoded per forward batch.
     """
 
     name = "geoclip"
@@ -296,6 +314,12 @@ class SatCLIPLocationEncoder(_RSHFEncoder):
 
     Runs in float64 (the released weights are double precision). Requires the
     ``coordbench`` extra (``rshf``).
+
+    Args:
+        repo: Hugging Face Hub repository ID.
+        revision: Git revision (commit SHA or tag) to load from the Hub.
+        device: Torch device string for inference.
+        batch_size: Number of coordinates encoded per forward batch.
     """
 
     name = "satclip"

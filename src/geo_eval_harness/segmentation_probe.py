@@ -94,6 +94,10 @@ class CachedFeaturesDataset(Dataset):
     :meth:`GPUTensorCache.from_cached` transfers whole layers, avoiding per-sample Python work.
 
     Each ``__getitem__`` returns a ``(features, mask)`` tuple.
+
+    Args:
+        layer_tensors: Per-layer ``(N, C, H, W)`` feature tensors.
+        masks: ``(N, H, W)`` integer segmentation mask tensor.
     """
 
     def __init__(
@@ -517,13 +521,15 @@ class SegmentationProbe(nn.Module):
                 f"{[n for n in available if n][:8]}."
             )
 
-    def _hook_fn(self, name: str, *, residual_branch: bool = False):
+    def _hook_fn(
+        self, name: str, *, residual_branch: bool = False
+    ) -> Callable[[nn.Module, tuple[Any, ...], Any], None]:
         """Return a forward hook that captures the output of the named layer.
 
         A residual branch returns only its update, so its input is added to give the stream.
         """
 
-        def hook(module, inputs, output):  # noqa: ARG001
+        def hook(module: nn.Module, inputs: tuple[Any, ...], output: Any) -> None:  # noqa: ARG001
             self._features[name] = output + inputs[0] if residual_branch else output
 
         return hook

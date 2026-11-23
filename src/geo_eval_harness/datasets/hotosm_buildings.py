@@ -169,6 +169,11 @@ class HOTOSMBuildings(BenchDataset, Dataset):
 
     :meth:`get_dataset` returns an instance holding one split's encoded image
     and mask bytes in RAM; the bare instance carries only metadata.
+
+    Args:
+        path: Optional path to a converted Parquet split file.
+        transform: Optional callable applied to each sample dict.
+        rows: Optional list of row indices to select from the Parquet split.
     """
 
     name = "hotosm_buildings"

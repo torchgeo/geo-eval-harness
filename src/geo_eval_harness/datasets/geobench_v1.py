@@ -43,7 +43,7 @@ class GeoBenchv1(Dataset):
         partition: str = "default",
         bands: tuple[str, ...] | None = None,
         transform: object = None,
-    ):
+    ) -> None:
         super().__init__()
         self.root = Path(root)
         self.dataset_name = dataset_name

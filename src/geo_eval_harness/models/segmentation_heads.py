@@ -124,6 +124,11 @@ class SweepPatchLinearHead(nn.Module):
 
     Until :attr:`selected` is set, :meth:`forward` returns ``(n_heads, B, C, H, W)`` logits;
     afterwards it returns the selected head's ``(B, C, H, W)`` logits.
+
+    Args:
+        channels_list: Channel counts for each hooked feature layer (uses ``channels_list[0]``).
+        num_classes: Number of segmentation output classes.
+        n_heads: Number of parallel probe heads to train jointly.
     """
 
     def __init__(self, channels_list: list[int], num_classes: int, n_heads: int) -> None:
@@ -216,6 +221,10 @@ class FeatureStandardizer(nn.Module):
     ``(x - mean) / sqrt(var + eps)`` per channel, as UniverSat's ``LP_eval.py``
     ``standardization=standard``. The statistics are buffers, so they move with the probe and are
     not trained.
+
+    Args:
+        channels_list: Channel count for each hooked feature layer.
+        eps: Numerical stability term added to per-channel variance.
     """
 
     def __init__(self, channels_list: list[int], eps: float = 1e-6) -> None:
@@ -265,7 +274,12 @@ def feature_moments(features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor,
 
 
 class StandardizedHead(nn.Module):
-    """Apply a :class:`FeatureStandardizer` before ``head``; parameters are the head's."""
+    """Apply a :class:`FeatureStandardizer` before ``head``; parameters are the head's.
+
+    Args:
+        standardizer: Fitted :class:`FeatureStandardizer` applied to incoming features.
+        head: Downstream segmentation head module.
+    """
 
     def __init__(self, standardizer: FeatureStandardizer, head: nn.Module) -> None:
         super().__init__()

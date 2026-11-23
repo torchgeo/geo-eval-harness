@@ -33,7 +33,15 @@ def equal_earth_projection(latlon: Tensor) -> Tensor:
 
 
 class SIRENLayer(nn.Module):
-    """Sinusoidal-activation linear layer: ``sin(w0 * z)``, or the ``finer``/``hsiren`` variants."""
+    """Sinusoidal-activation linear layer: ``sin(w0 * z)``, or the ``finer``/``hsiren`` variants.
+
+    Args:
+        in_f: Number of input features.
+        out_f: Number of output features.
+        w0: Frequency multiplier applied inside ``sin``.
+        is_first: Whether this is the first layer (enables ``hsiren`` activation).
+        act: Activation variant (``"siren"``, ``"finer"``, or ``"hsiren"``).
+    """
 
     def __init__(
         self, in_f: int, out_f: int, w0: float = 1.0, *, is_first: bool = False, act: str = "siren"
@@ -54,7 +62,19 @@ class SIRENLayer(nn.Module):
 
 
 class ReSIRENLocationEncoder(nn.Module):
-    """Encode Equal-Earth coordinates and optional Fourier year with a residual-SIREN MLP."""
+    """Encode Equal-Earth coordinates and optional Fourier year with a residual-SIREN MLP.
+
+    Args:
+        embed_dim: Hidden and output feature dimension.
+        depth: Number of residual SIREN blocks after the input layer.
+        use_year: Whether to concatenate Fourier-encoded year features.
+        w0_first: Frequency multiplier for the first SIREN layer.
+        w0: Frequency multiplier for subsequent residual SIREN layers.
+        variant: SIREN activation variant (``"siren"``, ``"finer"``, or ``"hsiren"``).
+        year_frequencies: Number of dyadic Fourier frequencies for the year encoding.
+        year_ref: Reference year subtracted before scaling.
+        year_scale: Scale divisor applied to centered year values.
+    """
 
     year_freqs: Tensor
 

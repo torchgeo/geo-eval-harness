@@ -24,7 +24,7 @@ import shutil
 import socket
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 from typing import Literal
 
@@ -72,7 +72,7 @@ def _source_digest(dataset: Dataset) -> str:
 
 
 @contextlib.contextmanager
-def _worker_threads() -> Iterator[None]:
+def _worker_threads() -> Generator[None, None, None]:
     """Run Torch ops with one intra-op thread, as ``DataLoader`` workers do.
 
     CPU resizing can round differently with other thread counts, so samples produced in the main
@@ -285,6 +285,11 @@ class CachedSamples(Dataset):
     """Serve ``{"image", "mask"}`` samples from cached arrays or tensors.
 
     Images and masks independently accept NumPy arrays or Torch tensors.
+
+    Args:
+        images: Cached image array or tensor of shape ``(N, ...)``.
+        masks: Cached mask array or tensor of shape ``(N, H, W)``.
+        doys: Optional cached day-of-year tensor aligned with ``images``.
     """
 
     def __init__(
@@ -330,6 +335,13 @@ class DeviceBatchLoader:
 
     Mirrors ``DataLoader(shuffle=...)`` RNG use: each epoch first draws the loader's base seed from
     the global generator, then ``RandomSampler`` draws its own seed, so shuffles match exactly.
+
+    Args:
+        images: Device-resident image tensor of shape ``(N, ...)``.
+        masks: Device-resident mask tensor of shape ``(N, H, W)``.
+        batch_size: Number of samples per yielded batch.
+        shuffle: Whether to shuffle sample indices each epoch.
+        doys: Optional device-resident day-of-year tensor aligned with ``images``.
     """
 
     def __init__(

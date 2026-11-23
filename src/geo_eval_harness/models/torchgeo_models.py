@@ -8,7 +8,7 @@ normalization strategies use the shared ``BenchModel`` implementation.
 """
 
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, cast
 
 import torch
@@ -42,7 +42,7 @@ from ._seco import normalize_seco
 from .interface import BenchModel
 
 
-def _resolve_torchgeo_factory(factory_name: str):
+def _resolve_torchgeo_factory(factory_name: str) -> Callable[..., Any]:
     """Return the model-factory function from ``torchgeo.models``."""
     fn = getattr(tgm, factory_name, None)
     if fn is None:
@@ -50,7 +50,7 @@ def _resolve_torchgeo_factory(factory_name: str):
     return fn
 
 
-def _resolve_torchgeo_weights(weights_class_name: str, weights_member: str):
+def _resolve_torchgeo_weights(weights_class_name: str, weights_member: str) -> Any:
     """Return the concrete weights enum member."""
     cls = getattr(tgm, weights_class_name, None)
     if cls is None:
@@ -148,7 +148,7 @@ def _require_input_size(name: str, images: torch.Tensor, img_size: int) -> None:
 _DEO_TARGET_SIZE = 224
 
 
-def _extract_normalize_transforms(weights) -> nn.Sequential | None:
+def _extract_normalize_transforms(weights: Any) -> nn.Sequential | None:
     """Copy the ``Normalize`` layers of a torchgeo weights transform as out-of-place layers.
 
     torchgeo's layers normalize in place, which would overwrite the caller's batch.
@@ -444,6 +444,17 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
     a single global scale. Satlas and SSL4EO-S12 multispectral checkpoints select their bands
     by name (see ``_TorchGeoBackboneBench._prepare_input_conv``).
     SeCo model normalization uses its RGB quantiles and 8-bit image pipeline.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        normalization_input_unit: Optional override for the expected weights input unit.
+        skip_weight_normalize: Number of leading pretrained ``Normalize`` layers to skip.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     weights_input_unit = "s2_dn_div10000"
@@ -503,6 +514,15 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
 
     Satlas multispectral checkpoints select their bands by name (see
     ``_TorchGeoBackboneBench._prepare_input_conv``).
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     weights_input_unit = "uint8_div255"
@@ -548,6 +568,18 @@ class TorchGeoScaleMAEBench(_TorchGeoBackboneBench):
     scale supplied to Scale-MAE's resolution-conditioned positional embedding.
     ``image_size`` must be a multiple of 16 because the stride-16 patch embedding
     would otherwise drop the trailing pixels.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list (must be RGB).
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Fallback spatial size when ``image_size`` is omitted.
+        image_size: Fixed square input size (multiple of 16) for the positional grid.
+        pool: Token pooling mode (``"cls"`` or ``"mean"``).
+        res: Ground-resolution scale passed to Scale-MAE's positional embedding.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     weights_input_unit = "uint8_div255"
@@ -669,6 +701,17 @@ class TorchGeoDOFABench(_TorchGeoBackboneBench):
     ``img_size`` (a multiple of 16) resamples it bicubically to the ``img_size // 16`` grid,
     keeping the class token, with timm's ``resample_abs_pos_embed``; the model then accepts
     only ``img_size`` inputs, so ``target_size`` must match it when ``auto_resize`` is on.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        wavelengths: Optional per-channel wavelengths in micrometers overriding ``bands``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        img_size: Optional fixed input size (multiple of 16) to resample ``pos_embed`` to.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     # DOFA's pretrained transform is empty in current torchgeo releases.
@@ -734,6 +777,15 @@ class TorchGeoEarthLocBench(_TorchGeoBackboneBench):
     """Wrapper for torchgeo EarthLoc.
 
     ``forward(x)`` returns a ``(B, 4096)`` global descriptor.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     weights_input_unit = "uint8_div255"
@@ -825,6 +877,15 @@ class TorchGeoDEOBench(BenchModel):
     DEO was pretrained at 224. ``target_size`` may be any multiple of 32: the Swin stages have
     no absolute positional embedding, and torchvision pads each stage map to a multiple of the
     12-token window (as it already does at 224, whose 56/28/14/7 grids are not multiples of 12).
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        mode: Patch-embedding branch to use (``"rgb"`` or ``"s2"``).
+        normalization: Normalization strategy applied to inputs.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Square input size (positive multiple of 32) when resizing.
+        stack_channels: Whether to repeat 1- or 2-channel inputs to 3 channels in RGB mode.
+        **_kwargs: Unused keyword arguments accepted for preset compatibility.
     """
 
     _deo_mean: torch.Tensor
@@ -983,6 +1044,16 @@ class TorchGeoCromaBench(_TorchGeoBackboneBench):
     ``mean +/- std_multiplier * std`` and rescales that window to ``[0, 1]``.
     ``model_native`` reproduces that using the dataset's own BandSpec stats,
     which is what the authors compute per dataset.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        std_multiplier: Half-width in standard deviations for ``model_native`` clipping.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     weights_input_unit = "reflectance_0_1"
@@ -1082,6 +1153,16 @@ class TorchGeoPanopticonBench(_TorchGeoBackboneBench):
     of 14 because the stride-14 patch embedding would otherwise drop the trailing pixels. For
     256 or 512 inputs, set ``img_size`` and ``target_size`` to the nearest valid size (252 or
     518); the image is then bilinearly resized to that size, so the patch grid still covers it.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        img_size: Optional fixed input size (multiple of 14) passed to the backbone factory.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
     _chn_ids: torch.Tensor

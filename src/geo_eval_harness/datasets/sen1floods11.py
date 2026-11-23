@@ -37,7 +37,15 @@ def _read(root: Path, chip: str, layer: str) -> np.ndarray:
 
 
 class Sen1Floods11Dataset(Dataset):
-    """Load one sensor's chip with the mask shared by both sensors."""
+    """Load one sensor's chip with the mask shared by both sensors.
+
+    Args:
+        root: Dataset root directory containing Sen1Floods11 imagery and masks.
+        chips: Chip identifiers included in the split.
+        layer: Sensor layer name (``"S1Hand"`` or ``"S2Hand"``).
+        fill: Per-channel replacement values for non-finite Sentinel-1 pixels.
+        transform: Optional callable applied to each sample dict.
+    """
 
     def __init__(
         self,
