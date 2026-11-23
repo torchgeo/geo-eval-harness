@@ -504,3 +504,31 @@ def test_dynamic_earthnet_requires_a_planet_band() -> None:
     bench = get_bench_dataset_class("dynamic_earthnet")()
     with pytest.raises(ValueError, match="Planet band"):
         bench.build_band_order(("b04", "b03", "b02"))
+
+
+def test_stacking_loader_still_reports_resized_from() -> None:
+    """Loaders that stack sensors after the transform drop extra keys (PASTIS); re-attach it."""
+    from geo_eval_harness.datasets.geobench_v2 import GeoBenchv2, _ChainedTransform
+    from geo_eval_harness.datasets.loading import _ResizeTransform
+
+    chained = _ChainedTransform(lambda s: s, _ResizeTransform(224, "bilinear"))
+
+    class _Stacking:
+        def __len__(self) -> int:
+            return 1
+
+        def __getitem__(self, index: int) -> dict:
+            raw = {
+                "image_s2": torch.zeros(3, 128, 128),
+                "image_s1": torch.zeros(2, 128, 128),
+                "mask": torch.zeros(128, 128),
+            }
+            out = chained(raw)
+            return {"image": torch.cat([out["image_s2"], out["image_s1"]]), "mask": out["mask"]}
+
+    dataset = object.__new__(GeoBenchv2)
+    dataset._inner = _Stacking()
+    dataset._chained = chained
+    sample = dataset[0]
+    assert sample["resized_from"] == (128, 128)
+    assert sample["image"].shape == (5, 224, 224)
