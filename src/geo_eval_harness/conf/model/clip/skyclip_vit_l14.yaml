@@ -1,0 +1,18 @@
+name: clip/skyclip_vit_l14
+target: geo_eval_harness.models.CLIPVisionBench
+supports_model_normalization: true
+kwargs:
+  variant: skyclip_vit_l14
+  pretrained: true
+  pool: proj
+input:
+  bands: rgb
+  image_size: 224
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - blocks.23
+    - blocks.17
+    - blocks.11
+    - blocks.5

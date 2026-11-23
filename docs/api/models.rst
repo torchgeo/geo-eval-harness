@@ -88,6 +88,11 @@ SAM 3
 
 .. autoclass:: SAM3Encoder
 
+Remote-sensing CLIP vision encoders
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: CLIPVisionBench
+
 Tessera V2
 ^^^^^^^^^^
 

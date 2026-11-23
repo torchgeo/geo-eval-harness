@@ -486,6 +486,25 @@ The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
 
+Remote-sensing CLIP vision encoders
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:class:`~geo_eval_harness.models.CLIPVisionBench` loads frozen vision towers from SkyCLIP, RemoteCLIP, and GeoRSCLIP directly into ``timm`` CLIP backbones with zero additional dependencies (no ``open_clip`` required). Checkpoints download from pinned Hugging Face commits and are verified against packaged SHA-256 digests before loading; pass ``model.kwargs.checkpoint_path`` to verify and load a local file instead.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model clip/skyclip_vit_b32 --dataset m-eurosat
+   $ geo-eval-harness run --model clip/remoteclip_vit_l14 --dataset m-eurosat
+   $ geo-eval-harness run --model clip/georsclip_vit_h14 --dataset m-eurosat
+
+Available presets under :file:`src/geo_eval_harness/conf/model/clip/`:
+
+* **SkyCLIP** (MIT, rehosted by TorchGeo): ``clip/skyclip_vit_b32`` (512-d) and ``clip/skyclip_vit_l14`` (768-d).
+* **RemoteCLIP** (Apache-2.0): ``clip/remoteclip_rn50`` (1024-d), ``clip/remoteclip_vit_b32`` (512-d), and ``clip/remoteclip_vit_l14`` (768-d).
+* **GeoRSCLIP** (MIT/CC): ``clip/georsclip_vit_b32`` (512-d, QuickGELU), ``clip/georsclip_vit_l14`` (768-d, QuickGELU), and ``clip/georsclip_vit_h14`` (1024-d).
+
+All presets expect 3-channel RGB imagery at 224 px and default to ``--normalization model``, which rescales inputs to ``[0, 1]`` and applies OpenAI CLIP statistics (``mean=(0.48145466, 0.4578275, 0.40821073)``, ``std=(0.26862954, 0.26130258, 0.27577711)``). ``pool`` defaults to ``proj`` (the CLIP image projection embedding); ViT presets also support ``cls``, ``mean``, and ``both`` on pre-projection tokens, and ``clip/remoteclip_rn50`` also supports ``avg``. Segmentation hooks ``blocks.11/8/5/2`` (ViT-B), ``blocks.23/17/11/5`` (ViT-L), ``blocks.31/23/15/7`` (ViT-H), or ``stages.3/2/1/0`` (RN50).
+
 AnySat
 ^^^^^^
 
