@@ -184,7 +184,7 @@ and the runnable
   workflow, and troubleshooting.
 - **[AGENTS.md](https://github.com/torchgeo/geo-eval-harness/blob/main/AGENTS.md)**
   — contributor guide and house style.
-- **[Cleanlab analysis](https://github.com/torchgeo/geo-eval-harness/blob/main/projects/cleanlab/README.md)** — standalone dataset auditing, probability extraction, and review galleries, with separate dependencies.
+- **[Cleanlab analysis](https://github.com/torchgeo/geo-eval-harness/blob/main/experiments/cleanlab/README.md)** — standalone dataset auditing, probability extraction, and review galleries, with separate dependencies.
 
 <!-- skip-on-docs-landing-end -->
 

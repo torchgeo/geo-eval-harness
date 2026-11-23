@@ -213,12 +213,12 @@ See the [project README](README.md) for installation and the gallery/deduplicati
 ```bash
 for dataset in m-eurosat m-bigearthnet m-brick-kiln m-pv4ger m-so2sat \
     m-forestnet benv2 treesatai so2sat forestnet eurosat-spatial; do
-    python projects/cleanlab/cleanlab_extract_probs.py \
+    python experiments/cleanlab/cleanlab_extract_probs.py \
         --dataset "$dataset" --results results/all_results.csv --verbose
 done
-python projects/cleanlab/run_cleanlab_audit.py --verbose
-python projects/cleanlab/cleanlab_per_class_singlelabel.py --splits test
-python projects/cleanlab/cleanlab_per_class_multilabel.py --splits test
+python experiments/cleanlab/run_cleanlab_audit.py --verbose
+python experiments/cleanlab/cleanlab_per_class_singlelabel.py --splits test
+python experiments/cleanlab/cleanlab_per_class_multilabel.py --splits test
 ```
 
 Existing probability artifacts can be reused by starting with `run_cleanlab_audit.py`. For newer per-model results, pass `--results results/models` to the extractor instead.

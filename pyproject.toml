@@ -190,7 +190,7 @@ lint.ignore = [
   "SIM116", # allow explicit branches
   "TRY003", # allow concise messages at the raise site
 ]
-lint.per-file-ignores."projects/cleanlab/**/*.py" = [ "D" ]
+lint.per-file-ignores."experiments/cleanlab/**/*.py" = [ "D" ]
 lint.per-file-ignores."scripts/check_dead_code.py" = [ "T201" ]  # gate output goes to stdout
 lint.per-file-ignores."src/geo_eval_harness/cli.py" = [ "T201" ]  # CLI payloads go to stdout
 lint.per-file-ignores."src/geo_eval_harness/commands/**/*.py" = [ "T201" ]
@@ -249,7 +249,7 @@ report.show_missing = true
 
 [tool.vulture]
 min_confidence = 60
-paths = [ "src", "scripts", "experiments", "projects", "docs", "tests" ]
+paths = [ "src", "scripts", "experiments", "docs", "tests" ]
 exclude = [
   "docs/conf.py",                                    # Sphinx reads these names by convention, not by reference.
   "docs/examples",                                   # standalone, read-only usage snippets
