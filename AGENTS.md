@@ -242,13 +242,13 @@ All datasets are loaded from `./data/<canonical-subdir>` relative to the current
 ### Import Ordering
 
 ```python
-import logging                          # 1. Standard library
+import logging  # 1. Standard library
 from dataclasses import dataclass
 
-import numpy as np                      # 2. Third-party
+import numpy as np  # 2. Third-party
 import torch
 
-from geo_eval_harness.datasets import get_datasets   # 3. Local imports
+from geo_eval_harness.datasets import get_datasets  # 3. Local imports
 
 logger = logging.getLogger(__name__)
 ```
@@ -278,8 +278,7 @@ def get_datasets(
     interpolation: str = "bilinear",
     bands: str | Iterable[str] | None = "rgb",
     time_steps: int | None = None,
-) -> tuple:
-    ...
+) -> tuple: ...
 ```
 
 ### Documentation Style (Google-style)
@@ -335,6 +334,7 @@ The same rule applies to bare `except Exception:` blocks that swallow errors to 
 class BandStats:
     mean: list[float]
     std: list[float]
+
 
 class BenchModel(nn.Module, ABC):
     @abstractmethod

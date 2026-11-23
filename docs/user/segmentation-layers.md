@@ -30,9 +30,13 @@ handles = []
 
 for name in ["layer1", "layer2", "layer3", "layer4"]:
     module = dict(model.named_modules())[name]
+
     def hook(n):
-        def fn(m, inp, out): shapes[n] = out.shape
+        def fn(m, inp, out):
+            shapes[n] = out.shape
+
         return fn
+
     handles.append(module.register_forward_hook(hook(name)))
 
 with torch.no_grad():

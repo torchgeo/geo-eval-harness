@@ -90,12 +90,15 @@ After line 562 (`feature_dim = x_train.shape[1]`):
 ```python
 if cfg.eval.intrinsic_dim.enabled:
     from geo_eval_harness.intrinsic_dim import compute_id_for_splits
+
     id_rows = compute_id_for_splits(
         splits={"train": x_train, "val": x_val, "test": x_test},
         cfg=cfg.eval.intrinsic_dim,
         common_meta=common_meta,
         feature_dim=feature_dim,
-        n_train=len(x_train), n_val=len(x_val), n_test=len(x_test),
+        n_train=len(x_train),
+        n_val=len(x_val),
+        n_test=len(x_test),
     )
     all_rows.extend(id_rows)
 ```
