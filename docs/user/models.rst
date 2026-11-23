@@ -91,6 +91,15 @@ TerraFM
 
 The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. With ``pretrain`` statistics, Sentinel-1 bands must declare unit ``db`` or ``linear_power``; other SAR inputs raise an error. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
 
+MMEarth
+^^^^^^^
+
+``mmearth/convnextv2_atto`` wraps the 12-band Sentinel-2 ConvNeXt-V2 Atto encoder from `MMEarth <https://github.com/vishalned/MMEarth-train>`_ (`ECCV 2024 <https://arxiv.org/abs/2405.02771>`_, MIT) using pure PyTorch without ``MinkowskiEngine``. The official ``pt-all_mod_atto_1M_64_uncertainty_56-8`` FCMAE checkpoint downloads from ERDA (or loads from ``model.kwargs.checkpoint_path``), is verified against ``checksums/mmearth.sha256``, remaps sparse pretraining kernels to dense convolutions, and loads strictly.
+
+Dataset channels map to MMEarth's 12-band Sentinel-2 pretraining order (``B01, B02, B03, B04, B05, B06, B07, B8A, B08, B09, B11, B12`` — note that narrow NIR ``B8A`` precedes broad NIR ``B08``). Because ConvNeXt-V2 is fully convolutional, inputs keep their native spatial resolution by default (``auto_resize: false``). Classification returns the 320-dimensional global-average-pooled, layer-normalized stage-3 embedding; segmentation hooks the four NCHW stages ``stages.3``, ``stages.2``, ``stages.1``, and ``stages.0`` (widths 320, 160, 80, 40).
+
+The preset defaults to dataset z-scoring, matching MMEarth's GeoBench evaluation script. With ``--normalization model``, inputs convert to Sentinel-2 DN and standardize with MMEarth64's published pretraining statistics (``s2_level: l2a`` by default, or ``l1c``).
+
 SMARTIES
 ^^^^^^^^
 

@@ -1,0 +1,15 @@
+name: mmearth/convnextv2_atto
+target: geo_eval_harness.models.MMEarthBench
+supports_model_normalization: true
+kwargs:
+  checkpoint_name: pt-all_mod_atto_1M_64_uncertainty_56-8
+  pretrained: true
+  s2_level: l2a
+  auto_resize: false
+segmentation:
+  lora_target_modules: 'stages\.\d+\.\d+\.pwconv[12]'
+  layers:
+    - stages.3
+    - stages.2
+    - stages.1
+    - stages.0
