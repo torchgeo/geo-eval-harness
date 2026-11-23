@@ -114,6 +114,20 @@ Sentinel-2 uses the L2A statistics (BigEarthNet) unless ``s2_level: l1c`` select
 
 Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, Infra-Bench CLS, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
 
+SatMAE++
+^^^^^^^^
+
+``satmaepp/rgb_vit_l`` (ViT-L/16, 224 px) and ``satmaepp/s2_vit_l`` (grouped-channel ViT-L/8, 96 px) wrap `SatMAE++ <https://github.com/techmn/satmae_pp>`_ (`Noman et al., CVPR 2024 <https://arxiv.org/abs/2403.05419>`_, Apache-2.0). Official pretraining weights download from pinned commits of `mubashir04/checkpoint_ViT-L_pretrain_fmow_rgb <https://huggingface.co/mubashir04/checkpoint_ViT-L_pretrain_fmow_rgb>`_ and `mubashir04/checkpoint_ViT-L_pretrain_fmow_sentinel <https://huggingface.co/mubashir04/checkpoint_ViT-L_pretrain_fmow_sentinel>`_ with SHA-256 verification; MAE decoder and multi-scale upsampling weights are ignored and every encoder weight must load.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model satmaepp/rgb_vit_l --dataset m-eurosat
+   $ geo-eval-harness run --model satmaepp/s2_vit_l --dataset m-eurosat --bands all
+
+* **RGB channel order (BGR):** Upstream pretrained and evaluated the fMoW-RGB checkpoint on OpenCV ``cv2.imread`` images in **BGR** channel order. :class:`~geo_eval_harness.models.SatMAEPPBench` automatically selects and reorders input bands to ``(blue, green, red)`` by canonical name.
+* **Sentinel-2 band grouping:** ``satmaepp/s2_vit_l`` selects the 10 Sentinel-2 bands ``B02, B03, B04, B05, B06, B07, B08, B8A, B11, B12`` (dropping B01 coastal, B09 water vapor, and B10 cirrus) and embeds them in three spectral groups: 10 m RGB+NIR ``(B02, B03, B04, B08)``, 20 m Red-Edge ``(B05, B06, B07, B8A)``, and 20 m SWIR ``(B11, B12)``.
+* **Normalization, pooling, and segmentation:** Presets default to dataset z-scoring and patch-mean pooling (``pool: mean``; ``cls`` and ``both`` are also supported). With ``--normalization model``, ``rgb_vit_l`` converts inputs to ``[0, 1]`` and standardizes with fMoW-RGB statistics, while ``s2_vit_l`` converts Sentinel-2 inputs to DN and applies fMoW-Sentinel ``mean ± 2 * std`` clipping to ``[0, 1]``. Segmentation hooks ``blocks.23/17/11/5`` for ``rgb_vit_l`` and ``taps.23/17/11/5`` (group-averaged NCHW spatial maps) for ``s2_vit_l``. Setting ``img_size`` to another multiple of the patch size bicubically interpolates ``pos_embed`` on load.
+
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

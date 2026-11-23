@@ -1,0 +1,13 @@
+name: satmaepp/s2_vit_l
+target: geo_eval_harness.models.SatMAEPPBench
+supports_model_normalization: true
+kwargs:
+  variant: s2_vit_l
+  pretrained: true
+  pool: mean
+input:
+  image_size: 96
+  bands: all
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["taps.23", "taps.17", "taps.11", "taps.5"]

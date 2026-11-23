@@ -1,0 +1,12 @@
+name: satmaepp/rgb_vit_l
+target: geo_eval_harness.models.SatMAEPPBench
+supports_model_normalization: true
+kwargs:
+  variant: rgb_vit_l
+  pretrained: true
+  pool: mean
+input:
+  image_size: 224
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["blocks.23", "blocks.17", "blocks.11", "blocks.5"]
