@@ -132,7 +132,7 @@ python experiments/run_handcrafted.py
 
 The sweep includes ImageStats as level 0 and every classification protocol in the current dataset catalog, including AID, multilabel datasets and EuroSAT's spatial split. It uses all bands with identity input normalization, with 224-pixel resizing, KNN-5, validation-selected C, train-plus-validation final refit, and 200 bootstrap draws.
 
-Results go to `results/models/handcrafted_level*.csv` and `imagestats_handcrafted_control.csv`. Feature lists and completion status are saved under `outputs/handcrafted/`. Resume skips matching completed rows; a missing linear or KNN result is reported as a failure. Summaries, including `--report-only`, select rows matching the requested configuration and devices. Use `--output-dir results/handcrafted-current` to keep a sweep separate.
+The sweep writes to `results/models/handcrafted_level*.csv` and a local `imagestats_handcrafted_control.csv` control file (the committed reference results in `results/models/` keep `handcrafted_level{1,2,3}.csv` alongside `imagestats.csv`). Feature lists and completion status are saved under `outputs/handcrafted/`. Resume skips matching completed rows; a missing linear or KNN result is reported as a failure. Summaries, including `--report-only`, select rows matching the requested configuration and devices. Use `--output-dir results/handcrafted-current` to keep a sweep separate.
 
 Use `--levels 1 2`, `--datasets eurosat resisc45`, or `--dry-run` for a smaller run. The extractor also works through the normal CLI:
 

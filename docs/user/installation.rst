@@ -86,7 +86,7 @@ CoordBench tables stream from Hugging Face through ``geo-eval-harness coord``; s
 TerraTorch models
 -----------------
 
-TerraTorch's PyPI release 1.2.13 requires ``torchgeo<0.10``, while this package requires ``torchgeo>=0.10,<0.11``. TerraTorch is installed separately from a compatible source revision and is not part of ``[all]``:
+TerraTorch's PyPI release 1.2.13 requires ``torchgeo<0.10``, while this package requires ``torchgeo>=0.10.1,<0.11``. TerraTorch is installed separately from a compatible source revision and is not part of ``[all]``:
 
 .. code-block:: console
 

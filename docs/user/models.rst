@@ -62,6 +62,20 @@ Clay v1.5 Large
 
 Inputs default to 256 pixels and must be square with sides divisible by eight. Set ``--image-size`` to change the input size or ``model.kwargs.checkpoint_path`` to load a local checkpoint containing the complete ``model.encoder.*`` weights.
 
+Prithvi-EO
+^^^^^^^^^^
+
+:class:`~geo_eval_harness.models.TerraTorchPrithviBench` wraps IBM/NASA Prithvi-EO v1 and v2 backbones through TerraTorch (see :doc:`installation` for the TerraTorch install). Presets ``terratorch/prithvi_eo_v1_100``, ``terratorch/prithvi_eo_v2_100_tl``, ``terratorch/prithvi_eo_v2_300``, ``terratorch/prithvi_eo_v2_300_tl``, and ``terratorch/prithvi_eo_v2_600`` use mean-patch pooling; matching ``*_cls`` presets use CLS-token pooling.
+
+Dataset channels map onto Prithvi's six Harmonized Landsat Sentinel-2 (HLS) slots (blue, green, red, narrow NIR, SWIR1, SWIR2) at 224 px; datasets with fewer bands select only the matching patch-embedding weights rather than zero-filling missing channels. Under ``--normalization model``, inputs are rescaled to Sentinel-2 DN and standardized with the published v1 or v2 HLS statistics.
+
+TerraMind
+^^^^^^^^^
+
+:class:`~geo_eval_harness.models.TerraTorchTerraMindBench` wraps TerraMind v1 backbones through TerraTorch. Presets ``terratorch/terramind_v1_base`` and ``terratorch/terramind_v1_large`` target Sentinel-2 L2A (``modality: S2L2A``); ``*_rgb`` variants select ``modality: RGB`` and ``*_s1`` variants select Sentinel-1 VV/VH (``modality: S1GRD``).
+
+Bands match the selected modality's pretrained layout by canonical name (using TerraTorch's band selection for subsets rather than zero-filling). Under ``--normalization model``, inputs convert to the modality's native scale (Sentinel-2 DN, 8-bit RGB, or Sentinel-1 dB from declared ``BandSpec.unit``) and standardize with TerraMind's per-modality pretraining statistics.
+
 TerraFM
 ^^^^^^^
 
@@ -298,9 +312,16 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ # EarthLoc place-recognition descriptor
    $ geo-eval-harness run --model torchgeo/earthloc_s2_resnet50 --dataset m-eurosat
 
+   $ # CROMA (optical Sentinel-2 ViT), Panopticon (wavelength-conditioned ViT-B/14), and DEO (Swin-B)
+   $ geo-eval-harness run --model torchgeo/croma_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/panopticon --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
+
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
+
+:class:`~geo_eval_harness.models.TorchGeoCromaBench` (``torchgeo/croma_base``, ``torchgeo/croma_large``) runs CROMA's optical Sentinel-2 encoder at 120 px by default; ``--normalization model`` applies CROMA's per-dataset mean ± ``std_multiplier`` × std clipping to ``[0, 1]``. :class:`~geo_eval_harness.models.TorchGeoPanopticonBench` (``torchgeo/panopticon``) embeds each channel using its ``BandSpec`` wavelength in nm on a stride-14 ViT-B/14 (input sizes must be multiples of 14; 224 px by default). :class:`~geo_eval_harness.models.TorchGeoDEOBench` (``torchgeo/deo_rgb``, ``torchgeo/deo_s2``) wraps DEO's Swin-B RGB and 10-band Sentinel-2 encoders with ``--normalization model`` by default and accepts any positive multiple of 32 for ``target_size`` (224 px by default).
 
 OlmoEarth (AI2)
 ^^^^^^^^^^^^^^^
@@ -507,6 +528,18 @@ calls that block through a custom method.  The fusion blocks ``model.model.block
 AnySat's hub code imports a top-level ``src`` package, and so does UniverSat's.  The two
 models therefore cannot be loaded in the same process.  Presets refuse datasets in AnySat's
 pretraining data (TreeSatAI, FLAIR) and sub-metre SAR, for which AnySat has no projector.
+
+UniverSat
+^^^^^^^^^
+
+:class:`~geo_eval_harness.models.UniverSatBenchModel` wraps UniverSat (AnySat v2), loading model code via ``torch.hub`` from a pinned commit of `gastruc/UniverSat <https://github.com/gastruc/UniverSat>`_ and weights from a pinned commit of `g-astruc/UniverSat <https://huggingface.co/g-astruc/UniverSat>`_. Presets ``universat_base`` (classification), ``universat_base_seg`` (multi-layer segmentation hooking blocks 14, 9, 6, and 3), and ``universat_base_dense`` (per-pixel ``patch_linear`` probe on block 14 with ``output_px: 1``) embed channels by sensor and wavelength with ``bandspec_zscore`` normalization.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model universat_base --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model universat_base_seg --dataset sen1floods11-s2 --bands all
+
+Because UniverSat's hub code also imports a top-level ``src`` package, it cannot be loaded in the same Python process as AnySat.
 
 THOR
 ^^^^

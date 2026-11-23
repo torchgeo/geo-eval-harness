@@ -3,7 +3,7 @@
 This page records how the values for `segmentation.layers` (see
 [Configuration](configuration.rst)) were determined for each model
 family, and serves as a reference when adding new models. It complements
-the [`SegmentationProbe`](../api/models.rst) and the segmentation-head
+the [`SegmentationProbe`](../api/eval.rst) and the segmentation-head
 classes (`LinearHead`, `FPNHead`, `DPTHead`, …).
 
 ## Background

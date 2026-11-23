@@ -1,5 +1,5 @@
 # Core image benchmark configuration (schema version 1).
-# Every value below is explicit. Omit fields to inherit model/dataset defaults.
+# Every field below is explicit with its default value (except device: auto for portability). Omit fields to inherit model/dataset defaults.
 schema_version: 1
 model:
   name: timm/resnet50
@@ -26,8 +26,15 @@ classification:
     n_bins_linear: 15
     temp_scale: false
   bootstrap_samples: 200
+  feature_standardize: false
 segmentation:
   head: fpn
+  neck: none
+  neck_norm: layernorm
+  upsampler: none
+  weight_decay: 0.0
+  head_dropout: 0.0
+  early_stopping_patience: null
   layers: []
   learning_rate: 1e-3
   epochs: 10
@@ -37,16 +44,31 @@ segmentation:
   ignore_index: 255
   cache_features: true
   cache_dtype: float16
+  amp: fp16
+  lora_rank: null
+  lora_target_modules: null
+  lora_alpha: 16.0
+  lora_last_blocks: null
+  backbone_learning_rate: null
+  full_finetune: false
+  feature_standardize: false
+  gradient_checkpointing: false
+  sweep_learning_rates: []
+  sweep_weight_decays: [0.0]
 runtime:
   device: auto
   batch_size: 64
   workers: 4
   seed: 0
   verbose: false
+  sample_cache: none
+  sample_cache_dir: ~/.cache/geo_eval_harness/samples
+  matmul_precision: highest
 output:
   directory: results
   file: null
   resume: false
+  epoch_metrics: null
 profile:
   enabled: false
   n_warmup: 3

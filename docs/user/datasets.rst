@@ -1,10 +1,7 @@
 Datasets
 ========
 
-``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and
-V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID and Infra-Bench CLS (Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), and OSCD post-image change segmentation (torchgeo). All datasets share the
-:class:`~geo_eval_harness.datasets.BenchDataset` interface and are
-registered by name so they can be selected without importing every loader.
+``geo-eval-harness`` supports two generations of GeoBench datasets — V1 and V2 — plus wrappers around torchgeo's standalone EuroSAT, NWPU-RESISC45, and UC Merced datasets, AID and Infra-Bench CLS (Hugging Face), HOTOSM building segmentation (Hugging Face), OpenEarthMap-SAR segmentation, the Open Cities AI Challenge building segmentation set, LoveDA land-cover segmentation (torchgeo), a LEVIR-CD post-image segmentation proxy, Sen1Floods11 hand-labelled flood-water segmentation (Sentinel-1 or Sentinel-2), BRIGHT post-event SAR building damage segmentation (Hugging Face), OSCD post-image change segmentation (torchgeo), and PLANTEUR multi-temporal crop-type segmentation (Hugging Face, including leave-one-island-out splits). All datasets share the :class:`~geo_eval_harness.datasets.BenchDataset` interface and are registered by name so they can be selected without importing every loader.
 
 Commands that use ``docs/examples/`` paths run from the repository root. With an installed package, save the example YAML locally and pass that path to ``--config``.
 
