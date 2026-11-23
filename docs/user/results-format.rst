@@ -1,27 +1,30 @@
 Results format
 ==============
 
-All evaluation runs append rows to per-model CSV files.  Each row is a
-flattened :class:`~geo_eval_harness.results.EvaluationResult` describing a single
-``(dataset, method, model, config)`` measurement.  Rows are split by *kind*
-across three directories, keyed by ``<model name>.csv``:
+All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside command-level files for compute cost and CoordBench:
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 22 48
 
-   * - Directory
-     - Row ``method``\ s
+   * - Path
+     - Row ``method``\ s / schema
      - Contents
    * - ``results/models/``
-     - ``knn5``, ``linear``, ``seg-*``
-     - Classification/segmentation metrics -- appended on each metrics run.
+     - ``knn5``, ``linear``, ``seg-*`` (including ``-std`` and ``-sweep<n>`` variants)
+     - Classification and segmentation metrics — appended on each metrics run.
    * - ``results/profiles/``
      - ``profile``
-     - Throughput/latency/param-count measurements -- one-time per model+hardware.
+     - Throughput/latency/param-count measurements — one-time per model+hardware.
    * - ``results/intrinsic_dim/``
      - ``intrinsic_dim``
-     - Intrinsic-dimension estimates -- one-time per model.
+     - Intrinsic-dimension and feature-spectrum estimates — one-time per model.
+   * - ``results/compute_cost.csv`` (and ``compute_cost.md``, ``compute_cost_coverage.csv``, ``compute_cost_provenance.json``)
+     - Compute-cost schema
+     - Per-sample GFLOPs, parameter counts, and timing from ``geo-eval-harness flops``, plus curated sweep notes, coverage, and provenance.
+   * - ``results/coordbench_results.csv``
+     - :class:`~geo_eval_harness.coordbench.CoordResult`
+     - Coordinate-only location-encoder results from ``geo-eval-harness coord`` (see :doc:`coordbench`).
 
 Profile and intrinsic-dim rows are one-time model+hardware measurements, so
 they are kept out of the metrics file: rerunning a classification sweep
@@ -68,65 +71,85 @@ and ``none`` to ``identity``.
 Method values
 -------------
 
-================== ==================================================================================
-``method``         Meaning
-================== ==================================================================================
-``knn5``           KNN-5 classification (multilabel KNN for ``m-bigearthnet``). -> ``results/models/``
-``linear``         L-BFGS logistic regression with C-sweep on the validation set. -> ``results/models/``
-``intrinsic_dim``  Optional intrinsic-dimension metrics on extracted embeddings (requires
-                   the ``[id]`` extra) plus dependency-free centered feature-spectrum
-                   diagnostics. Both are emitted when
-                   YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
-                   spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
-``profile``        Optional throughput/latency/param-count measurement (requires
-                   YAML ``profile: {enabled: true}``). -> ``results/profiles/``
-``seg-<head>``     Segmentation probe with the configured head (``linear`` / ``conv_block`` /
-                   ``fpn`` / ``dpt`` / ``patch_linear`` / ``upernet`` / ``unet``); the rest of
-                   the setup is in the setup columns. -> ``results/models/``
-================== ==================================================================================
+============================= ==================================================================================
+``method``                    Meaning
+============================= ==================================================================================
+``knn5`` / ``knn5-std``       KNN-5 classification (multilabel KNN for ``m-bigearthnet``); ``-std`` is appended
+                              when ``classification.feature_standardize`` is enabled. -> ``results/models/``
+``linear`` / ``linear-std``   L-BFGS logistic regression with C-sweep on the validation set; ``-std`` is appended
+                              when ``classification.feature_standardize`` is enabled. -> ``results/models/``
+``intrinsic_dim``             Optional intrinsic-dimension metrics on extracted embeddings (requires
+                              the ``[id]`` extra) plus dependency-free centered feature-spectrum
+                              diagnostics. Both are emitted when
+                              YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
+                              spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
+``profile``                   Optional throughput/latency/param-count measurement (requires
+                              YAML ``profile: {enabled: true}``). -> ``results/profiles/``
+``seg-<head>``                Segmentation probe with the configured head (``linear`` / ``conv_block`` /
+                              ``fpn`` / ``dpt`` / ``patch_linear`` / ``upernet`` / ``unet``); the rest of
+                              the setup is in the setup columns. Append ``-std`` when
+                              ``segmentation.feature_standardize`` is enabled, and ``-sweep<n>`` for an
+                              ``n``-cell ``patch_linear`` learning-rate/weight-decay probe sweep (for example
+                              ``seg-patch_linear-sweep<n>`` or ``seg-patch_linear-std-sweep<n>``).
+                              -> ``results/models/``
+============================= ==================================================================================
 
 CSV schema
 ----------
 
-==================== ============================================================
-Column               Description
-==================== ============================================================
-``dataset``          Dataset CLI name (e.g. ``m-eurosat``).
-``method``           Probe or measurement name; see `Method values`_.
-``metric_name``      Primary metric (``accuracy``, ``micro_mAP``, ``mIoU``,
-                     ``id_<estimator>_<split>`` for intrinsic-dimension rows,
-                     or ``spectrum_<metric>_<split>`` for feature-spectrum rows).
-``metric_value``     Point estimate.
-``ci_lower``         Bootstrap CI lower bound (0.0 when not applicable).
-``ci_upper``         Bootstrap CI upper bound (0.0 when not applicable).
-``feature_dim``      Embedding dimension produced by the backbone.
-``best_c``           Best ``C`` from the logistic-regression sweep
-                     (linear probe only, otherwise ``None``).
-``best_lr``          Best learning rate (segmentation only).
-``best_batch_size``  Best batch size (segmentation only).
-``n_train``          Train-split sample count.
-``n_val``            Validation-split sample count.
-``n_test``           Test-split sample count.
-``seed``             RNG seed used for the run.
-``model``            Fully-qualified class from the resolved preset's ``target``.
-``name``             Human-readable model name from the resolved preset.
-``normalization``    Strategy applied by the model wrapper (see table above).
-``image_size``       Input resize size (``None`` if no resizing).
-``interpolation``    Resize interpolation mode.
-``partition``        Dataset training partition, such as ``default`` or ``full``.
-``bands``            ``rgb`` / ``all`` / a sorted comma-joined list.
-``num_classes``      Dataset label count. It is also part of the resume key so
-                     label-schema changes cannot reuse stale rows.
-``c_range_start``    ``classification.linear.c_log10_start``.
-``c_range_stop``     ``classification.linear.c_log10_stop``.
-``c_range_num``      ``classification.linear.c_count``.
-``merge_val``        Whether ``train+val`` was merged before final logistic fit.
-``bootstrap``        Number of bootstrap resamples used for CIs.
-``fw_iou``           Frequency-weighted IoU (segmentation only).
-``precision``        Macro precision (segmentation only).
-``recall``           Macro recall (segmentation only).
-``f1``               Macro F1 (segmentation only).
-==================== ============================================================
+====================== ============================================================
+Column                 Description
+====================== ============================================================
+``dataset``            Dataset CLI name (e.g. ``m-eurosat``).
+``method``             Probe or measurement name; see `Method values`_.
+``metric_name``        Primary metric (``accuracy``, ``micro_mAP``, ``mIoU``,
+                       ``id_<estimator>_<split>`` for intrinsic-dimension rows,
+                       or ``spectrum_<metric>_<split>`` for feature-spectrum rows).
+``metric_value``       Point estimate.
+``ci_lower``           Bootstrap CI lower bound (0.0 when not applicable).
+``ci_upper``           Bootstrap CI upper bound (0.0 when not applicable).
+``feature_dim``        Embedding dimension produced by the backbone.
+``best_c``             Best ``C`` from the logistic-regression sweep
+                       (linear probe only, otherwise ``None``).
+``best_lr``            Best learning rate (segmentation only).
+``best_batch_size``    Best batch size (segmentation only).
+``n_train``            Train-split sample count.
+``n_val``              Validation-split sample count.
+``n_test``             Test-split sample count.
+``seed``               RNG seed used for the run.
+``model``              Fully-qualified class from the resolved preset's ``target``.
+``name``               Human-readable model name from the resolved preset.
+``normalization``      Strategy applied by the model wrapper (see table above).
+``image_size``         Input resize size (``None`` if no resizing).
+``interpolation``      Resize interpolation mode.
+``partition``          Dataset training partition, such as ``default`` or ``full``.
+``bands``              ``rgb`` / ``all`` / a sorted comma-joined list.
+``num_classes``        Dataset label count. It is also part of the resume key so
+                       label-schema changes cannot reuse stale rows.
+``config_hash``        SHA-256 fingerprint of the resolved model, preprocessing,
+                       and evaluation settings used by ``--resume``.
+``c_range_start``      ``classification.linear.c_log10_start``.
+``c_range_stop``       ``classification.linear.c_log10_stop``.
+``c_range_num``        ``classification.linear.c_count``.
+``merge_val``          Whether ``train+val`` was merged before final logistic fit.
+``bootstrap``          Number of bootstrap resamples used for CIs.
+``res``                Ground resolution in metres when recorded by the model
+                       (for example Scale-MAE); empty otherwise.
+``pool``               Token pooling mode when recorded by the model (for example
+                       ``mean``, ``cls``, or ``both``); empty otherwise.
+``fw_iou``             Frequency-weighted IoU (segmentation only).
+``precision``          Macro precision (segmentation only).
+``recall``             Macro recall (segmentation only).
+``f1``                 Macro F1 (segmentation only).
+``ece``                Expected calibration error (classification only).
+``rms_ce``             Root-mean-square calibration error (classification only).
+``mce``                Maximum calibration error (classification only).
+``ece_ts``             Post-temperature-scaling ECE (linear probe with ``temp_scale``).
+``rms_ce_ts``          Post-temperature-scaling RMS calibration error (linear probe with ``temp_scale``).
+``mce_ts``             Post-temperature-scaling MCE (linear probe with ``temp_scale``).
+``temperature``        Fitted temperature-scaling scalar (linear probe with ``temp_scale``).
+``calibration_n_bins`` Number of histogram bins used for calibration metrics.
+====================== ============================================================
 
 Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`).
 

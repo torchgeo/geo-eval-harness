@@ -92,6 +92,7 @@ Input and runtime
      verbose: false
      sample_cache: none
      sample_cache_dir: ~/.cache/geo_eval_harness/samples
+     matmul_precision: highest
 
 ``bands`` accepts ``rgb``, ``all``, or an ordered YAML list of dataset band
 names. The equivalent flag accepts comma-separated names, for example
@@ -135,10 +136,7 @@ normalization retain their documented behavior.
 
 Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
 
-Runtime flags are ``--device``, ``--batch-size``, ``--workers``,
-``--seed``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``,
-``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and
-``--normalization``.
+Runtime flags are ``--device``, ``--batch-size``, ``--workers``, ``--seed``, ``--matmul-precision``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``, ``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and ``--normalization``.
 
 Classification
 ^^^^^^^^^^^^^^
@@ -456,6 +454,7 @@ Its YAML schema is independent of image runs:
      heads: [fpn, dpt]
      band_configs: [rgb, s2]
      num_classes: 4
+     neck_policy: preset
    timing:
      batch_size: 64
      n_warmup: 3

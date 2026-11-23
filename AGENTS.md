@@ -21,7 +21,7 @@ src/geo_eval_harness/        # Main source package (importable as geo_eval_harne
   ├── coordbench/          # Location encoders, typed config, probes, and runner
   ├── resume.py            # config_hash-based resume/skip logic
   ├── results.py            # EvaluationResult schema + atomic per-model CSV writes
-  ├── download.py          # Dataset downloads (geobench_v1/v2 + torchgeo eurosat)
+  ├── download.py          # Dataset downloads (all registered GeoBench, torchgeo, and HF datasets)
   ├── hub.py               # Exact-commit Hugging Face downloads verified against checksums/*.sha256
   ├── datasets/            # Per-dataset BenchDataset wrappers + V1/V2 base classes
   ├── linear.py            # Custom LogisticRegression (PyTorch-based)
@@ -224,8 +224,11 @@ All datasets are loaded from `./data/<canonical-subdir>` relative to the current
 ### GeoBench V2 (Segmentation)
 `burn_scars`, `caffe`, `cloudsen12`, `dynamic_earthnet`, `flair2`, `fotw`, `kuro_siwo`, `pastis`, `spacenet2`, `spacenet7`
 
-### torchgeo template
-`eurosat` and `eurosat-spatial` (load via `torchgeo.datasets.EuroSAT`), and `resisc45`
+### Standalone classification (torchgeo / Hugging Face)
+`eurosat`, `eurosat-spatial`, `resisc45`, `ucmerced`, `aid`, `infrabench-cls`
+
+### Standalone segmentation (torchgeo / Hugging Face)
+`hotosm_buildings`, `openearthmap-sar`, `open_cities`, `loveda`, `levir-cd-post`, `sen1floods11-s1`, `sen1floods11-s2`, `bright-post-sar`, `bright-post-sar-rgb`, `oscd-post`, `planteur`, `planteur_loio_guadeloupe`, `planteur_loio_martinique`, `planteur_loio_guyane`, `planteur_loio_reunion`, `planteur_loio_mayotte`
 
 **Note:** V1 datasets use the `m-` prefix (e.g., `m-eurosat`), V2 datasets use no prefix. `geo-eval-harness datasets` prints the registry, which is the authoritative list.
 
@@ -257,7 +260,7 @@ logger = logging.getLogger(__name__)
 | Type | Convention | Example |
 |------|------------|---------|
 | Variables/functions | `snake_case` | `get_datasets`, `embed_split` |
-| Classes | `PascalCase` | `GeoBenchDataset`, `BenchModel` |
+| Classes | `PascalCase` | `BenchDataset`, `BenchModel` |
 | Constants | `SCREAMING_SNAKE_CASE` | `NUM_CLASSES_PER_DATASET` |
 | Private methods | `_leading_underscore` | `_load_sample_metadata` |
 
@@ -270,8 +273,14 @@ def get_datasets(
     dataset_name: str = "m-forestnet",
     partition_name: str = "default",
     batch_size: int = 32,
-    geobench_root: str | None = None,
-) -> tuple[DataLoader, DataLoader, DataLoader]:
+    *,
+    return_val: bool = False,
+    num_workers: int = 8,
+    image_size: int | None = None,
+    interpolation: str = "bilinear",
+    bands: str | Iterable[str] | None = "rgb",
+    time_steps: int | None = None,
+) -> tuple:
     ...
 ```
 
@@ -343,10 +352,10 @@ Implement `_forward_patch_features`, not the public `forward_patch_features`: th
 
 - **Line length:** 100 characters. `E501` is ignored because `ruff format` handles wrapping, and `W505` caps docstring and comment length at 100.
 - **Target:** Python 3.12
-- **Enabled rules:** `A, ARG, B, BLE001, C4, C901, D, E, ERA, F, FBT001, FBT002, G, I, LOG, NPY, PERF, PGH004, PIE, PLR0911, PLR0912, PLR0913, PLR0915, PLR5501, PT, RET505, RET506, RET507, RET508, RUF, SIM, T201, TID251, TRY, UP, W, W505`
+- **Enabled rules:** `A, ARG, B, BLE001, C4, C901, D, E, ERA, F, FBT001, FBT002, FURB, G, I, LOG, NPY, PERF, PGH004, PIE, PLR0911, PLR0912, PLR0913, PLR0915, PLR5501, PT, RET505, RET506, RET507, RET508, RUF, S110, SIM, T201, TID251, TRY, UP, W, W505`
 - **Ignored:** `B008, D104, D105, D107, E501, SIM108, SIM116, TRY003`
 - **Docstrings:** `D` (pydocstyle) is enabled with `convention = "google"`, so the docstring style below is enforced, not merely encouraged.
-- **Per-file ignores:** `tests/**` drops `ARG` and `D`; `projects/cleanlab/**` drops `D`; `cli.py` and `commands/**` drop `T201` because CLI payloads go to stdout.
+- **Per-file ignores:** `tests/**` drops `ARG` and `D`; `projects/cleanlab/**` drops `D`; `cli.py`, `commands/**`, and `scripts/check_dead_code.py` drop `T201` because CLI and gate payloads go to stdout.
 - **Banned imports (`TID251`):** `from __future__ import annotations` and `contextlib.suppress`.
 - **Complexity caps:** max-complexity 10, max-args 5, max-branches 12, max-returns 6, max-statements 50.
 
@@ -370,7 +379,7 @@ class TestGeoBenchDatasetBasics:
 
 ## Key Dependencies
 
-Core (see `pyproject.toml` for the authoritative list): `torch>=2.6`, `torchvision>=0.21`, `numpy>=1.24`, `scikit-learn>=1.4.2`, `timm>=1.0.20`, `torchgeo>=0.10`, `torchmetrics>=1.4`, `pydantic>=2.10`, `pyyaml>=6.0.1`, `h5py>=3.8`, `faissknn` (CPU or CUDA variant, picked by platform), `huggingface-hub>=0.20`, `geobenchv2>=0.9`, `pandas>=2`, `pyarrow>=14`, `safetensors>=0.4`, `filelock>=3.12`, `lazy-loader>=0.4`, `tqdm>=4.66`, `transformers[torch]>=5.14` (SAM 3 encoder and the DPT segmentation head).
+Core (see `pyproject.toml` for the authoritative list): `einops>=0.8`, `faissknn` (CPU or CUDA variant, picked by platform), `filelock>=3.12`, `geobenchv2>=0.9`, `geopandas>=0.14`, `h5py>=3.8`, `huggingface-hub>=0.20`, `lazy-loader>=0.4`, `numpy>=1.24`, `pandas>=2`, `pillow>=13`, `pyarrow>=14`, `pydantic>=2.10`, `pyyaml>=6.0.1`, `rasterio>=1.3`, `safetensors>=0.4`, `scikit-learn>=1.4.2`, `shapely>=2.0.4`, `timm>=1.0.20`, `torch>=2.6`, `torchgeo>=0.10.1,<0.11`, `torchmetrics>=1.4`, `torchvision>=0.21`, `tqdm>=4.66`, `transformers[torch]>=5.14` (SAM 3 encoder and the DPT segmentation head).
 
 Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
 

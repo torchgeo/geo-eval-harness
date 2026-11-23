@@ -114,6 +114,7 @@ Pass a file to ``geo-eval-harness coord --config my-coord.yaml``:
      cell_deg: 10.0
      knn_k: 5
      knn_device: cpu
+     ridge_alphas: [0.01, 0.1, 1.0, 10.0]  # omit for the default 21-value grid
    runtime:
      device: cpu
      seed: 0
@@ -122,11 +123,7 @@ Pass a file to ``geo-eval-harness coord --config my-coord.yaml``:
      file: null
      resume: false
 
-Explicit flags override YAML, including ``--no-resume``.
-``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select
-probes. ``--folds`` must be at least two. Other evaluation flags are
-``--cell-deg``, ``--knn-k``, and ``--knn-device``. ``--device`` selects the
-encoder/linear-probe device, and ``--seed`` controls reproducibility.
+Explicit flags override YAML, including ``--no-resume``. ``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select probes. ``--folds`` must be at least two. Other evaluation flags are ``--cell-deg``, ``--knn-k``, ``--knn-device``, and ``--ridge-alphas``. ``--device`` selects the encoder/linear-probe device, and ``--seed`` controls reproducibility.
 
 ``--dry-run`` validates and prints YAML without loading encoder weights or
 remote tables:
