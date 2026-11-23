@@ -36,7 +36,7 @@ Layer naming for SegmentationProbe:
 
 import logging
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import torch
 from transformers import Sam3Config, Sam3Model, Sam3VisionConfig
@@ -90,7 +90,7 @@ class SAM3Encoder(BenchModel):
         *,
         image_size: int | None = None,
         checkpoint_path: str | None = None,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
 

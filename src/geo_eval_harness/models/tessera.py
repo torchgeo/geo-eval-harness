@@ -102,6 +102,19 @@ class TesseraBenchModel(BenchModel):
     Inputs are BCHW raw L2A DN or reflectance. Missing S2 channels are filled with
     their pretraining means. Dates are aligned sample DOYs, or ``fallback_doy``.
     The S1 branch receives the upstream missing-modality token, not imagery.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list of Sentinel-2 input channels.
+        variant: Released student size (``"nano"``, ``"small"``, ``"medium"``, or ``"large"``).
+        embedding_dim: Output embedding dimension (``16``, ``32``, ``64``, or ``128``).
+        batch_pixels: Maximum number of pixels encoded per student batch.
+        fallback_doy: Day of year (1..366) used when sample dates are unavailable.
+        normalization: Normalization mode (must be ``"model_native"``).
+        checkpoint_path: Optional local checkpoint file overriding the Hub download.
+        protocol: Snapshot preprocessing protocol identifier (``"s2-snapshot-v1"``).
+        weights_revision: Optional Hub revision verified against the pinned student revision.
+        source_revision: Upstream Tessera source revision identifier.
+        image_size: Must be ``None``; Tessera runs on native spatial grids.
     """
 
     handles_own_normalization = True

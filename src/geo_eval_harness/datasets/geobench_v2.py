@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import Any, ClassVar, Literal
 
 import torch
 import torch.nn as nn
@@ -119,7 +119,7 @@ class GeoBenchv2(Dataset):
         *,
         band_order: object | None = None,
         transforms: Callable | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         if dataset_name not in _V2_REGISTRY:

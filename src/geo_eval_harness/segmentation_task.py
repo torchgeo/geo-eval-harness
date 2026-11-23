@@ -844,6 +844,17 @@ class SweepSegmentationSolver(SegmentationSolver):
     epoch every head is scored on validation mIoU and keeps a snapshot of its best epoch. Training
     ends by restoring the head with the highest best-epoch validation mIoU (ties: first in grid
     order, learning rate major); test evaluation then uses only that head.
+
+    Args:
+        model: ``SegmentationProbe`` built with a ``SweepPatchLinearHead``.
+        num_classes: Number of segmentation classes.
+        learning_rates: Learning-rate grid values (major axis).
+        weight_decays: Weight-decay grid values (minor axis).
+        device: Target torch device string.
+        lr_scheduler: Learning-rate schedule name (e.g. ``"cosine"``).
+        ignore_index: Target mask label ignored by the loss and metrics.
+        early_stopping_patience: Optional epochs without validation mIoU gain before stopping.
+        amp: Whether to enable automatic mixed precision on CUDA.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.

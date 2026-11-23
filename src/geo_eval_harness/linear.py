@@ -25,6 +25,18 @@ class LogisticRegression:
 
         loss = (1/n) * CrossEntropy + (1/n) * 0.5/C * ||W||^2
 
+    Args:
+        C: Inverse L2 regularization strength (must be positive).
+        max_iter: Maximum number of optimizer iterations or epochs.
+        lr: Learning rate for the chosen solver.
+        batch_size: Mini-batch size used by the ``adam`` solver.
+        solver: Optimizer to use (``"lbfgs"`` or ``"adam"``).
+        tol: Convergence tolerance on objective change.
+        patience: Consecutive epochs without improvement before stopping (``adam`` only).
+        random_state: Optional random seed for initialization and shuffling.
+        device: Target device (``None`` for CPU, ``"auto"``, or explicit torch device).
+        verbose: Whether to log training progress.
+        multi_label: Whether to fit independent sigmoid BCE heads instead of softmax.
     """
 
     def __init__(  # noqa: PLR0913 -- Public constructor options.

@@ -4,7 +4,7 @@ import importlib.util
 import logging
 import math
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 import torch
@@ -154,7 +154,7 @@ def has_lora_adapters(model: nn.Module) -> bool:
 
 
 @contextmanager
-def merged_lora(model: nn.Module) -> Iterator[None]:
+def merged_lora(model: nn.Module) -> Generator[None, None, None]:
     """Fold LoRA updates into the backbone weights for inference, then unmerge them.
 
     Unmerged adapters add several small kernels per adapted layer to every forward pass; merged,

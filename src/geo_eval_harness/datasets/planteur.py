@@ -140,6 +140,13 @@ class PLANTEUR(BenchDataset, Dataset):
     Samples hold the month chosen by ``time_steps`` as in PASTIS: ``None`` or 1 returns
     the first month as ``(C, H, W)``; ``T > 1`` returns ``T`` evenly spaced months as
     ``(T, C, H, W)``.
+
+    Args:
+        root: Optional directory holding converted ``.npy`` split arrays.
+        rows: Optional ``(split, row_index)`` pairs selecting patches to expose.
+        band_indices: Optional channel indices into ``bands`` to read.
+        months: Optional list of 0-based month indices to load per patch.
+        transform: Optional callable applied to each sample dict.
     """
 
     name = "planteur"

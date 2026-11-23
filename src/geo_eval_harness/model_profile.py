@@ -7,7 +7,7 @@ transfers, and automatic batch-size searches are outside its scope.
 import contextlib
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from statistics import median
 
@@ -106,7 +106,7 @@ EXTRA_FLOP_FORMULAS = {
 
 
 @contextlib.contextmanager
-def _attention_slow_path() -> Iterator[None]:
+def _attention_slow_path() -> Generator[None, None, None]:
     """Run attention modules as separate operators; their fused inference kernels are opaque."""
     enabled = torch.backends.mha.get_fastpath_enabled()
     torch.backends.mha.set_fastpath_enabled(False)
@@ -161,7 +161,7 @@ def _precision_context(
 
 
 @contextlib.contextmanager
-def _evaluation_mode(model: nn.Module) -> Iterator[None]:
+def _evaluation_mode(model: nn.Module) -> Generator[None, None, None]:
     states = {module: module.training for module in model.modules()}
     model.eval()
     try:

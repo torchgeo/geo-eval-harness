@@ -10,7 +10,7 @@ The MOSAIKS-style extractor is adapted from ``torchgeo.models.RCF``.
 
 from collections.abc import Sized
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -243,6 +243,16 @@ class RCFBench(BenchModel):
       the filter bank and inference inputs in the same distribution, the
       passed dataset is wrapped so its samples are pre-normalized with the
       same per-channel z-score this :class:`RCFBench` will use at inference.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        features: Number of random convolutional features to extract.
+        kernel_size: Spatial size of the square convolution filters.
+        mode: Filter sampling mode (``"gaussian"`` or ``"empirical"``).
+        stats_mode: Spatial pooling statistics mode passed to :class:`RCF`.
+        seed: Optional random seed for filter sampling.
+        dataset: Optional dataset used to sample empirical patches when ``mode="empirical"``.
+        **_kwargs: Additional keyword arguments forwarded to :class:`BenchModel`.
     """
 
     def __init__(  # noqa: PLR0913 - public YAML options
@@ -254,7 +264,7 @@ class RCFBench(BenchModel):
         stats_mode: str = "mean",
         seed: int | None = None,
         dataset: Dataset | None = None,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
         if mode == "empirical" and dataset is not None:

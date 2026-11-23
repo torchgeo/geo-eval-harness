@@ -45,7 +45,14 @@ def _tile_starts(length: int, size: int) -> list[tuple[int, int]]:
 
 
 class OSCDTileDataset(Dataset):
-    """Read one post-image tile and its change mask per index."""
+    """Read one post-image tile and its change mask per index.
+
+    Args:
+        root: Dataset root directory containing city imagery and labels.
+        tiles: Tile specs ``(city, top, left, overlap_rows, overlap_cols)``.
+        bands: Ordered Sentinel-2 band names to read per tile.
+        transform: Optional callable applied to each sample dict.
+    """
 
     def __init__(
         self,

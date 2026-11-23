@@ -10,7 +10,6 @@ from geo_eval_harness.models._band_mapping import (
     canonical_band_name,
     map_to_model_bands,
     select_src_bands,
-    wavelengths_um,
 )
 from geo_eval_harness.models.torchgeo_models import _resolve_dofa_wavelengths
 
@@ -161,28 +160,6 @@ class TestSelectSrcBands:
         src = [_band("vv", sensor="sar"), _band("vh", sensor="sar")]
         with pytest.raises(BandCompatibilityError, match="none of the target bands"):
             select_src_bands(src, ["red", "green", "blue"])
-
-
-class TestWavelengthsUm:
-    def test_default_fill_when_explicitly_provided(self) -> None:
-        bands = [_band("red", 0.665), _band("vv", None)]
-        wls = wavelengths_um(bands, default_um=1.5)
-        assert wls == [0.665, 1.5]
-
-    def test_falls_back_to_s2_wavelength_by_canonical_name(self) -> None:
-        """Use S2 wavelengths as approximations for Landsat bands with no declared wavelength."""
-        bands = [
-            _band("nir", None, sensor="landsat"),
-            _band("swir_1", None, sensor="landsat"),
-            _band("swir_2", None, sensor="landsat"),
-        ]
-        assert wavelengths_um(bands) == [0.842, 1.610, 2.190]
-
-    def test_sar_still_raises_without_s2_default_or_explicit_default(self) -> None:
-        """Radar backscatter has no optical wavelength fallback."""
-        bands = [_band("red", 0.665), _band("vv", None, sensor="sar")]
-        with pytest.raises(ValueError, match="Missing wavelengths"):
-            wavelengths_um(bands)
 
 
 class TestDofaWavelengths:

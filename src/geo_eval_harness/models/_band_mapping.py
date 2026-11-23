@@ -2,7 +2,6 @@
 
 import logging
 from dataclasses import dataclass, replace
-from typing import cast
 
 import torch
 
@@ -245,32 +244,3 @@ def map_to_model_bands(
         out[:, j] = images[:, idx]
         missing.append(False)
     return out, missing
-
-
-def wavelengths_um(bands: list[BandSpec], default_um: float | None = None) -> list[float]:
-    """Return per-band centre wavelengths in micrometres.
-
-    Bands without ``wavelength_um`` use :data:`S2_WAVELENGTHS_UM` by canonical name.
-    This approximates other sensors, such as Landsat (nir 0.842 vs. ~0.865 um).
-
-    Bands with no known S2 wavelength (e.g. SAR) raise unless the caller supplies ``default_um``.
-    """
-    still_missing = [
-        b.name
-        for b in bands
-        if b.wavelength_um is None and canonical_band_name(b.name) not in S2_WAVELENGTHS_UM
-    ]
-    if still_missing and default_um is None:
-        raise ValueError(
-            f"Missing wavelengths for {still_missing}: not in S2_WAVELENGTHS_UM either. "
-            "Pass explicit wavelengths or default_um only for a deliberate fallback ablation."
-        )
-    resolved = []
-    for b in bands:
-        if b.wavelength_um is not None:
-            resolved.append(float(b.wavelength_um))
-        elif canonical_band_name(b.name) in S2_WAVELENGTHS_UM:
-            resolved.append(S2_WAVELENGTHS_UM[canonical_band_name(b.name)])
-        else:
-            resolved.append(float(cast(float, default_um)))
-    return resolved

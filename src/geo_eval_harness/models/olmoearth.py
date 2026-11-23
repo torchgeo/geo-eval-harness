@@ -471,7 +471,7 @@ class OlmoEarthBenchModel(BenchModel):
         embedding: EmbeddingSource | None = None,
         missing_bands: MissingBands | None = None,
         gsd_scale: float = 1.0,
-        **_kwargs,
+        **_kwargs: Any,
     ) -> None:
         super().__init__(bands=bands, **_kwargs)
         self.embedding, self.missing_bands = _resolve_version_options(

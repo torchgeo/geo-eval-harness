@@ -134,6 +134,13 @@ class TerraTorchPrithviBench(_TerraTorchBench):
     use TerraTorch's ``model_bands=`` patch-embed selection, which keeps the
     pretrained weights for the bands that are present and drops the rest,
     rather than zero-filling the missing channels.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        backbone_name: TerraTorch Prithvi backbone registry name.
+        pretrained: Whether to load pretrained weights.
+        target_size: Optional spatial size to resize inputs to before encoding.
+        **kwargs: Additional keyword arguments forwarded to ``_TerraTorchBench``.
     """
 
     expected_input_unit = InputUnit.S2_DN
@@ -207,6 +214,16 @@ class TerraTorchClayBench(_TerraTorchBench):
     Input mapping and ``waves`` use available ``CLAY_BANDS`` in pretrained order.
     RGB inputs use three channels and wavelengths; full S2 inputs use all six. The
     encoder's positional grid follows ``target_size`` with its pretrained 8-pixel stride.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        backbone_name: TerraTorch Clay backbone registry name.
+        pretrained: Whether to load pretrained weights.
+        checkpoint_path: Optional local checkpoint path passed to TerraTorch.
+        target_size: Optional spatial size to resize inputs to before encoding.
+        modality: Modality name (accepted for preset compatibility; Clay uses Sentinel-2).
+        gsd: Ground sampling distance in meters passed to the Clay encoder.
+        **kwargs: Additional keyword arguments forwarded to ``_TerraTorchBench``.
     """
 
     # Clay's published mean/std (see _CLAY_PRETRAIN_MEAN_BY_BAND) are raw S2
@@ -343,6 +360,14 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
     Under ``model_native``, inputs are converted to the modality's native scale
     (dB for Sentinel-1, from each band's declared ``unit``) and z-scored with
     TerraMind's pretraining stats.
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        backbone_name: TerraTorch TerraMind backbone registry name.
+        pretrained: Whether to load pretrained weights.
+        target_size: Optional spatial size to resize inputs to before encoding.
+        modality: TerraMind modality key (e.g. ``"S2L2A"``, ``"RGB"``, ``"S1GRD"``, ``"S1RTC"``).
+        **kwargs: Additional keyword arguments forwarded to ``_TerraTorchBench``.
     """
 
     expected_input_unit = InputUnit.REFLECTANCE_0_1

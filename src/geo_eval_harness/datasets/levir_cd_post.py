@@ -18,7 +18,14 @@ from .base import BandSpec, BenchDataset
 
 
 class LEVIRCDPostTiles(Dataset):
-    """Non-overlapping square tiles of post images and change masks, in (image, row, col) order."""
+    """Non-overlapping square tiles of post images and change masks, in (image, row, col) order.
+
+    Args:
+        paths: Sequence of ``(image_path, mask_path)`` pairs.
+        transform: Optional callable applied to each sample dict.
+        tile_size: Side length in pixels of each cropped square tile.
+        tiles_per_side: Number of non-overlapping tiles along each image axis.
+    """
 
     def __init__(
         self,

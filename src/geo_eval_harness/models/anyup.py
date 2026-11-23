@@ -120,6 +120,10 @@ class AnyUpClassifier(nn.Module):
     cross-sample operations, so a batch whose attention exceeds ``ATTENTION_BUDGET`` runs in
     chunks of samples within ``CHUNK_BUDGET``, each recomputed in backward instead of storing
     its attention; batches within the budget run in one call as before.
+
+    Args:
+        classifier: Segmentation classifier module applied to upsampled features.
+        upsampler: Frozen AnyUp upsampler module.
     """
 
     def __init__(self, classifier: nn.Module, upsampler: nn.Module) -> None:

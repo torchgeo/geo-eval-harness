@@ -42,7 +42,13 @@ ASSET_TYPE_LABELS: dict[str, int] = {name: i for i, name in enumerate(CLASS_NAME
 
 
 class InfraBenchSplit(Dataset):
-    """Tiles of one split, resized to ``TILE_SIZE`` so batches stack."""
+    """Tiles of one split, resized to ``TILE_SIZE`` so batches stack.
+
+    Args:
+        paths: Paths to ``.npy`` tile files in the split.
+        labels: Integer class labels aligned with ``paths``.
+        transform: Optional callable applied to each sample dict.
+    """
 
     def __init__(self, paths: list[Path], labels: list[int], transform: Callable | None) -> None:
         self.paths = paths
