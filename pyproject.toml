@@ -33,6 +33,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Scientific/Engineering :: GIS",
 ]
@@ -195,8 +196,12 @@ lint.per-file-ignores."scripts/check_dead_code.py" = [ "T201" ]  # gate output g
 lint.per-file-ignores."src/geo_eval_harness/cli.py" = [ "T201" ]  # CLI payloads go to stdout
 lint.per-file-ignores."src/geo_eval_harness/commands/**/*.py" = [ "T201" ]
 lint.per-file-ignores."tests/**/*.py" = [ "ARG", "D" ]
-lint.flake8-tidy-imports.banned-api."__future__.annotations".msg = "Use ordinary annotations or quoted forward references."
-lint.flake8-tidy-imports.banned-api."contextlib.suppress".msg = "Let errors propagate or use an explicit except clause with a reason."
+lint.flake8-tidy-imports.banned-api."__future__.annotations".msg = """\
+  Use ordinary annotations or quoted forward references.\
+  """
+lint.flake8-tidy-imports.banned-api."contextlib.suppress".msg = """\
+  Let errors propagate or use an explicit except clause with a reason.\
+  """
 lint.mccabe.max-complexity = 10
 lint.pycodestyle.max-doc-length = 100
 lint.pydocstyle.convention = "google"
@@ -205,11 +210,64 @@ lint.pylint.max-branches = 12
 lint.pylint.max-returns = 6
 lint.pylint.max-statements = 50
 
+[tool.vulture]
+paths = [ "docs", "experiments", "scripts", "src", "tests" ]
+exclude = [
+  "docs/conf.py",                                    # Sphinx reads these names by convention, not by reference.
+  "docs/examples",                                   # standalone, read-only usage snippets
+  "src/geo_eval_harness/models/contrib_template.py", # template for new model wrappers, never instantiated
+]
+ignore_names = [
+  "__class__",                 # Python uses this assignment to replace the UPerNet pooling implementation.
+  "__dir__",                   # PEP 562 lazy-module hook, called by the import system
+  "__getattr__",               # PEP 562 lazy-module hook, called by the import system
+  # EvaluationResult / CoordBenchResult / ResultMetadata fields read only via
+  # dict/row access (CSV columns), not by a bare Python-level reference.
+  # Add a new field here if vulture flags it.
+  "best_batch_size",
+  "best_lr",
+  "best_val_epoch",
+  "boundary_iou",
+  "boundary_iou_width",
+  "c_range_num",
+  "c_range_start",
+  "c_range_stop",
+  "class_weights",
+  "ClimplicitLocationEncoder",
+  "construct_mapping",         # yaml.SafeLoader override, called by PyYAML
+  "download_aid",
+  "download_levir_cd_post",
+  "download_loveda",
+  "download_oscd_post",
+  "ece",
+  "ece_ts",
+  "epoch_seconds",
+  # torchmetrics.Metric class attributes and a HF UperNetConfig field, read by the libraries.
+  "full_state_update",
+  "GeoCLIPLocationEncoder",
+  "higher_is_better",
+  "is_differentiable",
+  # Public CoordBench API, YAML model targets, and downloaders dispatched by dataset name.
+  "list_families",
+  "mce",
+  "mce_ts",
+  "n_folds",
+  "num_labels",
+  "rms_ce",
+  "rms_ce_ts",
+  "SatCLIPLocationEncoder",
+  "selection_metric",
+  "SINRLocationEncoder",
+  "TorchGeoDEOBench",
+  "TorchGeoEarthLocBench",
+]
+ignore_decorators = [ "@field_validator", "@model_validator" ]  # called by Pydantic, not by name
+min_confidence = 60
+
 [tool.pyrefly]
+python-version = "3.12"
 project-includes = [ "src/geo_eval_harness/**/*.py" ]
 search-path = [ "src" ]
-python-version = "3.12"
-preset = "default"
 # Optional extras are checked when installed.
 ignore-missing-imports = [
   "olmoearth_pretrain_minimal",
@@ -218,8 +276,11 @@ ignore-missing-imports = [
   "terratorch.*",
   "torchid",
 ]
+preset = "default"
 
 [tool.pytest]
+ini_options.testpaths = [ "tests" ]
+ini_options.pythonpath = [ "src", "." ]
 ini_options.addopts = [
   "--strict-config",
   "--strict-markers",
@@ -230,73 +291,17 @@ ini_options.addopts = [
   "--cov-report=xml",
   "-m not slow and not accuracy_check",
 ]
-ini_options.testpaths = [ "tests" ]
-ini_options.pythonpath = [ "src", "." ]
 ini_options.markers = [
-  "integration: offline workflows using toy data and real application components (included by default)",
-  "slow: optional tests requiring downloaded datasets or pretrained weights (use -m slow to include)",
   "accuracy_check: per-class model accuracy regression tests (use -m accuracy_check to run)",
   "geography: committed dataset-geography store checks (included by default; CI runs them in one job)",
+  "integration: offline workflows using toy data and real application components (included by default)",
+  "slow: optional tests requiring downloaded datasets or pretrained weights (use -m slow to include)",
 ]
 
 [tool.coverage]
-run.branch = true
-run.patch = [ "subprocess" ]
-run.relative_files = true
 run.source = [ "geo_eval_harness" ]
+run.branch = true
+run.relative_files = true
+run.patch = [ "subprocess" ]
 report.precision = 2
 report.show_missing = true
-
-[tool.vulture]
-min_confidence = 60
-paths = [ "src", "scripts", "experiments", "docs", "tests" ]
-exclude = [
-  "docs/conf.py",                                    # Sphinx reads these names by convention, not by reference.
-  "docs/examples",                                   # standalone, read-only usage snippets
-  "src/geo_eval_harness/models/contrib_template.py", # template for new model wrappers, never instantiated
-]
-ignore_decorators = [ "@field_validator", "@model_validator" ]  # called by Pydantic, not by name
-ignore_names = [
-  # Public CoordBench API, YAML model targets, and downloaders dispatched by dataset name.
-  "list_families",
-  "ClimplicitLocationEncoder",
-  "GeoCLIPLocationEncoder",
-  "SatCLIPLocationEncoder",
-  "SINRLocationEncoder",
-  "TorchGeoDEOBench",
-  "TorchGeoEarthLocBench",
-  "download_aid",
-  "download_levir_cd_post",
-  "download_loveda",
-  "download_oscd_post",
-  "__class__",                 # Python uses this assignment to replace the UPerNet pooling implementation.
-  "__dir__",                   # PEP 562 lazy-module hook, called by the import system
-  "__getattr__",               # PEP 562 lazy-module hook, called by the import system
-  "construct_mapping",         # yaml.SafeLoader override, called by PyYAML
-  # EvaluationResult / CoordBenchResult / ResultMetadata fields read only via
-  # dict/row access (CSV columns), not by a bare Python-level reference.
-  # Add a new field here if vulture flags it.
-  "best_batch_size",
-  "best_lr",
-  "best_val_epoch",
-  "class_weights",
-  "epoch_seconds",
-  "selection_metric",
-  "boundary_iou",
-  "boundary_iou_width",
-  "c_range_num",
-  "c_range_start",
-  "c_range_stop",
-  "ece",
-  "ece_ts",
-  "mce",
-  "mce_ts",
-  "n_folds",
-  "rms_ce",
-  "rms_ce_ts",
-  # torchmetrics.Metric class attributes and a HF UperNetConfig field, read by the libraries.
-  "full_state_update",
-  "higher_is_better",
-  "is_differentiable",
-  "num_labels",
-]
