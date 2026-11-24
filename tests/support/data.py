@@ -30,10 +30,11 @@ def require_dataset_data(name: str) -> None:
         ]
     elif name in ("eurosat", "eurosat-spatial"):
         paths = [Path("data/eurosat")]
+    elif name in ("eurosat-l", "eurosat-l-spatial"):
+        paths = [Path("data/eurosat-l")]
     elif name in (
         "resisc45",
         "ucmerced",
-        "eurosat-l",
         "bigearthnet-l",
         "lc100-l",
         "hotosm_buildings",

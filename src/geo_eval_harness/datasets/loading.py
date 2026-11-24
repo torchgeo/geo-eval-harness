@@ -53,6 +53,7 @@ _REGISTRY_SPEC: dict[str, tuple[str, str, Literal["classification", "segmentatio
     "aid": ("aid", "AID", "classification"),
     "infrabench-cls": ("infrabench_cls", "InfraBenchCLS", "classification"),
     "eurosat-l": ("landsatbench", "EuroSATL", "classification"),
+    "eurosat-l-spatial": ("landsatbench", "EuroSATLSpatial", "classification"),
     "bigearthnet-l": ("landsatbench", "BigEarthNetL", "classification"),
     "lc100-l": ("landsatbench", "LC100L", "classification"),
     # other segmentation
@@ -120,6 +121,8 @@ def download_name(name: str) -> str:
         return "bright-post-sar"
     if name == "eurosat-spatial":
         return "eurosat"
+    if name == "eurosat-l-spatial":
+        return "eurosat-l"
     if name.startswith("planteur_loio_") and name in _REGISTRY_SPEC:
         return "planteur"
     return name

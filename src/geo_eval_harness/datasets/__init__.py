@@ -46,6 +46,7 @@ __all__ = [
     "DynamicEarthNet",
     "EuroSAT",
     "EuroSATL",
+    "EuroSATLSpatial",
     "EuroSATSpatial",
     "FieldsOfTheWorld",
     "Forestnet",

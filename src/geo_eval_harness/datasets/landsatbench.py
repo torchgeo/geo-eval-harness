@@ -16,6 +16,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchgeo.datasets import BigEarthNet as TGBigEarthNet
+from torchgeo.datasets import CopernicusBenchLC100ClsS3
 
 from .base import BandSpec, BenchDataset
 
@@ -29,13 +30,16 @@ _LANDSAT8_BAND_META: tuple[tuple[str, str, float], ...] = (
     ("swir_2", "SR_B7", 2.201),
 )
 
+_BEN_CLASS2IDX: dict[str, int] = {
+    name: idx for idx, name in enumerate(TGBigEarthNet.class_sets[43])
+}
+
 LC100_MISSING_PID = "0669864_-114.00_26.25"
 
 
 def _landsat8_bands(
     means: tuple[float, ...],
     stds: tuple[float, ...],
-    mins: tuple[float, ...],
     maxs: tuple[float, ...],
 ) -> list[BandSpec]:
     return [
@@ -45,12 +49,12 @@ def _landsat8_bands(
             source_name,
             mean=mean,
             std=std,
-            min=lo,
+            min=0.0,
             max=hi,
             wavelength_um=wavelength_um,
         )
-        for (name, source_name, wavelength_um), mean, std, lo, hi in zip(
-            _LANDSAT8_BAND_META, means, stds, mins, maxs, strict=True
+        for (name, source_name, wavelength_um), mean, std, hi in zip(
+            _LANDSAT8_BAND_META, means, stds, maxs, strict=True
         )
     ]
 
@@ -92,14 +96,8 @@ class _LandsatClassificationSplit(Dataset):
 
     def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         image = _read_landsat_image(self.paths[index], self.band_indices, self.tile_size)
-        label = torch.tensor(self.labels[index], dtype=torch.long)
-        sample = {"image": image, "label": label}
+        sample = {"image": image, "label": torch.tensor(self.labels[index], dtype=torch.long)}
         return sample if self.transform is None else self.transform(sample)
-
-
-_BEN_CLASS2IDX: dict[str, int] = {
-    name: idx for idx, name in enumerate(TGBigEarthNet.class_sets[43])
-}
 
 
 class _BigEarthNetLSplit(Dataset):
@@ -134,7 +132,25 @@ class _BigEarthNetLSplit(Dataset):
         return sample if self.transform is None else self.transform(sample)
 
 
-class EuroSATL(BenchDataset):
+class _LandsatBenchDataset(BenchDataset):
+    """Shared defaults and helpers for Landsat-Bench classification datasets."""
+
+    task = "classification"
+    rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
+    supports_partitions = False
+    tile_size: ClassVar[int]
+
+    @classmethod
+    def _band_indices(cls, bands: tuple[str, ...] | None) -> list[int]:
+        return [cls.bands.index(spec) + 1 for spec in cls.select_band_specs(bands)]
+
+    @staticmethod
+    def _check_split(split: str) -> None:
+        if split not in ("train", "val", "test"):
+            raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
+
+
+class EuroSATL(_LandsatBenchDataset):
     """Landsat-8 land-use classification (10 classes), from Landsat-Bench.
 
     27,000 Landsat 8 Collection 2 Level-2 chips corresponding to EuroSAT locations
@@ -144,7 +160,6 @@ class EuroSATL(BenchDataset):
     """
 
     name = "eurosat-l"
-    task = "classification"
     num_classes = 10
     class_names: ClassVar[tuple[str, ...]] = (
         "AnnualCrop",
@@ -159,37 +174,19 @@ class EuroSATL(BenchDataset):
         "SeaLake",
     )
     multilabel = False
-    rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 16200, "val": 5400, "test": 5400}
-    supports_partitions = False
     tile_size = 22
+    split_prefix: ClassVar[str] = "eurosat"
 
     bands: ClassVar[list[BandSpec]] = _landsat8_bands(
-        means=(
-            8515.3212890625,
-            8829.6005859375,
-            9795.9208984375,
-            9891.6552734375,
-            15499.8837890625,
-            13146.115234375,
-            11004.2119140625,
-        ),
-        stds=(
-            3938.755859375,
-            4057.7177734375,
-            4205.96044921875,
-            4434.4228515625,
-            6150.6396484375,
-            4923.02001953125,
-            4044.071044921875,
-        ),
-        mins=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        means=(8515.321, 8829.601, 9795.921, 9891.655, 15499.884, 13146.115, 11004.212),
+        stds=(3938.756, 4057.718, 4205.960, 4434.423, 6150.640, 4923.020, 4044.071),
         maxs=(62584.0, 63593.0, 65454.0, 65454.0, 64960.0, 65454.0, 65454.0),
     )
 
     @classmethod
     def data_root(cls) -> Path:
-        """Return ``Path("data/eurosat-l")``."""
+        """Return ``Path("data/eurosat-l")`` (shared by :class:`EuroSATLSpatial`)."""
         return Path("data/eurosat-l")
 
     def get_dataset(
@@ -202,10 +199,9 @@ class EuroSATL(BenchDataset):
     ) -> Dataset:
         """Return the split as a PyTorch dataset."""
         del partition
-        if split not in ("train", "val", "test"):
-            raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
+        self._check_split(split)
         root = self.data_root()
-        split_file = root / f"eurosat-{split}.txt"
+        split_file = root / f"{self.split_prefix}-{split}.txt"
         image_root = root / "eurosat-l"
         if not split_file.is_file() or not image_root.is_dir():
             raise FileNotFoundError(
@@ -227,12 +223,22 @@ class EuroSATL(BenchDataset):
                 if path.name in valid_names:
                     paths.append(path)
                     labels.append(class_idx)
-        specs = self.select_band_specs(bands)
-        band_indices = [self.bands.index(spec) + 1 for spec in specs]
-        return _LandsatClassificationSplit(paths, labels, band_indices, self.tile_size, transform)
+        return _LandsatClassificationSplit(
+            paths, labels, self._band_indices(bands), self.tile_size, transform
+        )
 
 
-class BigEarthNetL(BenchDataset):
+class EuroSATLSpatial(EuroSATL):
+    """EuroSAT-L with EuroSAT's longitude-based 60/20/20 train/val/test spatial splits.
+
+    Shares the same 27,000 Landsat-8 chips, classes, bands, and statistics as :class:`EuroSATL`.
+    """
+
+    name = "eurosat-l-spatial"
+    split_prefix = "eurosat-spatial"
+
+
+class BigEarthNetL(_LandsatBenchDataset):
     """Landsat-8 multi-label land-cover classification (19 classes), from Landsat-Bench.
 
     519,284 Landsat 8 Collection 2 Level-2 chips corresponding to BigEarthNet v1
@@ -242,64 +248,16 @@ class BigEarthNetL(BenchDataset):
     """
 
     name = "bigearthnet-l"
-    task = "classification"
     num_classes = 19
-    class_names: ClassVar[tuple[str, ...]] = (
-        "Urban fabric",
-        "Industrial or commercial units",
-        "Arable land",
-        "Permanent crops",
-        "Pastures",
-        "Complex cultivation patterns",
-        "Land principally occupied by agriculture, with significant areas of natural vegetation",
-        "Agro-forestry areas",
-        "Broad-leaved forest",
-        "Coniferous forest",
-        "Mixed forest",
-        "Natural grassland and sparsely vegetated areas",
-        "Moors, heathland and sclerophyllous vegetation",
-        "Transitional woodland, shrub",
-        "Beaches, dunes, sands",
-        "Inland wetlands",
-        "Coastal wetlands",
-        "Inland waters",
-        "Marine waters",
-    )
+    class_names: ClassVar[tuple[str, ...]] = tuple(TGBigEarthNet.class_sets[19])
     multilabel = True
-    rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 269695, "val": 123723, "test": 125866}
-    supports_partitions = False
     tile_size = 40
 
     bands: ClassVar[list[BandSpec]] = _landsat8_bands(
-        means=(
-            9405.1943359375,
-            9649.6767578125,
-            10425.685546875,
-            10444.5888671875,
-            16067.626953125,
-            12699.18359375,
-            10596.474609375,
-        ),
-        stds=(
-            6016.34375,
-            6095.47216796875,
-            5839.4619140625,
-            6068.49267578125,
-            6271.4404296875,
-            4256.0458984375,
-            3130.7763671875,
-        ),
-        mins=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        maxs=(
-            63979.91796875,
-            65330.30859375,
-            65454.0,
-            65454.0,
-            65454.0,
-            65454.00390625,
-            65454.00390625,
-        ),
+        means=(9405.194, 9649.677, 10425.686, 10444.589, 16067.627, 12699.184, 10596.475),
+        stds=(6016.344, 6095.472, 5839.462, 6068.493, 6271.440, 4256.046, 3130.776),
+        maxs=(63979.918, 65330.309, 65454.0, 65454.0, 65454.0, 65454.004, 65454.004),
     )
 
     @classmethod
@@ -317,8 +275,7 @@ class BigEarthNetL(BenchDataset):
     ) -> Dataset:
         """Return the split as a PyTorch dataset."""
         del partition
-        if split not in ("train", "val", "test"):
-            raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
+        self._check_split(split)
         root = self.data_root()
         split_file = root / f"bigearthnet-{split}.csv"
         image_dir = root / "bigearthnet-l" / "images"
@@ -335,12 +292,12 @@ class BigEarthNetL(BenchDataset):
         ]
         image_paths = [image_dir / f"{patch_id}.tif" for patch_id in patch_ids]
         label_paths = [label_dir / f"{patch_id}_labels_metadata.json" for patch_id in patch_ids]
-        specs = self.select_band_specs(bands)
-        band_indices = [self.bands.index(spec) + 1 for spec in specs]
-        return _BigEarthNetLSplit(image_paths, label_paths, band_indices, self.tile_size, transform)
+        return _BigEarthNetLSplit(
+            image_paths, label_paths, self._band_indices(bands), self.tile_size, transform
+        )
 
 
-class LC100L(BenchDataset):
+class LC100L(_LandsatBenchDataset):
     """Landsat-8 global multi-label land-cover classification (23 classes), from Landsat-Bench.
 
     8,634 Landsat 8 Collection 2 Level-2 scenes paired with Copernicus-Bench LC100 labels
@@ -350,59 +307,15 @@ class LC100L(BenchDataset):
     """
 
     name = "lc100-l"
-    task = "classification"
     num_classes = 23
-    class_names: ClassVar[tuple[str, ...]] = (
-        "Unknown",
-        "Shrubs",
-        "Herbaceous vegetation",
-        "Cultivated and managed vegetation / agriculture",
-        "Urban / built up",
-        "Bare / sparse vegetation",
-        "Snow and ice",
-        "Permanent water bodies",
-        "Herbaceous wetland",
-        "Moss and lichen",
-        "Closed forest, evergreen needle leaf",
-        "Closed forest, evergreen broad leaf",
-        "Closed forest, deciduous needle leaf",
-        "Closed forest, deciduous broad leaf",
-        "Closed forest, mixed",
-        "Closed forest, not matching any of the other definitions",
-        "Open forest, evergreen needle leaf",
-        "Open forest, evergreen broad leaf",
-        "Open forest, deciduous needle leaf",
-        "Open forest, deciduous broad leaf",
-        "Open forest, mixed",
-        "Open forest, not matching any of the other definitions",
-        "Oceans, seas",
-    )
+    class_names: ClassVar[tuple[str, ...]] = tuple(CopernicusBenchLC100ClsS3.classes)
     multilabel = True
-    rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 5181, "val": 1727, "test": 1726}
-    supports_partitions = False
     tile_size = 224
 
     bands: ClassVar[list[BandSpec]] = _landsat8_bands(
-        means=(
-            10349.7880859375,
-            10614.703125,
-            11293.564453125,
-            11854.380859375,
-            14793.0302734375,
-            12222.5654296875,
-            10831.328125,
-        ),
-        stds=(
-            10919.978515625,
-            10937.5087890625,
-            10435.6298828125,
-            10778.1865234375,
-            10573.8857421875,
-            8040.63525390625,
-            7096.6103515625,
-        ),
-        mins=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        means=(10349.788, 10614.703, 11293.564, 11854.381, 14793.030, 12222.565, 10831.328),
+        stds=(10919.979, 10937.509, 10435.630, 10778.187, 10573.886, 8040.635, 7096.610),
         maxs=(65454.0, 65454.0, 65454.0, 65454.0, 65454.0, 65175.0, 61457.0),
     )
 
@@ -421,8 +334,7 @@ class LC100L(BenchDataset):
     ) -> Dataset:
         """Return the static split as a PyTorch dataset, joining images and labels by PID."""
         del partition
-        if split not in ("train", "val", "test"):
-            raise ValueError(f"Unknown split {split!r}. Expected train, val, or test.")
+        self._check_split(split)
         root = self.data_root()
         labels_file = root / f"multilabel-{split}.csv"
         static_file = root / f"static_fnames-{split}.csv"
@@ -438,6 +350,6 @@ class LC100L(BenchDataset):
         fname_by_pid = dict(zip(static_df["PID"], static_df["filename"], strict=True))
         paths = [image_root / pid / fname_by_pid[pid] for pid in labels_df["PID"]]
         labels = labels_df.iloc[:, 1:].to_numpy(dtype=np.int64)
-        specs = self.select_band_specs(bands)
-        band_indices = [self.bands.index(spec) + 1 for spec in specs]
-        return _LandsatClassificationSplit(paths, labels, band_indices, self.tile_size, transform)
+        return _LandsatClassificationSplit(
+            paths, labels, self._band_indices(bands), self.tile_size, transform
+        )

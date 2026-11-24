@@ -72,6 +72,8 @@ AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 
 EUROSAT_L_REPO = "isaaccorley/eurosat-l"
 EUROSAT_L_REVISION = "40282cda59fa453cf4a7a3ccaf4dfc6b353eb58b"
+EUROSAT_SPATIAL_REPO = "torchgeo/eurosat"
+EUROSAT_SPATIAL_REVISION = "1ce6f1bfb56db63fd91b6ecc466ea67f2509774c"
 
 BIGEARTHNET_L_REPO = "isaaccorley/bigearthnet-l"
 BIGEARTHNET_L_REVISION = "792f53a06836ae42767b93ea14c1365d1a45bb26"
@@ -275,14 +277,32 @@ class _ChainedBinaryReader(io.RawIOBase):
         super().close()
 
 
-def download_eurosat_l(output_dir: Path) -> None:
-    """Download the pinned ``isaaccorley/eurosat-l`` release into ``output_dir/eurosat-l``."""
-    target = Path(output_dir) / "eurosat-l"
+def _fetch_hf_release(
+    output_dir: Path, name: str, repo: str, revision: str, manifest: str
+) -> tuple[Path, dict[str, str]]:
+    target = Path(output_dir) / name
     target.mkdir(parents=True, exist_ok=True)
-    checksums = load_checksums("eurosat_l.sha256")
-    logger.info("Downloading %s@%s -> %s", EUROSAT_L_REPO, EUROSAT_L_REVISION, target)
+    checksums = load_checksums(manifest)
+    logger.info("Downloading %s@%s -> %s", repo, revision, target)
+    fetch_pinned(repo, revision, target, checksums, allow_patterns=list(checksums))
+    return target, checksums
+
+
+def download_eurosat_l(output_dir: Path) -> None:
+    """Download EuroSAT-L imagery plus standard and spatial split files."""
+    target, _ = _fetch_hf_release(
+        output_dir, "eurosat-l", EUROSAT_L_REPO, EUROSAT_L_REVISION, "eurosat_l.sha256"
+    )
+    spatial_checksums = {
+        EuroSATSpatial.split_filenames[s]: EuroSATSpatial.split_sha256s[s]
+        for s in ("train", "val", "test")
+    }
     fetch_pinned(
-        EUROSAT_L_REPO, EUROSAT_L_REVISION, target, checksums, allow_patterns=list(checksums)
+        EUROSAT_SPATIAL_REPO,
+        EUROSAT_SPATIAL_REVISION,
+        target,
+        spatial_checksums,
+        allow_patterns=list(spatial_checksums),
     )
     with zipfile.ZipFile(target / "eurosat-l.zip") as archive:
         archive.extractall(target)
@@ -291,16 +311,12 @@ def download_eurosat_l(output_dir: Path) -> None:
 
 def download_bigearthnet_l(output_dir: Path) -> None:
     """Download the pinned ``isaaccorley/bigearthnet-l`` release into ``output_dir``."""
-    target = Path(output_dir) / "bigearthnet-l"
-    target.mkdir(parents=True, exist_ok=True)
-    checksums = load_checksums("bigearthnet_l.sha256")
-    logger.info("Downloading %s@%s -> %s", BIGEARTHNET_L_REPO, BIGEARTHNET_L_REVISION, target)
-    fetch_pinned(
+    target, _ = _fetch_hf_release(
+        output_dir,
+        "bigearthnet-l",
         BIGEARTHNET_L_REPO,
         BIGEARTHNET_L_REVISION,
-        target,
-        checksums,
-        allow_patterns=list(checksums),
+        "bigearthnet_l.sha256",
     )
     with tarfile.open(target / "bigearthnet-l.tar.gz", "r:gz") as archive:
         archive.extractall(target, filter="data")
@@ -309,11 +325,9 @@ def download_bigearthnet_l(output_dir: Path) -> None:
 
 def download_lc100_l(output_dir: Path) -> None:
     """Download the pinned ``isaaccorley/lc100-l`` release into ``output_dir/lc100-l``."""
-    target = Path(output_dir) / "lc100-l"
-    target.mkdir(parents=True, exist_ok=True)
-    checksums = load_checksums("lc100_l.sha256")
-    logger.info("Downloading %s@%s -> %s", LC100_L_REPO, LC100_L_REVISION, target)
-    fetch_pinned(LC100_L_REPO, LC100_L_REVISION, target, checksums, allow_patterns=list(checksums))
+    target, checksums = _fetch_hf_release(
+        output_dir, "lc100-l", LC100_L_REPO, LC100_L_REVISION, "lc100_l.sha256"
+    )
     parts = sorted(target / name for name in checksums if ".tar.gz.part." in name)
     with (
         io.BufferedReader(_ChainedBinaryReader(parts)) as stream,

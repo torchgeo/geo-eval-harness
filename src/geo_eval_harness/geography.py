@@ -84,6 +84,7 @@ GEO_ALIAS: dict[str, str] = {
     "bigearthnet-l": "m-bigearthnet",
     "bright-post-sar-rgb": "bright-post-sar",
     "eurosat-l": "m-eurosat",
+    "eurosat-l-spatial": "m-eurosat",
     "eurosat-spatial": "m-eurosat",
     "eurosat": "m-eurosat",
     "sen1floods11-s2": "sen1floods11-s1",

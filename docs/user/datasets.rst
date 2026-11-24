@@ -277,6 +277,7 @@ CLI name                Class
 ``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 ``infrabench-cls``       :class:`~geo_eval_harness.datasets.InfraBenchCLS` (13 infrastructure classes, S2 + S1)
 ``eurosat-l``           :class:`~geo_eval_harness.datasets.EuroSATL`  (10-class land use, Landsat 8)
+``eurosat-l-spatial``   :class:`~geo_eval_harness.datasets.EuroSATLSpatial`  (longitude-based spatial split, Landsat 8)
 ``bigearthnet-l``       :class:`~geo_eval_harness.datasets.BigEarthNetL`  (19-class multi-label, Landsat 8)
 ``lc100-l``             :class:`~geo_eval_harness.datasets.LC100L`  (23-class global multi-label, Landsat 8)
 

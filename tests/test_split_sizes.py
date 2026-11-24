@@ -43,6 +43,7 @@ EXPECTED_SIZES: dict[str, dict[str, int]] = {
     "eurosat-spatial": {"train": 16200, "val": 5400, "test": 5400},
     "aid": {"train": 6000, "val": 2000, "test": 2000},
     "eurosat-l": {"train": 16200, "val": 5400, "test": 5400},
+    "eurosat-l-spatial": {"train": 16200, "val": 5400, "test": 5400},
     "bigearthnet-l": {"train": 269695, "val": 123723, "test": 125866},
     "lc100-l": {"train": 5181, "val": 1727, "test": 1726},
     "hotosm_buildings": {"train": 5000, "val": 7237, "test": 7236},
