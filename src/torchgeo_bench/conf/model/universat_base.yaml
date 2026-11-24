@@ -1,8 +1,0 @@
-name: universat_base
-target: torchgeo_bench.models.UniverSatBenchModel
-kwargs:
-  modality: null
-  patch_size: 10
-  output_grid: null
-  input_res: null
-  normalize: false

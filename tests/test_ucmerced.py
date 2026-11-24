@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 from torchgeo.datasets import UCMerced as TGUCMerced
 
-from torchgeo_bench.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets import get_bench_dataset_class
 
 
 @pytest.mark.parametrize("split", ["train", "val", "test"])

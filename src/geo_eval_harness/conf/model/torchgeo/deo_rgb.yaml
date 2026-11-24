@@ -1,0 +1,16 @@
+name: tgeo_deo_swin_rgb
+target: geo_eval_harness.models.TorchGeoDEOBench
+kwargs:
+  mode: rgb
+  auto_resize: true
+  target_size: 224
+input:
+  normalization: model
+segmentation:
+  # Swin stage outputs (NHWC; features.1/3/5 are patch merging). LoRA on every block's attention and MLP.
+  lora_target_modules: 'feat_extr\.features\.\d+\.\d+\.(attn\.(qkv|proj)|mlp\.[03])'
+  layers:
+    - feat_extr.features.6
+    - feat_extr.features.4
+    - feat_extr.features.2
+    - feat_extr.features.0

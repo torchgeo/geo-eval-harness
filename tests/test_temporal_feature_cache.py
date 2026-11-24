@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from torchgeo_bench.segmentation_probe import SegmentationProbe
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
 @pytest.fixture(params=["mean", "max"])

@@ -18,7 +18,7 @@ import torch
 import yaml
 from filelock import FileLock, Timeout
 
-from torchgeo_bench.config.run import RunConfig
+from geo_eval_harness.config.run import RunConfig
 
 logger = logging.getLogger(__name__)
 
@@ -96,12 +96,12 @@ def resolve_path(root: Path, path: Path) -> Path:
     return path if path.is_absolute() else root / path
 
 
-def torchgeo_bench_cli(*, require: bool = False) -> Path:
-    """Return the torchgeo-bench CLI installed next to the running interpreter."""
-    cli = Path(sys.executable).with_name("torchgeo-bench")
+def geo_eval_harness_cli(*, require: bool = False) -> Path:
+    """Return the geo-eval-harness CLI installed next to the running interpreter."""
+    cli = Path(sys.executable).with_name("geo-eval-harness")
     if require and not cli.is_file():
         raise FileNotFoundError(
-            f"{cli} does not exist. Activate the torchgeo-bench environment first."
+            f"{cli} does not exist. Activate the geo-eval-harness environment first."
         )
     return cli
 

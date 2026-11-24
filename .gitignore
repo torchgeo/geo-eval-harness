@@ -1,44 +1,5 @@
 paper/
 results/*
-!results/contributed/
-results/contributed/*.csv
-# Track per-model results so model changes can include their benchmark data.
-!results/models/
-!results/models/*.csv
-!results/profiles/
-!results/profiles/*.csv
-!results/intrinsic_dim/
-!results/intrinsic_dim/*.csv
-!results/legacy/
-!results/legacy/*.csv
-experiments/scripts/*
-!experiments/scripts/test_knn_gpu_smoke.py
-!experiments/scripts/cleanlab_extract_probs.py
-!experiments/scripts/run_cleanlab_audit.py
-!experiments/scripts/render_flagged_gallery.py
-!experiments/scripts/eurosat_family_dedup.py
-!experiments/scripts/cleanlab_per_class_multilabel.py
-!experiments/scripts/cleanlab_per_class_singlelabel.py
-!experiments/scripts/analyze_compute_cost.py
-!experiments/scripts/cost/
-experiments/scripts/cost/*
-!experiments/scripts/cost/gpu_prices.yaml
-!experiments/scripts/cost/carbon_intensity.yaml
-!experiments/scripts/slurm/
-experiments/scripts/slurm/*
-!experiments/scripts/slurm/build_probe_jobs.py
-!experiments/scripts/slurm/probe_sweep.sh
-!experiments/scripts/slurm/knn_gpu_smoke.sh
-!experiments/scripts/slurm/cleanlab_audit.sh
-!experiments/scripts/slurm/cleanlab_audit.jobs
-!experiments/scripts/slurm/eurosat_spatial_geofm.sh
-!experiments/scripts/slurm/eurosat_spatial_pool_ablation.sh
-!experiments/scripts/slurm/olmoearth_sweep.py
-!experiments/scripts/slurm/olmoearth_sweep.sh
-!experiments/scripts/slurm/olmoearth_sweep.jobs
-!experiments/scripts/slurm/olmoearth_v1_1_sweep.jobs
-!experiments/scripts/slurm/slow_tests.sh
-!experiments/scripts/slurm/smoke_imports.sh
 figures/
 
 # Python
@@ -93,8 +54,6 @@ htmlcov/
 
 # Experiment outputs
 outputs/
-multirun/
-.hydra/
 
 # Data (large files)
 *.hdf5
@@ -109,19 +68,31 @@ data/
 *.csv
 *.json
 # Keep the result and metadata files needed by the benchmark and docs.
+!results/README.md
+!results/compute_cost.csv
+!results/compute_cost.md
+!results/compute_cost_coverage.csv
+!results/compute_cost_provenance.json
+!results/c_sweep_experiment.csv
+!results/cls_token_experiment.csv
+!results/coordbench_results.csv
+!results/effect_of_lbfgs_vs_adam.csv
+!results/segmentation_protocol/
+!results/segmentation_protocol/metadata.json
+!results/segmentation_protocol_study.csv
+!results/segmentation_protocol_study_selected.csv
+!results/segmentation_protocol_study_summary.csv
+!results/segmentation_representative_rgb_all_224_10ep.csv
+!results/segmentation_representative_rgb_all_224_10ep.csv.sweep.json
+!tests/fixtures/accuracy_baselines.csv
 !results/models/
 !results/models/*.csv
 !results/profiles/
 !results/profiles/*.csv
 !results/intrinsic_dim/
 !results/intrinsic_dim/*.csv
-!results/legacy/
-!results/legacy/*.csv
-!conf/**/*.json
-!**/band_stats.json
-!**/normalizer.json
 !docs/_static/_results_snapshots/*.json
-!docs/_static/_dataset_geography/*.json
+!src/geo_eval_harness/_static/_dataset_geography/*.json
 
 # Logs
 *.log
@@ -151,6 +122,3 @@ site/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
-
-# tracked benchmark results
-!coordbench-results.csv

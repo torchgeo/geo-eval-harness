@@ -1,0 +1,18 @@
+name: universat_base_dense
+target: geo_eval_harness.models.UniverSatBenchModel
+# UniverSat's own segmentation probe (PangaeaBench "9K linear probe", src/LP_eval.py upstream):
+# the final encoder tokens, resampled to one token per pixel by UniverSat's bilinear output block
+# and sub-patch cross-attention, then LayerNorm + a per-pixel linear classifier (patch_linear at 1 px).
+kwargs:
+  modality: null
+  patch_px: 16
+  output_px: 1
+  output_grid: null
+  input_res: null
+  normalize: false
+segmentation:
+  head: patch_linear
+  # Block 14 is the sub-patch cross-attention block whose output is the encoder's final token grid.
+  layers:
+    - model.model.blocks.14
+  lora_target_modules: 'model\.model\.blocks\.([1-9]|1[0-2])\.(attn\.(wq|wk|wv|proj)|mlp\.fc[12])'

@@ -1,23 +1,26 @@
 """Tests for model accuracy baselines."""
 
-import subprocess
-import sys
+from functools import partial
 from pathlib import Path
 
 import pandas as pd
 import pytest
 import torch
+import yaml
 
-from scripts.update_baselines import baseline_metadata, filter_and_deduplicate
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.models._band_mapping import map_to_model_bands
+from geo_eval_harness.models.torchgeo_models import _CROMA_S2_12
+from geo_eval_harness.resume import _canonical_key_cell
+from scripts.update_baselines import (
+    baseline_config,
+    baseline_metadata,
+    filter_and_deduplicate,
+    main,
+)
 from tests.support.cli import run_cli
 from tests.support.data import require_dataset_data
-from torchgeo_bench.config.presets import NORMALIZATIONS
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.models._band_mapping import map_to_model_bands
-from torchgeo_bench.models.torchgeo_models import _CROMA_S2_12
-from torchgeo_bench.resume import _canonical_key_cell
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
 _FIXTURE_PATH = Path(__file__).parent / "fixtures" / "accuracy_baselines.csv"
 
 _TOL = 0.02
@@ -51,7 +54,7 @@ def test_update_baselines_matches_effective_settings(model_config: str) -> None:
         "interpolation": "nearest",
         "num_classes": 99,
         "res": 0.1,
-        "pool": "mean",
+        "pool": "cls" if metadata["pool"] == "mean" else "mean",
         "c_range_start": -5.0,
         "c_range_stop": 6.0,
         "c_range_num": 10,
@@ -93,21 +96,32 @@ def test_update_baselines_requires_comparable_results() -> None:
         filter_and_deduplicate(pd.DataFrame([row]), cases={"rcf": {"all": ("m-eurosat",)}})
 
 
+def test_update_baselines_reads_a_numeric_looking_config_hash_as_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_hash = "36e0288988649564"
+    row = {
+        **baseline_metadata("rcf", "m-eurosat", "all"),
+        "metric_name": "accuracy",
+        "metric_value": 0.75,
+        "config_hash": config_hash,
+    }
+    source = tmp_path / "rcf.csv"
+    pd.DataFrame([{**row, "method": method} for method in ("knn5", "linear")]).to_csv(
+        source, index=False
+    )
+    monkeypatch.setattr(
+        "scripts.update_baselines.filter_and_deduplicate",
+        partial(filter_and_deduplicate, cases={"rcf": {"all": ("m-eurosat",)}}),
+    )
+    out = tmp_path / "out.csv"
+    main(["--input", str(source), "--output", str(out)])
+    assert pd.read_csv(out, dtype=str)["source_config_hash"].tolist() == [config_hash] * 2
+
+
 def test_accuracy_fixture_matches_stored_results(tmp_path: Path) -> None:
     out = tmp_path / "out.csv"
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(_REPO_ROOT / "scripts" / "update_baselines.py"),
-            "--output",
-            str(out),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=tmp_path,
-        timeout=120,
-    )
-    assert result.returncode == 0, f"Script failed:\n{result.stderr}"
+    main(["--output", str(out)])
     pd.testing.assert_frame_equal(pd.read_csv(out), _fixture_df, check_exact=True)
 
 
@@ -145,24 +159,19 @@ def test_accuracy(combo: dict[str, str], tmp_path: Path, pytestconfig: pytest.Co
     require_dataset_data(dataset)
 
     out = tmp_path / "out.csv"
+    config = baseline_config(model_config, dataset, bands).model_dump(
+        mode="json", exclude_unset=True
+    )
+    config["input"]["partition"] = combo["partition"]
+    config["output"] = {"file": str(out)}
+    config["classification"] = {"bootstrap_samples": 10}
+    config["runtime"] = {"device": pytestconfig.getoption("--accuracy-device")}
+    config_path = tmp_path / "run.yaml"
+    config_path.write_text(yaml.safe_dump(config))
     result = run_cli(
         "run",
-        "--model",
-        model_config,
-        "--dataset",
-        dataset,
-        "--bands",
-        bands,
-        "--normalization",
-        next(key for key, value in NORMALIZATIONS.items() if value == combo["normalization"]),
-        "--partition",
-        combo["partition"],
-        "--output",
-        str(out),
-        "--bootstrap-samples",
-        "10",
-        "--device",
-        pytestconfig.getoption("--accuracy-device"),
+        "--config",
+        str(config_path),
         cwd=Path.cwd(),
         timeout=pytestconfig.getoption("--accuracy-timeout"),
         offline=False,

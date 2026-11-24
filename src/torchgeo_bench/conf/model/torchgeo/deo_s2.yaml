@@ -1,8 +1,0 @@
-name: tgeo_deo_swin_s2
-target: torchgeo_bench.models.TorchGeoDEOBench
-kwargs:
-  mode: s2
-  auto_resize: true
-  target_size: 224
-input:
-  normalization: model

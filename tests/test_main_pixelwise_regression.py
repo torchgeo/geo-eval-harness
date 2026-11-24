@@ -8,10 +8,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
+from geo_eval_harness.config.presets import merge_settings
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.main import main, run_dense_task
 from tests.support.runner import _chainable_model_mock, _compose_cfg, _resume_row
-from torchgeo_bench.config.presets import merge_settings
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.main import main, run_dense_task
 
 
 class _RegressionDataset(Dataset):
@@ -57,13 +57,13 @@ def test_cached_regression_records_physical_rmse(tmp_path: Path) -> None:
     solver.evaluate_cached.return_value = ({"RMSE": 30.0}, torch.tensor([20.0, 40.0]))
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_loaders()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_loaders()),
         mock.patch(
-            "torchgeo_bench.main.instantiate_dataset_model",
+            "geo_eval_harness.main.build_model",
             return_value=_chainable_model_mock(),
         ),
         mock.patch(
-            "torchgeo_bench.pixelwise_regression_task.build_pixelwise_regression_probe_and_solver",
+            "geo_eval_harness.pixelwise_regression_task.build_pixelwise_regression_probe_and_solver",
             return_value=(probe, solver),
         ) as build,
     ):
@@ -94,13 +94,13 @@ def test_uncached_regression_trains_from_images(tmp_path: Path) -> None:
     solver.evaluate.return_value = ({"RMSE": 30.0}, torch.tensor([20.0, 40.0]))
 
     with (
-        mock.patch("torchgeo_bench.main.get_datasets", return_value=_loaders()),
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_loaders()),
         mock.patch(
-            "torchgeo_bench.main.instantiate_dataset_model",
+            "geo_eval_harness.main.build_model",
             return_value=_chainable_model_mock(),
         ),
         mock.patch(
-            "torchgeo_bench.pixelwise_regression_task.build_pixelwise_regression_probe_and_solver",
+            "geo_eval_harness.pixelwise_regression_task.build_pixelwise_regression_probe_and_solver",
             return_value=(probe, solver),
         ),
     ):
@@ -123,7 +123,7 @@ def test_regression_resume_skips_complete_run(tmp_path: Path) -> None:
         output, index=False
     )
 
-    with mock.patch("torchgeo_bench.main.get_datasets") as get_datasets:
+    with mock.patch("geo_eval_harness.main.get_datasets") as get_datasets:
         main(cfg)
 
     get_datasets.assert_not_called()

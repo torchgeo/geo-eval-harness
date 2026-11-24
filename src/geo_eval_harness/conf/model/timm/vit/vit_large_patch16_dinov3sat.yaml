@@ -1,0 +1,14 @@
+name: vit_large_patch16_dinov3sat
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: vit_large_patch16_dinov3.sat493m
+  pretrained: true
+  global_pool: avg
+  auto_resize: true
+  use_cls_token: false
+segmentation:
+  layers:
+    - blocks.23
+    - blocks.17
+    - blocks.11
+    - blocks.5

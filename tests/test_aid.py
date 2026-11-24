@@ -6,7 +6,7 @@ import pytest
 import torch
 from PIL import Image
 
-from torchgeo_bench.datasets.aid import AID
+from geo_eval_harness.datasets.aid import AID
 
 
 @pytest.mark.parametrize(

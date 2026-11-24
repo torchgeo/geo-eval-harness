@@ -12,17 +12,10 @@ Ranking explorer
      </a>
    </p>
 
-Benchmark results are spread across papers, repositories, and follow-up runs.
-The Ranking Explorer is a static comparison of frozen geospatial foundation
-models under one evaluation protocol, covering both classification and
-segmentation tasks. It is intended as a shared, inspectable record that the
-community can use to converge on reliable performance information—not a
-declaration of a final winner.
+The Ranking Explorer compares geospatial models on classification and segmentation tasks. Classification uses frozen features; segmentation views separate frozen backbones, LoRA, and full fine-tuning.
 
-Rankings are summaries: choose the task (classification or segmentation), how
-datasets are combined, then the probe and input bands whose results are being
-summarized. If a result is wrong, missing, or implausible, please `open an
-issue <https://github.com/torchgeo/torchgeo-bench/issues>`__ with the model,
+Choose a task, aggregation, probe or segmentation setup, and input bands. If a result is wrong, missing, or implausible, please `open an
+issue <https://github.com/torchgeo/geo-eval-harness/issues>`__ with the model,
 view, and any supporting evidence. General feedback is welcome too.
 
 The aggregation choices answer different questions:
@@ -38,13 +31,62 @@ The aggregation choices answer different questions:
 
 The fixed methodology and coverage rules are:
 
-* All rows use patch-mean features.
+* Classification mean and CLS poolings occupy separate model rows. The recorded ``pool`` determines pooling; missing values fall back to the ``_cls`` preset suffix, then patch mean. CLS rows have a distinct identity even when their source model name is shared with mean rows, and each pooling must independently satisfy coverage and normalization requirements. Segmentation probes read feature maps and carry no pooling.
+* On RGB-only datasets, an explicit ``bands=rgb`` request takes priority over an otherwise matching ``bands=all`` request. Matching includes pooling, normalization, seed, resolution, and the other result identity fields; scores never decide this choice. Both requests remain in the result files.
 * A model is ranked only with a complete row across the eligible datasets in
   its ``(task, probe, bands)`` view.
-* The generator uses complete ``model_native`` results when available and
-  otherwise uses complete ``bandspec_zscore`` results; it never combines the
-  two.
+* The generator uses complete ``model_native`` results when available and otherwise uses complete ``bandspec_zscore`` results; it never combines the two. A model that records only ``identity`` results, because it applies no normalization, is ranked on those. ``imagestats_handcrafted_control`` repeats ImageStats for the handcrafted sweep and is never ranked.
 * Models without a complete row are named below the table.
+* TerraMind RGB views use its RGB configuration, including on RGB-only datasets requested with ``bands=all``. Its SAR and optical configurations remain separate outside segmentation Native views.
+* Exception: segmentation **Native bands** views (below) rank each model on the
+  datasets it has.
+
+Segmentation views are built from the setup columns of each result row (see
+:ref:`segmentation-setup-columns`):
+
+* **Adaptation** (``adaptation``): frozen backbone, LoRA, or full fine-tuning.
+* **Decoder** (``decoder``): UPerNet or U-Net.
+* **Pyramid**: the backbone's native features, the ViT neck (``neck: vit``),
+  or AnyUp upsampling (``upsampler: anyup``). **Default** is each model's own
+  pyramid (native features for hierarchical backbones, the ViT neck for ViTs),
+  so hierarchical and ViT backbones share one view; it exists only with Native
+  bands. A model with both pyramids in one setup stops the generator.
+* **Bands** adds **Native bands** for segmentation: each model is ranked on its
+  own input bands per dataset (RGB, multispectral or SAR), so models that mix
+  modalities across datasets keep one row. Per-modality configurations of one
+  model are merged (``NATIVE_MODEL_ALIASES``: DEO Swin RGB/S2, TerraFM S1/S2);
+  where two of them, or two band lists, cover a dataset, the better seed mean
+  counts. Coverage is relaxed: a model is ranked on the datasets it has, and a
+  Datasets column shows how many. Average rank ranks the models that have a
+  dataset among themselves (ties share the best rank) and averages each model's
+  ranks over its own datasets, which is the per-cell rank of the per-model
+  results tables; Improvability averages over the model's own datasets. ELO
+  needs a complete score matrix and is not offered. Native views are left out
+  of the sensitivity heatmap and have no GFLOPs points.
+* By default every dataset uses its canonical protocol (``SEG_PROTOCOL`` in
+  :file:`scripts/regen_leaderboard.py`): head LR ``1e-3`` and full fine-tuning
+  backbone LR ``1e-5`` everywhere; 20 epochs with a per-dataset LoRA backbone
+  LR (``5e-4`` or ``1e-4``) on the original grid datasets (burn_scars, caffe,
+  cloudsen12, fotw, kuro_siwo, flair2, openearthmap-sar, spacenet2,
+  spacenet7); 30 epochs and LoRA LR ``5e-4`` on sen1floods11-s1,
+  sen1floods11-s2; 30 epochs and LoRA LR ``1e-4`` on
+  every other dataset.
+  The default input size is 224 px on every dataset
+  (``SEG_IMAGE_SIZE`` in the same file, keyed by dataset). Rows trained and
+  evaluated at another ``image_size`` (for example native 256 px on fotw or
+  512 px on spacenet2, spacenet7 and loveda), or with no recorded size, are
+  ``image_size=<n>`` variants.
+  **Show variants** adds a **Protocol** selector for the other epoch,
+  learning-rate and input-size setups. Variants are ranked like any view but
+  left out of the sensitivity heatmap.
+* Each cell is the mean over seeds, with the standard deviation and the
+  number of seeds underneath. Seeds must share every setup column and the
+  input size; two different setups in one cell stop the generator with an
+  error.
+* Segmentation rows require setup columns to enter the rankings.
+* OSCD post-only segmentation (``oscd-post``) is excluded from the published
+  benchmark and all ranking views: its scores do not meaningfully discriminate
+  models. The dataset loader and example configuration remain available.
 
 The GFLOPs chart directly below the table pairs positive, measured 224-pixel
 backbone GFLOPs with the selected aggregation. It labels the displayed models

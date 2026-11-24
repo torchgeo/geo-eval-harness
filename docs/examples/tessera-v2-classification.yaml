@@ -1,0 +1,8 @@
+model:
+  name: tessera_v2/medium
+datasets: [benv2, m-bigearthnet]
+classification:
+  methods: [knn, linear]
+runtime:
+  device: cuda:0
+  batch_size: 2

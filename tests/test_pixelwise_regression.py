@@ -5,12 +5,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from torchgeo_bench.config.schema import SegmentationConfig
-from torchgeo_bench.pixelwise_regression_task import (
+from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.pixelwise_regression_task import (
     PixelwiseRegressionSolver,
     build_pixelwise_regression_probe_and_solver,
 )
-from torchgeo_bench.results import bootstrap_mean
+from geo_eval_harness.results import bootstrap_mean
 
 
 class _FixedProbe(nn.Module):

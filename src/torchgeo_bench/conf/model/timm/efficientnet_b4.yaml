@@ -1,7 +1,0 @@
-name: efficientnet_b4
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: efficientnet_b4
-  pretrained: true
-  global_pool: avg
-  auto_resize: true

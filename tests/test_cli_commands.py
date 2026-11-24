@@ -4,20 +4,16 @@
 """Tests for the discoverable image CLI."""
 
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 from unittest import mock
 
 import pytest
 import yaml
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.commands._config import set_path
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.presets import resolve_run_config
-from torchgeo_bench.config.run import validate_run_config
+from geo_eval_harness.cli import main
+from geo_eval_harness.commands._config import set_path
+from geo_eval_harness.config.presets import resolve_run_config
+from geo_eval_harness.config.run import RunConfig, validate_run_config
 
 
 def test_dry_run_applies_explicit_flags_and_preserves_false_values(
@@ -45,20 +41,6 @@ def test_dry_run_applies_explicit_flags_and_preserves_false_values(
     assert "resume: false" in output
     assert "- burn_scars" in output
     assert "methods:\n  - knn" in output
-
-
-def test_config_values_are_overridden_by_explicit_flags(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "config.yaml"
-    path.write_text(
-        "model: {name: rcf}\ndatasets: [m-eurosat]\nruntime: {seed: 8}\noutput: {resume: true}\n",
-        encoding="utf-8",
-    )
-    main(["run", "--config", str(path), "--seed", "3", "--no-resume", "--dry-run"])
-    output = capsys.readouterr().out
-    assert "seed: 3" in output
-    assert "resume: false" in output
 
 
 def test_nested_flag_mapping() -> None:
@@ -98,310 +80,303 @@ def test_missing_model_or_dataset_fails_before_execution(selection: list[str]) -
     assert error.value.code == 2
 
 
-def test_non_dry_run_calls_typed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    received = []
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.run", received.append)
-    main(["run", "--model", "rcf", "--dataset", "m-eurosat"])
-    assert received[0].model.name == "rcf"
+class TestRunRuntime:
+    @pytest.fixture
+    def received(self, monkeypatch: pytest.MonkeyPatch) -> list[RunConfig]:
+        """Collect the configs that reach the benchmark runner in strict mode."""
+        configs: list[RunConfig] = []
 
+        def capture(config: RunConfig, *, strict: bool = False) -> None:
+            assert strict is True
+            configs.append(config)
 
-def test_runtime_preserves_typed_schema(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    received = []
+        monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", capture)
+        return configs
 
-    def capture(config: object, *, strict: bool = False) -> None:
-        assert strict is True
-        received.append(config)
+    def test_runtime_preserves_typed_schema(self, received: list[RunConfig]) -> None:
+        config = validate_run_config(
+            {
+                "model": {"name": "rcf"},
+                "datasets": ["m-eurosat"],
+                "runtime": {"device": "cpu", "batch_size": 2},
+                "input": {
+                    "normalization": "none",
+                    "image_size": 8,
+                    "time_steps": 1,
+                    "interpolation": "nearest",
+                },
+                "classification": {"methods": ["knn"]},
+            }
+        )
+        from geo_eval_harness.commands._run_runtime import run
 
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
-    config = validate_run_config(
-        {
-            "model": {"name": "rcf"},
-            "datasets": ["m-eurosat"],
-            "runtime": {"device": "cpu", "batch_size": 2},
-            "input": {
-                "normalization": "none",
-                "image_size": 8,
-                "time_steps": 1,
-                "interpolation": "nearest",
-            },
-            "classification": {"methods": ["knn"]},
-        }
-    )
-    from torchgeo_bench.commands._run_runtime import run
+        run(config)
+        assert received[0].runtime.device == "cpu"
+        assert received[0].input.normalization == "none"
+        assert received[0].classification.methods == ["knn"]
+        assert received[0] == config
 
-    run(config)
-    assert received[0].runtime.device == "cpu"
-    assert received[0].input.normalization == "none"
-    assert received[0].classification.methods == ["knn"]
-    assert received[0] == config
+    def test_runtime_preserves_model_and_segmentation_overrides(
+        self, received: list[RunConfig]
+    ) -> None:
+        config = validate_run_config(
+            {
+                "model": {"name": "torchgeo/scalemae_large_fmow", "kwargs": {"res": 1.0}},
+                "datasets": ["m-eurosat"],
+                "runtime": {"device": "cpu"},
+                "input": {"image_size": 8, "interpolation": "nearest"},
+                "segmentation": {"layers": ["layer1"]},
+            }
+        )
+        from geo_eval_harness.commands._run_runtime import run
 
+        run(config)
+        effective, preset = resolve_run_config(received[0], "m-eurosat")
+        assert preset.kwargs["res"] == 1.0
+        assert effective.input.image_size == 8
+        assert effective.input.interpolation == "nearest"
+        assert effective.segmentation.layers == ["layer1"]
 
-@pytest.mark.parametrize(
-    ("device", "available", "message"),
-    [("cuda", False, "CUDA is unavailable"), ("cuda:2", True, "CUDA index 2")],
-)
-def test_runtime_rejects_invalid_cuda_before_loading(
-    monkeypatch: pytest.MonkeyPatch, device: str, *, available: bool, message: str
-) -> None:
-    import torch
-
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
-    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    with (
-        mock.patch("torchgeo_bench.main.get_datasets") as data,
-        mock.patch("torchgeo_bench.main.build_model") as build,
-        pytest.raises(ValueError, match=message),
-    ):
-        main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", device])
-    data.assert_not_called()
-    build.assert_not_called()
-
-
-def test_runtime_preserves_model_and_segmentation_overrides(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    received = []
-
-    def capture(config: object, *, strict: bool = False) -> None:
-        assert strict is True
-        received.append(config)
-
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
-    config = validate_run_config(
-        {
-            "model": {"name": "torchgeo/scalemae_large_fmow", "kwargs": {"res": 1.0}},
-            "datasets": ["m-eurosat"],
-            "runtime": {"device": "cpu"},
-            "input": {"image_size": 8, "interpolation": "nearest"},
-            "segmentation": {"layers": ["layer1"]},
-        }
-    )
-    from torchgeo_bench.commands._run_runtime import run
-
-    run(config)
-    effective, preset = resolve_run_config(received[0], "m-eurosat")
-    assert preset.kwargs["res"] == 1.0
-    assert effective.input.image_size == 8
-    assert effective.input.interpolation == "nearest"
-    assert effective.segmentation.layers == ["layer1"]
-
-
-def test_runtime_preserves_preset_layers_when_schema_omits_them(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    received = []
-
-    def capture(config: object, *, strict: bool = False) -> None:
-        assert strict is True
-        received.append(config)
-
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
-    config = validate_run_config(
-        {
-            "model": {"name": "torchgeo/resnet50_s2rgb_satlas_si"},
-            "datasets": ["burn_scars"],
-            "runtime": {"device": "cpu"},
-        }
-    )
-    from torchgeo_bench.commands._run_runtime import run
-
-    run(config)
-    effective, _ = resolve_run_config(received[0], "burn_scars")
-    assert effective.segmentation.layers == [
-        "layer4",
-        "layer3",
-        "layer2",
-        "layer1",
-    ]
-
-
-def test_runtime_explicit_empty_layers_clear_preset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    received = []
-
-    def capture(config: object, *, strict: bool = False) -> None:
-        assert strict is True
-        received.append(config)
-
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", capture)
-    config = validate_run_config(
-        {
-            "model": {"name": "torchgeo/resnet50_s2rgb_satlas_si"},
-            "datasets": ["burn_scars"],
-            "runtime": {"device": "cpu"},
-            "segmentation": {"layers": []},
-        }
-    )
-    from torchgeo_bench.commands._run_runtime import run
-
-    run(config)
-    effective, _ = resolve_run_config(received[0], "burn_scars")
-    assert effective.segmentation.layers == []
-
-
-def test_linear_only_reaches_typed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    received = []
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.run", received.append)
-    main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--methods", "linear"])
-    assert received[0].classification.methods == ["linear"]
-
-
-def test_unknown_config_field_fails_before_execution(tmp_path: Path) -> None:
-    path = tmp_path / "config.yaml"
-    path.write_text("model: {name: rcf}\ndatasets: [m-eurosat]\nrunntim: {}\n", encoding="utf-8")
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(path), "--dry-run"])
-    assert error.value.code == 2
-
-
-@pytest.mark.parametrize(
-    "error_type",
-    [FileNotFoundError, PermissionError, ValueError, yaml.YAMLError, RuntimeError, TypeError],
-)
-def test_runtime_failure_propagates_from_cli(
-    monkeypatch: pytest.MonkeyPatch, error_type: type[Exception]
-) -> None:
-    def fail(_: object, *, strict: bool) -> None:
-        raise error_type("benchmark failed")
-
-    monkeypatch.setattr("torchgeo_bench.commands._run_runtime.main", fail)
-    with pytest.raises(error_type, match="benchmark failed"):
-        main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu"])
-
-
-@pytest.mark.parametrize(
-    ("contents", "diagnostic"),
-    [
-        (None, "No such file"),
-        ("model: [\n", "while parsing"),
-        ("model: {name: rcf}\nmodel: {name: other}\n", "duplicate key"),
-        ("[a, b]: value\n", "unhashable key"),
-        ("model: !unknown rcf\n", "could not determine a constructor"),
-        ("null\n", "top level"),
-        ("runtime: null\n", "runtime"),
-        ("runtime: []\n", "runtime"),
-        ("runtime: {workers: -1}\n", "runtime.workers"),
-    ],
-)
-def test_config_errors_exit_without_tracebacks(
-    contents: str | None, diagnostic: str, tmp_path: Path
-) -> None:
-    path = tmp_path / "invalid.yaml"
-    if contents is not None:
-        path.write_text(contents, encoding="utf-8")
-    result = subprocess.run(
+    @pytest.mark.parametrize(
+        ("settings", "layers"),
         [
-            sys.executable,
-            "-m",
-            "torchgeo_bench.cli",
-            "run",
-            "--config",
-            str(path),
-            "--model",
-            "rcf",
-            "--dataset",
-            "m-eurosat",
-            "--device",
-            "cpu",
-            "--dry-run",
+            ({}, ["layer4", "layer3", "layer2", "layer1"]),
+            ({"segmentation": {"layers": []}}, []),
         ],
-        cwd=tmp_path,
-        env={
-            **os.environ,
-            "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"),
-            "CUDA_VISIBLE_DEVICES": "",
-            "HF_HUB_OFFLINE": "1",
-        },
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
+        ids=["omitted-keeps-preset", "empty-clears-preset"],
     )
-    assert result.returncode == 2
-    assert result.stdout == ""
-    assert "error:" in result.stderr
-    assert str(path) in result.stderr
-    assert diagnostic in result.stderr
-    assert "Traceback" not in result.stderr
+    def test_runtime_segmentation_layers_follow_the_schema(
+        self, settings: dict[str, object], layers: list[str], received: list[RunConfig]
+    ) -> None:
+        config = validate_run_config(
+            {
+                "model": {"name": "torchgeo/resnet50_s2rgb_satlas_si"},
+                "datasets": ["burn_scars"],
+                "runtime": {"device": "cpu"},
+                **settings,
+            }
+        )
+        from geo_eval_harness.commands._run_runtime import run
+
+        run(config)
+        effective, _ = resolve_run_config(received[0], "burn_scars")
+        assert effective.segmentation.layers == layers
+
+    def test_image_size_override_reaches_model_construction(
+        self, received: list[RunConfig]
+    ) -> None:
+        main(
+            [
+                "run",
+                "--model",
+                "torchgeo/scalemae_large_fmow",
+                "--dataset",
+                "m-eurosat",
+                "--device",
+                "cpu",
+                "--image-size",
+                "32",
+            ]
+        )
+        config = received[0]
+        assert config.input.image_size == 32
+        assert resolve_run_config(config, "m-eurosat")[0].input.image_size == 32
+
+    @pytest.mark.parametrize(
+        ("device_flags", "available", "message"),
+        [
+            ([], False, "Requested 'cuda:0', but CUDA is unavailable"),
+            (["--device", "cuda:2"], True, "CUDA index 2"),
+        ],
+    )
+    def test_runtime_rejects_invalid_cuda_before_loading(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        device_flags: list[str],
+        *,
+        available: bool,
+        message: str,
+    ) -> None:
+        import torch
+
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
+        monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+        with (
+            mock.patch("geo_eval_harness.main.get_datasets") as data,
+            mock.patch("geo_eval_harness.main.build_model") as build,
+            pytest.raises(SystemExit, match=f"^error: .*{message}"),
+        ):
+            main(["run", "--model", "rcf", "--dataset", "m-eurosat", *device_flags])
+        data.assert_not_called()
+        build.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error_type",
+        [FileNotFoundError, PermissionError, ValueError, yaml.YAMLError, RuntimeError, TypeError],
+    )
+    def test_runtime_failure_propagates_from_cli(
+        self, monkeypatch: pytest.MonkeyPatch, error_type: type[Exception]
+    ) -> None:
+        def fail(_: object, *, strict: bool) -> None:
+            raise error_type("benchmark failed")
+
+        monkeypatch.setattr("geo_eval_harness.commands._run_runtime.main", fail)
+        with pytest.raises(error_type, match="benchmark failed"):
+            main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu"])
 
 
-def test_config_directory_is_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(tmp_path), "--dry-run"])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert str(tmp_path) in message
-    assert "directory" in message
+class TestConfigErrors:
+    @pytest.mark.parametrize(
+        ("contents", "diagnostic"),
+        [
+            (None, "No such file"),
+            ("model: [\n", "while parsing"),
+            ("model: {name: rcf}\nmodel: {name: other}\n", "duplicate key"),
+            ("[a, b]: value\n", "unhashable key"),
+            ("model: !unknown rcf\n", "could not determine a constructor"),
+            ("null\n", "top level"),
+            ("runtime: null\n", "runtime"),
+            ("runtime: []\n", "runtime"),
+            ("runtime: {workers: -1}\n", "runtime.workers"),
+            ("typo_key: 1\n", "typo_key\n  Extra inputs are not permitted"),
+        ],
+    )
+    def test_config_errors_exit_without_tracebacks(
+        self,
+        contents: str | None,
+        diagnostic: str,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = tmp_path / "invalid.yaml"
+        if contents is not None:
+            path.write_text(contents, encoding="utf-8")
+        with pytest.raises(SystemExit) as error:
+            main(
+                [
+                    "run",
+                    "--config",
+                    str(path),
+                    "--model",
+                    "rcf",
+                    "--dataset",
+                    "m-eurosat",
+                    "--device",
+                    "cpu",
+                    "--dry-run",
+                ]
+            )
+        assert error.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "error:" in captured.err
+        assert str(path) in captured.err
+        assert diagnostic in captured.err
 
+    def test_config_directory_is_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--config", str(tmp_path), "--dry-run"])
+        assert error.value.code == 2
+        message = capsys.readouterr().err
+        assert str(tmp_path) in message
+        assert "directory" in message
 
-def test_unreadable_config_is_reported(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "unreadable.yaml"
+    def test_unreadable_config_is_reported(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "unreadable.yaml"
 
-    def deny_read(_: Path, **kwargs: object) -> None:
-        raise PermissionError(13, "Permission denied", str(path))
+        def deny_read(_: Path, **kwargs: object) -> None:
+            raise PermissionError(13, "Permission denied", str(path))
 
-    monkeypatch.setattr(Path, "open", deny_read)
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(path), "--dry-run"])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert str(path) in message
-    assert "Permission denied" in message
+        monkeypatch.setattr(Path, "open", deny_read)
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--config", str(path), "--dry-run"])
+        assert error.value.code == 2
+        message = capsys.readouterr().err
+        assert str(path) in message
+        assert "Permission denied" in message
 
+    def test_invalid_config_encoding_is_reported(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "invalid-encoding.yaml"
+        path.write_bytes(b"\xff")
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--config", str(path), "--dry-run"])
+        assert error.value.code == 2
+        message = capsys.readouterr().err
+        assert str(path) in message
+        assert "utf-8" in message
 
-def test_invalid_config_encoding_is_reported(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "invalid-encoding.yaml"
-    path.write_bytes(b"\xff")
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(path), "--dry-run"])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert str(path) in message
-    assert "utf-8" in message
+    @pytest.mark.parametrize(
+        ("section", "flags"),
+        [
+            ("model", ["--model", "rcf"]),
+            ("runtime", ["--seed", "3"]),
+            ("input", ["--image-size", "32"]),
+            ("classification", ["--knn-k", "3"]),
+            ("output", ["--no-resume"]),
+            ("classification.linear", ["--no-refit-train-val"]),
+            ("classification.calibration", ["--no-temp-scale"]),
+        ],
+    )
+    @pytest.mark.parametrize("value", [None, [], [["seed", 8]], 3])
+    def test_invalid_sections_are_not_coerced_or_replaced_by_overrides(
+        self,
+        section: str,
+        flags: list[str],
+        value: object,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config = {"model": {"name": "rcf"}, "datasets": ["m-eurosat"]}
+        if "." in section:
+            parent, child = section.split(".")
+            config[parent] = {child: value}
+        else:
+            config[section] = value
+        path = tmp_path / "invalid-section.yaml"
+        path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--config", str(path), *flags, "--dry-run"])
+        assert error.value.code == 2
+        message = capsys.readouterr().err
+        assert str(path) in message
+        assert section in message
+        assert "mapping" in message
 
+    @pytest.mark.parametrize("value", ["null", "3", "[]"])
+    def test_invalid_model_section_has_a_field_error(
+        self, value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "invalid.yaml"
+        path.write_text(f"model: {value}\ndatasets: [m-eurosat]\n")
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--config", str(path), "--dry-run"])
+        assert error.value.code == 2
+        assert "model" in capsys.readouterr().err
 
-@pytest.mark.parametrize(
-    ("section", "flags"),
-    [
-        ("model", ["--model", "rcf"]),
-        ("runtime", ["--seed", "3"]),
-        ("input", ["--image-size", "32"]),
-        ("classification", ["--knn-k", "3"]),
-        ("output", ["--no-resume"]),
-        ("classification.linear", ["--no-refit-train-val"]),
-        ("classification.calibration", ["--no-temp-scale"]),
-    ],
-)
-@pytest.mark.parametrize("value", [None, [], [["seed", 8]], 3])
-def test_invalid_sections_are_not_coerced_or_replaced_by_overrides(
-    section: str,
-    flags: list[str],
-    value: object,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    config = {"model": {"name": "rcf"}, "datasets": ["m-eurosat"]}
-    if "." in section:
-        parent, child = section.split(".")
-        config[parent] = {child: value}
-    else:
-        config[section] = value
-    path = tmp_path / "invalid-section.yaml"
-    path.write_text(yaml.safe_dump(config), encoding="utf-8")
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(path), *flags, "--dry-run"])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert str(path) in message
-    assert section in message
-    assert "mapping" in message
+    @pytest.mark.parametrize(
+        ("selection", "message"),
+        [
+            (["resnet50", "m-eurosat"], "error: Unknown model config 'resnet50'.\n"),
+            (
+                ["rcf", "unknown"],
+                "error: unknown model or dataset: model=rcf, datasets=['unknown']\n",
+            ),
+        ],
+    )
+    def test_unknown_catalog_entries_fail_before_execution(
+        self, selection: list[str], message: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        model, dataset = selection
+        with pytest.raises(SystemExit) as error:
+            main(["run", "--model", model, "--dataset", dataset])
+        assert error.value.code == 2
+        assert capsys.readouterr().err == message
 
 
 def test_flags_complete_partial_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -444,40 +419,6 @@ def test_nested_linear_override_preserves_sibling_values(
     assert "refit_train_val: false" in output
 
 
-def test_model_catalog_matches_packaged_presets(capsys: pytest.CaptureFixture[str]) -> None:
-    main(["models"])
-    assert capsys.readouterr().out.splitlines() == list_model_configs()
-
-
-def test_catalog_name_selection_and_invalid_requests(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    main(["models"])
-    assert "timm/resnet50" in capsys.readouterr().out
-    main(["datasets"])
-    assert "m-eurosat" in capsys.readouterr().out
-    main(["models", "timm/resnet50"])
-    assert "target:" in capsys.readouterr().out
-    main(["datasets", "m-eurosat"])
-    dataset_detail = capsys.readouterr().out
-    assert "name: m-eurosat" in dataset_detail
-    assert "task: classification" in dataset_detail
-    with pytest.raises(SystemExit) as error:
-        main(["profile"])
-    assert error.value.code == 2
-    with pytest.raises(SystemExit, match="unknown model"):
-        main(["models", "unknown"])
-    with pytest.raises(SystemExit, match="unknown dataset"):
-        main(["datasets", "unknown"])
-
-
-@pytest.mark.parametrize(("model", "dataset"), [("unknown", "m-eurosat"), ("rcf", "unknown")])
-def test_unknown_catalog_entries_fail_before_execution(model: str, dataset: str) -> None:
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--model", model, "--dataset", dataset])
-    assert error.value.code == 2
-
-
 def test_config_help_is_available_without_selection(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -487,34 +428,37 @@ def test_config_help_is_available_without_selection(
     assert json.loads(capsys.readouterr().out)["title"] == "RunConfig"
 
 
-def test_main_rejects_unknown_parser_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    import argparse
-
-    monkeypatch.setattr(
-        "torchgeo_bench.cli._parse_args",
-        lambda _: argparse.Namespace(command="other"),
-    )
-    with pytest.raises(SystemExit, match="not implemented"):
-        main([])
-
-
-@pytest.mark.parametrize("value", ["null", "3", "[]"])
-def test_invalid_model_section_has_a_field_error(
-    value: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "invalid.yaml"
-    path.write_text(f"model: {value}\ndatasets: [m-eurosat]\n")
-    with pytest.raises(SystemExit) as error:
-        main(["run", "--config", str(path), "--dry-run"])
-    assert error.value.code == 2
-    assert "model" in capsys.readouterr().err
-
-
 @pytest.mark.parametrize("flags", [["--methods", "other"], ["--bands", "red,,blue"]])
 def test_dry_run_rejects_unsupported_method_and_band_selections(flags: list[str]) -> None:
     with pytest.raises(SystemExit) as error:
         main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run", *flags])
     assert error.value.code == 2
+
+
+@pytest.mark.parametrize(
+    ("intrinsic_dim", "diagnostic"),
+    [
+        ("{enabled: true, estimators: [TwoNN]}", "geo-eval-harness[id]"),
+        ("{estimators: [twonn]}", "intrinsic_dim.estimators"),
+        ("{max_samples: 1}", "intrinsic_dim.max_samples"),
+    ],
+)
+def test_dry_run_rejects_unusable_intrinsic_dim_settings(
+    intrinsic_dim: str,
+    diagnostic: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("geo_eval_harness.commands._run.find_spec", lambda name: None)
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"model: {{name: rcf}}\ndatasets: [m-eurosat]\nintrinsic_dim: {intrinsic_dim}\n"
+    )
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--config", str(path), "--dry-run"])
+    assert error.value.code == 2
+    assert diagnostic in capsys.readouterr().err
 
 
 def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
@@ -525,8 +469,18 @@ def test_yaml_bands_require_a_list(tmp_path: Path) -> None:
     assert error.value.code == 2
 
 
+def test_dry_run_rejects_partition_on_dataset_without_partitions(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    selection = ["--dataset", "so2sat", "--partition", "0.01x_train", "--methods", "knn"]
+    with pytest.raises(SystemExit) as error:
+        main(["run", "--model", "rcf", "--dry-run", *selection])
+    assert error.value.code == 2
+    assert "supports only the default partition" in capsys.readouterr().err
+
+
 def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
-    from torchgeo_bench import commands
+    from geo_eval_harness import commands
 
     received = []
     monkeypatch.setattr(commands, "download", received.append)
@@ -553,7 +507,7 @@ def test_auto_device_resolves_once_before_dataset_execution(
         received.append(cfg)
         return ()
 
-    monkeypatch.setattr("torchgeo_bench.main.run_dataset", dataset_run)
+    monkeypatch.setattr("geo_eval_harness.main.run_dataset", dataset_run)
     with mock.patch.object(torch.cuda, "is_available", return_value=available) as query:
         main(
             [
@@ -578,7 +532,7 @@ def test_auto_device_resolves_once_before_dataset_execution(
 def test_dry_run_reload_preserves_preset_settings(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
-    from torchgeo_bench.commands import _run_runtime
+    from geo_eval_harness.commands import _run_runtime
 
     received = []
     monkeypatch.setattr(
@@ -594,26 +548,3 @@ def test_dry_run_reload_preserves_preset_settings(
     assert received[0] == received[1]
     assert not restored.input.model_fields_set
     assert not restored.segmentation.model_fields_set
-
-
-def test_image_size_override_reaches_model_construction(monkeypatch: pytest.MonkeyPatch) -> None:
-    from torchgeo_bench.commands import _run_runtime
-
-    received = []
-    monkeypatch.setattr(_run_runtime, "main", lambda cfg, **kwargs: received.append(cfg))
-    main(
-        [
-            "run",
-            "--model",
-            "torchgeo/scalemae_large_fmow",
-            "--dataset",
-            "m-eurosat",
-            "--device",
-            "cpu",
-            "--image-size",
-            "32",
-        ]
-    )
-    config = received[0]
-    assert config.input.image_size == 32
-    assert resolve_run_config(config, "m-eurosat")[0].input.image_size == 32

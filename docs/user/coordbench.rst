@@ -9,7 +9,7 @@ random, spatial-block, or official held-out splits.
 The normalized benchmark tables stream from the
 `taylor-geospatial/coordbench <https://huggingface.co/datasets/taylor-geospatial/coordbench>`_
 dataset on Hugging Face. There is no separate download command and no local
-``data/`` layout to prepare.
+``data/`` layout to prepare. Each table is read at a pinned commit and checked against a packaged SHA-256 checksum.
 
 First run
 ---------
@@ -19,7 +19,7 @@ small CPU example evaluates one regression benchmark with two random folds:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model sincos --dataset california_housing \
+   $ geo-eval-harness coord --model sincos --dataset california_housing \
        --methods linear --folds 2 --device cpu \
        --output results/coordbench_quickstart.csv
 
@@ -28,9 +28,8 @@ Unlike image-run resume, this key does not include a configuration hash;
 use a separate output file when changing encoder kwargs or evaluation
 settings that are not part of the key.
 
-``python -m torchgeo_bench coord`` and ``python -m torchgeo_bench.cli coord``
-are equivalent entry points. The former ``run mode=coord`` and dotted
-``key=value`` overrides are no longer supported.
+``python -m geo_eval_harness coord`` and ``python -m geo_eval_harness.cli coord``
+are equivalent entry points.
 
 Included encoders
 -----------------
@@ -40,7 +39,6 @@ Model preset      Installation    Description
 ================  ==============  =============================================
 ``sincos``        base            Four-dimensional periodic coordinate baseline.
 ``mind``          base            64-dimensional MIND Matryoshka prefix.
-``mind-small``    base            128-dimensional distilled MIND student.
 ``climplicit``    ``coordbench``  Climplicit climate-specialist encoder.
 ``geoclip``       ``coordbench``  GeoCLIP Equal-Earth/RFF encoder.
 ``satclip``       ``coordbench``  SatCLIP spherical-harmonic encoder.
@@ -51,14 +49,16 @@ Install the optional reference encoders from PyPI with:
 
 .. code-block:: console
 
-   $ pip install "torchgeo-bench[coordbench]"
+   $ pip install "geo-eval-harness[coordbench]"
+
+The pretrained presets read their Hugging Face repositories at pinned commits. To load another repository, set ``revision`` together with ``repo`` in ``model.kwargs``; ``revision: null`` follows that repository's default branch.
 
 For example, run SatCLIP on its five downstream benchmarks with random and
 spatial-block cross-validation:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --model satclip --dataset satclip --split both
+   $ geo-eval-harness coord --model satclip --dataset satclip --split both
 
 Benchmarks and probes
 ---------------------
@@ -83,10 +83,9 @@ because this track does not define a KNN regressor. ``evaluation.split``
 holdout:
 
 ``random``
-   Seeded k-fold cross-validation.
+   Seeded k-fold cross-validation. A task with fewer valid points than ``evaluation.folds`` is an error.
 ``spatial``
-   K-fold cross-validation over geographic grid cells. ``evaluation.cell_deg``
-   (``--cell-deg``) sets the cell width in degrees.
+   K-fold cross-validation over geographic grid cells. ``evaluation.cell_deg`` (``--cell-deg``) sets the cell width in degrees. Each occupied cell is assigned to one fold, so a benchmark with fewer occupied cells than ``evaluation.folds`` uses one fold per cell; ``n_folds`` records the number used, and a single occupied cell is an error.
 ``both``
    Run both cross-validation protocols. Benchmarks with an official test mask
    use that fixed holdout once instead.
@@ -100,7 +99,7 @@ bootstrapped confidence intervals.
 YAML configuration
 ------------------
 
-Pass a file to ``torchgeo-bench coord --config my-coord.yaml``:
+Pass a file to ``geo-eval-harness coord --config my-coord.yaml``:
 
 .. code-block:: yaml
 
@@ -115,6 +114,7 @@ Pass a file to ``torchgeo-bench coord --config my-coord.yaml``:
      cell_deg: 10.0
      knn_k: 5
      knn_device: cpu
+     ridge_alphas: [0.01, 0.1, 1.0, 10.0]  # omit for the default 21-value grid
    runtime:
      device: cpu
      seed: 0
@@ -123,27 +123,22 @@ Pass a file to ``torchgeo-bench coord --config my-coord.yaml``:
      file: null
      resume: false
 
-Explicit flags override YAML, including ``--no-resume``.
-``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select
-probes. ``--folds`` must be at least two. Other evaluation flags are
-``--cell-deg``, ``--knn-k``, and ``--knn-device``. ``--device`` selects the
-encoder/linear-probe device, and ``--seed`` controls reproducibility.
+Explicit flags override YAML, including ``--no-resume``. ``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select probes. ``--folds`` must be at least two. Other evaluation flags are ``--cell-deg``, ``--knn-k``, ``--knn-device``, and ``--ridge-alphas``. ``--device`` selects the encoder/linear-probe device, and ``--seed`` controls reproducibility.
 
 ``--dry-run`` validates and prints YAML without loading encoder weights or
 remote tables:
 
 .. code-block:: console
 
-   $ torchgeo-bench coord --config docs/examples/coord-run.yaml --dry-run
+   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
 
-The coordinate schema deliberately has no image ``input``, ``segmentation``,
-or ``classification`` sections. See :doc:`/api/coordbench` for
+The coordinate schema has its own model, dataset, evaluation, runtime, and output sections. See :doc:`/api/coordbench` for
 ``CoordConfig`` and the Python loader.
 
 Add a location encoder
 ----------------------
 
-A custom encoder subclasses :class:`~torchgeo_bench.coordbench.LocationEncoder`
+A custom encoder subclasses :class:`~geo_eval_harness.coordbench.LocationEncoder`
 and implements ``_encode(lon, lat, year)``. The method receives one batch of
 NumPy arrays and returns a finite ``(N, D)`` feature matrix.
 
@@ -169,10 +164,10 @@ root using :file:`docs/examples/coord-run.yaml`:
 
 .. code-block:: console
 
-   $ PYTHONPATH=. uv run torchgeo-bench coord --config docs/examples/coord-run.yaml
+   $ PYTHONPATH=. uv run geo-eval-harness coord --config docs/examples/coord-run.yaml
 
 For a reusable integration, place the class in an installed package and add a
-model preset under :file:`src/torchgeo_bench/conf/model/`:
+model preset under :file:`src/geo_eval_harness/conf/model/`:
 
 .. code-block:: yaml
 
@@ -195,5 +190,5 @@ random and spatial holdouts:
 
 .. code-block:: console
 
-   $ python -m torchgeo_bench.coordbench.leaderboard \
+   $ python -m geo_eval_harness.coordbench.leaderboard \
        results/coordbench_results.csv --method linear

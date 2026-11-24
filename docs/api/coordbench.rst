@@ -2,7 +2,7 @@ CoordBench
 ==========
 
 The coordinate-only pipeline loads point-label benchmarks, embeds coordinates
-with a frozen :class:`~torchgeo_bench.coordbench.LocationEncoder`, and evaluates
+with a frozen :class:`~geo_eval_harness.coordbench.LocationEncoder`, and evaluates
 lightweight downstream probes. See :doc:`/user/coordbench` for runnable examples.
 
 Typed configuration
@@ -12,15 +12,15 @@ The public runner accepts ``CoordConfig``, not image settings:
 
 .. code-block:: python
 
-   from torchgeo_bench.coordbench import run_coordbench
-   from torchgeo_bench.coordbench.config import load_coord_config
+   from geo_eval_harness.coordbench import run_coordbench
+   from geo_eval_harness.coordbench.config import load_coord_config
 
    config = load_coord_config("docs/examples/coord-run.yaml")
    run_coordbench(config)
 
 Loading validates YAML without fetching tables or weights. Calling the runner executes the benchmark and appends results to ``coordbench_results.csv`` beneath ``config.output.directory``, unless ``config.output.file`` selects an exact path.
 
-.. currentmodule:: torchgeo_bench.coordbench.config
+.. currentmodule:: geo_eval_harness.coordbench.config
 
 .. autoclass:: CoordConfig
    :members: model_dump_yaml
@@ -32,7 +32,7 @@ Loading validates YAML without fetching tables or weights. Calling the runner ex
 Encoders
 --------
 
-.. currentmodule:: torchgeo_bench.coordbench
+.. currentmodule:: geo_eval_harness.coordbench
 
 .. autoclass:: LocationEncoder
 .. autoclass:: SinCosLocationEncoder

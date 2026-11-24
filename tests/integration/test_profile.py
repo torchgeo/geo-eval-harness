@@ -1,18 +1,21 @@
-"""Real fixed-batch profiles from every canonical entry point."""
+"""Real fixed-batch profiles from a module launch and repeated in-process commands."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from tests.support.cli import cli_output, run_cli, run_module_cli, run_public_cli
+from tests.support.cli import cli_output, run_cli
 from tests.support.data import write_classification_files
 
 pytestmark = pytest.mark.integration
 
 
-def test_profiles_are_numerical_and_reproduce_seeded_inputs(tmp_path: Path) -> None:
+def test_profiles_are_numerical_and_reproduce_seeded_inputs(
+    tmp_path: Path, cli_main: Callable[..., None], capsys: pytest.CaptureFixture[str]
+) -> None:
     write_classification_files(tmp_path, "m-eurosat", (2, 7))
     arguments = [
         "profile",
@@ -32,15 +35,15 @@ def test_profiles_are_numerical_and_reproduce_seeded_inputs(tmp_path: Path) -> N
         "2",
         "--count-flops",
     ]
-    results = [
-        run_public_cli(*arguments, "--seed", "7", cwd=tmp_path),
-        run_cli(*arguments, "--seed", "7", cwd=tmp_path),
-        run_module_cli("torchgeo_bench.cli", *arguments, "--seed", "8", cwd=tmp_path),
-    ]
+    launched = run_cli(*arguments, "--seed", "7", cwd=tmp_path)
+    assert launched.returncode == 0, cli_output(launched)
+    outputs = [launched.stdout]
+    for seed in ("7", "8"):
+        cli_main([*arguments, "--seed", seed])
+        outputs.append(capsys.readouterr().out)
     records = []
-    for result in results:
-        assert result.returncode == 0, cli_output(result)
-        record = json.loads(result.stdout)
+    for output in outputs:
+        record = json.loads(output)
         records.append(record)
         assert record["model"] == "rcf"
         assert record["dataset"] == "m-eurosat"

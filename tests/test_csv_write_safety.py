@@ -8,7 +8,7 @@ from threading import Barrier
 import pandas as pd
 import pytest
 
-from torchgeo_bench.results import append_rows_atomic
+from geo_eval_harness.results import append_rows_atomic
 
 
 @pytest.mark.parametrize("stage", ["serialization", "fsync", "replace"])

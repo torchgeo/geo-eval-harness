@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from experiments import _runner as runner
-from torchgeo_bench.config.run import RunConfig, load_run_config
-from torchgeo_bench.config.schema import ModelConfig
+from geo_eval_harness.config.run import RunConfig, load_run_config
+from geo_eval_harness.config.schema import ModelConfig
 
 
 def test_queue_dry_run_logs_without_launching_jobs(
@@ -30,7 +30,7 @@ def test_queue_dry_run_logs_without_launching_jobs(
 
     assert runner.run_jobs(jobs, [0, 2], output="results.csv", dry_run=True) == 0
     assert (
-        "-m torchgeo_bench run --config '<job-config.yaml>' --device cuda:0 --resume --output results.csv"
+        "-m geo_eval_harness run --config '<job-config.yaml>' --device cuda:0 --resume --output results.csv"
         in caplog.text
     )
     assert "--device cuda:2" in caplog.text
@@ -48,14 +48,14 @@ def test_queue_reports_job_result_at_the_expected_log_level(
     settings = RunConfig(
         model=ModelConfig(
             name="custom-rcf",
-            target="torchgeo_bench.models.RCFBench",
+            target="geo_eval_harness.models.RCFBench",
             kwargs={"features": 8, "mode": "empirical"},
         ),
         datasets=["m-eurosat"],
     )
 
     def run_command(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess:
-        assert command[:4] == [sys.executable, "-m", "torchgeo_bench", "run"]
+        assert command[:4] == [sys.executable, "-m", "geo_eval_harness", "run"]
         path = Path(command[command.index("--config") + 1])
         config_paths.append(path)
         assert load_run_config(path) == settings
@@ -108,8 +108,8 @@ def test_queue_logging_uses_stderr_by_default() -> None:
             sys.executable,
             "-c",
             "from experiments._runner import Job, run_jobs; "
-            "from torchgeo_bench.config.schema import ModelConfig; "
-            "from torchgeo_bench.config.run import RunConfig; "
+            "from geo_eval_harness.config.schema import ModelConfig; "
+            "from geo_eval_harness.config.run import RunConfig; "
             "config = RunConfig(model=ModelConfig(name='rcf'), datasets=['m-eurosat']); "
             "run_jobs([Job('rcf', config)], [0], output='results.csv', dry_run=True)",
         ],

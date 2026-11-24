@@ -1,0 +1,15 @@
+name: olmoearth_v1_3_base_student128
+target: geo_eval_harness.models.OlmoEarthBenchModel
+kwargs:
+  model_size: base
+  version: v1_3
+  patch_size: 8
+  input_res: null
+  time_steps: 1
+  std_multiplier: 2.0
+  normalize: false
+  min_image_size: 64
+  embedding: student
+  missing_bands: zero
+input:
+  image_size: null

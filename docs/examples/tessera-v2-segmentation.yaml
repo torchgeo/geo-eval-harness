@@ -1,0 +1,10 @@
+model:
+  name: tessera_v2/medium
+datasets: [pastis, fotw]
+segmentation:
+  head: linear
+  epochs: 10
+  cache_features: false
+runtime:
+  device: cuda:0
+  batch_size: 2

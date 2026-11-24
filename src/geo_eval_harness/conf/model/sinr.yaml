@@ -1,0 +1,5 @@
+name: sinr
+target: geo_eval_harness.coordbench.models.SINRLocationEncoder
+track: coord
+kwargs:
+  repo: MVRL/sinr-location-encoder-1000-cls

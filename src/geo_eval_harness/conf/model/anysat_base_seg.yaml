@@ -1,0 +1,78 @@
+name: anysat_base_seg
+target: geo_eval_harness.models.AnySatBenchModel
+# See anysat_base.yaml for input_gsd, patch_size and impute_missing. Segmentation reads AnySat's
+# output tokens through output_tap: the final cross-attention block (model.model.blocks.6) is
+# called through a custom method, so a forward hook on it never fires. Blocks 0-5 are the fusion
+# self-attention blocks ([B, 1 + h*w, 768], class token first; num_prefix_tokens = 1). Every
+# dataset below is single-modality, so each block holds one h x h token grid.
+kwargs:
+  modality: null
+  patch_size: 10
+  input_gsd: null
+  impute_missing: true
+  doy: 120
+  normalize: false
+segmentation:
+  # Fusion blocks 0-5 and the cross-attention block 6 (its query is a learned parameter, so wk,
+  # wv, proj and the MLP); LoRA wraps the Linear layers, so block 6 trains although its forward
+  # hook never fires. The intra-patch spatial encoder and the projectors stay frozen.
+  lora_target_modules: 'model\.model\.blocks\.([0-5]\.(attn\.(qkv|proj)|mlp\.fc[12])|6\.(attn\.(wk|wv|proj)|mlp\.fc[12]))'
+  layers:
+    - output_tap
+    - model.model.blocks.4
+    - model.model.blocks.2
+    - model.model.blocks.0
+dataset_overrides:
+  # Landsat-7 projector = the six HLS bands exactly (B,G,R,NIR,SWIR1,SWIR2), 30 m, 512 px.
+  # The authors' Burn Scars numbers used a newly trained HLS projector instead.
+  burn_scars:
+    kwargs: {modality: l7, input_gsd: 68.5714, patch_size: 240}
+    input: {bands: all}
+  cloudsen12:  # S2 L1C 10 m, 512 px (pretraining was L2A); B1, B9, B10 unused
+    kwargs: {input_gsd: 22.8571, patch_size: 80}
+    input: {bands: all}
+  sen1floods11-s2:  # S2 10 m, 512 px, the authors' 80 m patches
+    kwargs: {input_gsd: 22.8571, patch_size: 80}
+    input: {bands: all}
+  # VV, VH and the VV/VH ratio on dB values, as the authors' Sen1Floods11 loader computes it;
+  # ratio_stats are its mean and std over the whole training split (clamped to +-1e4).
+  sen1floods11-s1:
+    kwargs: {input_gsd: 22.8571, patch_size: 80, ratio_stats: [0.6025, 1.4704]}
+  oscd-post:  # S2 10 m, 256 px
+    kwargs: {input_gsd: 11.4286, patch_size: 40}
+    input: {bands: all}
+  fotw:  # S2 R,G,B,NIR 10 m, 256 px; the other six S2 bands are imputed
+    kwargs: {input_gsd: 11.4286, patch_size: 40}
+    input: {bands: all}
+  kuro_siwo:  # S1 linear power 10 m, 224 px; ratio_stats from 2,000 training tiles
+    kwargs: {patch_size: 80, input_gsd: 10.0, ratio_stats: [6.736, 22.0468]}
+    input: {bands: [vv, vh]}
+  # Degraded: one SAR amplitude channel (stored as red, ~6 m, 512 px) as VV through the dual-pol
+  # s1-asc projector, with VH imputed.
+  caffe:
+    kwargs: {modality: s1-asc, band_names: [vv], input_gsd: 13.7143, patch_size: 80}
+    input: {bands: [red]}
+  # Degraded: Planet RGB (4 m, 512 px) through the S2 projector, other seven bands imputed;
+  # the 1 m SPOT projector would need 2048 px tiles.
+  spacenet7:
+    kwargs: {modality: s2, input_gsd: 9.1429, patch_size: 80}
+  # Very-high-resolution RGB through the 1 m SPOT projector (10 m patches, AnySat's finest).
+  loveda:  # 0.3 m, 1024 px
+    kwargs: {input_gsd: 1.3714}
+  levir-cd-post:  # 0.5 m, 256 px
+    kwargs: {input_gsd: 0.5714}
+  spacenet2:  # WorldView pan-sharpened ~0.3 m, 650 px; RGB of the eight bands
+    kwargs: {modality: spot, input_gsd: 0.8705}
+    input: {bands: [red, green, blue]}
+  hotosm_buildings:  # ~0.3 m (zoom 19), 256 px
+    kwargs: {input_gsd: 0.3429}
+  open_cities:  # 0.02-0.2 m drone chips, 512 px; ~0.1 m assumed (a 51 m tile, 5x5 patches)
+    kwargs: {input_gsd: 0.2286}
+  bright-post-sar-rgb:  # SAR amplitude repeated as RGB, 0.3-0.6 m, 1024 px; ~0.45 m assumed
+    kwargs: {input_gsd: 2.0571}
+  flair2:
+    kwargs: {refuse: "FLAIR is in AnySat's GeoPlex pretraining data"}
+  openearthmap-sar:
+    kwargs: {refuse: "AnySat has no sub-metre SAR modality"}
+  bright-post-sar:
+    kwargs: {refuse: "AnySat has no sub-metre SAR modality"}

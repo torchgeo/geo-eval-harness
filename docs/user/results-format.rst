@@ -1,27 +1,30 @@
 Results format
 ==============
 
-All evaluation runs append rows to per-model CSV files.  Each row is a
-flattened :class:`~torchgeo_bench.main.EvaluationResult` describing a single
-``(dataset, method, model, config)`` measurement.  Rows are split by *kind*
-across three directories, keyed by ``<model name>.csv``:
+All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside command-level files for compute cost and CoordBench:
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 25 50
+   :widths: 30 22 48
 
-   * - Directory
-     - Row ``method``\ s
+   * - Path
+     - Row ``method``\ s / schema
      - Contents
    * - ``results/models/``
-     - ``knn5``, ``linear``, ``seg-*``
-     - Classification/segmentation metrics -- appended on each metrics run.
+     - ``knn5``, ``linear``, ``seg-*`` (including ``-std`` and ``-sweep<n>`` variants)
+     - Classification and segmentation metrics — appended on each metrics run.
    * - ``results/profiles/``
      - ``profile``
-     - Throughput/latency/param-count measurements -- one-time per model+hardware.
+     - Throughput/latency/param-count measurements — one-time per model+hardware.
    * - ``results/intrinsic_dim/``
      - ``intrinsic_dim``
-     - Intrinsic-dimension estimates -- one-time per model.
+     - Intrinsic-dimension and feature-spectrum estimates — one-time per model.
+   * - ``results/compute_cost.csv`` (and ``compute_cost.md``, ``compute_cost_coverage.csv``, ``compute_cost_provenance.json``)
+     - Compute-cost schema
+     - Per-sample GFLOPs, parameter counts, and timing from ``geo-eval-harness flops``, plus curated sweep notes, coverage, and provenance.
+   * - ``results/coordbench_results.csv``
+     - :class:`~geo_eval_harness.coordbench.CoordResult`
+     - Coordinate-only location-encoder results from ``geo-eval-harness coord`` (see :doc:`coordbench`).
 
 Profile and intrinsic-dim rows are one-time model+hardware measurements, so
 they are kept out of the metrics file: rerunning a classification sweep
@@ -32,15 +35,17 @@ rows every time.
 Sample rows
 -----------
 
+These illustrative rows show selected columns; they are not benchmark measurements.
+
 .. code-block:: text
 
    dataset,method,metric_name,metric_value,ci_lower,ci_upper,feature_dim,best_c,n_train,n_val,n_test,seed,model,name,normalization,image_size,interpolation,partition,bands,num_classes
-   m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,torchgeo_bench.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,torchgeo_bench.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
-   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,torchgeo_bench.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,3
+   m-eurosat,knn5,accuracy,0.8234,0.8123,0.8345,512,,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
+   m-eurosat,linear,accuracy,0.8567,0.8461,0.8673,512,0.1,21600,5400,5400,0,geo_eval_harness.models.RCFBench,rcf,bandspec_zscore,224,bilinear,default,rgb,10
+   burn_scars,seg-fpn,mIoU,0.6234,0.0,0.0,768,,1000,200,300,0,geo_eval_harness.models.TimmPatchBenchModel,resnet50,bandspec_zscore,224,bilinear,default,rgb,2
 
 Datasets emit unnormalized tensors; each model wrapper normalises inside
-:meth:`~torchgeo_bench.models.BenchModel.normalize_inputs` according to
+:meth:`~geo_eval_harness.models.BenchModel.normalize_inputs` according to
 the strategy selected by ``input.normalization``. The CSV retains the internal
 names below: ``dataset`` maps to ``bandspec_zscore``, ``model`` to ``model_native``,
 and ``none`` to ``identity``.
@@ -59,82 +64,168 @@ and ``none`` to ``identity``.
    * - ``minmax``
      - Scale each channel to ``[0, 1]`` from BandSpec min/max.
    * - ``minmax_zscore``
-     - ``minmax`` then z-score against assumed ``mean=0.5, std=0.25``.
+     - Min-max scaling, then z-scoring with the correspondingly scaled dataset mean/std.
    * - ``identity``
-     - No rescaling (for models whose forward owns normalisation).
-
-Older snapshots may carry legacy values such as ``raw`` / ``mean_stdev`` /
-``percentile_2_98`` — they are kept verbatim for resume safety.
+     - No rescaling (for models that use raw inputs or whose forward owns normalisation).
 
 Method values
 -------------
 
-================== ==================================================================================
-``method``         Meaning
-================== ==================================================================================
-``knn5``           KNN-5 classification (multilabel KNN for ``m-bigearthnet``). -> ``results/models/``
-``linear``         L-BFGS logistic regression with C-sweep on the validation set. -> ``results/models/``
-``intrinsic_dim``  Optional intrinsic-dimension metrics on extracted embeddings (requires
-                   the ``[id]`` extra) plus dependency-free centered feature-spectrum
-                   diagnostics. Both are emitted when
-                   YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
-                   spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
-``profile``        Optional throughput/latency/param-count measurement (requires
-                   YAML ``profile: {enabled: true}``). -> ``results/profiles/``
-``seg-<head>``     Segmentation probe with the configured head (``linear`` / ``conv_block`` /
-                   ``fpn`` / ``dpt`` / ``patch_linear``). -> ``results/models/``
-================== ==================================================================================
+============================= ==================================================================================
+``method``                    Meaning
+============================= ==================================================================================
+``knn5`` / ``knn5-std``       KNN-5 classification (multilabel KNN for ``m-bigearthnet``); ``-std`` is appended
+                              when ``classification.feature_standardize`` is enabled. -> ``results/models/``
+``linear`` / ``linear-std``   L-BFGS logistic regression with C-sweep on the validation set; ``-std`` is appended
+                              when ``classification.feature_standardize`` is enabled. -> ``results/models/``
+``intrinsic_dim``             Optional intrinsic-dimension metrics on extracted embeddings (requires
+                              the ``[id]`` extra) plus dependency-free centered feature-spectrum
+                              diagnostics. Both are emitted when
+                              YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
+                              spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
+``profile``                   Optional throughput/latency/param-count measurement (requires
+                              YAML ``profile: {enabled: true}``). -> ``results/profiles/``
+``seg-<head>``                Segmentation probe with the configured head (``linear`` / ``conv_block`` /
+                              ``fpn`` / ``dpt`` / ``patch_linear`` / ``upernet`` / ``unet``); the rest of
+                              the setup is in the setup columns. Append ``-std`` when
+                              ``segmentation.feature_standardize`` is enabled, and ``-sweep<n>`` for an
+                              ``n``-cell ``patch_linear`` learning-rate/weight-decay probe sweep (for example
+                              ``seg-patch_linear-sweep<n>`` or ``seg-patch_linear-std-sweep<n>``).
+                              -> ``results/models/``
+============================= ==================================================================================
 
 CSV schema
 ----------
 
-==================== ============================================================
-Column               Description
-==================== ============================================================
-``dataset``          Dataset CLI name (e.g. ``m-eurosat``).
-``method``           ``knn5``, ``linear``, ``intrinsic_dim``, or ``seg-<head_type>``.
-``metric_name``      Primary metric (``accuracy``, ``micro_mAP``, ``mIoU``,
-                     ``id_<estimator>_<split>`` for intrinsic-dimension rows,
-                     or ``spectrum_<metric>_<split>`` for feature-spectrum rows).
-``metric_value``     Point estimate.
-``ci_lower``         Bootstrap CI lower bound (0.0 when not applicable).
-``ci_upper``         Bootstrap CI upper bound (0.0 when not applicable).
-``feature_dim``      Embedding dimension produced by the backbone.
-``best_c``           Best ``C`` from the logistic-regression sweep
-                     (linear probe only, otherwise ``None``).
-``best_lr``          Best learning rate (segmentation only).
-``best_batch_size``  Best batch size (segmentation only).
-``n_train``          Train-split sample count.
-``n_val``            Validation-split sample count.
-``n_test``           Test-split sample count.
-``seed``             RNG seed used for the run.
-``model``            Fully-qualified class from the resolved preset's ``target``.
-``name``             Human-readable model name from the resolved preset.
-``normalization``    Strategy applied by the model wrapper (see table above).
-``image_size``       Input resize size (``None`` if no resizing).
-``interpolation``    Resize interpolation mode.
-``partition``        GeoBench V1 partition name (``default`` for V2).
-``bands``            ``rgb`` / ``all`` / a sorted comma-joined list.
-``num_classes``      Dataset label count. It is also part of the resume key so
-                     label-schema changes cannot reuse stale rows.
-``c_range_start``    ``classification.linear.c_log10_start``.
-``c_range_stop``     ``classification.linear.c_log10_stop``.
-``c_range_num``      ``classification.linear.c_count``.
-``merge_val``        Whether ``train+val`` was merged before final logistic fit.
-``bootstrap``        Number of bootstrap resamples used for CIs.
-``fw_iou``           Frequency-weighted IoU (segmentation only).
-``precision``        Macro precision (segmentation only).
-``recall``           Macro recall (segmentation only).
-``f1``               Macro F1 (segmentation only).
-==================== ============================================================
+====================== ============================================================
+Column                 Description
+====================== ============================================================
+``dataset``            Dataset CLI name (e.g. ``m-eurosat``).
+``method``             Probe or measurement name; see `Method values`_.
+``metric_name``        Primary metric (``accuracy``, ``micro_mAP``, ``mIoU``,
+                       ``id_<estimator>_<split>`` for intrinsic-dimension rows,
+                       or ``spectrum_<metric>_<split>`` for feature-spectrum rows).
+``metric_value``       Point estimate.
+``ci_lower``           Bootstrap CI lower bound (0.0 when not applicable).
+``ci_upper``           Bootstrap CI upper bound (0.0 when not applicable).
+``feature_dim``        Embedding dimension produced by the backbone.
+``best_c``             Best ``C`` from the logistic-regression sweep
+                       (linear probe only, otherwise ``None``).
+``best_lr``            Best learning rate (segmentation only).
+``best_batch_size``    Best batch size (segmentation only).
+``n_train``            Train-split sample count.
+``n_val``              Validation-split sample count.
+``n_test``             Test-split sample count.
+``seed``               RNG seed used for the run.
+``model``              Fully-qualified class from the resolved preset's ``target``.
+``name``               Human-readable model name from the resolved preset.
+``normalization``      Strategy applied by the model wrapper (see table above).
+``image_size``         Input resize size (``None`` if no resizing).
+``interpolation``      Resize interpolation mode.
+``partition``          Dataset training partition, such as ``default`` or ``full``.
+``bands``              ``rgb`` / ``all`` / a sorted comma-joined list.
+``num_classes``        Dataset label count. It is also part of the resume key so
+                       label-schema changes cannot reuse stale rows.
+``config_hash``        SHA-256 fingerprint of the resolved model, preprocessing,
+                       and evaluation settings used by ``--resume``.
+``c_range_start``      ``classification.linear.c_log10_start``.
+``c_range_stop``       ``classification.linear.c_log10_stop``.
+``c_range_num``        ``classification.linear.c_count``.
+``merge_val``          Whether ``train+val`` was merged before final logistic fit.
+``bootstrap``          Number of bootstrap resamples used for CIs.
+``res``                Ground resolution in metres when recorded by the model
+                       (for example Scale-MAE); empty otherwise.
+``pool``               Token pooling mode when recorded by the model (for example
+                       ``mean``, ``cls``, or ``both``); empty otherwise.
+``fw_iou``             Frequency-weighted IoU (segmentation only).
+``precision``          Macro precision (segmentation only).
+``recall``             Macro recall (segmentation only).
+``f1``                 Macro F1 (segmentation only).
+``ece``                Expected calibration error (classification only).
+``rms_ce``             Root-mean-square calibration error (classification only).
+``mce``                Maximum calibration error (classification only).
+``ece_ts``             Post-temperature-scaling ECE (linear probe with ``temp_scale``).
+``rms_ce_ts``          Post-temperature-scaling RMS calibration error (linear probe with ``temp_scale``).
+``mce_ts``             Post-temperature-scaling MCE (linear probe with ``temp_scale``).
+``temperature``        Fitted temperature-scaling scalar (linear probe with ``temp_scale``).
+``calibration_n_bins`` Number of histogram bins used for calibration metrics.
+====================== ============================================================
+
+Segmentation rows also include ``boundary_iou`` (mean Boundary IoU) and ``boundary_iou_width`` (the boundary tolerance in pixels, rounded from 2% of the image diagonal), plus ``best_val_epoch`` and ``best_val_miou``: the epoch restored for test evaluation and its validation mIoU (see :ref:`segmentation-model-selection`).
+
+.. _segmentation-setup-columns:
+
+Segmentation setup columns
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``method`` is ``seg-<head>`` for every segmentation setup. The rest of the training setup is
+recorded in the setup columns below, which follow ``pool`` in the CSV.
+``geo_eval_harness.results.segmentation_setup_columns`` maps a resolved
+``segmentation`` config to them. Every cell is text: whole numbers are written as integers
+(``20``, ``16``, ``0``), other numbers in Python's shortest round-trip form (``0.001``,
+``1e-05``). Off-values of settings that apply are written explicitly (``none``, ``0``); an empty
+cell means the column does not apply to the row. Classification rows leave all of them empty.
+
+============================ ==========================================================
+Column                       Value on a segmentation row
+============================ ==========================================================
+``adaptation``               ``frozen``, ``lora`` (``lora_rank`` set) or ``full``
+                             (``full_finetune``).
+``decoder``                  ``segmentation.head`` (``upernet``, ``unet``, ...).
+``neck``                     ``segmentation.neck`` (``none`` or ``vit``).
+``upsampler``                ``segmentation.upsampler`` (``none`` or ``anyup``).
+``epochs``                   ``segmentation.epochs``, the configured maximum.
+``head_lr``                  ``segmentation.learning_rate``.
+``backbone_lr``              ``segmentation.backbone_learning_rate``; empty when
+                             ``adaptation`` is ``frozen``.
+``weight_decay``             ``segmentation.weight_decay``.
+``head_dropout``             ``segmentation.head_dropout``.
+``lora_rank``                ``segmentation.lora_rank``; empty unless LoRA.
+``lora_alpha``               ``segmentation.lora_alpha``; empty unless LoRA.
+``lora_last_blocks``         ``segmentation.lora_last_blocks``; empty unless LoRA
+                             is restricted to the last blocks.
+``class_weights``            ``none`` (no class weighting).
+``selection_metric``         ``val_miou``: the best-validation-mIoU epoch is
+                             restored (:ref:`segmentation-model-selection`).
+``early_stopping_patience``  ``segmentation.early_stopping_patience``; empty when off.
+============================ ==========================================================
+
+The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Linear-probe rows with ``merge_val`` false also remain distinct from rows refit on train plus validation, and the ranking explorer ranks only the refit rows. Resume uses the configuration hash.
+
+.. _segmentation-epoch-metrics:
+
+Per-epoch segmentation metrics
+------------------------------
+
+Set ``output.epoch_metrics`` to a JSON Lines path to record segmentation training curves. Lines are appended, and parent directories are created. The file is output only, so it does not change ``config_hash`` or resume.
+
+Each epoch appends one ``"event": "epoch"`` line as soon as it completes, so a failed run keeps the epochs it finished. A completed fit then appends one ``"event": "selected"`` line. Every line carries ``run_id`` (unique per fit), ``timestamp`` (UTC), and the result-row identity ``dataset``, ``name``, ``method``, ``bands``, ``partition``, ``image_size``, ``seed``, and ``config_hash``. Join curves to result rows on ``config_hash`` and ``method``; use ``run_id`` to separate repeated runs.
+
+====================== ============================================================
+Epoch field            Description
+====================== ============================================================
+``epoch``              Epoch number, starting from one.
+``train_loss``         Sample-weighted mean training loss over the epoch's steps.
+``val_loss``           Validation loss: the criterion's mean over the whole split.
+``val_miou``           Validation dataset-level macro mIoU.
+``head_lr``            Head learning rate used during the epoch.
+``backbone_lr``        Trainable backbone learning rate; ``null`` for a frozen backbone.
+``train_steps``        Optimizer steps taken.
+``skipped_batches``    Training batches smaller than the head minimum.
+``nonfinite_batches``  Training batches skipped before the head because the backbone
+                       features were not finite (for example a float16 overflow).
+``epoch_seconds``      Wall time for training and validation.
+``peak_gpu_mem_mb``    Peak allocated CUDA memory in MiB; ``null`` off CUDA.
+``train_miou``         Macro mIoU of training-mode predictions accumulated over the
+                       epoch's steps (no extra pass; weights change during the epoch).
+====================== ============================================================
+
+The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
 
 Atomic appends
 --------------
 
-Rows are appended via :func:`~torchgeo_bench.main.append_rows_atomic`,
-which uses ``fcntl`` advisory file locking (available on Linux and
-macOS).  This makes it safe to point multiple parallel jobs (e.g. one
-per GPU or per dataset) at the same output file without corrupting it.
+Rows are appended via :func:`~geo_eval_harness.results.append_rows_atomic`, which uses ``filelock.FileLock`` on Linux, macOS, and Windows. Parallel jobs can append to the same output file.
 
 Resume mode
 -----------
@@ -153,11 +244,9 @@ all three files -- ``results/models/<name>.csv``,
 
 Resume checks each method separately, so ``--methods linear`` never requires a KNN row. Profile and intrinsic-dimension passes do not change ``config_hash``; each requested metric must be present before a pass is skipped.
 
-Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results. It excludes ``runtime.device`` and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
+Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results, and ``runtime.matmul_precision`` when it is not ``highest``. It excludes ``runtime.device``, ``classification.knn_device``, and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
-Rows written before version 0.5.0 do not have ``num_classes`` and are treated
-as incomplete by resume mode. The checked-in SpaceNet2/7 rows produced under
-the old three-class task were removed; they remain available from the 0.4.0 tag.
+The hash of a classification, profile, or intrinsic-dimension row does not cover the ``segmentation`` section, so segmentation settings in a model preset or run config never change it. Segmentation hashes cover both the ``classification`` and ``segmentation`` sections and include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
 
 CoordBench uses a separate schema and output path. See :doc:`coordbench` and
-:class:`~torchgeo_bench.coordbench.CoordResult`.
+:class:`~geo_eval_harness.coordbench.CoordResult`.

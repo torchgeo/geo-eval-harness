@@ -1,5 +1,6 @@
 """Unit tests for model profiling helpers."""
 
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest import mock
@@ -8,9 +9,9 @@ import pytest
 import torch
 from torch import nn
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench import model_profile
-from torchgeo_bench.model_profile import (
+from geo_eval_harness import model_profile
+from geo_eval_harness.model_profile import (
+    ProfileResult,
     ProfileTiming,
     _count_gflops,
     _count_params,
@@ -18,8 +19,21 @@ from torchgeo_bench.model_profile import (
     measure_profile,
     profile_inference,
 )
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
+
+
+def _profile_cpu(model: nn.Module, sample: torch.Tensor, **options: Any) -> ProfileResult:
+    """Profile on CPU with one measured pass and no warmup unless ``options`` says otherwise."""
+    settings = {"n_warmup": 0, "n_measure": 1} | options
+    return profile_inference(model, sample, device=torch.device("cpu"), **settings)
+
+
+def _mixed_device_model() -> nn.Module:
+    model = nn.Linear(2, 2)
+    model.register_buffer("other", torch.ones(1, device="meta"))
+    return model
 
 
 def test_count_params_correct() -> None:
@@ -41,6 +55,26 @@ def test_count_gflops_matches_conv_and_linear_ops(requires_grad) -> None:
     assert gflops == pytest.approx(expected / 1e9)
     assert sample.grad is None
     assert all(p.grad is None for p in model.parameters())
+
+
+def test_count_gflops_counts_cpu_scaled_dot_product_attention() -> None:
+    class Attention(nn.Module):
+        def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+            return nn.functional.scaled_dot_product_attention(tokens, tokens, tokens)
+
+    heads, length, head_dim = 2, 5, 4
+    gflops = _count_gflops(Attention(), torch.rand(1, heads, length, head_dim))
+    assert gflops == pytest.approx(2 * 2 * heads * length * length * head_dim / 1e9)
+
+
+def test_count_gflops_counts_transformer_layer_in_evaluation_mode() -> None:
+    length, width, hidden = 5, 8, 16
+    layer = nn.TransformerEncoderLayer(width, 2, hidden, dropout=0.0, batch_first=True).eval()
+    gflops = _count_gflops(layer, torch.rand(1, length, width))
+    projections = 2 * length * width * (3 * width + width + 2 * hidden)
+    attention = 2 * 2 * length * length * width
+    assert gflops == pytest.approx((projections + attention) / 1e9)
+    assert torch.backends.mha.get_fastpath_enabled()
 
 
 @pytest.mark.parametrize("use_profile", [False, True])
@@ -82,14 +116,7 @@ def test_count_gflops_handles_parameter_views_without_mutating_model(
 
     with torch.inference_mode(outer_inference):
         if use_profile:
-            result = profile_inference(
-                model,
-                sample,
-                device=torch.device("cpu"),
-                n_warmup=1,
-                n_measure=2,
-                count_flops=True,
-            )
+            result = _profile_cpu(model, sample, n_warmup=1, n_measure=2, count_flops=True)
             gflops = result.flops.gflops
             assert result.flops.status == "measured"
         else:
@@ -172,29 +199,45 @@ def test_measure_profile_does_not_hide_counter_errors(monkeypatch: pytest.Monkey
         measure_profile(nn.Linear(4, 2), torch.rand(2, 4), torch.device("cpu"), 0, 1)
 
 
-def test_profile_rejects_unavailable_cuda(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    with pytest.raises(ValueError, match="CUDA is unavailable"):
-        profile_inference(nn.Identity(), torch.ones(1, 2), device=torch.device("cuda"))
-
-
-def test_profile_validates_tensor_devices_and_precision(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+@pytest.mark.parametrize(
+    ("device", "cuda_available", "message"),
+    [
+        ("cuda", False, "CUDA is unavailable"),
+        ("cuda:2", True, "CUDA index 2"),
+        ("cuda:0", True, "sample_batch is on"),
+        ("meta", False, "device must be 'cpu' or 'cuda'"),
+        ("mps", False, "device must be 'cpu' or 'cuda'"),
+    ],
+)
+def test_profile_rejects_invalid_devices(
+    monkeypatch: pytest.MonkeyPatch, device: str, *, cuda_available: bool, message: str
+) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    with pytest.raises(ValueError, match="sample_batch is on"):
-        profile_inference(nn.Identity(), torch.ones(1, 2), device=torch.device("cuda:0"))
-    mixed = nn.Linear(2, 2)
-    mixed.register_buffer("other", torch.ones(1, device="meta"))
-    with pytest.raises(ValueError, match="one device"):
-        profile_inference(mixed, torch.ones(1, 2), device=torch.device("cpu"))
-    with pytest.raises(ValueError, match="model tensors are on"):
-        profile_inference(
-            nn.Linear(2, 2, device="meta"), torch.ones(1, 2), device=torch.device("cpu")
-        )
-    with pytest.raises(ValueError, match="float32"):
-        profile_inference(
-            nn.Linear(2, 2).double(), torch.ones(1, 2).double(), device=torch.device("cpu")
-        )
+    with pytest.raises(ValueError, match=message):
+        profile_inference(nn.Identity(), torch.ones(1, 2), device=torch.device(device))
+
+
+@pytest.mark.parametrize(
+    ("model", "sample", "options", "message"),
+    [
+        (nn.Identity, torch.empty(0, 2), {}, "non-empty batch"),
+        (_mixed_device_model, torch.ones(1, 2), {}, "one device"),
+        (lambda: nn.Linear(2, 2, device="meta"), torch.ones(1, 2), {}, "model tensors are on"),
+        (lambda: nn.Linear(2, 2).double(), torch.ones(1, 2).double(), {}, "float32"),
+        (nn.Identity, torch.ones(1, 2), {"n_warmup": -1}, "n_warmup"),
+        (nn.Identity, torch.ones(1, 2), {"n_measure": 0}, "n_measure"),
+        (nn.Identity, torch.ones(1, 2), {"precision": "int8"}, "precision"),
+    ],
+)
+def test_profile_rejects_invalid_settings(
+    model: Callable[[], nn.Module], sample: torch.Tensor, options: dict[str, Any], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _profile_cpu(model(), sample, **options)
+
+
+def test_precision_context_rejects_unknown_precision() -> None:
     with pytest.raises(ValueError, match="precision"):
         model_profile._precision_context(torch.device("cpu"), "invalid")
 
@@ -233,83 +276,52 @@ def test_mocked_cuda_timing_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.device == "cuda:1"
 
 
-def test_profile_rejects_out_of_range_cuda_before_forward(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    with pytest.raises(ValueError, match="CUDA index 2"):
-        profile_inference(nn.Identity(), torch.ones(1, 2), device=torch.device("cuda:2"))
-
-
-@pytest.mark.parametrize("device", ["meta", "mps"])
-def test_profile_still_restricts_measurement_devices(device: str) -> None:
-    with pytest.raises(ValueError, match="device must be 'cpu' or 'cuda'"):
-        profile_inference(nn.Identity(), torch.ones(1, 2), device=torch.device(device))
-
-
-def test_cpu_budget_and_denominator(monkeypatch: pytest.MonkeyPatch) -> None:
-    timestamps = iter([0.0, 0.2, 0.2, 0.7, 0.7, 0.7])
-    monkeypatch.setattr(model_profile.time, "perf_counter", lambda: next(timestamps))
-    result = measure_cpu_throughput(
-        nn.Identity(),
-        torch.ones(2, 2),
-        ProfileTiming(batch_size=2, n_warmup=0, n_measure=10),
-        time_budget_s=0.5,
-    )
-    assert result["throughput_samples_per_sec_cpu"] == pytest.approx(4)
-    assert result["latency_ms_per_batch_p50_cpu"] == pytest.approx(500)
-
-
-def test_cpu_budget_can_expire_during_warmup(monkeypatch: pytest.MonkeyPatch) -> None:
-    timestamps = iter([0.0, 2.0])
-    monkeypatch.setattr(model_profile.time, "perf_counter", lambda: next(timestamps))
-    model = nn.Identity()
-    result = measure_cpu_throughput(
-        model,
-        torch.ones(2, 2),
-        ProfileTiming(batch_size=2, n_warmup=1, n_measure=1),
-        time_budget_s=1,
-    )
-    assert all(value is None for value in result.values())
-    assert model.training
-
-
-def test_cpu_zero_budget_disables_measurement(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("timestamps", "timing", "budget", "forwards", "expected"),
+    [
+        ([0.0, 0.2, 0.2, 0.7, 0.7, 0.7], (0, 10), 0.5, 1, (4, 500)),
+        ([0.0, 2.0], (1, 1), 1, 1, (None, None)),
+        ([], (1, 1), 0.0, 0, (None, None)),
+    ],
+)
+def test_cpu_budget_and_denominator(
+    timestamps: list[float],
+    timing: tuple[int, int],
+    budget: float,
+    forwards: int,
+    expected: tuple[float | None, float | None],
+) -> None:
     model = nn.Linear(2, 2)
-
-    def unexpected_forward(sample: torch.Tensor) -> torch.Tensor:
-        pytest.fail("A zero profiling budget must not execute the model")
-
-    monkeypatch.setattr(model, "forward", unexpected_forward)
-    result = measure_cpu_throughput(
-        model,
-        torch.ones(4, 2),
-        ProfileTiming(batch_size=2, n_warmup=1, n_measure=1),
-        time_budget_s=0.0,
-    )
-    assert result == {
-        "throughput_samples_per_sec_cpu": None,
-        "latency_ms_per_batch_p50_cpu": None,
-    }
+    calls: list[torch.Tensor] = []
+    model.register_forward_hook(lambda _module, _inputs, output: calls.append(output))
+    n_warmup, n_measure = timing
+    with mock.patch.object(model_profile.time, "perf_counter", side_effect=timestamps) as clock:
+        result = measure_cpu_throughput(
+            model,
+            torch.ones(4, 2),
+            ProfileTiming(batch_size=2, n_warmup=n_warmup, n_measure=n_measure),
+            time_budget_s=budget,
+        )
+    assert (
+        result["throughput_samples_per_sec_cpu"],
+        result["latency_ms_per_batch_p50_cpu"],
+    ) == pytest.approx(expected)
+    assert clock.call_count == len(timestamps)
+    assert len(calls) == forwards
+    assert next(model.parameters()).device == torch.device("cpu")
     assert model.training
 
 
-def test_cpu_invalid_settings() -> None:
-    with pytest.raises(ValueError, match="non-empty batch"):
-        profile_inference(nn.Identity(), torch.empty(0, 2), device=torch.device("cpu"))
-    with pytest.raises(ValueError, match="sample batch"):
-        measure_cpu_throughput(
-            nn.Identity(),
-            torch.ones(1, 2),
-            ProfileTiming(batch_size=2, n_warmup=0, n_measure=1),
-            time_budget_s=1,
-        )
-    with pytest.raises(ValueError, match="positive"):
-        measure_cpu_throughput(
-            nn.Identity(),
-            torch.ones(1, 2),
-            ProfileTiming(batch_size=1, n_warmup=0, n_measure=0),
-            time_budget_s=1,
-        )
+@pytest.mark.parametrize(
+    ("timing", "message"),
+    [
+        (ProfileTiming(batch_size=2, n_warmup=0, n_measure=1), "sample batch"),
+        (ProfileTiming(batch_size=1, n_warmup=0, n_measure=0), "positive"),
+    ],
+)
+def test_cpu_invalid_settings(timing: ProfileTiming, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        measure_cpu_throughput(nn.Identity(), torch.ones(1, 2), timing, time_budget_s=1)
 
 
 @pytest.mark.parametrize("outer_inference", [False, True])
@@ -338,10 +350,9 @@ def test_count_gflops_uses_one_frozen_no_grad_forward(*, outer_inference: bool) 
 
 
 def test_profile_records_fixed_batch_and_precision() -> None:
-    result = profile_inference(
+    result = _profile_cpu(
         nn.Linear(4, 2),
         torch.rand(3, 4),
-        device=torch.device("cpu"),
         precision="float32",
         n_warmup=1,
         n_measure=2,
@@ -356,10 +367,8 @@ def test_profile_records_fixed_batch_and_precision() -> None:
     assert result.latency_ms_per_batch_p50 > 0
     assert result.peak_gpu_mem_gb is None
     assert result.reserved_gpu_mem_gb is None
-    values = result.as_dict()
-    assert values["gflops_status"] == "disabled"
-    assert values["gflops_convention"] == "one multiply-add is two operations"
-    assert values["gflops_coverage"] == "registered operators only; total coverage unverified"
+    assert result.flops.convention == "one multiply-add is two operations"
+    assert result.flops.coverage == "registered operators only; total coverage unverified"
 
 
 def test_profile_propagates_unsupported_model_flops() -> None:
@@ -376,14 +385,7 @@ def test_profile_propagates_unsupported_model_flops() -> None:
 
     model = Unsupported()
     with pytest.raises(NotImplementedError, match="unsupported"):
-        profile_inference(
-            model,
-            torch.rand(1, 2),
-            device=torch.device("cpu"),
-            n_warmup=0,
-            n_measure=1,
-            count_flops=True,
-        )
+        _profile_cpu(model, torch.rand(1, 2), count_flops=True)
     assert model.calls == 2
     assert model.training
 
@@ -394,14 +396,7 @@ def test_profile_propagates_real_flop_execution_failure() -> None:
             raise RuntimeError("real model failure")
 
     with pytest.raises(RuntimeError, match="real model failure"):
-        profile_inference(
-            Broken(),
-            torch.rand(1, 2),
-            device=torch.device("cpu"),
-            n_warmup=0,
-            n_measure=1,
-            count_flops=True,
-        )
+        _profile_cpu(Broken(), torch.rand(1, 2), count_flops=True)
 
 
 def test_profile_does_not_mutate_autograd_hooks() -> None:
@@ -410,14 +405,7 @@ def test_profile_does_not_mutate_autograd_hooks() -> None:
 
     graph_hook = autograd_graph.register_multi_grad_hook
     tracker_hook = module_tracker.register_multi_grad_hook
-    profile_inference(
-        nn.Linear(4, 2),
-        torch.rand(1, 4),
-        device=torch.device("cpu"),
-        n_warmup=0,
-        n_measure=1,
-        count_flops=False,
-    )
+    _profile_cpu(nn.Linear(4, 2), torch.rand(1, 4))
     assert autograd_graph.register_multi_grad_hook is graph_hook
     assert module_tracker.register_multi_grad_hook is tracker_hook
 
@@ -427,14 +415,7 @@ def test_profile_restores_mixed_training_modes(*, count_flops: bool) -> None:
     model = nn.Sequential(nn.Linear(4, 2), nn.BatchNorm1d(2))
     model.train()
     model[1].eval()
-    profile_inference(
-        model,
-        torch.rand(2, 4),
-        device=torch.device("cpu"),
-        n_warmup=0,
-        n_measure=1,
-        count_flops=count_flops,
-    )
+    _profile_cpu(model, torch.rand(2, 4), count_flops=count_flops, doy=torch.tensor([[1], [2]]))
     assert model.training is True
     assert model[1].training is False
 
@@ -444,40 +425,7 @@ def test_profile_accepts_autocast_precisions(precision: str) -> None:
     model = nn.Linear(4, 2)
     dtypes: list[torch.dtype] = []
     with model.register_forward_hook(lambda module, args, output: dtypes.append(output.dtype)):
-        result = profile_inference(
-            model,
-            torch.rand(1, 4),
-            device=torch.device("cpu"),
-            precision=precision,
-            n_warmup=0,
-            n_measure=1,
-            count_flops=True,
-        )
+        result = _profile_cpu(model, torch.rand(1, 4), precision=precision, count_flops=True)
     assert result.precision == precision
     assert dtypes == [getattr(torch, precision)] * 2
     assert result.flops.gflops == pytest.approx(16 / 1e9)
-
-
-def test_profile_rejects_invalid_settings() -> None:
-    model = nn.Linear(2, 2)
-    sample = torch.rand(1, 2)
-    with pytest.raises(ValueError, match="n_warmup"):
-        profile_inference(model, sample, device=torch.device("cpu"), n_warmup=-1)
-    with pytest.raises(ValueError, match="n_measure"):
-        profile_inference(model, sample, device=torch.device("cpu"), n_measure=0)
-    with pytest.raises(ValueError, match="precision"):
-        profile_inference(model, sample, device=torch.device("cpu"), precision="int8")
-
-
-def test_cpu_profile_restores_model_and_reports_metrics() -> None:
-    model = nn.Linear(2, 2)
-    metrics = measure_cpu_throughput(
-        model,
-        torch.rand(2, 2),
-        ProfileTiming(batch_size=2, n_warmup=0, n_measure=1),
-        time_budget_s=1,
-    )
-    assert metrics["throughput_samples_per_sec_cpu"] is not None
-    assert metrics["latency_ms_per_batch_p50_cpu"] is not None
-    assert next(model.parameters()).device == torch.device("cpu")
-    assert model.training

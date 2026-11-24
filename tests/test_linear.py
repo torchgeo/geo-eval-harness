@@ -1,11 +1,13 @@
 """Tests for LogisticRegression (linear.py) — validation, fitting, inference."""
 
+from unittest import mock
+
 import numpy as np
 import pytest
 import torch
 
+from geo_eval_harness.linear import LogisticRegression
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.linear import LogisticRegression
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 
@@ -64,7 +66,10 @@ def test_logistic_regression_uses_current_cuda(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    assert LogisticRegression(device=device, use_tf32=False).device == torch.device("cuda:1")
+    set_precision = mock.Mock()
+    monkeypatch.setattr(torch, "set_float32_matmul_precision", set_precision)
+    assert LogisticRegression(device=device).device == torch.device("cuda:1")
+    set_precision.assert_not_called()
 
 
 def test_auto_device_fits_on_cpu_when_cuda_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,6 +1,0 @@
-name: resnet152
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: resnet152
-  pretrained: true
-  global_pool: avg

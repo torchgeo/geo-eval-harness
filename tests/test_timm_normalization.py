@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
+from geo_eval_harness.datasets.base import BandSpec
 
 
 def _rgb_bands(
@@ -45,7 +45,7 @@ def _block_pretrained_download(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_imagenet_normalization_rescales_raw_values_to_unit_interval() -> None:
     """Scale sensor values to [0, 1] before applying ImageNet mean and standard deviation."""
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = _rgb_bands(mins=(0.0, 0.0, 0.0), maxs=(28000.0, 28000.0, 28000.0))
     model = TimmPatchBenchModel(
@@ -67,7 +67,7 @@ def test_imagenet_normalization_rescales_raw_values_to_unit_interval() -> None:
 
 
 def test_imagenet_normalization_band_min_subtracted_first() -> None:
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = _rgb_bands(mins=(100.0, 100.0, 100.0), maxs=(900.0, 900.0, 900.0))
     model = TimmPatchBenchModel(
@@ -88,7 +88,7 @@ def test_imagenet_normalization_band_min_subtracted_first() -> None:
 
 
 def test_imagenet_normalization_rejects_non_rgb() -> None:
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = [*_rgb_bands(), _rgb_bands()[0]]
     with pytest.raises(ValueError, match="requires 3 input channels"):
@@ -101,7 +101,7 @@ def test_imagenet_normalization_rejects_non_rgb() -> None:
 
 
 def test_timm_default_normalization_uses_default_cfg_stats() -> None:
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = _rgb_bands()
     model = TimmPatchBenchModel(
@@ -125,7 +125,7 @@ def test_timm_default_normalization_uses_default_cfg_stats() -> None:
 
 def test_bands_zscore_unaffected_by_imagenet_path() -> None:
     """Dataset z-scores must use band statistics, not ImageNet statistics."""
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = _rgb_bands(mins=(0.0, 0.0, 0.0), maxs=(28000.0, 28000.0, 28000.0))
     model = TimmPatchBenchModel(
@@ -140,7 +140,7 @@ def test_bands_zscore_unaffected_by_imagenet_path() -> None:
 
 
 def test_none_normalization_is_identity() -> None:
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     model = TimmPatchBenchModel(
         bands=_rgb_bands(),
@@ -156,7 +156,7 @@ def test_none_normalization_is_identity() -> None:
 def test_model_native_uses_timm_pretrained_stats() -> None:
     import timm
 
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     cfg = timm.get_pretrained_cfg("resnet18")
     bands = _rgb_bands(mins=(0.0, 0.0, 0.0), maxs=(1.0, 1.0, 1.0))  # already in [0, 1]
@@ -187,7 +187,7 @@ def _band(name: str, wavelength_um: float | None) -> BandSpec:
 
 def test_rgb_first_permutation_reorders_bgr_native_bands() -> None:
     """Match wavelengths to pretrained R/G/B weights, regardless of band names or order."""
-    from torchgeo_bench.models.timm import _rgb_first_permutation
+    from geo_eval_harness.models.timm import _rgb_first_permutation
 
     # Native S2 order: b02=blue, b03=green, b04=red, b08=nir
     bands = [_band("b02", 0.49), _band("b03", 0.56), _band("b04", 0.665), _band("b08", 0.842)]
@@ -197,7 +197,7 @@ def test_rgb_first_permutation_reorders_bgr_native_bands() -> None:
 
 def test_rgb_first_permutation_none_without_full_triplet() -> None:
     """Do not reorder SAR bands or incomplete RGB triplets."""
-    from torchgeo_bench.models.timm import _rgb_first_permutation
+    from geo_eval_harness.models.timm import _rgb_first_permutation
 
     bands = [_band("vv", None), _band("vh", None)]
     assert _rgb_first_permutation(bands) is None
@@ -208,7 +208,7 @@ def test_rgb_first_permutation_none_without_full_triplet() -> None:
 
 def test_multichannel_pretrained_permutes_channels_before_backbone() -> None:
     """A widened pretrained RGB kernel still expects its first three channels in R/G/B order."""
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     bands = [_band("b02", 0.49), _band("b03", 0.56), _band("b04", 0.665), _band("b08", 0.842)]
     model = TimmPatchBenchModel(bands=bands, model_name="resnet18", pretrained=True)
@@ -229,7 +229,7 @@ def test_multichannel_pretrained_permutes_channels_before_backbone() -> None:
 
 def test_unknown_timm_model_name_raises_clearly() -> None:
     """Missing pretraining metadata must remain a construction error."""
-    from torchgeo_bench.models.timm import TimmPatchBenchModel
+    from geo_eval_harness.models.timm import TimmPatchBenchModel
 
     with pytest.raises(RuntimeError, match="no pretrained cfg"):
         TimmPatchBenchModel(

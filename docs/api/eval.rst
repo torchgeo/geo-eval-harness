@@ -1,23 +1,25 @@
 Evaluation
 ==========
 
-The evaluation pipeline lives in :mod:`torchgeo_bench.main` and a few
+The evaluation pipeline lives in :mod:`geo_eval_harness.main` and a few
 focused sub-modules.  Each evaluation method (KNN-5, linear probe,
 segmentation, intrinsic dimension) consumes per-split feature embeddings
-or raw images and produces one :class:`EvaluationResult` row per metric.
+or raw images and produces :class:`~geo_eval_harness.results.EvaluationResult` rows.
 Image orchestration accepts
-:class:`~torchgeo_bench.config.run.RunConfig`; see :doc:`cli` for loading,
+:class:`~geo_eval_harness.config.run.RunConfig`; see :doc:`cli` for loading,
 preset resolution, and the separate standalone measurement schemas.
 
 Result schema
 -------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.results
 
 .. autoclass:: EvaluationResult
 
 Feature extraction
 ------------------
+
+.. currentmodule:: geo_eval_harness.main
 
 .. autofunction:: embed_split
 
@@ -32,41 +34,51 @@ KNN-5 evaluation
 
 .. autofunction:: evaluate_knn
 
-.. currentmodule:: torchgeo_bench.knn
+.. currentmodule:: geo_eval_harness.knn
 .. autoclass:: KNNClassifier
 
 Linear probing
 --------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_logistic
 
-.. currentmodule:: torchgeo_bench.linear
+.. currentmodule:: geo_eval_harness.linear
 .. autoclass:: LogisticRegression
 
 Segmentation
 ------------
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_segmentation
+.. autoclass:: LoaderSplits
+.. autoclass:: SegmentationOutcome
 
-.. currentmodule:: torchgeo_bench.segmentation_probe
+.. currentmodule:: geo_eval_harness.segmentation_probe
 .. autoclass:: SegmentationProbe
+.. autoexception:: NonFiniteFeaturesError
 
-.. currentmodule:: torchgeo_bench.segmentation_task
+.. currentmodule:: geo_eval_harness.segmentation_task
 .. autoclass:: SegmentationSolver
+.. autoclass:: SweepSegmentationSolver
 .. autoclass:: SegMetrics
+.. autoclass:: EpochRecord
+
+.. currentmodule:: geo_eval_harness.epoch_metrics
+.. autoclass:: EpochMetricsWriter
 
 Intrinsic dimension
 -------------------
 
 See :doc:`intrinsic_dim` for the standalone module API; the orchestration
-function lives in :mod:`torchgeo_bench.main`:
+function lives in :mod:`geo_eval_harness.main`:
 
-.. currentmodule:: torchgeo_bench.main
+.. currentmodule:: geo_eval_harness.main
 .. autofunction:: evaluate_intrinsic_dim
 
 Result I/O
 ----------
+
+.. currentmodule:: geo_eval_harness.results
 
 .. autofunction:: append_rows_atomic

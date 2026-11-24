@@ -1,15 +1,13 @@
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.10
+    rev: v0.17.6
     hooks:
       - id: ruff
-        exclude: ^(src/torchgeo_bench/config/schema\.py|src/torchgeo_bench/cli\.py|src/torchgeo_bench/legacy_run\.py|src/torchgeo_bench/preprocessing\.py|src/torchgeo_bench/commands)
         args: ["--fix", "--show-fixes"]
       - id: ruff-format
-        exclude: ^(src/torchgeo_bench/config/schema\.py|src/torchgeo_bench/cli\.py|src/torchgeo_bench/legacy_run\.py|src/torchgeo_bench/preprocessing\.py|src/torchgeo_bench/commands)
 
   - repo: https://github.com/facebook/pyrefly-pre-commit
-    rev: 1.2.0
+    rev: 1.5.0
     hooks:
       - id: pyrefly-check
         language: system
@@ -24,7 +22,7 @@ repos:
       - id: check-json
       - id: sort-simple-yaml
       - id: pretty-format-json
-        exclude: ^(slides-js/|docs/_static/_results_snapshots/|docs/_static/_dataset_geography/)
+        exclude: ^(docs/_static/_results_snapshots/|src/geo_eval_harness/_static/_dataset_geography/)
       - id: debug-statements
       - id: check-added-large-files
         args: ["--maxkb=2000"]
@@ -36,12 +34,18 @@ repos:
       - id: requirements-txt-fixer
 
   - repo: https://github.com/tox-dev/pyproject-fmt
-    rev: v2.21.0
+    rev: v2.31.2
     hooks:
       - id: pyproject-fmt
 
   - repo: local
     hooks:
+      - id: vulture
+        name: Check for dead code (vulture)
+        entry: uv run --no-sync python scripts/check_dead_code.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: explicit-except
         name: Require a reason for exception recovery
         language: pygrep

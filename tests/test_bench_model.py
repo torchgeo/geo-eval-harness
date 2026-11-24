@@ -3,8 +3,8 @@
 import pytest
 import torch
 
+from geo_eval_harness.models.interface import BenchModel, forward_model_batch
 from tests.support.models import bands as _bands
-from torchgeo_bench.models.interface import BenchModel
 
 
 class _Toy(BenchModel):
@@ -48,3 +48,16 @@ def test_normalize_inputs_buffer_dtype() -> None:
 def test_empty_bands_rejected() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         _Toy(bands=[])
+
+
+def test_unknown_constructor_options_rejected() -> None:
+    with pytest.raises(TypeError, match=r"_Toy .*\['auto_resise', 'normalisation'\]"):
+        _Toy(bands=_bands(2), normalisation="identity", auto_resise=True)
+
+
+def test_date_metadata_does_not_change_date_independent_models() -> None:
+    model = _Toy(bands=_bands(2))
+    images = torch.zeros(2, 2, 2, 2)
+    torch.testing.assert_close(
+        forward_model_batch(model, images, doy=torch.tensor([260, 366])), model(images)
+    )

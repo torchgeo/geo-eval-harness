@@ -1,5 +1,8 @@
 """Tests for the CoordBench location-encoder track (network-free)."""
 
+import json
+import re
+import sys
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -9,9 +12,8 @@ import pandas as pd
 import pytest
 import torch
 
-from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
-from torchgeo_bench.config.presets import ModelPreset
-from torchgeo_bench.coordbench import (
+from geo_eval_harness.config.presets import ModelPreset
+from geo_eval_harness.coordbench import (
     CoordBenchmark,
     SinCosLocationEncoder,
     knn_probe_score,
@@ -20,9 +22,12 @@ from torchgeo_bench.coordbench import (
     run_coordbench,
     spatial_fold_ids,
 )
-from torchgeo_bench.coordbench import datasets as cb_datasets
-from torchgeo_bench.coordbench.config import CoordConfig
-from torchgeo_bench.coordbench.run import _instantiate_encoder
+from geo_eval_harness.coordbench import datasets as cb_datasets
+from geo_eval_harness.coordbench import models as cb_models
+from geo_eval_harness.coordbench.config import CoordConfig, resolve_coord_preset
+from geo_eval_harness.coordbench.run import _instantiate_encoder
+from geo_eval_harness.hub import load_checksums, sha256_file
+from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
 
@@ -170,6 +175,15 @@ def test_linear_and_knn_classification(points: tuple[np.ndarray, np.ndarray]) ->
     assert len(folds) == 5
 
 
+def test_random_folds_reject_fewer_valid_points_than_folds(rng: np.random.Generator) -> None:
+    feats = rng.normal(size=(6, 4)).astype(np.float32)
+    labels = np.array([1.0, 2.0, 3.0, np.nan, np.nan, np.nan])  # Three of six rows are nodata.
+    with pytest.raises(ValueError, match="needs at least 5 valid points, got 3"):
+        linear_probe_score(feats, labels, "regression", device="cpu")
+    with pytest.raises(ValueError, match="needs at least 5 valid points, got 3"):
+        knn_probe_score(feats, labels, device="cpu")
+
+
 def test_spatial_fold_ids_group_by_cell(points: tuple[np.ndarray, np.ndarray]) -> None:
     lon, lat = points
     fa = spatial_fold_ids(lat, lon, folds=5, cell_deg=10.0, seed=0)
@@ -235,7 +249,7 @@ def test_run_coordbench_end_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, explicit_file: bool
 ) -> None:
     monkeypatch.setattr(
-        "torchgeo_bench.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
+        "geo_eval_harness.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
     )
     cfg = _coord_cfg(tmp_path, split="both")
     cfg.output.directory = str(tmp_path / "nested")
@@ -266,7 +280,7 @@ def test_run_coordbench_reports_official_test_count(
     test_mask = np.zeros(len(bench.lat), dtype=bool)
     test_mask[::3] = True
     bench.test_mask = test_mask
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.load_benchmarks", lambda names: [bench])
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [bench])
 
     cfg = _coord_cfg(tmp_path, split="both")
     run_coordbench(cfg)
@@ -274,6 +288,22 @@ def test_run_coordbench_reports_official_test_count(
     df = pd.read_csv(cfg.output.file)
     assert set(df.split) == {"official"}
     assert set(df.n_test) == {int(test_mask.sum())}
+
+
+def test_spatial_split_uses_occupied_cells(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lon = np.repeat([5.0, 15.0, 25.0], 40) + np.tile(np.linspace(-4, 4, 40), 3)
+    lat = np.tile(np.linspace(1, 9, 40), 3)
+    bench = CoordBenchmark(
+        name="three-cells", lat=lat, lon=lon, tasks={"target": lat + lon}, task_type="regression"
+    )
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [bench])
+
+    cfg = _coord_cfg(tmp_path, split="spatial")
+    run_coordbench(cfg)
+    assert set(pd.read_csv(cfg.output.file).n_folds) == {3}
+
+    with pytest.raises(ValueError, match="at least 2 occupied folds"):
+        run_coordbench(_coord_cfg(tmp_path, split="spatial", cell_deg=45.0))
 
 
 def test_load_benchmarks_selection(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -300,14 +330,41 @@ def test_load_benchmarks_selection(monkeypatch: pytest.MonkeyPatch) -> None:
     np.testing.assert_array_equal(single[0].tasks["bio1"], [10.0, 20.0])
 
 
+def test_load_config_reads_the_pinned_commit_and_verifies_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    table = pd.DataFrame({"lon": [0.0, 1.0], "lat": [2.0, 3.0]})
+    path = tmp_path / "data.parquet"
+    table.to_parquet(path)
+    requested: dict[str, Any] = {}
+
+    def download(repo: str, filename: str, **kwargs: Any) -> str:
+        requested.update(kwargs, filename=filename)
+        return str(path)
+
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", download)
+    monkeypatch.setitem(
+        load_checksums("coordbench.sha256"), "data/country/data.parquet", sha256_file(path)
+    )
+
+    pd.testing.assert_frame_equal(cb_datasets.load_config("country"), table)
+    assert re.fullmatch(r"[0-9a-f]{40}", requested.pop("revision"))
+    assert requested == {"filename": "data/country/data.parquet", "repo_type": "dataset"}
+
+    path.write_bytes(b"another revision")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        cb_datasets.load_config("country")
+
+
 def test_mind_load_roundtrip(tmp_path: Path) -> None:
     from safetensors.torch import save_file
 
-    from torchgeo_bench.coordbench.mind import ReSIRENLocationEncoder, load_mind
+    from geo_eval_harness.coordbench.mind import ReSIRENLocationEncoder, load_mind
 
-    model = ReSIRENLocationEncoder(embed_dim=16, out_dim=8, depth=2).eval()
+    model = ReSIRENLocationEncoder(embed_dim=16, depth=2).eval()
     path = tmp_path / "m.safetensors"
-    save_file(model.state_dict(), str(path))
+    head = {"head.weight": torch.zeros(8, 16), "head.bias": torch.zeros(8)}
+    save_file(model.state_dict() | head, str(path))
 
     loaded = load_mind(str(path))
     assert loaded.embed_dim == 16
@@ -316,26 +373,27 @@ def test_mind_load_roundtrip(tmp_path: Path) -> None:
 
     latlon = torch.tensor([[37.77, -122.42], [51.51, -0.13]], dtype=torch.float32)
     with torch.no_grad():
-        torch.testing.assert_close(
-            loaded(latlon, return_features=True), model(latlon, return_features=True)
-        )
         torch.testing.assert_close(loaded(latlon), model(latlon))
 
 
 def test_mind_encoder_dim_slice(monkeypatch: pytest.MonkeyPatch) -> None:
-    from torchgeo_bench.coordbench import mind as mind_mod
-    from torchgeo_bench.coordbench.models import MINDLocationEncoder
+    from geo_eval_harness.coordbench import mind as mind_mod
+    from geo_eval_harness.coordbench.models import MINDLocationEncoder
 
-    model = mind_mod.ReSIRENLocationEncoder(embed_dim=32, out_dim=32, depth=2).eval()
+    model = mind_mod.ReSIRENLocationEncoder(embed_dim=32, depth=2).eval()
     monkeypatch.setattr(mind_mod, "load_mind", lambda path, device="cpu": model)
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", lambda *a, **k: "dummy")
+    requested: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download", lambda *a, **k: requested.update(k) or "dummy"
+    )
 
-    enc = MINDLocationEncoder(dim=8, feature="pooled", device="cpu")
+    enc = MINDLocationEncoder(dim=8, device="cpu")
+    assert requested == {"revision": cb_models.MIND_REVISION}
     out = enc.encode(np.array([1.0, 2.0]), np.array([37.0, 51.0]))
     assert out.shape == (2, 8)  # MIND's training permits using a prefix of the 32 features.
     assert out.dtype == np.float32
     with torch.no_grad():
-        expected = model(torch.tensor([[37.0, 1.0], [51.0, 2.0]]), return_features=True)
+        expected = model(torch.tensor([[37.0, 1.0], [51.0, 2.0]]))
     np.testing.assert_allclose(out, expected[:, :8].numpy())
 
 
@@ -356,7 +414,7 @@ def test_runtime_method_selection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, methods: list[str]
 ) -> None:
     monkeypatch.setattr(
-        "torchgeo_bench.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
+        "geo_eval_harness.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
     )
     calls = []
 
@@ -368,8 +426,8 @@ def test_runtime_method_selection(
         calls.append(("linear", kwargs))
         return 0.6, [0.5, 0.7]
 
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.knn_probe_score", knn)
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.linear_probe_score", linear)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.knn_probe_score", knn)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.linear_probe_score", linear)
     config = _coord_cfg(
         tmp_path,
         methods=methods,
@@ -383,7 +441,7 @@ def test_runtime_method_selection(
     assert set(rows.method) == {"knn7" if method == "knn" else "linear" for method in methods}
     assert all(options["device"] == "cpu" for _, options in calls)
     assert all(options["alphas"] == (0.1, 2.0) for kind, options in calls if kind == "linear")
-    assert set(rows.model_target) == {"torchgeo_bench.coordbench.models.SinCosLocationEncoder"}
+    assert set(rows.model_target) == {"geo_eval_harness.coordbench.models.SinCosLocationEncoder"}
     assert set(rows.model_name) == {"sincos"}
     assert list(rows.columns) == [
         "dataset",
@@ -408,7 +466,7 @@ def test_runtime_method_selection(
 
 def test_resume_skips_encoding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "torchgeo_bench.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
+        "geo_eval_harness.coordbench.run.load_benchmarks", lambda names: _synthetic_benchmarks()
     )
     config = _coord_cfg(tmp_path)
     run_coordbench(config)
@@ -428,7 +486,7 @@ def test_partial_results_survive_failure_and_resume(
 ) -> None:
     bench = _synthetic_benchmarks()[0]
     bench.tasks["second"] = bench.tasks["target"].copy()
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.load_benchmarks", lambda names: [bench])
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [bench])
     calls = []
 
     def failing_linear(*args: Any, **kwargs: Any) -> tuple[float, list[float]]:
@@ -437,7 +495,7 @@ def test_partial_results_survive_failure_and_resume(
             raise RuntimeError("second task failed")
         return 0.8, [0.8]
 
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.linear_probe_score", failing_linear)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.linear_probe_score", failing_linear)
     config = _coord_cfg(tmp_path, methods=["linear"])
     with pytest.raises(RuntimeError, match="second task failed"):
         run_coordbench(config)
@@ -450,7 +508,7 @@ def test_partial_results_survive_failure_and_resume(
 
 def test_knn_only_skips_regression(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "torchgeo_bench.coordbench.run.load_benchmarks",
+        "geo_eval_harness.coordbench.run.load_benchmarks",
         lambda names: [_synthetic_benchmarks()[0]],
     )
 
@@ -482,6 +540,41 @@ def test_custom_encoder_preserves_ordinary_nested_kwargs() -> None:
     assert encoder.device == "cpu"
 
 
+@pytest.mark.parametrize("model", ["climplicit", "geoclip", "satclip", "sinr"])
+def test_rshf_encoders_name_the_missing_extra(monkeypatch: pytest.MonkeyPatch, model: str) -> None:
+    monkeypatch.setattr("geo_eval_harness.coordbench.models.find_spec", lambda name: None)
+    cfg = CoordConfig.model_validate({"model": {"name": model}})
+    with pytest.raises(ImportError, match=r"pip install 'geo-eval-harness\[coordbench\]'"):
+        _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
+
+
+@pytest.mark.parametrize("model", ["climplicit", "geoclip", "satclip", "sinr"])
+def test_rshf_encoders_read_their_pinned_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    config = tmp_path / "config.json"
+    keys = ("num_inputs", "num_filts", "depth", "num_classes", "sigma", "input_size")
+    config.write_text(json.dumps(dict.fromkeys((*keys, "encoded_size", "dim"), 1)))
+    rshf = mock.MagicMock()
+    monkeypatch.setitem(sys.modules, "rshf", rshf)
+    monkeypatch.setitem(sys.modules, f"rshf.{model}", rshf)
+    monkeypatch.setattr(cb_models, "find_spec", lambda name: rshf)
+    monkeypatch.setattr("safetensors.torch.load_file", lambda path: {})
+    downloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "huggingface_hub.hf_hub_download", lambda *a, **k: downloads.append(k) or str(config)
+    )
+
+    cfg = CoordConfig.model_validate({"model": {"name": model}})
+    _instantiate_encoder(resolve_coord_preset(cfg), "cpu")
+
+    loads = [call.kwargs for call in rshf.mock_calls if call[0].endswith("from_pretrained")]
+    revisions = {kwargs.get("revision") for kwargs in downloads + loads}
+    pinned = getattr(cb_models, f"{model.upper()}_REVISION")
+    assert re.fullmatch(r"[0-9a-f]{40}", pinned)
+    assert revisions == {pinned}
+
+
 def test_rejects_non_location_custom_target() -> None:
     preset = ModelPreset(name="not-an-encoder", target="builtins.dict")
     with pytest.raises(TypeError, match="LocationEncoder"):
@@ -496,7 +589,7 @@ def test_auto_device_resolves_for_encoder_and_probe(
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     monkeypatch.setattr(
-        "torchgeo_bench.coordbench.run.load_benchmarks",
+        "geo_eval_harness.coordbench.run.load_benchmarks",
         lambda names: [_synthetic_benchmarks()[0]],
     )
     devices = []
@@ -505,11 +598,11 @@ def test_auto_device_resolves_for_encoder_and_probe(
         devices.append(kwargs["device"])
         return linear_probe_score(*args, **{**kwargs, "device": "cpu"})
 
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.linear_probe_score", linear)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.linear_probe_score", linear)
     config = _coord_cfg(tmp_path)
     config.runtime.device = "auto"
     with mock.patch(
-        "torchgeo_bench.coordbench.run._instantiate_encoder", wraps=_instantiate_encoder
+        "geo_eval_harness.coordbench.run._instantiate_encoder", wraps=_instantiate_encoder
     ) as build:
         run_coordbench(config)
     assert build.call_args.args[1] == expected
@@ -529,7 +622,7 @@ def test_coordinate_run_rejects_invalid_cuda_before_loading(
     entrypoint: str,
     device_case: tuple[str, bool, str],
 ) -> None:
-    from torchgeo_bench.cli import main
+    from geo_eval_harness.cli import main
 
     device, available, message = device_case
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
@@ -537,14 +630,14 @@ def test_coordinate_run_rejects_invalid_cuda_before_loading(
     config = _coord_cfg(tmp_path)
     config.runtime.device = device
     with (
-        mock.patch("torchgeo_bench.coordbench.run.load_benchmarks") as data,
-        mock.patch("torchgeo_bench.coordbench.run.build_model") as build,
+        mock.patch("geo_eval_harness.coordbench.run.load_benchmarks") as data,
+        mock.patch("geo_eval_harness.coordbench.run.build_model") as build,
     ):
         if entrypoint == "direct":
             with pytest.raises(ValueError, match=message):
                 run_coordbench(config)
         else:
-            with pytest.raises(ValueError, match=message):
+            with pytest.raises(SystemExit, match=f"^error: .*{message}"):
                 main(
                     [
                         "coord",
@@ -566,14 +659,14 @@ def test_coordinate_run_rejects_invalid_cuda_before_loading(
 def test_runtime_seeds_encoder_construction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.load_benchmarks", lambda names: [])
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.load_benchmarks", lambda names: [])
     random_values = []
 
     def build(preset: ModelPreset, *, device: str) -> SinCosLocationEncoder:
         random_values.append(torch.rand(4))
         return SinCosLocationEncoder(device=device)
 
-    monkeypatch.setattr("torchgeo_bench.coordbench.run.build_model", build)
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.build_model", build)
     config = _coord_cfg(tmp_path)
     for seed in (7, 7, 11):
         config.runtime.seed = seed

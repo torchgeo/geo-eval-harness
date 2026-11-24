@@ -1,0 +1,760 @@
+"""OlmoEarth (AI2) wrapper for geo-eval-harness.
+
+Sensor routing, mixed-sensor splitting, and band imputation are documented
+on :class:`OlmoEarthBenchModel`.
+
+Reference implementations (canonical first):
+    https://github.com/allenai/olmoearth_pretrain/blob/main/docs/Inference-Quickstart.md
+    https://github.com/isaaccorley/geopool/blob/main/scripts/embed_olmoearth.py
+"""
+
+import logging
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Literal, cast
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+from geo_eval_harness.bands import BandCompatibilityError, BandSpec
+
+from ..hub import fetch_pinned_file, load_checksums
+from ._input_units import InputUnit, _detect_band_group_unit, linear_power_to_db, to_s2_dn
+from ._normalization import NormalizationStrategy
+from ._optional import require_package
+from .interface import BenchModel
+
+logger = logging.getLogger(__name__)
+
+
+# OlmoEarth's Sentinel-2 channel order.
+OLMOEARTH_S2_BANDS = (
+    "B02",
+    "B03",
+    "B04",
+    "B08",
+    "B05",
+    "B06",
+    "B07",
+    "B8A",
+    "B11",
+    "B12",
+    "B01",
+    "B09",
+)
+
+
+# Map semantic and source band names to OlmoEarth's per-modality channel indices.
+_MODALITY_INFO: dict[str, dict] = {
+    "s2": {
+        "modality_name": "SENTINEL2_L2A",
+        "sample_field": "sentinel2_l2a",
+        "channels": 12,
+        "num_band_sets": 3,
+        # OlmoEarth band_order: B02, B03, B04, B08, B05, B06, B07, B8A,
+        # B11, B12, B01, B09.
+        "name_to_idx": {
+            "blue": 0,
+            "b02": 0,
+            "green": 1,
+            "b03": 1,
+            "red": 2,
+            "b04": 2,
+            "nir": 3,
+            "b08": 3,
+            "red_edge_1": 4,
+            "b05": 4,
+            "red_edge_2": 5,
+            "b06": 5,
+            "red_edge_3": 6,
+            "b07": 6,
+            "red_edge_4": 7,
+            "b8a": 7,
+            "swir_1": 8,
+            "b11": 8,
+            "swir_2": 9,
+            "b12": 9,
+            "coastal_aerosol": 10,
+            "b01": 10,
+            "water_vapour": 11,
+            "b09": 11,
+            # B10 (cirrus) — OlmoEarth has no cirrus slot; skipped.
+            "swir_cirrus": None,
+            "b10": None,
+        },
+    },
+    "landsat": {
+        "modality_name": "LANDSAT",
+        "sample_field": "landsat",
+        "channels": 11,
+        "num_band_sets": 2,
+        # OlmoEarth band_order: B8 (pan), B1, B2, B3, B4, B5, B6, B7,
+        # B9, B10, B11.  GeoBench m-forestnet (Landsat-8) typically
+        # ships only B2/B3/B4/B5/B6/B7 under semantic names.
+        "name_to_idx": {
+            "panchromatic": 0,
+            "pan": 0,
+            "b8": 0,
+            "coastal_aerosol": 1,
+            "coastal": 1,
+            "b1": 1,
+            "blue": 2,
+            "b2": 2,
+            "green": 3,
+            "b3": 3,
+            "red": 4,
+            "b4": 4,
+            "nir": 5,
+            "b5": 5,
+            "swir_1": 6,
+            "b6": 6,
+            "swir_2": 7,
+            "b7": 7,
+            "cirrus": 8,
+            "b9": 8,
+            "tirs_1": 9,
+            "thermal_1": 9,
+            "b10": 9,
+            "tirs_2": 10,
+            "thermal_2": 10,
+            "b11": 10,
+        },
+    },
+    # Sentinel-1 uses vv (0) and vh (1): BandSet(["vv", "vh"], 16), is_multitemporal=True.
+    # Only backscatter intensities fill them (m-so2sat's Lee-filtered VV/VH included); complex
+    # parts, covariance cross-terms and the VV/VH ratio have no slot.
+    "sar": {
+        "modality_name": "SENTINEL1",
+        "sample_field": "sentinel1",
+        "channels": 2,
+        "num_band_sets": 1,
+        "name_to_idx": {
+            "vv": 0,
+            "vv_real": None,
+            "vv_imag": None,
+            "vv_lee": 0,
+            "vv_lee_real": None,
+            "vv_lee_imag": None,
+            "vh": 1,
+            "vh_real": None,
+            "vh_imag": None,
+            "vh_lee": 1,
+            "vh_lee_real": None,
+            "vh_lee_imag": None,
+            "vv_vh": None,
+        },
+    },
+    # NAIP / aerial: no dedicated OlmoEarth modality, route RGB through
+    # the S2 path with non-RGB positions missing.
+    "aerial": {
+        "modality_name": "SENTINEL2_L2A",
+        "sample_field": "sentinel2_l2a",
+        "channels": 12,
+        "num_band_sets": 3,
+        "name_to_idx": {
+            "red": 2,
+            "r": 2,
+            "green": 1,
+            "g": 1,
+            "blue": 0,
+            "b": 0,
+            "nir": 3,
+            "ir": 3,
+        },
+    },
+}
+_MODALITY_INFO["naip"] = _MODALITY_INFO["aerial"]
+# Datasets use both "sar" and "s1" for Sentinel-1.
+_MODALITY_INFO["s1"] = _MODALITY_INFO["sar"]
+
+
+# Sensor GSDs in metres for OlmoEarth's positional encodings.
+_SENSOR_INPUT_RES: dict[str, int] = {
+    "s2": 10,
+    "sar": 10,  # S1 coregistered to S2 10 m grid in OlmoEarth pretraining
+    "s1": 10,
+    "landsat": 30,
+    "aerial": 1,
+    "naip": 1,
+}
+
+# SAR keeps its scale for the S1 normalizer.
+_PASSTHROUGH_SENSORS: frozenset[str] = frozenset({"sar", "s1"})
+
+# Under norm_from_pretrained="auto", Landsat uses dataset statistics.
+# GeoBench's uint8 Landsat scale does not match the pretrained DN statistics.
+_DATASET_STATS_SENSORS: frozenset[str] = frozenset({"landsat"})
+
+# The pretrained S1 statistics describe sigma0 in dB; linear power is converted first.
+_PRETRAINED_SAR_UNITS: frozenset[str | None] = frozenset({"db", "linear_power"})
+
+# Released checkpoints per version; e.g. Large exists only for v1 and v1.3 ships Base only.
+_VERSION_SIZES: dict[str, frozenset[str]] = {
+    "v1": frozenset({"nano", "tiny", "base", "large"}),
+    "v1_1": frozenset({"nano", "tiny", "base"}),
+    "v1_2": frozenset({"nano", "tiny", "small", "base"}),
+    "v1_3": frozenset({"base"}),
+}
+
+#: Pinned Hugging Face commit of each released checkpoint repository under ``allenai/``.
+CHECKPOINT_REVISIONS: dict[str, str] = {
+    "OlmoEarth-v1-Nano": "529248a4dc3c54014c56b7504641cec98de31d1c",
+    "OlmoEarth-v1-Tiny": "885784437d4e2d632b7bf51b4233426c6f4479dc",
+    "OlmoEarth-v1-Base": "4bd1392a4539404d2c74276c39f3cb4cfff466cc",
+    "OlmoEarth-v1-Large": "b2c9f41de3d8454cb37f0cd9cc3e79ec7c4af435",
+    "OlmoEarth-v1_1-Nano": "6c16c7da0d05a1c4f32c2a7f9233e07c9ebfa61a",
+    "OlmoEarth-v1_1-Tiny": "74fab5714f763d6b94f8b1536bdd3300d77f45e8",
+    "OlmoEarth-v1_1-Base": "4ef31d45f80c1d4fcce18f9cde40c1b5e4d96cf4",
+    "OlmoEarth-v1_2-Nano": "e1f693ae2a7d5b57871a978e9d09e22d05206747",
+    "OlmoEarth-v1_2-Tiny": "12a9fdbfeff905d7e147e7497f9f7a95c518eefc",
+    "OlmoEarth-v1_2-Small": "5dd894799741b60f59dc4b1dbbb758d8afd89062",
+    "OlmoEarth-v1_2-Base": "2e99a734a30e9aeb993aaa39946c6dcf554739e0",
+    "OlmoEarth-v1_3-Base": "9e9e918a369701c105dde7ef56789b0ff1d47f50",
+}
+
+# Checkpoints whose encoder ends in an AttentionPooler that emits location tokens and a
+# detached low-dim student readout of them.
+_ATTENTION_POOLER_VERSIONS: frozenset[str] = frozenset({"v1_3"})
+
+# Versions pretrained with band dropout, which presented dropped bands as 0 after
+# normalization. v1 was not, so its missing bands copy the nearest present band.
+_ZERO_MISSING_BANDS_VERSIONS: frozenset[str] = frozenset({"v1_1", "v1_2", "v1_3"})
+
+EmbeddingSource = Literal["patch_tokens", "location_tokens", "student"]
+MissingBands = Literal["impute", "zero"]
+
+
+def build_sensor_group(sensor: str, indexed_bands: list[tuple[int, BandSpec]]) -> dict[str, Any]:
+    """Resolve the channel layout and normalization metadata for one sensor."""
+    if sensor not in _MODALITY_INFO:
+        supported = sorted(set(_MODALITY_INFO))
+        raise ValueError(
+            f"OlmoEarth wrapper has no layout for sensor '{sensor}'.  Supported: {supported}."
+        )
+    info = _MODALITY_INFO[sensor]
+    name_to_idx = info["name_to_idx"]
+    src_indices: list[int] = []
+    dst_indices: list[int] = []
+    unknown: list[str] = []
+    group_bands: list[BandSpec] = []
+    for src_idx, b in indexed_bands:
+        key_name = b.name.lower()
+        if key_name not in name_to_idx:
+            unknown.append(b.name)
+        elif name_to_idx[key_name] is not None:
+            src_indices.append(src_idx)
+            group_bands.append(b)
+            dst_indices.append(name_to_idx[key_name])
+    if unknown:
+        raise ValueError(
+            f"OlmoEarth wrapper can't map BandSpec names {unknown} for "
+            f"sensor '{sensor}'.  Add them to "
+            f"_MODALITY_INFO['{sensor}']['name_to_idx'] "
+            f"with the correct OlmoEarth band index."
+        )
+    if not group_bands:
+        raise BandCompatibilityError(
+            f"OlmoEarth has no slot for any selected '{sensor}' band: "
+            f"{[b.name for _, b in indexed_bands]}."
+        )
+    input_unit: InputUnit | None = (
+        None if sensor in _PASSTHROUGH_SENSORS else _detect_band_group_unit(group_bands)
+    )
+    return {
+        "sensor": sensor,
+        "modality_name": info["modality_name"],
+        "sample_field": info["sample_field"],
+        "channels": info["channels"],
+        "num_band_sets": info["num_band_sets"],
+        "src_indices": src_indices,
+        "dst_indices": dst_indices,
+        "input_unit": input_unit,
+        # Dataset statistics stay in source order; normalization precedes band mapping.
+        "src_means": [b.mean for b in group_bands],
+        "src_stds": [b.std for b in group_bands],
+    }
+
+
+def _build_sensor_groups(bands: list[BandSpec]) -> list[dict[str, Any]]:
+    """Resolve modality groups in the order sensors appear in the input."""
+    grouped: dict[str, list[tuple[int, BandSpec]]] = defaultdict(list)
+    for i, band in enumerate(bands):
+        grouped[band.sensor.lower()].append((i, band))
+    result = [build_sensor_group(sensor, group) for sensor, group in grouped.items()]
+    fields: dict[str, str] = {}
+    for group in result:
+        field = group["sample_field"]
+        previous_sensor = fields.setdefault(field, group["sensor"])
+        if previous_sensor != group["sensor"]:
+            raise ValueError(
+                "OlmoEarth cannot route multiple input sensors to the same sample field: "
+                f"{previous_sensor!r} and {group['sensor']!r} both map to {field!r}. "
+                "Select one sensor or add an explicit fusion policy."
+            )
+    return result
+
+
+def _fetch_checkpoint(version: str, model_size: str) -> Path:
+    """Return the directory holding a checkpoint's pinned, SHA-256 verified config and weights."""
+    name = f"OlmoEarth-{version}-{model_size.capitalize()}"
+    checksums = load_checksums("olmoearth.sha256")
+    paths = [
+        fetch_pinned_file(
+            f"allenai/{name}", filename, CHECKPOINT_REVISIONS[name], checksums[f"{name}/{filename}"]
+        )
+        for filename in ("config.json", "weights.pth")
+    ]
+    return paths[0].parent
+
+
+def _resolve_version_options(
+    version: str,
+    model_size: str,
+    embedding: EmbeddingSource | None,
+    missing_bands: MissingBands | None,
+) -> tuple[EmbeddingSource, MissingBands]:
+    """Validate the checkpoint choice and resolve version-dependent defaults."""
+    if version not in _VERSION_SIZES:
+        raise ValueError(
+            f"Unknown OlmoEarth version {version!r}; use one of {sorted(_VERSION_SIZES)}."
+        )
+    if model_size not in _VERSION_SIZES[version]:
+        raise ValueError(
+            f"OlmoEarth {version} has no {model_size!r} checkpoint; "
+            f"available sizes: {sorted(_VERSION_SIZES[version])}."
+        )
+    has_pooler = version in _ATTENTION_POOLER_VERSIONS
+    if embedding is None:
+        embedding = "location_tokens" if has_pooler else "patch_tokens"
+    if embedding != "patch_tokens" and not has_pooler:
+        raise ValueError(
+            f"embedding={embedding!r} needs an AttentionPooler checkpoint "
+            f"({sorted(_ATTENTION_POOLER_VERSIONS)}); OlmoEarth {version} only has patch tokens."
+        )
+    if missing_bands is None:
+        missing_bands = "zero" if version in _ZERO_MISSING_BANDS_VERSIONS else "impute"
+    return embedding, missing_bands
+
+
+class OlmoEarthBenchModel(BenchModel):
+    """BenchModel wrapper for OlmoEarth geospatial foundation models.
+
+    AI2's multi-modal ViT covers Sentinel-2, Sentinel-1, Landsat, NAIP, and other EO streams.
+    The wrapper groups input bands by sensor and builds one encoder branch per modality.
+
+    Supported modalities (auto-detected from ``BandSpec.sensor``):
+
+    * ``"s2"`` -> ``Modality.SENTINEL2_L2A`` (12 channels, 3 band-sets)
+    * ``"landsat"`` -> ``Modality.LANDSAT`` (11 channels, 2 band-sets)
+    * ``"sar"`` / ``"s1"`` -> ``Modality.SENTINEL1`` (2 channels, 1 band-set)
+    * ``"aerial"`` / ``"naip"`` -> S2 path with the other channels missing
+
+    Mixed-sensor inputs (e.g. ``["s2", "sar"]``) are handled by
+    building separate tensor branches and populating multiple
+    ``MaskedOlmoEarthSample`` fields simultaneously.
+
+    Missing channels are filled as upstream's ``Normalizer`` fills them for each version.
+    With ``missing_bands="impute"`` a missing band copies the raw value of the present band
+    nearest in wavelength and is normalized with its own statistics; a band without such a
+    neighbour is set to 0 after normalization. Under dataset statistics the copy carries the
+    source band's normalized value. With ``missing_bands="zero"`` every missing channel is
+    set to 0 after normalization, the value band dropout used for dropped bands during
+    pretraining. Masks stay all-visible so ``pool_spatially`` can produce embeddings.
+
+    ``normalize_inputs`` is identity; this wrapper normalizes internally per sensor group.
+    With ``norm_from_pretrained="auto"``, S2 values are converted to S2 DN.
+    SAR declared in dB or linear power goes through OlmoEarth's pretrained ``Normalizer``.
+    SAR in an undeclared unit uses ``BandSpec`` stats unless ``sar_log_scale`` is set.
+    GeoBench's uint8 Landsat values use ``BandSpec`` stats instead of pretrained DN stats.
+    Pass ``True`` or ``False`` to force pretrained or dataset statistics for all groups.
+
+    ``input_res`` is auto-detected from the primary sensor's GSD: 10 m
+    for S2/SAR, 30 m for Landsat.  Pass ``input_res`` explicitly to
+    override.  The encoder receives ``input_res * gsd_scale``, the ground
+    size of the pixels a resizing run feeds it.
+
+    Args:
+        bands: Ordered ``BandSpec`` list describing the input channels.
+        model_size: One of ``"nano"``, ``"tiny"``, ``"small"``, ``"base"``,
+            ``"large"``.  ``"large"`` is only available for ``version="v1"``;
+            ``"small"`` is only available for ``version="v1_2"``; ``"v1_3"``
+            ships ``"base"`` only.
+        version: Model version — ``"v1"`` (default), ``"v1_1"``, ``"v1_2"``
+            or ``"v1_3"``.  v1.1 ships Nano/Tiny/Base with improved accuracy and
+            ~25% more parameters.  v1.2 ships Nano/Tiny/Small/Base (RoPE
+            position encoding); no Large variant for v1.1/v1.2.  v1.3 ships
+            Base with an AttentionPooler that reads the encoder tokens into a
+            768-d location-token grid plus a detached 128-d student readout.
+        patch_size: Patch size for the encoder (default 4).
+        input_res: Ground resolution of the tiles' native pixels in meters.
+            ``None`` (default) lets the wrapper auto-detect from the primary
+            sensor GSD.
+        time_steps: Temporal slots in the input.  Default 1 (single
+            timestep — the native shape of these classification datasets).
+            Values > 1 replicate the single input frame into that many
+            identical slots; use only for explicit multi-timestep ablations.
+        std_multiplier: Std multiplier passed to ``Normalizer``.
+        normalize: If True, L2-normalize output embeddings.
+        sar_log_scale: Convert SAR to dB via ``10·log10(max(v, 1e-6))``
+            before OlmoEarth's S1 normalizer, which expects σ⁰ in dB
+            (min-max over -50..0 dB). ``None`` (default) converts exactly
+            when every SAR band declares ``BandSpec.unit == "linear_power"``
+            (e.g. Kuro Siwo); linear values would otherwise all normalize to
+            ~0.77-0.79. ``True``/``False`` force it.
+        landsat_scale_factor: Optional multiplier applied to Landsat
+            values *after* the standard uint8→DN conversion.  Use to
+            compensate for mis-matched scales between GeoBench's uint8
+            composites and OlmoEarth's pretraining DN range (~10 000).
+            Only applies on the pretrained-normalizer path
+            (``norm_from_pretrained=True``).
+        norm_from_pretrained: ``"auto"`` (default), ``True`` or ``False``,
+            selecting how each sensor group is normalized:
+
+            * ``True`` — rescale to S2 DN and apply OlmoEarth's pretrained
+              per-modality ``Normalizer`` (correct when the input matches the
+              pretraining scale, e.g. S2/SAR).
+            * ``False`` — normalize each band with its own ``BandSpec``
+              mean/std via the same ``±std_multiplier·std`` no-clip mapping
+              OlmoEarth saw in pretraining (dataset-specific stats).  Required
+              when the input scale can't match the pretrained normalizer (e.g.
+              GeoBench's uint8 Landsat, whose pretrained stats assume real DN);
+              matches helios' ``norm_stats_from_pretrained=False`` /
+              ``NORM_NO_CLIP_2_STD`` and supersedes ``landsat_scale_factor``
+              (the DN rescale is skipped).
+            * ``"auto"`` — decide per sensor group: dataset stats for sensors
+              in ``_DATASET_STATS_SENSORS`` (Landsat) and for SAR whose bands do
+              not all declare unit ``db`` or ``linear_power`` (unless
+              ``sar_log_scale`` is set), pretrained for the rest.
+        sensor_remap: Optional dict mapping sensor names to alternate routing
+            keys before modality resolution, e.g. ``{"landsat": "aerial"}`` to
+            route Landsat RGB+NIR through the aerial/S2 path.
+        min_image_size: If set, upsample inputs smaller than this value
+            to ``min_image_size x min_image_size`` via bilinear interpolation.
+            Useful for datasets with small native images (e.g. m-so2sat at
+            32 px) where the patch grid would otherwise be too sparse.
+        embedding: Which encoder output is mean-pooled into the image
+            embedding: ``"patch_tokens"`` (the transformer's patch tokens),
+            ``"location_tokens"`` (the AttentionPooler grid) or ``"student"``
+            (its 128-d student readout).  The latter two require ``"v1_3"``.
+            ``None`` (default) selects ``"location_tokens"`` for v1.3, the
+            representation AI2's evals probe, and ``"patch_tokens"`` otherwise.
+        missing_bands: How channels absent from the input are filled:
+            ``"impute"`` copies the nearest present band (upstream's v1 recipe);
+            ``"zero"`` sets them to 0 after normalization, as band dropout did
+            in v1.1+ pretraining.  ``None`` (default) selects ``"impute"`` for
+            v1 and ``"zero"`` otherwise.
+        gsd_scale: Ground size of an input pixel relative to a native pixel:
+            the tile side before the run's resize over the resized side, which
+            the runner supplies.  1.0 for unresized tiles.
+    """
+
+    #: The runner supplies ``gsd_scale`` so a resize changes ``input_res`` with the pixels.
+    wants_gsd_scale = True
+
+    def __init__(  # noqa: PLR0913 - public YAML options
+        self,
+        bands: list[BandSpec],
+        *,
+        model_size: Literal["nano", "tiny", "small", "base", "large"] = "base",
+        version: Literal["v1", "v1_1", "v1_2", "v1_3"] = "v1",
+        patch_size: int = 4,
+        input_res: int | None = None,
+        time_steps: int = 1,
+        std_multiplier: float = 2.0,
+        normalize: bool = False,
+        sar_log_scale: bool | None = None,
+        landsat_scale_factor: float | None = None,
+        norm_from_pretrained: bool | Literal["auto"] = "auto",
+        sensor_remap: dict[str, str] | None = None,
+        min_image_size: int | None = None,
+        embedding: EmbeddingSource | None = None,
+        missing_bands: MissingBands | None = None,
+        gsd_scale: float = 1.0,
+        **_kwargs: Any,
+    ) -> None:
+        super().__init__(bands=bands, **_kwargs)
+        self.embedding, self.missing_bands = _resolve_version_options(
+            version, model_size, embedding, missing_bands
+        )
+
+        # Lazy imports so the package is only needed when this model is used.
+        require_package("olmoearth_pretrain_minimal", "pip install 'geo-eval-harness[olmoearth]'")
+        from olmoearth_pretrain_minimal import Normalizer, load_model_from_path
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
+
+        # Quiet down the package's INFO-level ModalitySpec dumps.
+        for logger_name in (
+            "olmoearth_pretrain_minimal",
+            "olmoearth_pretrain_minimal.olmoearth_pretrain_v1",
+        ):
+            logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+        bands_for_routing = self.bands
+        if sensor_remap:
+            from dataclasses import replace as dc_replace
+
+            bands_for_routing = [
+                dc_replace(b, sensor=sensor_remap.get(b.sensor, b.sensor)) for b in self.bands
+            ]
+
+        sensor_groups = _build_sensor_groups(bands_for_routing)
+        for g in sensor_groups:
+            g["modality"] = getattr(Modality, g["modality_name"])
+            g["sar_to_db"] = g["sensor"] in ("sar", "s1") and (
+                sar_log_scale
+                if sar_log_scale is not None
+                else all(self.bands[i].unit == "linear_power" for i in g["src_indices"])
+            )
+            g["dataset_stats"] = g["sensor"] in _DATASET_STATS_SENSORS or (
+                g["sensor"] in _PASSTHROUGH_SENSORS
+                and sar_log_scale is None
+                and not {self.bands[i].unit for i in g["src_indices"]} <= _PRETRAINED_SAR_UNITS
+            )
+        self._sensor_groups = sensor_groups
+
+        if input_res is None:
+            sensors_present = {g["sensor"] for g in sensor_groups}
+            # For mixed s2+sar, S2 10 m is the OlmoEarth pretraining grid.
+            primary = "s2" if "s2" in sensors_present else sensor_groups[0]["sensor"]
+            input_res = _SENSOR_INPUT_RES.get(primary, 10)
+
+        self.model_size = model_size
+        self.patch_size = patch_size
+        self.input_res = input_res * gsd_scale
+        self.time_steps = time_steps
+        self.std_multiplier = std_multiplier
+        self.do_normalize = normalize
+        self.sar_log_scale = sar_log_scale
+        self.landsat_scale_factor = landsat_scale_factor
+        self.norm_from_pretrained = norm_from_pretrained
+        self.min_image_size = min_image_size
+
+        pretrained = load_model_from_path(_fetch_checkpoint(version, model_size))
+        # Preserve segmentation tap paths while retaining only the inference encoder.
+        self.encoder_model: Any = torch.nn.Module()
+        self.encoder_model.add_module("encoder", cast(torch.nn.Module, pretrained.encoder))
+        # Upstream fills NaN channels: "v1" copies the nearest present band, "v1.1" zeroes them.
+        self.normalizer = Normalizer(
+            std_multiplier=std_multiplier,
+            model_type="v1" if self.missing_bands == "impute" else "v1.1",
+        )
+        self._token_layout: list[tuple[int, ...]] = []
+        self._record_token_layout()
+
+    def _record_token_layout(self) -> None:
+        """Record each modality's ``(h, w, ...)`` token shape as the encoder flattens them.
+
+        The encoder orders modalities through a ``set``, so the order is only known at call time.
+        """
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit import (
+            get_modalities_to_process,
+            return_modalities_from_dict,
+        )
+
+        encoder = self.encoder_model.encoder
+        collapse = encoder.collapse_and_combine_hwtc
+
+        def collapse_and_record(x: dict[str, torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor]:
+            order = get_modalities_to_process(
+                return_modalities_from_dict(x), encoder.supported_modality_names
+            )
+            self._token_layout = [tuple(x[modality].shape[1:-1]) for modality in order]
+            return collapse(x)
+
+        encoder.collapse_and_combine_hwtc = collapse_and_record
+
+    def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Average block tokens over modality, time and band set into a ``(B, D, h, w)`` grid."""
+        sizes = [int(np.prod(shape)) for shape in self._token_layout]
+        if sum(sizes) != tokens.shape[1]:
+            raise ValueError(
+                f"OlmoEarth tokens {tuple(tokens.shape)} do not match the last forward's "
+                f"per-modality layout {self._token_layout}."
+            )
+        grids = [
+            chunk.reshape(chunk.shape[0], shape[0], shape[1], -1, chunk.shape[-1]).mean(dim=3)
+            for chunk, shape in zip(tokens.split(sizes, dim=1), self._token_layout, strict=True)
+        ]
+        return torch.stack(grids).mean(dim=0).permute(0, 3, 1, 2)
+
+    handles_own_normalization = True
+    fixed_normalization = NormalizationStrategy.MODEL_NATIVE
+
+    def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
+        """Identity — OlmoEarth's internal Normalizer handles raw values."""
+        return images
+
+    def _pad_group(
+        self,
+        g_images: torch.Tensor,
+        dst_indices: list[int],
+        target_channels: int,
+    ) -> torch.Tensor:
+        """Place each input channel at its OlmoEarth modality position.
+
+        Returns ``(B, target_channels, H, W)`` with NaN for missing bands.
+        """
+        B, _, H, W = g_images.shape
+        out = torch.full(
+            (B, target_channels, H, W), torch.nan, device=g_images.device, dtype=g_images.dtype
+        )
+        for local_idx, dst_idx in enumerate(dst_indices):
+            out[:, dst_idx] = g_images[:, local_idx]
+        return out
+
+    def _normalize_with_band_stats(
+        self,
+        g_images: torch.Tensor,
+        means: list[float],
+        stds: list[float],
+    ) -> torch.Tensor:
+        """Per-band ``±std_multiplier·std`` no-clip normalization from dataset stats.
+
+        Maps each band's ``[mean - m·std, mean + m·std]`` to ``[0, 1]`` (no
+        clipping), matching OlmoEarth's pretraining scheme / helios'
+        ``NORM_NO_CLIP_2_STD`` but using the input's own ``BandSpec`` stats.
+        ``g_images`` is ``(B, Csrc, H, W)`` in source-band order.
+        """
+        m = self.std_multiplier
+        mean_t = torch.tensor(means, dtype=g_images.dtype, device=g_images.device).view(1, -1, 1, 1)
+        std_t = torch.tensor(stds, dtype=g_images.dtype, device=g_images.device).view(1, -1, 1, 1)
+        low = mean_t - m * std_t
+        span = (2.0 * m * std_t).clamp(min=1e-6)
+        return (g_images - low) / span
+
+    def _to_nhwtc(self, g_images: torch.Tensor) -> np.ndarray:
+        """``(B, C, H, W)`` tensor -> ``(B, H, W, T, C)`` numpy, replicating frames.
+
+        ``T`` is ``self.time_steps``; for ``time_steps > 1`` the single input
+        frame is repeated into each temporal slot.
+        """
+        g_nhwc = g_images.permute(0, 2, 3, 1).cpu().numpy()
+        g_nhwtc = g_nhwc[:, :, :, None, :]
+        if self.time_steps > 1:
+            g_nhwtc = np.repeat(g_nhwtc, self.time_steps, axis=3)
+        return g_nhwtc
+
+    def _build_mask(
+        self,
+        B: int,
+        H: int,
+        W: int,
+        num_band_sets: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Per-band-set ``(B, H, W, T, num_band_sets)`` mask — all visible.
+
+        ``MaskValue.ONLINE_ENCODER`` is 0 so zeros == visible.  Shape must
+        be 5-D because the encoder's ``apply_embedding_to_modality`` does
+        ``mask[..., idx]`` for each band-set index.
+        """
+        return torch.zeros(
+            B, H, W, self.time_steps, num_band_sets, dtype=torch.float32, device=device
+        )
+
+    def normalize_sensor_group(self, images: torch.Tensor, group: dict[str, Any]) -> np.ndarray:
+        """Normalize and impute one sensor's channels in the OlmoEarth layout."""
+        g_images = images[:, group["src_indices"]]  # (B, Csensor, H, W)
+
+        if self.norm_from_pretrained == "auto":
+            use_pretrained = not group["dataset_stats"]
+        else:
+            use_pretrained = self.norm_from_pretrained
+
+        if use_pretrained:
+            input_unit = group["input_unit"]
+            if input_unit is not None:
+                g_images = to_s2_dn(g_images, input_unit)
+                if group["sensor"] == "landsat" and self.landsat_scale_factor is not None:
+                    g_images = g_images * self.landsat_scale_factor
+            if group["sar_to_db"]:
+                g_images = linear_power_to_db(g_images)
+
+            g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
+            g_nhwtc = self._to_nhwtc(g_images)
+            g_nhwtc = self.normalizer.normalize(group["modality"], g_nhwtc)
+        else:
+            # Dataset statistics apply to raw values, without DN rescaling or clipping.
+            g_images = self._normalize_with_band_stats(
+                g_images, group["src_means"], group["src_stds"]
+            )
+            g_images = self._pad_group(g_images, group["dst_indices"], group["channels"])
+            g_nhwtc = self._to_nhwtc(g_images)
+            missing = np.isnan(g_nhwtc)
+            if self.missing_bands == "impute" and missing.any():
+                from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.data.missing_bands import (
+                    copy_nearest_bands,
+                )
+
+                g_nhwtc, missing = copy_nearest_bands(group["modality"].name, g_nhwtc, missing)
+            g_nhwtc = np.where(missing, 0.0, g_nhwtc)
+
+        return g_nhwtc
+
+    def _forward_patch_features(
+        self,
+        images: torch.Tensor,
+    ) -> torch.Tensor:
+        """Extract image-level embeddings from raw inputs."""
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit import PoolingType
+        from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.datatypes import (
+            MaskedOlmoEarthSample,
+        )
+
+        device = images.device
+        B, _, H, W = images.shape
+
+        if self.min_image_size is not None and (self.min_image_size > H or self.min_image_size > W):
+            new_h = max(H, self.min_image_size)
+            new_w = max(W, self.min_image_size)
+            images = F.interpolate(
+                images, size=(new_h, new_w), mode="bilinear", align_corners=False
+            )
+            B, _, H, W = images.shape
+
+        # v1.1's linear patch embedding requires H and W to be divisible by patch_size.
+        pad_h = (self.patch_size - H % self.patch_size) % self.patch_size
+        pad_w = (self.patch_size - W % self.patch_size) % self.patch_size
+        if pad_h > 0 or pad_w > 0:
+            images = F.pad(images, (0, pad_w, 0, pad_h))
+            B, _, H, W = images.shape
+
+        timestamps = torch.zeros(B, self.time_steps, 3, dtype=torch.long, device=device)
+        timestamps[:, :, 0] = 15
+        timestamps[:, :, 1] = 6
+        timestamps[:, :, 2] = 2020
+
+        sample_kwargs: dict = {}
+        for group in self._sensor_groups:
+            g_nhwtc = self.normalize_sensor_group(images, group)
+
+            field = group["sample_field"]
+            mask = self._build_mask(B, H, W, group["num_band_sets"], device)
+            sample_kwargs[field] = torch.from_numpy(g_nhwtc).float().to(device)
+            sample_kwargs[f"{field}_mask"] = mask
+
+        sample = MaskedOlmoEarthSample(timestamps=timestamps, **sample_kwargs)
+
+        outputs = self.encoder_model.encoder(
+            sample,
+            patch_size=self.patch_size,
+            input_res=self.input_res,
+            fast_pass=True,
+        )
+
+        if self.embedding == "patch_tokens":
+            pooled = outputs["tokens_and_masks"].pool_spatially(PoolingType.MEAN)
+            embeddings = pooled.mean(dim=(1, 2))
+        else:
+            key = (
+                "location_tokens"
+                if self.embedding == "location_tokens"
+                else "student_location_tokens"
+            )
+            embeddings = outputs[key].mean(dim=(1, 2))
+
+        if self.do_normalize:
+            embeddings = F.normalize(embeddings, p=2, dim=-1)
+
+        return embeddings

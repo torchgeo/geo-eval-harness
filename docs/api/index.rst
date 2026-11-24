@@ -1,12 +1,13 @@
 API Reference
 =============
 
-Complete API documentation for all ``torchgeo_bench`` modules.
+Public interfaces for ``geo_eval_harness`` modules.
 
 .. toctree::
    :maxdepth: 2
 
    datasets
+   geography
    models
    coordbench
    eval

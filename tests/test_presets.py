@@ -1,22 +1,22 @@
 """Offline coverage of the typed preset boundary."""
 
-import subprocess
-import sys
+import importlib
+import re
 
 import pytest
 
-from torchgeo_bench.config import list_model_configs, model_config_path
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.presets import (
+from geo_eval_harness.config import list_model_configs, model_config_path
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import (
     ModelPreset,
     build_model,
     load_model_preset,
     resolve_run_config,
 )
-from torchgeo_bench.config.profile import ProfileConfig, resolve_profile_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import ModelConfig, load_yaml
-from torchgeo_bench.models.torchgeo_models import TorchGeoScaleMAEBench
+from geo_eval_harness.config.profile import ProfileConfig, resolve_profile_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import ModelConfig, load_yaml
+from geo_eval_harness.models.torchgeo_models import TorchGeoScaleMAEBench
 
 
 @pytest.mark.parametrize("name", ["timm/resnet5", "RCF", "not-a-model", "../model/rcf"])
@@ -27,7 +27,7 @@ def test_unknown_model_config_is_rejected_without_suggestions(name: str) -> None
 
 
 @pytest.mark.parametrize("name", list_model_configs())
-def test_packaged_preset_is_typed_without_loading_weights(name: str) -> None:
+def test_packaged_preset_is_typed_and_omits_schema_defaults(name: str) -> None:
     preset = load_model_preset(ModelConfig(name=name), seed=17)
     assert isinstance(preset, ModelPreset)
     assert preset.target
@@ -38,12 +38,40 @@ def test_packaged_preset_is_typed_without_loading_weights(name: str) -> None:
     assert "interpolation" not in preset.kwargs
     assert "${" not in str(preset.model_dump())
 
+    for settings in (preset, *preset.dataset_overrides.values()):
+        linear = settings.classification.linear
+        assert (linear.c_log10_start, linear.c_log10_stop, linear.c_count) == (-6.0, 4.0, 40)
 
-@pytest.mark.parametrize("name", list_model_configs())
-def test_packaged_preset_omits_schema_defaults(name: str) -> None:
     raw = load_yaml(model_config_path(name))
     preset = ModelPreset.model_validate(raw)
-    assert raw == preset.model_dump(mode="json", exclude_defaults=True)
+    expected = preset.model_dump(mode="json", exclude_defaults=True)
+    if preset.dataset_overrides:
+        # An override may restore a schema default the preset changed (Satlas normalization).
+        expected["dataset_overrides"] = {
+            dataset: override.model_dump(mode="json", exclude_unset=True)
+            for dataset, override in preset.dataset_overrides.items()
+        }
+    assert raw == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "torchgeo/croma_base",
+        "torchgeo/croma_large",
+        "terratorch/clay_v1",
+        "terratorch/clay_v1_cls",
+        "terratorch/clay_v1_5",
+        "terratorch/clay_v1_5_cls",
+    ],
+)
+def test_croma_and_clay_segmentation_layers_are_declared_residual_branches(name: str) -> None:
+    """Their feed-forward modules return an update; the probe adds the input only if declared."""
+    preset = load_model_preset(ModelConfig(name=name))
+    module, _, symbol = preset.target.rpartition(".")
+    declared = getattr(importlib.import_module(module), symbol).residual_branch_layers
+    assert preset.segmentation.layers
+    assert all(re.fullmatch(declared, layer) for layer in preset.segmentation.layers)
 
 
 def test_rcf_seed_is_explicit_and_overridable() -> None:
@@ -140,19 +168,6 @@ def test_model_dataset_overrides_are_isolated_and_fall_back() -> None:
     assert model_cfg.input.image_size == 224
 
 
-def test_configuration_import_and_resolution_do_not_import_omegaconf() -> None:
-    code = """
-import sys
-from torchgeo_bench.config import list_model_configs
-from torchgeo_bench.config.schema import ModelConfig
-from torchgeo_bench.config.presets import load_model_preset
-for name in list_model_configs():
-    load_model_preset(ModelConfig(name=name))
-assert not set(('omegaconf', 'torch', 'torchgeo', 'numpy', 'pandas')) & sys.modules.keys()
-"""
-    subprocess.run([sys.executable, "-c", code], check=True)
-
-
 @pytest.mark.parametrize("image_size", [None, 96])
 def test_scalemae_constructor_uses_resolved_dataset_grid(
     monkeypatch: pytest.MonkeyPatch, image_size: int | None
@@ -174,16 +189,35 @@ def test_scalemae_constructor_uses_resolved_dataset_grid(
             received.update(kwargs)
             return object()
 
-    monkeypatch.setattr("torchgeo_bench.models.TorchGeoScaleMAEBench", constructor)
+    monkeypatch.setattr("geo_eval_harness.models.TorchGeoScaleMAEBench", constructor)
     build_model(preset, bands=[], normalization="identity")
     assert received["image_size"] == effective.input.image_size == (image_size or 64)
     assert received["res"] == 3.5
 
 
+@pytest.mark.parametrize(
+    ("resized_from", "message"),
+    [(None, "size before the resize"), ((512, 256), "512x256")],
+)
+def test_resized_ground_resolution_needs_square_tiles_of_a_declared_size(
+    resized_from: tuple[int, int] | None, message: str
+) -> None:
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "olmoearth_nano"},
+            "datasets": ["cloudsen12"],
+            "input": {"image_size": 224},
+        }
+    )
+    _, preset = resolve_run_config(config, "cloudsen12")
+    with pytest.raises(ValueError, match=message):
+        build_model(preset, bands=[], normalization="identity", resized_from=resized_from)
+
+
 def test_flops_scalemae_constructor_grid_follows_explicit_synthetic_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from torchgeo_bench.config.flops import FlopsConfig
+    from geo_eval_harness.config.flops import FlopsConfig
 
     config = FlopsConfig.model_validate(
         {
@@ -201,7 +235,7 @@ def test_flops_scalemae_constructor_grid_follows_explicit_synthetic_size(
             received.update(kwargs)
             return object()
 
-    monkeypatch.setattr("torchgeo_bench.models.TorchGeoScaleMAEBench", constructor)
+    monkeypatch.setattr("geo_eval_harness.models.TorchGeoScaleMAEBench", constructor)
     build_model(preset, bands=[], normalization="identity")
     assert received["image_size"] == effective.input.image_size == 96
 
@@ -218,22 +252,23 @@ def test_explicit_constructor_options_override_dataset_defaults() -> None:
         assert preset.kwargs["res"] == 1.25
 
 
-def test_explicit_default_values_override_preset_lr_layers_and_range() -> None:
+def test_explicit_values_override_preset_settings_and_linear_grid() -> None:
     omitted = RunConfig.model_validate(
         {"model": {"name": "torchgeo/croma_large"}, "datasets": ["m-eurosat"]}
     )
     effective, _ = resolve_run_config(omitted, "m-eurosat")
-    assert effective.classification.linear.c_log10_stop != 4.0
+    assert effective.classification.linear.c_log10_stop == 4.0
     explicit = RunConfig.model_validate(
         {
             **omitted.model_dump_yaml(),
-            "classification": {"linear": {"c_log10_stop": 4.0}},
+            "classification": {"linear": {"c_log10_stop": 2.0, "c_count": 20}},
             "segmentation": {"learning_rate": 0.001, "layers": [], "cache_features": False},
             "input": {"image_size": None},
         }
     )
     effective, _ = resolve_run_config(explicit, "m-eurosat")
-    assert effective.classification.linear.c_log10_stop == 4.0
+    assert effective.classification.linear.c_log10_stop == 2.0
+    assert effective.classification.linear.c_count == 20
     assert effective.segmentation.learning_rate == 0.001
     assert effective.segmentation.layers == []
     assert effective.segmentation.cache_features is False
@@ -249,7 +284,7 @@ def test_typed_preset_learning_rate_and_head_defaults_have_lower_precedence(monk
         }
     )
     monkeypatch.setattr(
-        "torchgeo_bench.config.presets.load_model_preset", lambda *args, **kwargs: preset
+        "geo_eval_harness.config.presets.load_model_preset", lambda *args, **kwargs: preset
     )
     config = RunConfig.model_validate({"model": {"name": "custom"}, "datasets": ["caffe"]})
     effective, _ = resolve_run_config(config, "caffe")

@@ -1,22 +1,37 @@
 """Tests for OlmoEarth sensor routing, normalization, and embeddings."""
 
+import hashlib
+import re
 import sys
 from importlib.util import find_spec
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest import mock
 
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 
-from torchgeo_bench.datasets.base import BandSpec
-from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
+from geo_eval_harness import flops_pipeline
+from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.datasets.loading import _ResizeTransform
+from geo_eval_harness.main import instantiate_dataset_model, main
+from geo_eval_harness.models import olmoearth
+from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel, _build_sensor_groups
+from tests.support.runner import RunnerMocks, _compose_cfg
+from tests.support.runner import runner as runner
 
 olmoearth_available = find_spec("olmoearth_pretrain_minimal") is not None
 requires_olmoearth = pytest.mark.skipif(
     not olmoearth_available,
-    reason="olmoearth-pretrain-minimal not installed (pip install 'torchgeo-bench[olmoearth]')",
+    reason="olmoearth-pretrain-minimal not installed (pip install 'geo-eval-harness[olmoearth]')",
 )
 
 
@@ -36,7 +51,7 @@ def _rgb_bands() -> list[BandSpec]:
 
 
 def _s2_bands() -> list[BandSpec]:
-    from torchgeo_bench.models.olmoearth import OLMOEARTH_S2_BANDS
+    from geo_eval_harness.models.olmoearth import OLMOEARTH_S2_BANDS
 
     return [
         BandSpec(
@@ -53,39 +68,77 @@ def _s2_bands() -> list[BandSpec]:
 
 
 @pytest.fixture
-def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    state: dict[str, Any] = {"normalizer_inputs": {}, "loads": []}
+def tiny_olmoearth(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "normalizer_inputs": {},
+        "loads": [],
+        "downloads": [],
+        "payload": b"pinned",
+    }
+
+    def download(repo: str, filename: str, *, revision: str) -> str:
+        state["downloads"].append((repo, filename, revision))
+        path = tmp_path / repo / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(state["payload"])
+        return str(path)
+
+    digest = hashlib.sha256(b"pinned").hexdigest()
+    manifest = olmoearth.load_checksums("olmoearth.sha256")
+    monkeypatch.setattr("geo_eval_harness.hub.hf_hub_download", download)
+    monkeypatch.setattr(olmoearth, "load_checksums", lambda _: dict.fromkeys(manifest, digest))
 
     class _Normalizer:
-        def __init__(self, *, std_multiplier: float) -> None:
+        def __init__(self, *, std_multiplier: float, model_type: str) -> None:
             self.std_multiplier = std_multiplier
+            state["model_type"] = model_type
 
         def normalize(self, modality: str, values: np.ndarray) -> np.ndarray:
             state["normalizer_inputs"][modality] = values.copy()
             return values / 1000 - np.arange(values.shape[-1])
 
-    class _Encoder(torch.nn.Module):
-        def encoder(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
+    class _FlexiEncoder(torch.nn.Module):
+        supported_modality_names: ClassVar[list[str]] = ["sentinel2_l2a", "sentinel1"]
+
+        def forward(self, sample: SimpleNamespace, **kwargs: object) -> dict[str, Any]:
             state["sample"] = sample
             state["encoder_kwargs"] = kwargs
             pooled = torch.arange(24, dtype=torch.float32).reshape(1, 2, 3, 4)
-            return {"tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled)}
+            return {
+                "tokens_and_masks": SimpleNamespace(pool_spatially=lambda _mode: pooled),
+                "location_tokens": torch.arange(16, dtype=torch.float32).reshape(1, 2, 2, 4),
+                "student_location_tokens": torch.arange(8, dtype=torch.float32).reshape(1, 2, 2, 2),
+            }
 
-    def load_model(model_id: str, *, load_weights: bool) -> _Encoder:
-        state["loads"].append((model_id, load_weights))
+        def collapse_and_combine_hwtc(
+            self, x: dict[str, torch.Tensor]
+        ) -> tuple[torch.Tensor, None]:
+            order = sorted(key for key in x if key in self.supported_modality_names)
+            return torch.cat([x[key].flatten(1, -2) for key in order], dim=1), None
+
+    class _Encoder(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.encoder = _FlexiEncoder()
+
+    def load_model(path: Path) -> _Encoder:
+        state["loads"].append(path.name)
         return _Encoder()
 
     exports = {
         "olmoearth_pretrain_minimal": {
-            "ModelID": SimpleNamespace(OLMOEARTH_V1_NANO="nano"),
             "Normalizer": _Normalizer,
-            "load_model_from_id": load_model,
+            "load_model_from_path": load_model,
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants": {
             "Modality": SimpleNamespace(SENTINEL2_L2A="s2", SENTINEL1="sar", LANDSAT="landsat"),
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.nn.flexi_vit": {
             "PoolingType": SimpleNamespace(MEAN="mean"),
+            "return_modalities_from_dict": lambda x: [k for k in x if not k.endswith("_mask")],
+            "get_modalities_to_process": lambda available, supported: sorted(
+                set(available) & set(supported)
+            ),
         },
         "olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.datatypes": {
             "MaskedOlmoEarthSample": SimpleNamespace,
@@ -99,14 +152,20 @@ def tiny_olmoearth(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     return state
 
 
+def test_missing_package_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(sys.modules, "olmoearth_pretrain_minimal", None)
+    with pytest.raises(ModuleNotFoundError, match=r"pip install 'geo-eval-harness\[olmoearth\]'"):
+        OlmoEarthBenchModel(bands=_rgb_bands())
+
+
 def test_mixed_sensor_payload_normalization_imputation_and_pooling(
     tiny_olmoearth: dict[str, Any],
 ) -> None:
     bands = [
         BandSpec("s2", "blue", "B02", 0.2, 0.1, 0, 1),
-        BandSpec("sar", "vv", "VV", 10, 2, 0, 100),
+        BandSpec("sar", "vv", "VV", 10, 2, 0, 100, unit="db"),
         BandSpec("s2", "red", "B04", 0.3, 0.1, 0, 1),
-        BandSpec("sar", "vh", "VH", 20, 3, 0, 100),
+        BandSpec("sar", "vh", "VH", 20, 3, 0, 100, unit="db"),
     ]
     model = OlmoEarthBenchModel(bands, model_size="nano", time_steps=2, normalization="identity")
     images = torch.tensor([0.2, 10.0, 0.3, 20.0]).view(1, 4, 1, 1).expand(1, 4, 4, 4)
@@ -117,22 +176,155 @@ def test_mixed_sensor_payload_normalization_imputation_and_pooling(
         before["s2"][..., [0, 2]], np.broadcast_to([2000, 3000], (1, 4, 4, 2, 2))
     )
     np.testing.assert_allclose(before["sar"], np.broadcast_to([10, 20], (1, 4, 4, 2, 2)))
+    assert np.isnan(before["s2"][..., [1, *range(3, 12)]]).all()
     torch.testing.assert_close(sample.sentinel2_l2a[..., 0], torch.full((1, 4, 4, 2), 2.0))
-    torch.testing.assert_close(sample.sentinel2_l2a[..., 10], sample.sentinel2_l2a[..., 0])
-    torch.testing.assert_close(sample.sentinel2_l2a[..., 4], sample.sentinel2_l2a[..., 2])
     assert sample.sentinel2_l2a_mask.shape == (1, 4, 4, 2, 3)
     assert sample.sentinel1_mask.shape == (1, 4, 4, 2, 1)
     assert torch.count_nonzero(sample.sentinel2_l2a_mask) == 0
     assert torch.count_nonzero(sample.sentinel1_mask) == 0
     torch.testing.assert_close(sample.timestamps, torch.tensor([[[15, 6, 2020], [15, 6, 2020]]]))
     assert tiny_olmoearth["encoder_kwargs"] == {"patch_size": 4, "input_res": 10, "fast_pass": True}
-    assert tiny_olmoearth["loads"] == [("nano", True)]
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1-Nano"]
     torch.testing.assert_close(out, torch.tensor([[10.0, 11.0, 12.0, 13.0]]))
 
 
+@pytest.mark.parametrize(("image_size", "input_res"), [(224, 10 * 512 / 224), (None, 10)])
+def test_input_res_is_the_ground_size_of_the_pixels_the_encoder_receives(
+    tiny_olmoearth: dict[str, Any], image_size: int | None, input_res: float
+) -> None:
+    config = RunConfig.model_validate(
+        {
+            "model": {"name": "olmoearth_nano"},
+            "datasets": ["cloudsen12"],
+            "input": {"bands": "rgb", "image_size": image_size},
+            "runtime": {"device": "cpu"},
+        }
+    )
+    config, preset = resolve_run_config(config, "cloudsen12")
+    sample = {"image": torch.zeros(3, 512, 512)}
+    if image_size is not None:
+        sample = _ResizeTransform(image_size, config.input.interpolation)(sample)
+    model = instantiate_dataset_model(
+        config, preset, get_bench_dataset_class("cloudsen12")(), [sample], torch.device("cpu")
+    )
+    model(sample["image"][None])
+    assert tiny_olmoearth["encoder_kwargs"] == {
+        "patch_size": 8,
+        "input_res": pytest.approx(input_res, rel=1e-12),
+        "fast_pass": True,
+    }
+
+
+def test_flops_measures_synthetic_tiles_as_native_pixels(tiny_olmoearth: dict[str, Any]) -> None:
+    config = FlopsConfig.model_validate(
+        {"model": {"name": "olmoearth_nano"}, "input": {"band_source": "cloudsen12"}}
+    )
+    _, preset = config.resolve()
+    bands = get_bench_dataset_class("cloudsen12").resolve_band_specs("rgb")
+    model = flops_pipeline._build_model(preset, bands, "bandspec_zscore", "rgb")
+    assert model is not None
+    assert model.input_res == 10
+
+
+@pytest.mark.usefixtures("tiny_olmoearth")
+def test_resume_skips_finished_olmoearth_rows(tmp_path: Path, runner: RunnerMocks) -> None:
+    out = tmp_path / "out.csv"
+    cfg = _compose_cfg(
+        out,
+        overrides={
+            "model": {"name": "olmoearth_nano"},
+            "classification": {"methods": ["knn"]},
+            "output": {"resume": True},
+        },
+    )
+    runner.build.side_effect = build_model
+
+    main(cfg)
+    stored = out.read_bytes()
+    main(cfg)
+
+    runner.knn.assert_called_once()
+    assert out.read_bytes() == stored
+    assert pd.read_csv(out)["normalization"].tolist() == ["model_native"]
+
+
+@pytest.mark.parametrize(
+    ("unit", "sar_log_scale", "expected"),
+    [
+        ("linear_power", None, [-10.0, -20.0]),  # declared linear: auto-convert to dB
+        ("db", None, [0.1, 0.01]),
+        ("linear_power", False, [0.1, 0.01]),
+        (None, True, [-10.0, -20.0]),
+    ],
+)
+def test_sar_db_conversion_follows_declared_unit(
+    tiny_olmoearth: dict[str, Any],
+    unit: str | None,
+    *,
+    sar_log_scale: bool | None,
+    expected: list[float],
+) -> None:
+    bands = [
+        BandSpec("sar", "vv", "VV", 0.1, 1, 0, 100, unit=unit),
+        BandSpec("sar", "vh", "VH", 0.03, 0.2, 0, 100, unit=unit),
+    ]
+    model = OlmoEarthBenchModel(
+        bands, model_size="nano", normalization="identity", sar_log_scale=sar_log_scale
+    )
+    images = torch.tensor([0.1, 0.01]).view(1, 2, 1, 1).expand(1, 2, 4, 4)
+    model(images)
+    np.testing.assert_allclose(
+        tiny_olmoearth["normalizer_inputs"]["sar"],
+        np.broadcast_to(expected, (1, 4, 4, 1, 2)),
+        rtol=1e-5,
+    )
+
+
+def test_sar_in_an_undeclared_unit_uses_dataset_statistics(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    bands = get_bench_dataset_class("openearthmap-sar").resolve_band_specs(["vv", "vh"])
+    model = OlmoEarthBenchModel(bands, model_size="nano", normalization="identity")
+    images = torch.tensor([band.mean for band in bands]).view(1, 2, 1, 1)
+    actual = model.normalize_sensor_group(images, model._sensor_groups[0])
+    np.testing.assert_allclose(actual.ravel(), [0.5, 0.5])
+    assert tiny_olmoearth["normalizer_inputs"] == {}
+
+
+@pytest.mark.parametrize(
+    ("dataset", "selection", "expected"),
+    [
+        ("m-so2sat", "all", {0: "vv_lee", 1: "vh_lee"}),
+        ("treesatai", ["vv", "vh", "vv_vh"], {0: "vv", 1: "vh"}),
+    ],
+)
+def test_sar_slots_take_only_polarization_intensities(
+    dataset: str, selection: str | list[str], expected: dict[int, str]
+) -> None:
+    bands = get_bench_dataset_class(dataset).resolve_band_specs(selection)
+    (group,) = [g for g in _build_sensor_groups(bands) if g["sample_field"] == "sentinel1"]
+    slots = zip(group["dst_indices"], group["src_indices"], strict=True)
+    assert {dst: bands[src].name for dst, src in slots} == expected
+
+
+def test_rejects_sar_selection_without_a_backscatter_band() -> None:
+    bands = get_bench_dataset_class("m-so2sat").resolve_band_specs(["vv_real", "vv_imag"])
+    with pytest.raises(BandCompatibilityError, match="no slot for any selected 'sar' band"):
+        _build_sensor_groups(bands)
+
+
+def test_sar_dataset_units() -> None:
+    from geo_eval_harness.datasets.benv2 import BENV2
+    from geo_eval_harness.datasets.kuro_siwo import KuroSiwo
+
+    assert {b.unit for b in KuroSiwo.bands if b.sensor == "sar"} == {"linear_power"}
+    assert {b.unit for b in BENV2.bands if b.sensor == "s1"} == {"db"}
+
+
+@requires_olmoearth
 @pytest.mark.parametrize("normalization", ["auto", False])
 def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
-    tiny_olmoearth: dict[str, Any], *, normalization: str | bool
+    weight_free_olmoearth: None, *, normalization: str | bool
 ) -> None:
     bands = [
         BandSpec("landsat", name, name, 80, 20, 0, 255)
@@ -144,14 +336,34 @@ def test_landsat_dataset_scaling_is_unclipped_and_precedes_imputation(
     images = torch.tensor([0.0, 40.0, 80.0, 120.0, 160.0, 200.0]).view(1, 6, 1, 1)
     group = model._sensor_groups[0]
     actual = model.normalize_sensor_group(images, group)
-    expected = np.array([0, -0.5, -0.5, 0, 0.5, 1, 1.5, 2, 2, 2, 2])
+    # B8 and B1 copy B3 and B2, B9 copies B6; the thermal bands have no neighbour.
+    expected = np.array([0, -0.5, -0.5, 0, 0.5, 1, 1.5, 2, 1.5, 0, 0])
     np.testing.assert_allclose(actual, expected.reshape(1, 1, 1, 1, 11))
-    assert tiny_olmoearth["normalizer_inputs"] == {}
+
+
+def test_tokens_to_grid_averages_each_location_over_modalities_and_band_sets(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    del tiny_olmoearth
+    model = OlmoEarthBenchModel(_rgb_bands(), model_size="nano", version="v1")
+    s2 = torch.arange(2 * 3 * 4 * 1 * 3 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 3, 5)
+    s1 = -torch.arange(2 * 3 * 4 * 1 * 1 * 5, dtype=torch.float32).reshape(2, 3, 4, 1, 1, 5)
+    tokens, _ = model.encoder_model.encoder.collapse_and_combine_hwtc(
+        {"sentinel2_l2a": s2, "sentinel2_l2a_mask": s2, "sentinel1": s1}
+    )
+    assert model._token_layout == [(3, 4, 1, 1), (3, 4, 1, 3)]
+
+    grid = model.tokens_to_grid(tokens)
+
+    expected = (s2.mean(dim=(3, 4)) + s1.mean(dim=(3, 4))) / 2
+    torch.testing.assert_close(grid, expected.permute(0, 3, 1, 2))
+    with pytest.raises(ValueError, match="do not match"):
+        model.tokens_to_grid(tokens[:, 1:])
 
 
 def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:
     """Aerial and S2 inputs share one sample field and must not overwrite each other."""
-    from torchgeo_bench.models.olmoearth import _build_sensor_groups
+    from geo_eval_harness.models.olmoearth import _build_sensor_groups
 
     bands = [
         BandSpec("aerial", "red", "red", mean=120.0, std=30.0, min=0.0, max=255.0),
@@ -162,6 +374,132 @@ def test_rejects_sensor_groups_that_share_an_olmoearth_sample_field() -> None:
         _build_sensor_groups(bands)
 
 
+@pytest.mark.parametrize(
+    ("embedding", "expected"),
+    [
+        (None, [6.0, 7.0, 8.0, 9.0]),  # v1.3 defaults to the location-token grid
+        ("patch_tokens", [10.0, 11.0, 12.0, 13.0]),
+        ("student", [3.0, 4.0]),
+    ],
+)
+def test_v1_3_embedding_source(
+    tiny_olmoearth: dict[str, Any], embedding: str | None, expected: list[float]
+) -> None:
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base",
+        version="v1_3",
+        embedding=embedding,
+        normalization="identity",
+    )
+    out = model(torch.full((1, 3, 4, 4), 1500.0))
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
+    torch.testing.assert_close(out, torch.tensor([expected]))
+
+
+@pytest.mark.parametrize(
+    ("version", "missing_bands", "model_type"),
+    [("v1_3", None, "v1.1"), ("v1_3", "impute", "v1"), ("v1", None, "v1")],
+)
+def test_missing_bands_reach_the_upstream_normalizer_as_nan(
+    tiny_olmoearth: dict[str, Any], version: str, missing_bands: str | None, model_type: str
+) -> None:
+    """Upstream's ``Normalizer`` fills NaN channels according to its ``model_type``."""
+    model = OlmoEarthBenchModel(
+        _rgb_bands(),
+        model_size="base" if version == "v1_3" else "nano",
+        version=version,
+        missing_bands=missing_bands,
+        normalization="identity",
+    )
+    group = model._sensor_groups[0]
+    actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), group)
+    present = actual[..., [0, 1, 2]]
+    np.testing.assert_allclose(present.ravel(), [1.5, 0.5, -0.5])
+    assert np.isnan(actual[..., 3:]).all()
+    assert tiny_olmoearth["model_type"] == model_type
+
+
+class _WeightFreeEncoder(torch.nn.Module):
+    collapse_and_combine_hwtc = None
+
+
+@pytest.fixture
+def weight_free_olmoearth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use the installed package's preprocessing without loading a checkpoint."""
+    import olmoearth_pretrain_minimal
+
+    monkeypatch.setattr(olmoearth, "_fetch_checkpoint", lambda *_args: Path())
+    monkeypatch.setattr(
+        olmoearth_pretrain_minimal,
+        "load_model_from_path",
+        lambda *_args, **_kwargs: SimpleNamespace(encoder=_WeightFreeEncoder()),
+    )
+
+
+@requires_olmoearth
+@pytest.mark.parametrize("version", ["v1", "v1_2"])
+def test_missing_bands_are_filled_as_upstream_does_for_the_version(
+    weight_free_olmoearth: None, version: str
+) -> None:
+    """Upstream copies the nearest present band for v1 and zeroes missing bands for v1.1+."""
+    from olmoearth_pretrain_minimal import Normalizer
+    from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
+
+    model = OlmoEarthBenchModel(
+        _rgb_bands(), model_size="nano", version=version, normalization="identity"
+    )
+    actual = model.normalize_sensor_group(torch.full((1, 3, 1, 1), 1500.0), model._sensor_groups[0])
+    padded = np.full((1, 1, 1, 1, 12), np.nan)
+    padded[..., :3] = 1500.0
+    reference = Normalizer(std_multiplier=2.0, model_type=version.replace("_", "."))
+    np.testing.assert_allclose(actual, reference.normalize(Modality.SENTINEL2_L2A, padded))
+    assert actual[..., 3:].any() == (version == "v1")
+
+
+def test_rejects_pooler_embeddings_without_attention_pooler(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError, match="AttentionPooler"):
+        OlmoEarthBenchModel(
+            _rgb_bands(),
+            model_size="base",
+            version="v1_2",
+            embedding="location_tokens",
+            normalization="identity",
+        )
+    assert tiny_olmoearth["loads"] == []
+
+
+def test_checkpoint_is_fetched_at_its_pinned_revision_and_verified_before_loading(
+    tiny_olmoearth: dict[str, Any],
+) -> None:
+    OlmoEarthBenchModel(_rgb_bands(), model_size="base", version="v1_3")
+    revision = olmoearth.CHECKPOINT_REVISIONS["OlmoEarth-v1_3-Base"]
+    assert tiny_olmoearth["downloads"] == [
+        ("allenai/OlmoEarth-v1_3-Base", name, revision) for name in ("config.json", "weights.pth")
+    ]
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
+
+    tiny_olmoearth["payload"] = b"tampered"
+    with pytest.raises(ValueError, match="SHA-256"):
+        OlmoEarthBenchModel(_rgb_bands(), model_size="base", version="v1_3")
+    assert tiny_olmoearth["loads"] == ["OlmoEarth-v1_3-Base"]
+
+
+def test_every_released_checkpoint_is_pinned() -> None:
+    names = {
+        f"OlmoEarth-{version}-{size.capitalize()}"
+        for version, sizes in olmoearth._VERSION_SIZES.items()
+        for size in sizes
+    }
+    checksums = olmoearth.load_checksums("olmoearth.sha256")
+    assert set(olmoearth.CHECKPOINT_REVISIONS) == names
+    assert all(re.fullmatch(r"[0-9a-f]{40}", r) for r in olmoearth.CHECKPOINT_REVISIONS.values())
+    assert set(checksums) == {f"{n}/{f}" for n in names for f in ("config.json", "weights.pth")}
+    assert all(re.fullmatch(r"[0-9a-f]{64}", digest) for digest in checksums.values())
+
+
 # Embedding widths from the released Hugging Face model configs.
 EXPECTED_DIM = {"nano": 128, "tiny": 192, "small": 384, "base": 768, "large": 1024}
 
@@ -170,7 +508,7 @@ EXPECTED_DIM = {"nano": 128, "tiny": 192, "small": 384, "base": 768, "large": 10
 @pytest.mark.slow
 @pytest.mark.parametrize("size", ["nano", "tiny"])  # base/large are too heavy for CI
 def test_rgb_forward_pass_shape(size: str) -> None:
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     model = OlmoEarthBenchModel(bands=_rgb_bands(), model_size=size, normalization="identity")
     model.eval()
@@ -183,7 +521,7 @@ def test_rgb_forward_pass_shape(size: str) -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_s2_forward_pass_shape() -> None:
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     model = OlmoEarthBenchModel(bands=_s2_bands(), model_size="nano", normalization="identity")
     model.eval()
@@ -197,8 +535,8 @@ def test_s2_forward_pass_shape() -> None:
 @pytest.mark.slow
 def test_reflectance_input_is_rescaled_to_dn() -> None:
     """Convert So2Sat reflectance (up to 2.8) to DN before pretrained normalization."""
-    from torchgeo_bench.models._input_units import InputUnit
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models._input_units import InputUnit
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     refl_bands = [
         BandSpec(
@@ -263,7 +601,7 @@ def test_landsat_modality_routing() -> None:
     """Use Landsat's own modality and 30 m grid, not Sentinel-2's."""
     from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ("blue", "green", "red", "nir", "swir_1", "swir_2")
     landsat_bands = [
@@ -298,7 +636,7 @@ def test_aerial_falls_back_to_s2() -> None:
     """The minimal encoder has no NAIP branch, so aerial RGB needs the S2 layout."""
     from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     naip_bands = [
         BandSpec(
@@ -329,8 +667,8 @@ def test_aerial_falls_back_to_s2() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_partial_s2_10band_forward_pass() -> None:
-    """Use helios' blue/B8A substitutions for m-so2sat's missing B01/B09 channels."""
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    """Encode Sentinel-2 inputs with missing B01/B09 channels."""
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ["b02", "b03", "b04", "b08", "b05", "b06", "b07", "b8a", "b11", "b12"]
     bands = [
@@ -351,8 +689,6 @@ def test_partial_s2_10band_forward_pass() -> None:
     assert g["channels"] == 12
     assert g["num_band_sets"] == 3
     assert set(g["dst_indices"]) == set(range(10))
-    # B01 coastal (10) <- B02 blue (0); B09 water vapour (11) <- B8A (7).
-    assert g["impute_ops"] == [(0, 10), (7, 11)]
     x = torch.rand(2, 10, 64, 64, generator=torch.Generator().manual_seed(0)) * 3000.0
     out = model.forward_patch_features(x)
     assert out.shape == (2, EXPECTED_DIM["nano"])
@@ -362,8 +698,8 @@ def test_partial_s2_10band_forward_pass() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_forestnet_landsat_imputes_missing_bands() -> None:
-    """Use helios' spectral substitutions for m-forestnet's five missing Landsat bands."""
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    """Encode Landsat inputs with five missing channels."""
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ("blue", "green", "red", "nir", "swir_1", "swir_2")
     landsat_bands = [
@@ -379,10 +715,6 @@ def test_forestnet_landsat_imputes_missing_bands() -> None:
         for n in names
     ]
     model = OlmoEarthBenchModel(bands=landsat_bands, model_size="nano", normalization="identity")
-    g = model._sensor_groups[0]
-    # Use green (3) for pan, blue (2) for coastal, and swir2 (7) for cirrus/TIRS.
-    assert g["impute_ops"] == [(3, 0), (2, 1), (7, 8), (7, 9), (7, 10)]
-    assert all(src in set(g["dst_indices"]) for src, _ in g["impute_ops"])
     model.eval()
     x = torch.rand(2, 6, 64, 64, generator=torch.Generator().manual_seed(0)) * 200.0
     out = model.forward_patch_features(x)
@@ -394,7 +726,7 @@ def test_forestnet_landsat_imputes_missing_bands() -> None:
 @pytest.mark.slow
 def test_landsat_dataset_stats_normalization() -> None:
     """Use helios' unclipped ±2 std scaling for uint8 Landsat, not pretrained DN units."""
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     names = ("blue", "green", "red", "nir", "swir_1", "swir_2")
     bands = [
@@ -427,8 +759,8 @@ def test_landsat_dataset_stats_normalization() -> None:
 @pytest.mark.slow
 def test_auto_normalization_default_per_sensor() -> None:
     """Auto normalization uses dataset stats for uint8 Landsat and pretrained stats for S2 DN."""
-    from torchgeo_bench.models._input_units import InputUnit
-    from torchgeo_bench.models.olmoearth import _DATASET_STATS_SENSORS, OlmoEarthBenchModel
+    from geo_eval_harness.models._input_units import InputUnit
+    from geo_eval_harness.models.olmoearth import _DATASET_STATS_SENSORS, OlmoEarthBenchModel
 
     ls = [
         BandSpec(
@@ -468,7 +800,7 @@ def test_auto_normalization_default_per_sensor() -> None:
 @pytest.mark.parametrize("size", ["nano", "small"])
 def test_v1_2_variants_forward_pass(size: str) -> None:
     """Small is available only in v1.2."""
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     model = OlmoEarthBenchModel(
         bands=_rgb_bands(), model_size=size, version="v1_2", normalization="identity"
@@ -486,7 +818,7 @@ def test_mixed_s2_sar_forward_pass() -> None:
     """S2 and SAR must fill separate fields in the same OlmoEarth sample."""
     from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     # Minimal m-so2sat-style: 3 S2 (reflectance) + 2 SAR (Lee-filtered).
     mixed_bands = [
@@ -566,7 +898,7 @@ def test_s1_sensor_tag_aliases_to_sar_modality() -> None:
     """Both ``s1`` and ``sar`` sensor names must route to Sentinel-1."""
     from olmoearth_pretrain_minimal.olmoearth_pretrain_v1.utils.constants import Modality
 
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     bands = [
         BandSpec(
@@ -595,38 +927,10 @@ def test_s1_sensor_tag_aliases_to_sar_modality() -> None:
 @requires_olmoearth
 @pytest.mark.slow
 def test_treesatai_vv_vh_ratio_band_routes_to_sar_modality() -> None:
-    """TreeSatAI's VV/VH ratio shares the VH slot; it is not a separate physical polarization."""
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    """TreeSatAI's VV/VH ratio is not a physical polarization and fills no Sentinel-1 channel."""
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
-    bands = [
-        BandSpec(
-            sensor="s1",
-            name="vv",
-            source_name="vv",
-            mean=60197.8,
-            std=17913.3,
-            min=0.0,
-            max=65535.0,
-        ),
-        BandSpec(
-            sensor="s1",
-            name="vh",
-            source_name="vh",
-            mean=65496.9,
-            std=1326.41,
-            min=0.0,
-            max=65535.0,
-        ),
-        BandSpec(
-            sensor="s1",
-            name="vv_vh",
-            source_name="vv/vh",
-            mean=88.73,
-            std=2409.44,
-            min=0.0,
-            max=65535.0,
-        ),
-    ]
+    bands = get_bench_dataset_class("treesatai").resolve_band_specs(["vv", "vh", "vv_vh"])
     model = OlmoEarthBenchModel(bands=bands, model_size="nano", normalization="identity")
     model.eval()
     out = model.forward_patch_features(
@@ -641,7 +945,7 @@ def test_invalid_model_size_at_construction_not_forward() -> None:
     """Invalid model_size must fail in __init__ before any model loading call."""
     import olmoearth_pretrain_minimal as oepm
 
-    from torchgeo_bench.models.olmoearth import OlmoEarthBenchModel
+    from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
     with (
         mock.patch.object(
@@ -649,6 +953,6 @@ def test_invalid_model_size_at_construction_not_forward() -> None:
             "load_model_from_id",
             side_effect=AssertionError("load_model_from_id should not be called"),
         ),
-        pytest.raises(AttributeError, match="OLMOEARTH_V1_XLARGE"),
+        pytest.raises(ValueError, match="no 'xlarge' checkpoint"),
     ):
         OlmoEarthBenchModel(bands=_rgb_bands(), model_size="xlarge", normalization="identity")

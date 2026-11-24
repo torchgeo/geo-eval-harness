@@ -10,11 +10,11 @@ from typing import Any
 import pytest
 import yaml
 
-from torchgeo_bench import commands
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.commands import _flops
-from torchgeo_bench.commands.flops_arguments import add_flops_arguments
-from torchgeo_bench.config.flops import FlopsConfig
+from geo_eval_harness import commands
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.commands import _flops
+from geo_eval_harness.commands.flops_arguments import add_flops_arguments
+from geo_eval_harness.config.flops import FlopsConfig
 
 
 def parser() -> argparse.ArgumentParser:
@@ -73,7 +73,7 @@ def test_explicit_flags_override_yaml_without_overriding_omitted_values(tmp_path
     "selection",
     [
         pytest.param(
-            {"name": "custom-stats", "target": "torchgeo_bench.models.ImageStatsBench"},
+            {"name": "custom-stats", "target": "geo_eval_harness.models.ImageStatsBench"},
             id="custom-target-to-preset",
         ),
         pytest.param(
@@ -94,9 +94,9 @@ def test_model_flag_replaces_entire_yaml_selection(
 ) -> None:
     import torch
 
-    from torchgeo_bench.config.presets import build_model
-    from torchgeo_bench.datasets.cloudsen12 import CloudSEN12
-    from torchgeo_bench.models import RCFBench
+    from geo_eval_harness.config.presets import build_model
+    from geo_eval_harness.datasets.cloudsen12 import CloudSEN12
+    from geo_eval_harness.models import RCFBench
 
     path = tmp_path / "flops.yaml"
     path.write_text(
@@ -131,9 +131,9 @@ def test_model_flag_replaces_entire_yaml_selection(
 def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> None:
     import torch
 
-    from torchgeo_bench.config.presets import build_model
-    from torchgeo_bench.datasets.cloudsen12 import CloudSEN12
-    from torchgeo_bench.models import RCFBench
+    from geo_eval_harness.config.presets import build_model
+    from geo_eval_harness.datasets.cloudsen12 import CloudSEN12
+    from geo_eval_harness.models import RCFBench
 
     path = tmp_path / "flops.yaml"
     path.write_text(
@@ -156,7 +156,7 @@ def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> No
                 "--model",
                 "imagestats",
                 "--model-target",
-                "torchgeo_bench.models.RCFBench",
+                "geo_eval_harness.models.RCFBench",
                 "--model-kwargs",
                 "{features: 8, stats_mode: stdev}",
             ]
@@ -166,7 +166,7 @@ def test_explicit_constructor_flags_win_after_model_switch(tmp_path: Path) -> No
     model = build_model(preset, bands=CloudSEN12.bands).to(resolved.runtime.device).eval()
     assert isinstance(model, RCFBench)
     assert resolved.model.name == "imagestats"
-    assert resolved.model.target == "torchgeo_bench.models.RCFBench"
+    assert resolved.model.target == "geo_eval_harness.models.RCFBench"
     assert resolved.model.kwargs == {"features": 8, "stats_mode": "stdev"}
     images = torch.zeros(
         2,
@@ -213,6 +213,8 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
                 "fpn",
                 "dpt",
                 "patch_linear",
+                "upernet",
+                "unet",
                 "--seg-band-configs",
                 "s2",
                 "--seg-num-classes",
@@ -242,7 +244,7 @@ def test_all_argument_categories_dispatch_typed_config(monkeypatch: pytest.Monke
     assert config.input.band_source == "so2sat"
     assert config.classification.head == "mlp"
     assert config.classification.num_classes == 19
-    assert len(config.segmentation.heads) == 5
+    assert len(config.segmentation.heads) == 7
     assert config.segmentation.num_classes == 6
     assert config.segmentation.probe.layers == ["four", "three", "two", "one"]
     assert config.segmentation.probe.temporal_pool == "max"
@@ -290,18 +292,6 @@ def test_constructor_options_use_strict_safe_yaml(
     assert "error:" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("arguments", [["model=rcf"], ["+model.features=8"], ["++device=cpu"]])
-def test_canonical_parser_rejects_old_override_syntax(
-    arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["flops", *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "overrides have been retired" in message
-    assert "--config" in message
-
-
 def test_canonical_parser_dispatches_yaml_and_explicit_flags(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -332,8 +322,8 @@ class BlockRuntime:
         if fullname.split('.')[0] in {'torch', 'torchgeo', 'timm', 'pandas', 'omegaconf'}:
             raise AssertionError(f'Unexpected heavy import: {fullname}')
 sys.meta_path.insert(0, BlockRuntime())
-from torchgeo_bench.commands.flops_arguments import add_flops_arguments
-from torchgeo_bench.commands._flops import run
+from geo_eval_harness.commands.flops_arguments import add_flops_arguments
+from geo_eval_harness.commands._flops import run
 parser = argparse.ArgumentParser()
 add_flops_arguments(parser)
 run(parser.parse_args(sys.argv[1:]))
@@ -366,7 +356,7 @@ def test_dry_run_round_trip_is_reusable(capsys: pytest.CaptureFixture[str], tmp_
 
 
 def test_packaged_flops_yaml_uses_the_typed_schema() -> None:
-    path = Path(__file__).parents[1] / "src" / "torchgeo_bench" / "conf" / "flops_config.yaml"
+    path = Path(__file__).parents[1] / "src" / "geo_eval_harness" / "conf" / "flops_config.yaml"
     config = _flops.load_config(parser().parse_args(["--config", str(path), "--model", "rcf"]))
     resolved, preset = config.resolve()
     assert preset.kwargs["seed"] == 0
@@ -374,15 +364,20 @@ def test_packaged_flops_yaml_uses_the_typed_schema() -> None:
     assert resolved.segmentation.heads == ["fpn", "dpt"]
 
 
-def test_real_rcf_synthetic_cpu_csv_and_resume(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("model_arguments", "variant"),
+    [([], "catalog"), (["--model-kwargs", "{features: 8}"], "custom")],
+)
+def test_real_rcf_synthetic_cpu_csv_and_resume(
+    tmp_path: Path, model_arguments: list[str], variant: str
+) -> None:
     import pandas as pd
 
     output = tmp_path / "synthetic.csv"
     arguments = [
         "--model",
         "rcf",
-        "--model-kwargs",
-        "{features: 8}",
+        *model_arguments,
         "--device",
         "cpu",
         "--image-size",
@@ -408,6 +403,7 @@ def test_real_rcf_synthetic_cpu_csv_and_resume(tmp_path: Path) -> None:
     assert (rows["gflops_total"] > 0).all()
     assert (rows["throughput_samples_per_sec"] > 0).all()
     assert rows["peak_gpu_mem_gb"].isna().all()
+    assert rows["measurement_variant"].tolist() == [variant, variant]
     before = output.read_bytes()
     _flops.run(parser().parse_args(arguments))
     assert output.read_bytes() == before
@@ -424,7 +420,7 @@ def test_invalid_cuda_errors_without_cpu_fallback(
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(SystemExit, match=f"^error: .*{message}"):
         _flops.run(
             parser().parse_args(
                 ["--model", "rcf", "--device", device, "--output", str(tmp_path / "cuda.csv")]

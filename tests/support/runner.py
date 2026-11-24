@@ -1,17 +1,20 @@
 """Small deterministic inputs for runner orchestration tests."""
 
+from collections.abc import Iterator
 from pathlib import Path
+from typing import NamedTuple
 from unittest import mock
 
 import numpy as np
+import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import get_bench_dataset_class
-from torchgeo_bench.main import dataset_metadata
-from torchgeo_bench.resume import resume_config_hash
+from geo_eval_harness.config.presets import merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import get_bench_dataset_class
+from geo_eval_harness.main import dataset_metadata
+from geo_eval_harness.resume import resume_config_hash
 
 
 class _DictTensorDataset(Dataset):
@@ -69,8 +72,9 @@ def _synthetic_embeddings() -> list[tuple[np.ndarray, np.ndarray]]:
 
 
 def _hash_for(cfg: RunConfig, ds_name: str | None = None) -> str:
-    resolved, preset = resolve_run_config(cfg, ds_name or cfg.datasets[0])
-    return resume_config_hash(resolved, preset)
+    dataset = ds_name or cfg.datasets[0]
+    resolved, preset = resolve_run_config(cfg, dataset)
+    return resume_config_hash(resolved, preset, task=get_bench_dataset_class(dataset).task)
 
 
 def _resume_row(cfg: RunConfig, *, method: str, metric_name: str) -> dict[str, object]:
@@ -82,7 +86,7 @@ def _resume_row(cfg: RunConfig, *, method: str, metric_name: str) -> dict[str, o
             ds_name,
             get_bench_dataset_class(ds_name),
             preset,
-            resume_config_hash(resolved, preset),
+            resume_config_hash(resolved, preset, task=get_bench_dataset_class(ds_name).task),
         ),
         "method": method,
         "metric_name": metric_name,
@@ -96,3 +100,33 @@ def _chainable_model_mock() -> mock.Mock:
     model.eval.return_value = model
     model.effective_normalization = "bandspec_zscore"
     return model
+
+
+class RunnerMocks(NamedTuple):
+    """Mocks installed on ``geo_eval_harness.main`` by ``runner``."""
+
+    data: mock.Mock
+    build: mock.Mock
+    embed: mock.Mock
+    knn: mock.Mock
+
+
+def _embed_split(*_args: object, split: str, **_kwargs: object) -> tuple[np.ndarray, np.ndarray]:
+    return dict(zip(("train", "val", "test"), _synthetic_embeddings(), strict=True))[split]
+
+
+@pytest.fixture
+def runner() -> Iterator[RunnerMocks]:
+    """Replace data loading, model construction, embedding and KNN with deterministic mocks."""
+    with (
+        mock.patch("geo_eval_harness.main.get_datasets", return_value=_synthetic_loaders()) as data,
+        mock.patch(
+            "geo_eval_harness.main.build_model", return_value=_chainable_model_mock()
+        ) as build,
+        mock.patch("geo_eval_harness.main.embed_split", side_effect=_embed_split) as embed,
+        mock.patch(
+            "geo_eval_harness.main.evaluate_knn",
+            return_value=(0.5, 0.45, 0.55, {"ece": 0.05, "rms_ce": 0.07, "mce": 0.1}, 6),
+        ) as knn,
+    ):
+        yield RunnerMocks(data, build, embed, knn)

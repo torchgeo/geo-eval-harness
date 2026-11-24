@@ -1,0 +1,7 @@
+name: mind
+target: geo_eval_harness.coordbench.models.MINDLocationEncoder
+track: coord
+kwargs:
+  repo: taylor-geospatial/MIND
+  filename: mind.safetensors
+  dim: 64

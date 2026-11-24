@@ -1,0 +1,7 @@
+name: efficientnetv2_m
+target: geo_eval_harness.models.TimmPatchBenchModel
+kwargs:
+  model_name: tf_efficientnetv2_m
+  pretrained: true
+  global_pool: avg
+  auto_resize: true

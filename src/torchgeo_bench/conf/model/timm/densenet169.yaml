@@ -1,6 +1,0 @@
-name: densenet169
-target: torchgeo_bench.models.TimmPatchBenchModel
-kwargs:
-  model_name: densenet169
-  pretrained: true
-  global_pool: avg

@@ -1,4 +1,4 @@
-"""Unit tests for utility helpers in ``torchgeo_bench.main``."""
+"""Unit tests for utility helpers in ``geo_eval_harness.main``."""
 
 from unittest import mock
 
@@ -8,15 +8,15 @@ import torch
 from pydantic import ValidationError
 from torch.utils.data import DataLoader, Dataset
 
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.config.schema import SegmentationConfig
-from torchgeo_bench.main import _expand_dataset_list, evaluate_profile
-from torchgeo_bench.resume import (
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.config.schema import SegmentationConfig
+from geo_eval_harness.main import _expand_dataset_list, evaluate_profile
+from geo_eval_harness.resume import (
     _completed_run_keys,
     filter_completed_metric_rows,
     normalize_bands_value,
 )
-from torchgeo_bench.segmentation_task import build_seg_probe_and_solver
+from geo_eval_harness.segmentation_task import build_seg_probe_and_solver
 
 
 class _ImageOnlyDataset(Dataset):
@@ -29,7 +29,7 @@ class _ImageOnlyDataset(Dataset):
 
 
 def test_expand_dataset_list_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("torchgeo_bench.main.list_datasets", lambda: ["m-eurosat", "benv2"])
+    monkeypatch.setattr("geo_eval_harness.main.list_datasets", lambda: ["m-eurosat", "benv2"])
     assert _expand_dataset_list("all") == ["m-eurosat", "benv2"]
     assert _expand_dataset_list(["all"]) == ["m-eurosat", "benv2"]
 
@@ -106,11 +106,11 @@ def test_evaluate_profile_adds_cpu_metrics_branch() -> None:
 
     with (
         mock.patch(
-            "torchgeo_bench.main.measure_profile",
+            "geo_eval_harness.main.measure_profile",
             return_value={"params_m": 0.1, "throughput_samples_per_sec": 20.0},
         ),
         mock.patch(
-            "torchgeo_bench.main.measure_cpu_throughput",
+            "geo_eval_harness.main.measure_cpu_throughput",
             return_value={
                 "throughput_samples_per_sec_cpu": 3.0,
                 "latency_ms_per_batch_p50_cpu": 12.0,

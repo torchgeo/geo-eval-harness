@@ -1,5 +1,0 @@
-name: sinr
-target: torchgeo_bench.coordbench.models.SINRLocationEncoder
-track: coord
-kwargs:
-  repo: MVRL/sinr-location-encoder-1000-cls

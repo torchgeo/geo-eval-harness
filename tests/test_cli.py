@@ -1,17 +1,22 @@
 """Unit tests for CLI entrypoints."""
 
 import argparse
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import yaml
 
-from torchgeo_bench import commands
-from torchgeo_bench.cli import main as cli_main
-from torchgeo_bench.config.flops import FlopsConfig
-from torchgeo_bench.config.presets import ModelPreset
-from torchgeo_bench.config.run import RunConfig
+from geo_eval_harness import commands
+from geo_eval_harness.cli import _parse_args
+from geo_eval_harness.cli import main as cli_main
+from geo_eval_harness.commands._config import parse_image_size
+from geo_eval_harness.commands.run_arguments import add_run_arguments
+from geo_eval_harness.config import list_model_configs
+from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.presets import ModelPreset
+from geo_eval_harness.config.run import RunConfig
 
 
 @pytest.mark.parametrize("command", ["run", "profile", "flops", "coord"])
@@ -36,6 +41,47 @@ def test_run_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.datasets == ["m-eurosat"]
     assert cfg.runtime.batch_size == 8
     assert cfg.runtime.device == "cpu"
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["run", "-m", "rcf", "-d", "m-eurosat", "--device", "cpu"], "WARNING: problem\n"),
+        (
+            ["run", "-m", "rcf", "-d", "m-eurosat", "--device", "cpu", "--verbose"],
+            "INFO: progress\nWARNING: problem\n",
+        ),
+        (
+            ["coord", "--model", "sincos", "--dataset", "country"],
+            "INFO: progress\nWARNING: problem\n",
+        ),
+        (["profile", "-m", "rcf", "-d", "m-eurosat"], "WARNING: problem\n"),
+    ],
+)
+def test_commands_log_to_stderr_at_the_selected_level(
+    argv: list[str],
+    expected: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def runtime(_config: object) -> None:
+        logger = logging.getLogger("geo_eval_harness.main")
+        logger.info("progress")
+        logger.warning("problem")
+
+    root = logging.getLogger()
+    level = root.level
+    monkeypatch.setattr(root, "handlers", [])
+    monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=runtime))
+    monkeypatch.setattr(commands, "_profile_runtime", SimpleNamespace(run=runtime))
+    monkeypatch.setattr("geo_eval_harness.coordbench.run.run_coordbench", runtime)
+    try:
+        cli_main(argv)
+    finally:
+        root.setLevel(level)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == expected
 
 
 @pytest.mark.parametrize("command", ["run", "flops"])
@@ -72,309 +118,308 @@ def test_flags_override_yaml_and_preserve_omitted_values(
     assert not config.output.resume
 
 
-@pytest.mark.parametrize("command", ["run", "flops"])
-@pytest.mark.parametrize(
-    "output_args",
-    [
-        ["--output", "results/run=1.csv"],
-        ["-o", "results/run=1.csv"],
-        ["--output=results/run=1.csv"],
-    ],
-)
-def test_output_flag_value_can_contain_equals(
-    command: str, output_args: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    selection = ["--dataset", "m-eurosat"] if command == "run" else []
-    cli_main([command, "--model", "rcf", *selection, *output_args, "--dry-run"])
-    schema = RunConfig if command == "run" else FlopsConfig
-    config = schema.model_validate(yaml.safe_load(capsys.readouterr().out))
-    assert config.output.file == "results/run=1.csv"
+class TestRunArguments:
+    @pytest.fixture
+    def parser(self) -> argparse.ArgumentParser:
+        parser = argparse.ArgumentParser()
+        add_run_arguments(parser)
+        return parser
 
+    @staticmethod
+    def dry_run(capsys: pytest.CaptureFixture[str], command: str, *flags: str) -> dict:
+        """Return the YAML a command prints for an rcf dry run with extra flags."""
+        selection = [] if command == "flops" else ["--dataset", "m-eurosat"]
+        cli_main([command, "--model", "rcf", *selection, *flags, "--dry-run"])
+        return yaml.safe_load(capsys.readouterr().out)
 
-@pytest.mark.parametrize("command", ["run", "flops"])
-@pytest.mark.parametrize(
-    "flags",
-    [
-        ["--seed", "1", "--device", "cpu", "--seed", "2"],
-        ["--seed=1", "--device=cpu", "--seed=2"],
-        ["--seed", "1", "--device", "cpu", "--seed", "1", "--seed", "2"],
-    ],
-)
-def test_repeated_flags_keep_their_order(
-    command: str, flags: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    selection = ["--dataset", "m-eurosat"] if command == "run" else []
-    cli_main([command, "--model", "rcf", *selection, "--dry-run", *flags])
-    schema = RunConfig if command == "run" else FlopsConfig
-    config = schema.model_validate(yaml.safe_load(capsys.readouterr().out))
-    assert config.runtime.seed == 2
-    assert config.runtime.device == "cpu"
+    def test_omitted_flags_do_not_set_config_defaults(
+        self, parser: argparse.ArgumentParser
+    ) -> None:
+        assert vars(parser.parse_args([])) == {}
 
+    def test_explicit_values_preserve_types_and_dataset_order(
+        self, parser: argparse.ArgumentParser
+    ) -> None:
+        args = parser.parse_args(
+            [
+                "--config",
+                "run.yaml",
+                "-m",
+                "rcf",
+                "-d",
+                "m-eurosat",
+                "--dataset",
+                "burn_scars",
+                "--image-size",
+                "none",
+                "--workers",
+                "0",
+                "--no-resume",
+                "--methods",
+                "linear",
+                "--dry-run",
+            ]
+        )
+        assert vars(args) == {
+            "config": Path("run.yaml"),
+            "model": "rcf",
+            "datasets": ["m-eurosat", "burn_scars"],
+            "image_size": None,
+            "workers": 0,
+            "resume": False,
+            "methods": ["linear"],
+            "dry_run": True,
+        }
 
-@pytest.mark.parametrize("command", ["run", "flops", "profile", "coord"])
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["model=rcf"],
-        ["+model.features=8"],
-        ["++model.pool=cls", "+model.gsd=1.0"],
-        ["typo.key=1"],
-        ["seed=1", "--device", "cpu", "seed=2"],
-        ["seed=1", "--device", "cpu", "--", "seed=2"],
-    ],
-)
-def test_old_override_grammar_reports_migration(
-    command: str, arguments: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main([command, *arguments])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "key=value and +key=value overrides have been retired" in message
-    assert "--model rcf --dataset m-eurosat" in message
-    assert "--config run.yaml" in message
-    assert "Traceback" not in message
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["run", "--unknown=value", "--dry-run"],
-        ["run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run", "--unknown=value"],
-        ["flops", "--model", "rcf", "--dry-run", "--unknown=value"],
-    ],
-)
-def test_unrecognized_arguments_are_rejected(argv, capsys) -> None:
-    with pytest.raises(SystemExit) as exc:
-        cli_main(argv)
-    assert exc.value.code == 2
-    assert "unrecognized arguments" in capsys.readouterr().err
-
-
-def test_run_repeated_dataset_flags_preserve_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    received: list[RunConfig] = []
-    monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=received.append))
-    cli_main(["run", "-m", "rcf", "-d", "m-eurosat", "--dataset", "m-so2sat"])
-    assert received[0].datasets == ["m-eurosat", "m-so2sat"]
-
-
-def test_run_unknown_model_errors(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["run", "--model", "not_a_model", "--dataset", "m-eurosat"])
-    assert error.value.code == 2
-    assert "not_a_model" in capsys.readouterr().err
-
-
-def test_run_unknown_yaml_key_errors_without_traceback(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "invalid.yaml"
-    path.write_text("model: {name: rcf}\ndatasets: [m-eurosat]\ntypo_key: 1\n")
-    with pytest.raises(SystemExit) as error:
-        cli_main(["run", "--config", str(path)])
-    assert error.value.code == 2
-    message = capsys.readouterr().err
-    assert "typo_key" in message
-    assert "Extra inputs are not permitted" in message
-    assert "Traceback" not in message
-
-
-def test_run_dry_run_prints_reusable_typed_config(capsys: pytest.CaptureFixture[str]) -> None:
-    cli_main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run"])
-    config = RunConfig.model_validate(yaml.safe_load(capsys.readouterr().out))
-    assert config.model.name == "rcf"
-    assert config.datasets == ["m-eurosat"]
-
-
-def test_run_list_models(capsys) -> None:
-    cli_main(["models"])
-    out = capsys.readouterr().out
-    assert "rcf" in out
-    assert "torchgeo/scalemae_large_fmow" in out
-
-
-def test_run_list_datasets(capsys) -> None:
-    cli_main(["datasets"])
-    out = capsys.readouterr().out
-    assert "m-eurosat" in out
-    assert "ucmerced" in out
-
-
-def test_run_model_help(capsys) -> None:
-    cli_main(["models", "rcf"])
-    preset = ModelPreset.model_validate(yaml.safe_load(capsys.readouterr().out))
-    assert preset.name == "rcf"
-    assert preset.target == "torchgeo_bench.models.RCFBench"
-    assert preset.track == "image"
-
-
-def test_run_model_help_unknown_model_errors() -> None:
-    with pytest.raises(SystemExit, match="unknown model 'not-a-real-model'"):
-        cli_main(["models", "not-a-real-model"])
-
-
-def test_run_model_help_rejects_path_traversal() -> None:
-    with pytest.raises(SystemExit, match="unknown model"):
-        cli_main(["models", "../flops_config"])
-
-
-@pytest.mark.parametrize(
-    ("dataset", "task"), [("m-eurosat", "classification"), ("burn_scars", "segmentation")]
-)
-def test_dataset_catalog_details(
-    dataset: str, task: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    cli_main(["datasets", dataset])
-    assert yaml.safe_load(capsys.readouterr().out) == {"name": dataset, "task": task}
-
-
-def test_download_invalid_target() -> None:
-    with pytest.raises(SystemExit, match="Unknown dataset"):
-        cli_main(["download", "bogus"])
-
-
-@pytest.mark.parametrize(
-    ("collection", "selection"),
-    [
-        ("geobench_v1", "unknown"),
-        ("geobench_v1", "m-eurosat,unknown"),
-        ("geobench_v2", "unknown"),
-        ("geobench_v2", "caffe,unknown"),
-    ],
-)
-def test_download_invalid_collection_selection(
-    tmp_path: Path,
-    collection: str,
-    selection: str,
-) -> None:
-    output = tmp_path / "downloads"
-    with pytest.raises(SystemExit, match="error: Unknown GeoBench"):
-        cli_main(["download", collection, "--datasets", selection, "--output-dir", str(output)])
-    assert not output.exists()
-
-
-@pytest.mark.parametrize("collection", ["geobench_v1", "geobench_v2"])
-def test_download_collection_propagates_unexpected_errors(
-    monkeypatch: pytest.MonkeyPatch,
-    collection: str,
-) -> None:
-    def fail(*args: object, **kwargs: object) -> None:
-        raise RuntimeError("unexpected download failure")
-
-    monkeypatch.setattr(f"torchgeo_bench.download.download_{collection}", fail)
-    with pytest.raises(RuntimeError, match="unexpected download failure"):
-        cli_main(["download", collection])
-
-
-def test_download_geobench_v1(monkeypatch) -> None:
-    calls: list[tuple[str, list[str] | None]] = []
-
-    def _fake_download(path, datasets=None) -> None:
-        calls.append((str(path), datasets))
-
-    monkeypatch.setattr("torchgeo_bench.download.download_geobench_v1", _fake_download)
-    cli_main(["download", "geobench_v1"])
-    assert calls == [("data", None)]
-
-
-def test_download_geobench_v2_with_datasets(monkeypatch) -> None:
-    calls: list[tuple[str, list[str] | None]] = []
-
-    def _fake_download(path, datasets=None) -> None:
-        calls.append((str(path), datasets))
-
-    monkeypatch.setattr("torchgeo_bench.download.download_geobench_v2", _fake_download)
-    cli_main(["download", "geobench_v2", "--datasets", "burn_scars,benv2"])
-    assert calls == [("data", ["burn_scars", "benv2"])]
-
-
-@pytest.mark.parametrize(
-    "names",
-    [
-        ["m-eurosat", "burn_scars"],
-        ["m-eurosat", "eurosat"],
-        ["eurosat", "resisc45"],
-        ["ucmerced"],
-        ["eurosat", "ucmerced"],
-        ["m-eurosat", "burn_scars", "eurosat", "resisc45"],
-    ],
-)
-def test_download_named_datasets(monkeypatch, names: list[str]) -> None:
-    calls: list[tuple[list[str], str]] = []
-
-    def _fake_download(names, path) -> None:
-        calls.append((names, str(path)))
-
-    monkeypatch.setattr("torchgeo_bench.download.download_datasets", _fake_download)
-    cli_main(["download", *names])
-    assert calls == [(names, "data")]
-
-
-@pytest.mark.parametrize("names", [["geobench_v1", "eurosat"], ["geobench_v1", "geobench_v2"]])
-def test_download_rejects_mixed_collection_targets(names: list[str]) -> None:
-    with pytest.raises(SystemExit, match="collection targets cannot be mixed"):
-        cli_main(["download", *names])
-
-
-@pytest.mark.parametrize("invalid", ["unknown", "not_a_dataset"])
-def test_download_named_dataset_rejects_unknown_before_backend(monkeypatch, invalid: str) -> None:
-    calls: list[object] = []
-    monkeypatch.setattr(
-        "torchgeo_bench.download.snapshot_download", lambda *args, **kwargs: calls.append(args)
+    @pytest.mark.parametrize("command", ["run", "flops"])
+    @pytest.mark.parametrize(
+        "output_args",
+        [
+            ["--output", "results/run=1.csv"],
+            ["-o", "results/run=1.csv"],
+            ["--output=results/run=1.csv"],
+        ],
     )
-    with pytest.raises(SystemExit, match="Unknown dataset"):
-        cli_main(["download", "m-eurosat", invalid])
-    assert calls == []
+    def test_output_flag_value_can_contain_equals(
+        self, command: str, output_args: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert self.dry_run(capsys, command, *output_args)["output"]["file"] == "results/run=1.csv"
 
-
-def test_download_eurosat(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(
-        "torchgeo_bench.download.download_eurosat", lambda path: calls.append(str(path))
+    @pytest.mark.parametrize("command", ["run", "flops"])
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            ["--seed", "1", "--device", "cpu", "--seed", "2"],
+            ["--seed=1", "--device=cpu", "--seed=2"],
+            ["--seed", "1", "--device", "cpu", "--seed", "1", "--seed", "2"],
+        ],
     )
-    cli_main(["download", "eurosat"])
-    assert calls == ["data"]
+    def test_repeated_flags_keep_their_order(
+        self, command: str, flags: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert self.dry_run(capsys, command, *flags)["runtime"] == {"device": "cpu", "seed": 2}
 
+    def test_run_repeated_dataset_flags_preserve_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        received: list[RunConfig] = []
+        monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=received.append))
+        cli_main(["run", "-m", "rcf", "-d", "m-eurosat", "--dataset", "m-so2sat"])
+        assert received[0].datasets == ["m-eurosat", "m-so2sat"]
 
-def test_download_rejects_empty_dataset_list() -> None:
-    with pytest.raises(SystemExit, match="at least one dataset name"):
-        cli_main(["download", "geobench_v1", "--datasets", ","])
-
-
-def test_download_resisc45(monkeypatch) -> None:
-    calls: list[str] = []
-    monkeypatch.setattr(
-        "torchgeo_bench.download.download_resisc45", lambda path: calls.append(str(path))
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["run", "--unknown=value", "--dry-run"],
+            ["run", "--model", "rcf", "--dataset", "m-eurosat", "--dry-run", "--unknown=value"],
+            ["flops", "--model", "rcf", "--dry-run", "--unknown=value"],
+        ],
     )
-    cli_main(["download", "resisc45"])
-    assert calls == ["data"]
+    def test_unrecognized_arguments_are_rejected(
+        self, argv: list[str], capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as exc:
+            cli_main(argv)
+        assert exc.value.code == 2
+        assert "unrecognized arguments" in capsys.readouterr().err
+
+    def test_run_dry_run_prints_reusable_typed_config(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        config = RunConfig.model_validate(self.dry_run(capsys, "run"))
+        assert config.model.name == "rcf"
+        assert config.datasets == ["m-eurosat"]
+
+    def test_constructor_options_are_explicit_yaml_kwargs(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / "custom.yaml"
+        path.write_text(
+            "model:\n  name: custom\n  target: not_installed.Model\n"
+            "  kwargs: {pool: cls, gsd: 1.0}\ndatasets: [m-eurosat]\n"
+        )
+        cli_main(["run", "--config", str(path), "--dry-run"])
+        config = RunConfig.model_validate(yaml.safe_load(capsys.readouterr().out))
+        assert config.model.target == "not_installed.Model"
+        assert config.model.kwargs == {"pool": "cls", "gsd": 1.0}
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [("none", None), ("None", None), ("NONE", None), ("1", 1), ("224", 224)],
+    )
+    def test_image_size_parser(self, value: str, expected: int | None) -> None:
+        assert parse_image_size(value) == expected
+
+    @pytest.mark.parametrize("value", ["0", "-1", "2.5", "null", "bad", ""])
+    def test_invalid_image_size(self, value: str) -> None:
+        with pytest.raises(argparse.ArgumentTypeError, match="positive integer or none"):
+            parse_image_size(value)
+
+    @pytest.mark.parametrize("command", ["run", "profile"])
+    def test_commands_report_the_same_image_size_error(
+        self, command: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit) as error:
+            _parse_args([command, "--image-size", "2.5"])
+        assert error.value.code == 2
+        assert "image-size must be a positive integer or none" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("command", ["run", "profile"])
+    def test_omitted_image_size_stays_unset(self, command: str) -> None:
+        assert not hasattr(_parse_args([command]), "image_size")
+
+    @pytest.mark.parametrize("command", ["run", "profile"])
+    @pytest.mark.parametrize(("value", "expected"), [("none", None), ("17", 17)])
+    def test_dry_run_preserves_explicit_resize(
+        self,
+        command: str,
+        value: str,
+        expected: int | None,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        config = self.dry_run(capsys, command, "--image-size", value)
+        assert config["input"]["image_size"] == expected
+
+    def test_flops_requires_a_concrete_size(self) -> None:
+        with pytest.raises(SystemExit) as error:
+            _parse_args(["flops", "--image-size", "none"])
+        assert error.value.code == 2
 
 
-def test_download_ucmerced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    calls: list[Path] = []
-    monkeypatch.setattr("torchgeo_bench.download.download_ucmerced", calls.append)
-    cli_main(["download", "ucmerced", "--output-dir", str(tmp_path)])
-    assert calls == [tmp_path]
+class TestCatalog:
+    def test_model_catalog_matches_packaged_presets(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        cli_main(["models"])
+        names = capsys.readouterr().out.splitlines()
+        assert names == list_model_configs()
+        # Model names are CLI identifiers and must use forward slashes even on Windows.
+        assert "torchgeo/scalemae_large_fmow" in names
+        assert not any("\\" in name for name in names)
+
+    def test_run_list_datasets(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cli_main(["datasets"])
+        out = capsys.readouterr().out
+        assert "m-eurosat" in out
+        assert "ucmerced" in out
+
+    def test_run_model_help(self, capsys: pytest.CaptureFixture[str]) -> None:
+        cli_main(["models", "rcf"])
+        preset = ModelPreset.model_validate(yaml.safe_load(capsys.readouterr().out))
+        assert preset.name == "rcf"
+        assert preset.target == "geo_eval_harness.models.RCFBench"
+        assert preset.track == "image"
+
+    @pytest.mark.parametrize(
+        ("dataset", "task"), [("m-eurosat", "classification"), ("burn_scars", "segmentation")]
+    )
+    def test_dataset_catalog_details(
+        self, dataset: str, task: str, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        cli_main(["datasets", dataset])
+        assert yaml.safe_load(capsys.readouterr().out) == {"name": dataset, "task": task}
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (["models", "not-a-real-model"], "unknown model 'not-a-real-model'"),
+            (["models", "../flops_config"], "unknown model"),
+            (["datasets", "unknown"], "unknown dataset 'unknown'"),
+        ],
+    )
+    def test_unknown_name_errors(self, argv: list[str], message: str) -> None:
+        with pytest.raises(SystemExit, match=message):
+            cli_main(argv)
 
 
-def test_download_rejects_datasets_for_ucmerced() -> None:
-    with pytest.raises(SystemExit, match="only supported for GeoBench"):
-        cli_main(["download", "ucmerced", "--datasets", "ucmerced"])
+class TestDownloadCommand:
+    @pytest.fixture
+    def backend(self, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Path, list[str] | None]]:
+        """Record downloader calls in place of the real downloads."""
+        calls: list[tuple[str, Path, list[str] | None]] = []
+        for name in ("geobench_v1", "geobench_v2", "eurosat", "resisc45", "ucmerced"):
+
+            def record(path: Path, datasets: list[str] | None = None, name: str = name) -> None:
+                calls.append((name, path, datasets))
+
+            monkeypatch.setattr(f"geo_eval_harness.download.download_{name}", record)
+        return calls
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["geobench_v1"], [("geobench_v1", None)]),
+            (
+                ["geobench_v2", "--datasets", "burn_scars,benv2"],
+                [("geobench_v2", ["burn_scars", "benv2"])],
+            ),
+            (["eurosat"], [("eurosat", None)]),
+            (["resisc45"], [("resisc45", None)]),
+            (["ucmerced"], [("ucmerced", None)]),
+            (
+                ["m-eurosat", "burn_scars", "eurosat", "resisc45"],
+                [
+                    ("geobench_v1", ["m-eurosat"]),
+                    ("geobench_v2", ["burn_scars"]),
+                    ("eurosat", None),
+                    ("resisc45", None),
+                ],
+            ),
+        ],
+    )
+    def test_targets_reach_their_downloaders(
+        self,
+        argv: list[str],
+        expected: list[tuple[str, list[str] | None]],
+        backend: list[tuple[str, Path, list[str] | None]],
+    ) -> None:
+        cli_main(["download", *argv])
+        assert backend == [(name, Path("data"), datasets) for name, datasets in expected]
+
+    def test_output_dir_reaches_the_downloader(
+        self, tmp_path: Path, backend: list[tuple[str, Path, list[str] | None]]
+    ) -> None:
+        cli_main(["download", "ucmerced", "--output-dir", str(tmp_path)])
+        assert backend == [("ucmerced", tmp_path, None)]
+
+    @pytest.mark.parametrize(
+        ("argv", "message"),
+        [
+            (["bogus"], "error: Unknown dataset"),
+            (["geobench_v1", "eurosat"], "collection targets cannot be mixed"),
+            (["geobench_v1", "geobench_v2"], "collection targets cannot be mixed"),
+            (["eurosat", "--datasets", "m-eurosat"], "only supported for GeoBench"),
+            (["geobench_v1", "--datasets", ","], "at least one dataset name"),
+            (["geobench_v1", "--datasets", "m-eurosat,unknown"], "error: Unknown GeoBench"),
+            (["geobench_v2", "--datasets", "caffe,unknown"], "error: Unknown GeoBench"),
+        ],
+    )
+    def test_invalid_request_exits_before_writing(
+        self, argv: list[str], message: str, tmp_path: Path
+    ) -> None:
+        output = tmp_path / "downloads"
+        with pytest.raises(SystemExit, match=message):
+            cli_main(["download", *argv, "--output-dir", str(output)])
+        assert not output.exists()
+
+    @pytest.mark.parametrize("collection", ["geobench_v1", "geobench_v2"])
+    def test_collection_propagates_unexpected_errors(
+        self, monkeypatch: pytest.MonkeyPatch, collection: str
+    ) -> None:
+        def fail(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("unexpected download failure")
+
+        monkeypatch.setattr(f"geo_eval_harness.download.download_{collection}", fail)
+        with pytest.raises(RuntimeError, match="unexpected download failure"):
+            cli_main(["download", collection])
 
 
-def test_download_rejects_datasets_for_resisc45() -> None:
-    with pytest.raises(SystemExit):
-        cli_main(["download", "resisc45", "--datasets", "resisc45"])
-
-
-def test_download_rejects_datasets_for_eurosat() -> None:
-    with pytest.raises(SystemExit, match="only supported for GeoBench"):
-        cli_main(["download", "eurosat", "--datasets", "m-eurosat"])
-
-
-def test_flops_without_model_errors_cleanly(capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("command", ["flops", "profile"])
+def test_command_without_model_errors_cleanly(
+    command: str, capsys: pytest.CaptureFixture[str]
+) -> None:
     with pytest.raises(SystemExit) as error:
-        cli_main(["flops"])
+        cli_main([command])
     assert error.value.code == 2
     message = capsys.readouterr().err
     assert "model" in message
@@ -388,32 +433,3 @@ def test_flops_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(received[0], FlopsConfig)
     assert received[0].classification.num_classes == 10
     assert received[0].runtime.device == "cpu"
-
-
-def test_unknown_model_is_reported_without_suggestions(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as error:
-        cli_main(["run", "-m", "resnet50", "-d", "m-eurosat"])
-    assert error.value.code == 2
-    assert capsys.readouterr().err == "error: Unknown model config 'resnet50'.\n"
-
-
-def test_constructor_options_are_explicit_yaml_kwargs(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    path = tmp_path / "custom.yaml"
-    path.write_text(
-        "model:\n  name: custom\n  target: not_installed.Model\n"
-        "  kwargs: {pool: cls, gsd: 1.0}\ndatasets: [m-eurosat]\n"
-    )
-    cli_main(["run", "--config", str(path), "--dry-run"])
-    config = RunConfig.model_validate(yaml.safe_load(capsys.readouterr().out))
-    assert config.model.target == "not_installed.Model"
-    assert config.model.kwargs == {"pool": "cls", "gsd": 1.0}
-
-
-def test_model_names_are_posix_on_every_platform(capsys: pytest.CaptureFixture[str]) -> None:
-    """Model names are CLI identifiers and must use forward slashes even on Windows."""
-    cli_main(["models"])
-    names = capsys.readouterr().out.splitlines()
-    assert "torchgeo/scalemae_large_fmow" in names
-    assert not any("\\" in n for n in names)

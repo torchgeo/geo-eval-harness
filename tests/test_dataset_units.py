@@ -6,10 +6,13 @@ from unittest.mock import MagicMock
 import pytest
 import torch
 
-from torchgeo_bench.datasets.eurosat import EuroSAT, EuroSATSpatial
-from torchgeo_bench.datasets.fotw import FieldsOfTheWorld as FOTW
-from torchgeo_bench.datasets.spacenet2 import SpaceNet2
-from torchgeo_bench.datasets.spacenet7 import SpaceNet7
+from geo_eval_harness.datasets.burn_scars import BurnScars
+from geo_eval_harness.datasets.eurosat import EuroSAT, EuroSATSpatial
+from geo_eval_harness.datasets.fotw import FieldsOfTheWorld as FOTW
+from geo_eval_harness.datasets.pastis import PASTIS
+from geo_eval_harness.datasets.spacenet2 import SpaceNet2
+from geo_eval_harness.datasets.spacenet7 import SpaceNet7
+from geo_eval_harness.datasets.treesatai import TreeSatAI
 
 
 class TestFOTWCanonicalize:
@@ -32,6 +35,38 @@ class TestFOTWCanonicalize:
         assert result["label"] == 1
         assert "image_a" not in result
         assert "image_b" not in result
+
+    def test_unknown_label_is_ignored(self) -> None:
+        mask = torch.tensor([[0, 1, 2, 3], [3, 2, 1, 0]])
+        result = FOTW().canonicalize_sample({"image": torch.zeros(3, 2, 4), "mask": mask})
+        torch.testing.assert_close(result["mask"], torch.tensor([[0, 1, 2, 255], [255, 2, 1, 0]]))
+        assert FOTW.num_classes == 3
+
+
+def test_burn_scars_no_data_is_ignored() -> None:
+    mask = torch.tensor([[0, 1, 2], [2, 1, 0]])
+    result = BurnScars().canonicalize_sample({"image": torch.zeros(6, 2, 3), "mask": mask})
+    torch.testing.assert_close(result["mask"], torch.tensor([[0, 1, 255], [255, 1, 0]]))
+    assert BurnScars.num_classes == 2
+
+
+def test_treesatai_sentinel1_is_decoded_to_signed_db() -> None:
+    aerial = torch.full((4, 2, 2), 200.0)
+    stored = torch.tensor([[[65526.0, 0.0], [3.0, 32767.0]], [[65523.0, 65516.0], [55537.0, 9.0]]])
+    result = TreeSatAI().canonicalize_sample({"image_aerial": aerial, "image_s1": stored})
+    # -9999 marks no data and takes the mean of the channel's other pixels.
+    expected = torch.tensor([[[-10.0, 0.0], [3.0, 32767.0]], [[-13.0, -20.0], [-8.0, 9.0]]])
+    torch.testing.assert_close(result["image_s1"], expected)
+    assert result["image_aerial"] is aerial
+    units = {band.name: band.unit for band in TreeSatAI.bands if band.sensor == "s1"}
+    assert units == {"vv": "db", "vh": "db", "vv_vh": None}
+
+
+def test_pastis_sentinel1_declares_db() -> None:
+    units = {band.name: band.unit for band in PASTIS.bands if band.sensor != "s2"}
+    # The VV/VH channels hold VV - VH in dB, the polarisation ratio on the dB scale.
+    names = ["vv_asc", "vh_asc", "vv_vh_asc", "vv_desc", "vh_desc", "vv_vh_desc"]
+    assert units == dict.fromkeys(names, "db")
 
 
 @pytest.mark.parametrize("dataset_cls", [SpaceNet2, SpaceNet7])

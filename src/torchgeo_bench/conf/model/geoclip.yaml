@@ -1,5 +1,0 @@
-name: geoclip
-target: torchgeo_bench.coordbench.models.GeoCLIPLocationEncoder
-track: coord
-kwargs:
-  repo: MVRL/geoclip-location-encoder

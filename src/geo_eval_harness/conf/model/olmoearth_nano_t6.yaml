@@ -1,0 +1,11 @@
+name: olmoearth_v1_nano_t6
+target: geo_eval_harness.models.OlmoEarthBenchModel
+kwargs:
+  model_size: nano
+  patch_size: 8
+  input_res: null
+  time_steps: 6
+  std_multiplier: 2.0
+  normalize: false
+input:
+  image_size: null

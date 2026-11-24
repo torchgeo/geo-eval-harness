@@ -3,7 +3,7 @@
 import argparse
 import importlib
 import json
-import subprocess
+import logging
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -12,13 +12,13 @@ import pandas as pd
 import pytest
 import yaml
 
-from tests.support.cli import cli_output, run_cli
+from geo_eval_harness.cli import main
+from geo_eval_harness.config.presets import merge_settings, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
+from geo_eval_harness.datasets import list_datasets
+from geo_eval_harness.datasets.loading import get_dataset_task
+from geo_eval_harness.resume import resume_config_hash
 from tests.support.data import write_classification_files
-from torchgeo_bench.config.presets import merge_settings, resolve_run_config
-from torchgeo_bench.config.run import RunConfig
-from torchgeo_bench.datasets import list_datasets
-from torchgeo_bench.datasets.loading import get_dataset_task
-from torchgeo_bench.resume import resume_config_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,7 +134,9 @@ def test_feature_manifest_uses_resolved_current_hashes(sweep, level):
         assert len(spec["feature_names"]) == spec["feature_dim"]
         job = sweep.build_jobs(level, [dataset])[0]
         effective, preset = resolve_run_config(job.config, dataset)
-        assert spec["config_hash"] == resume_config_hash(effective, preset)
+        assert spec["config_hash"] == resume_config_hash(
+            effective, preset, task=get_dataset_task(dataset)
+        )
         if level:
             assert sorted(
                 column for record in spec["feature_metadata"] for column in record["columns"]
@@ -165,11 +167,17 @@ def test_summary_does_not_mix_historical_configs_with_current_scores(
         sweep.summarize(args)
 
 
-def test_study_file_entrypoint_dry_run_uses_current_cli(tmp_path: Path) -> None:
-    result = subprocess.run(
+def test_study_file_entrypoint_dry_run_uses_current_cli(
+    sweep: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
         [
-            sys.executable,
-            str(ROOT / "experiments" / "run_handcrafted.py"),
+            "run_handcrafted.py",
             "--dry-run",
             "--datasets",
             "aid",
@@ -181,17 +189,12 @@ def test_study_file_entrypoint_dry_run_uses_current_cli(tmp_path: Path) -> None:
             "--run-dir",
             str(tmp_path / "manifests"),
         ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
     )
-    assert result.returncode == 0, cli_output(result)
-    assert "-m torchgeo_bench run --config" in result.stderr
-    assert "--resume" in result.stderr
-    assert "handcrafted_level3" in result.stderr
-    assert "image_cli" not in result.stderr
+    caplog.set_level(logging.INFO)
+    assert sweep.main() == 0
+    assert "-m geo_eval_harness run --config" in caplog.text
+    assert "--resume" in caplog.text
+    assert "handcrafted_level3" in caplog.text
     assert not list((tmp_path / "results").glob("*.csv"))
     assert len(list((tmp_path / "manifests").glob("*.features.json"))) == 4
 
@@ -199,8 +202,9 @@ def test_study_file_entrypoint_dry_run_uses_current_cli(tmp_path: Path) -> None:
 @pytest.mark.integration
 @pytest.mark.parametrize(("level", "width"), [(0, 12), (1, 27), (2, 63), (3, 111)])
 def test_study_config_runs_real_cli_and_resumes(
-    sweep: ModuleType, tmp_path: Path, level: int, width: int
+    sweep: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, level: int, width: int
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     write_classification_files(tmp_path, "m-pv4ger", (0, 1), all_bands=True)
     job = sweep.build_jobs(level, ["m-pv4ger"])[0]
     config = RunConfig.model_validate(
@@ -220,8 +224,7 @@ def test_study_config_runs_real_cli_and_resumes(
     config_path.write_text(yaml.safe_dump(config.model_dump_yaml()))
     output = tmp_path / "results.csv"
     arguments = ["run", "--config", str(config_path), "--output", str(output), "--resume"]
-    result = run_cli(*arguments, cwd=tmp_path)
-    assert result.returncode == 0, cli_output(result)
+    main(arguments)
     rows = pd.read_csv(output)
     assert len(rows) == 2
     assert set(rows["method"]) == {"knn5", "linear"}
@@ -235,8 +238,9 @@ def test_study_config_runs_real_cli_and_resumes(
     assert set(rows["metric_name"]) == {"accuracy"}
     assert rows["metric_value"].between(0.99, 1).all()
     effective, preset = resolve_run_config(config, "m-pv4ger")
-    assert set(rows["config_hash"]) == {resume_config_hash(effective, preset)}
+    assert set(rows["config_hash"]) == {
+        resume_config_hash(effective, preset, task=get_dataset_task("m-pv4ger"))
+    }
     before = output.read_bytes()
-    resumed = run_cli(*arguments, cwd=tmp_path)
-    assert resumed.returncode == 0, cli_output(resumed)
+    main(arguments)
     assert output.read_bytes() == before

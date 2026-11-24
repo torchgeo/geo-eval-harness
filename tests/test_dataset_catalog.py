@@ -1,5 +1,6 @@
 """Regression tests for the shared, lightweight dataset catalog."""
 
+import json
 import os
 import subprocess
 import sys
@@ -10,8 +11,8 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import pytest
 import yaml
 
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets import (
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets import (
     BandSpec,
     BenchDataset,
     get_bench_dataset_class,
@@ -19,6 +20,7 @@ from torchgeo_bench.datasets import (
     list_datasets,
     loading,
 )
+from geo_eval_harness.datasets.geobench_v2 import _V2_REGISTRY
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,7 +54,7 @@ def registered_dataset(
         ) -> "Dataset":
             raise AssertionError("Catalogs and dry runs must not load samples")
 
-    module = ModuleType("torchgeo_bench.datasets._catalog_test")
+    module = ModuleType("geo_eval_harness.datasets._catalog_test")
     module.TinyDataset = TinyDataset
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setitem(
@@ -106,15 +108,50 @@ def test_dry_run_accepts_registered_dataset(
     assert yaml.safe_load(capsys.readouterr().out)["datasets"] == [registered_dataset.name]
 
 
-@pytest.mark.parametrize("name", list_datasets())
-def test_catalog_task_matches_registered_wrapper(
-    name: str, capsys: pytest.CaptureFixture[str]
-) -> None:
-    main(["datasets", name])
-    assert yaml.safe_load(capsys.readouterr().out) == {
-        "name": name,
-        "task": get_bench_dataset_class(name).task,
-    }
+def test_catalog_task_matches_registered_wrapper(capsys: pytest.CaptureFixture[str]) -> None:
+    mismatches = {}
+    for name in list_datasets():
+        main(["datasets", name])
+        shown = yaml.safe_load(capsys.readouterr().out)
+        if shown != {"name": name, "task": get_bench_dataset_class(name).task}:
+            mismatches[name] = shown
+    assert not mismatches
+
+
+_CLASSIFICATION = [name for name in list_datasets() if get_dataset_task(name) == "classification"]
+
+
+@pytest.mark.parametrize("name", _CLASSIFICATION)
+def test_classification_class_names_match_num_classes(name: str) -> None:
+    cls = get_bench_dataset_class(name)
+    assert len(cls.class_names) == cls.num_classes
+    assert len(set(cls.class_names)) == cls.num_classes
+
+
+@pytest.mark.parametrize("name", sorted(set(_CLASSIFICATION) & set(_V2_REGISTRY)))
+def test_v2_class_names_follow_upstream_label_order(name: str) -> None:
+    import geobench_v2.datasets
+
+    upstream = getattr(geobench_v2.datasets, _V2_REGISTRY[name])
+    assert get_bench_dataset_class(name).class_names == tuple(upstream.classes)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("name", ["aid", "eurosat", "resisc45", "ucmerced"])
+def test_folder_class_names_follow_loaded_label_order(name: str) -> None:
+    bench = get_bench_dataset_class(name)
+    if not bench.data_root().exists():
+        pytest.skip(f"{name} data not found at {bench.data_root()}")
+    assert bench.class_names == tuple(bench().get_dataset("test").classes)
+
+
+def test_m_eurosat_band_labels_match_raw_eurosat_statistics() -> None:
+    """GeoBench's shifted HDF5 keys must map to the bands their pixel statistics show."""
+    subset = get_bench_dataset_class("m-eurosat").bands
+    raw = get_bench_dataset_class("eurosat").bands
+    assert [(b.name, b.wavelength_um) for b in subset] == [(b.name, b.wavelength_um) for b in raw]
+    for subset_band, raw_band in zip(subset, raw, strict=True):
+        assert subset_band.mean == pytest.approx(raw_band.mean, rel=0.1), subset_band.name
 
 
 def test_unknown_dataset_task_raises() -> None:
@@ -122,40 +159,52 @@ def test_unknown_dataset_task_raises() -> None:
         get_dataset_task("unregistered-dataset")
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
+def test_public_export_matches_registry() -> None:
+    from geo_eval_harness import datasets
+
+    classes = [get_bench_dataset_class(name) for name in list_datasets()]
+    assert not {cls.__name__ for cls in classes} - set(datasets.__all__)
+    assert not [cls.__name__ for cls in classes if getattr(datasets, cls.__name__) is not cls]
+
+
+def test_catalog_queries_do_not_import_wrappers_or_ml() -> None:
+    queries = [
         ["--help"],
         ["run", "--help"],
         ["datasets"],
         ["datasets", "m-eurosat"],
         ["datasets", "burn_scars"],
+        ["datasets", "openearthmap-sar"],
+        ["datasets", "open_cities"],
         ["datasets", "catalog-test"],
         ["models"],
         ["models", "rcf"],
         ["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", "cpu", "--dry-run"],
         ["run", "--model", "rcf", "--dataset", "catalog-test", "--device", "cpu", "--dry-run"],
-    ],
-)
-def test_catalog_queries_do_not_import_wrappers_or_ml(arguments: list[str]) -> None:
+        ["run", "--model", "rcf", "--dataset", "openearthmap-sar", "--dry-run"],
+        ["run", "--model", "rcf", "--dataset", "open_cities", "--dry-run"],
+    ]
     code = """
+import json
 import sys
-from torchgeo_bench.cli import main
-from torchgeo_bench.datasets.loading import _REGISTRY_SPEC
+from geo_eval_harness.cli import main
+from geo_eval_harness.datasets.loading import _REGISTRY_SPEC
 _REGISTRY_SPEC['catalog-test'] = ('_unimportable', 'TinyDataset', 'segmentation')
-try:
-    main(sys.argv[1:])
-except SystemExit as error:  # allow-except: argparse help exits successfully
-    assert error.code == 0
-assert not {'torch', 'torchgeo', 'timm', 'numpy', 'pandas', 'geobench_v2'} & sys.modules.keys()
-assert not any(name.startswith('torchgeo_bench.models') for name in sys.modules)
-assert not any(
-    f'torchgeo_bench.datasets.{spec[0]}' in sys.modules
-    for spec in _REGISTRY_SPEC.values()
-)
+for arguments in json.loads(sys.argv[1]):
+    print('query:', arguments, file=sys.stderr, flush=True)
+    try:
+        main(arguments)
+    except SystemExit as error:  # allow-except: argparse help exits successfully
+        assert error.code == 0
+    assert not {'torch', 'torchgeo', 'timm', 'numpy', 'pandas', 'geobench_v2'} & sys.modules.keys()
+    assert not any(name.startswith('geo_eval_harness.models') for name in sys.modules)
+    assert not any(
+        f'geo_eval_harness.datasets.{spec[0]}' in sys.modules
+        for spec in _REGISTRY_SPEC.values()
+    )
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, *arguments],
+        [sys.executable, "-c", code, json.dumps(queries)],
         env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src")},
         capture_output=True,
         text=True,

@@ -58,3 +58,14 @@ def test_statistics_reject_inconsistent_channel_metadata(two_band_dataset: Magic
     two_band_dataset.bands.append(SimpleNamespace(name="missing"))
     with pytest.raises(ValueError, match=r"2 channels.*3 BandSpec"):
         statistics.compute_statistics("toy", batch_size=2, num_workers=0)
+
+
+def test_statistics_skip_pixels_at_ignore_index(two_band_dataset: MagicMock) -> None:
+    samples = two_band_dataset.get_dataset.return_value
+    for sample in samples:
+        sample["mask"] = torch.tensor([[0, 255]])
+    result = statistics.compute_statistics("toy", batch_size=2, num_workers=0, ignore_index=255)
+    # Only the first pixel of each sample is kept: -0.5, 1.5, 3.5.
+    assert result[0]["mean"] == pytest.approx(1.5)
+    assert result[0]["std"] == pytest.approx(sqrt(8 / 3))
+    assert (result[0]["min"], result[0]["max"]) == (-0.5, 3.5)

@@ -1,0 +1,16 @@
+name: tt_clay_v1_5_large
+target: geo_eval_harness.models.TerraTorchClayBench
+kwargs:
+  backbone_name: clay_v1_5_large
+  pretrained: true
+  target_size: null
+  modality: sentinel-2-l2a
+input:
+  image_size: 256
+segmentation:
+  lora_target_modules: 'clay_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[13])'
+  layers:
+    - clay_encoder.transformer.layers.23.1
+    - clay_encoder.transformer.layers.17.1
+    - clay_encoder.transformer.layers.11.1
+    - clay_encoder.transformer.layers.5.1
