@@ -1386,3 +1386,24 @@ def test_s1_rejects_missing_bands_or_undeclared_unit_for_model_native(
     )
     images = torch.tensor([1.0, 2.0]).view(1, 2, 1, 1)
     assert model.normalize_inputs(images).flatten().tolist() == [2.0, 1.0]
+
+
+_NEW_TORCHGEO_SSL_PRESETS = [
+    "torchgeo/resnet50_s2_all_decur",
+    "torchgeo/resnet50_s1_all_decur",
+]
+
+
+@pytest.mark.parametrize("preset_name", _NEW_TORCHGEO_SSL_PRESETS)
+def test_new_torchgeo_ssl_presets_resolve_factory_and_weights(preset_name: str) -> None:
+    from geo_eval_harness.config.presets import load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    preset = load_model_preset(ModelConfig(name=preset_name), seed=0)
+    assert preset.input.bands == "all"
+    assert preset.segmentation.layers
+    assert callable(_resolve_torchgeo_factory(preset.kwargs["factory"]))
+    weights = _resolve_torchgeo_weights(
+        preset.kwargs["weights_class"], preset.kwargs["weights_member"]
+    )
+    assert weights.meta["in_chans"] in (2, 9, 12, 13)

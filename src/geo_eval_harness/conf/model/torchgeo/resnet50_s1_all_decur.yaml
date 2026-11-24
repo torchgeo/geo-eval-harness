@@ -1,0 +1,16 @@
+name: tgeo_resnet50_s1all_decur
+target: geo_eval_harness.models.TorchGeoResNetBench
+kwargs:
+  factory: resnet50
+  weights_class: ResNet50_Weights
+  weights_member: SENTINEL1_ALL_DECUR
+  auto_resize: false
+  target_size: 224
+input:
+  bands: all
+segmentation:
+  layers:
+    - layer4
+    - layer3
+    - layer2
+    - layer1
