@@ -58,6 +58,10 @@ class EpochMetricsWriter:
             },
         )
 
+    def selected_regression(self, best_epoch: int | None, best_val_rmse: float | None) -> None:
+        """Append the regression checkpoint restored for test evaluation."""
+        self._write("selected", {"best_epoch": best_epoch, "best_val_rmse": best_val_rmse})
+
     def _write(self, event: str, payload: Mapping[str, object]) -> None:
         """Append one line and flush it immediately."""
         line = {

@@ -48,6 +48,7 @@ from geo_eval_harness.results import (
     append_rows_atomic,
     bootstrap_accuracy,
     bootstrap_map,
+    bootstrap_mean,
     bootstrap_miou,
     format_setup_value,
     model_results_path,
@@ -72,7 +73,8 @@ from geo_eval_harness.utils import (
 
 if TYPE_CHECKING:
     from geo_eval_harness.epoch_metrics import EpochMetricsWriter
-    from geo_eval_harness.segmentation_task import EpochRecord, SegMetrics
+    from geo_eval_harness.segmentation_probe import SegmentationProbe
+    from geo_eval_harness.segmentation_task import DenseSolver, EpochRecord, SegMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +125,17 @@ class SegmentationOutcome(NamedTuple):
     best_epoch: int | None
     best_val_miou: float | None
     weight_decay: float | None = None
+
+
+class RegressionOutcome(NamedTuple):
+    """Regression test metrics and the validation checkpoint selected for evaluation."""
+
+    metrics: "SegMetrics"
+    feature_dim: int
+    lr: float
+    batch_size: int
+    best_epoch: int | None
+    best_val_rmse: float | None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -636,58 +649,20 @@ def evaluate_segmentation(
     Returns:
         Test metrics with the feature dimension, learning rate, batch size, and selected epoch.
     """
-    train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
-    if val_loader is None or len(val_loader) == 0:
-        raise ValueError("Segmentation benchmarks require a non-empty validation loader.")
+    if loaders.val is None or len(loaders.val) == 0:
+        raise ValueError("Dense benchmarks require a non-empty validation loader.")
     device = torch.device(cfg.runtime.device)
-    seed, verbose = cfg.runtime.seed, cfg.runtime.verbose
+    seed = cfg.runtime.seed
     from geo_eval_harness.segmentation_task import (
         SweepSegmentationSolver,
         build_seg_probe_and_solver,
     )
 
     seg_cfg = cfg.segmentation
-    epochs, probe_batch_size, lr = seg_cfg.epochs, seg_cfg.batch_size, seg_cfg.learning_rate
-    use_cache = seg_cfg.uses_feature_cache
-    cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
+    lr = seg_cfg.learning_rate
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
-    collect_confusions = cfg.classification.bootstrap_samples > 0
-    if use_cache:
-        logger.info("Caching backbone features for train and val splits...")
-        train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
-        val_cache = probe.extract_segmentation_features(val_loader, cache_dtype=cache_dtype)
-        test_cache = probe.extract_segmentation_features(test_loader, cache_dtype=cache_dtype)
-        if seg_cfg.feature_standardize:
-            probe.fit_standardizer(train_cache)
-        solver.fit_cached(
-            train_cache=train_cache,
-            val_cache=val_cache,
-            batch_size=probe_batch_size,
-            epochs=epochs,
-            verbose=verbose,
-            on_epoch=on_epoch,
-        )
-        eval_result = solver.evaluate_cached(
-            test_cache,
-            batch_size=probe_batch_size,
-            collect_confusions=collect_confusions,
-        )
-    else:
-        if seg_cfg.feature_standardize:
-            probe.fit_standardizer(train_loader)
-        solver.fit(
-            train_loader=train_loader,
-            val_loader=val_loader,
-            epochs=epochs,
-            verbose=verbose,
-            on_epoch=on_epoch,
-        )
-        eval_result = solver.evaluate(
-            test_loader,
-            collect_confusions=collect_confusions,
-        )
-    actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
+    eval_result, actual_batch_size = fit_dense_probe(probe, solver, loaders, cfg, on_epoch=on_epoch)
 
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result
@@ -707,7 +682,7 @@ def evaluate_segmentation(
         lr=lr,
         batch_size=actual_batch_size,
         best_epoch=solver.best_epoch,
-        best_val_miou=solver.best_val_miou,
+        best_val_miou=solver.best_score,
         weight_decay=weight_decay,
     )
 
@@ -782,8 +757,167 @@ def run_segmentation(
     yield [row]
 
 
+def fit_dense_probe(
+    probe: "SegmentationProbe",
+    solver: "DenseSolver",
+    loaders: LoaderSplits,
+    cfg: RunConfig,
+    *,
+    on_epoch: "Callable[[EpochRecord], None] | None" = None,
+) -> tuple["SegMetrics | tuple[SegMetrics, torch.Tensor]", int]:
+    """Train and evaluate either dense task through the same cache and batch paths."""
+    train_loader, val_loader, test_loader = loaders.train, loaders.val, loaders.test
+    seg_cfg = cfg.segmentation
+    epochs, probe_batch_size = seg_cfg.epochs, seg_cfg.batch_size
+    verbose = cfg.runtime.verbose
+    use_cache = seg_cfg.uses_feature_cache
+    cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
+    collect_confusions = cfg.classification.bootstrap_samples > 0
+    if use_cache:
+        logger.info("Caching backbone features for train and val splits...")
+        cache_options = {"cache_dtype": cache_dtype}
+        if solver.target_dtype != torch.long:
+            cache_options["target_dtype"] = solver.target_dtype
+        train_cache, val_cache, test_cache = (
+            probe.extract_segmentation_features(loader, **cache_options)
+            for loader in (train_loader, val_loader, test_loader)
+        )
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_cache)
+        solver.fit_cached(
+            train_cache=train_cache,
+            val_cache=val_cache,
+            batch_size=probe_batch_size,
+            epochs=epochs,
+            verbose=verbose,
+            on_epoch=on_epoch,
+        )
+        eval_result = solver.evaluate_cached(
+            test_cache,
+            batch_size=probe_batch_size,
+            collect_confusions=collect_confusions,
+        )
+    else:
+        if seg_cfg.feature_standardize:
+            probe.fit_standardizer(train_loader)
+        solver.fit(
+            train_loader=train_loader,
+            val_loader=val_loader,
+            epochs=epochs,
+            verbose=verbose,
+            on_epoch=on_epoch,
+        )
+        eval_result = solver.evaluate(
+            test_loader,
+            collect_confusions=collect_confusions,
+        )
+    actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
+
+    return eval_result, actual_batch_size
+
+
+def evaluate_pixelwise_regression(
+    model: torch.nn.Module,
+    loaders: LoaderSplits,
+    cfg: RunConfig,
+    target_scale: float,
+    *,
+    on_epoch: "Callable[[EpochRecord], None] | None" = None,
+) -> RegressionOutcome:
+    """Select the lowest validation RMSE epoch and evaluate in physical units."""
+    from geo_eval_harness.pixelwise_regression_task import (
+        build_pixelwise_regression_probe_and_solver,
+    )
+
+    if loaders.val is None or len(loaders.val) == 0:
+        raise ValueError("Dense benchmarks require a non-empty validation loader.")
+    probe, solver = build_pixelwise_regression_probe_and_solver(
+        model, cfg.segmentation, torch.device(cfg.runtime.device), target_scale
+    )
+    result, batch_size = fit_dense_probe(probe, solver, loaders, cfg, on_epoch=on_epoch)
+    if isinstance(result, tuple):
+        metrics, scores = result
+        metrics["ci_lower"], metrics["ci_upper"] = bootstrap_mean(
+            scores, n_boot=cfg.classification.bootstrap_samples, seed=cfg.runtime.seed
+        )
+    else:
+        metrics = result
+    return RegressionOutcome(
+        metrics,
+        sum(probe.channels_list),
+        cfg.segmentation.learning_rate,
+        batch_size,
+        solver.best_epoch,
+        solver.best_score,
+    )
+
+
+def run_pixelwise_regression(
+    cfg: RunConfig,
+    model: BenchModel,
+    loaders: LoaderSplits,
+    common_meta: ResultMetadata,
+    target_scale: float,
+) -> Iterator[list[dict]]:
+    """Yield the completed pixelwise regression measurement."""
+    train_dataset, val_dataset, test_dataset = (
+        loaders.train.dataset,
+        loaders.val.dataset,
+        loaders.test.dataset,
+    )
+    assert isinstance(train_dataset, Sized)
+    assert isinstance(val_dataset, Sized)
+    assert isinstance(test_dataset, Sized)
+    writer = _epoch_metrics_writer(cfg, common_meta, method=f"reg-{cfg.segmentation.head}")
+    outcome = evaluate_pixelwise_regression(
+        model, loaders, cfg, target_scale, on_epoch=None if writer is None else writer.epoch
+    )
+    if writer is not None:
+        writer.selected_regression(outcome.best_epoch, outcome.best_val_rmse)
+    metrics = outcome.metrics
+    regression_meta: ResultMetadata = {
+        **common_meta,
+        "merge_val": False,
+        "feature_dim": outcome.feature_dim,
+        "n_train": len(train_dataset),
+        "n_val": len(val_dataset),
+        "n_test": len(test_dataset),
+    }
+    row = EvaluationResult(
+        **regression_meta,
+        method=f"reg-{cfg.segmentation.head}",
+        metric_name="RMSE",
+        metric_value=metrics["RMSE"],
+        ci_lower=metrics.get("ci_lower", float("nan")),
+        ci_upper=metrics.get("ci_upper", float("nan")),
+        best_lr=outcome.lr,
+        best_batch_size=outcome.batch_size,
+        best_val_epoch=format_setup_value(outcome.best_epoch),
+        selection_metric="val_RMSE",
+    ).to_row()
+    yield [row]
+
+
+def run_dense_task(  # noqa: PLR0913 - task dispatch preserves explicit inputs.
+    task: str,
+    cfg: RunConfig,
+    model: BenchModel,
+    loaders: LoaderSplits,
+    common_meta: ResultMetadata,
+    target_scale: float,
+) -> Iterator[list[dict]]:
+    """Dispatch a dense prediction task to its task-specific solver."""
+    if task == "segmentation":
+        yield from run_segmentation(cfg, model, loaders, common_meta)
+        return
+    if task == "pixelwise_regression":
+        yield from run_pixelwise_regression(cfg, model, loaders, common_meta, target_scale)
+        return
+    raise ValueError(f"Unsupported dense task {task!r}.")
+
+
 def _epoch_metrics_writer(
-    cfg: RunConfig, common_meta: ResultMetadata
+    cfg: RunConfig, common_meta: ResultMetadata, *, method: str | None = None
 ) -> "EpochMetricsWriter | None":
     """Return a per-epoch JSON Lines writer when ``output.epoch_metrics`` is set."""
     if cfg.output.epoch_metrics is None:
@@ -792,7 +926,7 @@ def _epoch_metrics_writer(
 
     identity_keys = ("dataset", "name", "bands", "partition", "image_size", "seed", "config_hash")
     identity = {key: common_meta[key] for key in identity_keys}
-    identity["method"] = cfg.segmentation.method
+    identity["method"] = method or cfg.segmentation.method
     return EpochMetricsWriter(Path(cfg.output.epoch_metrics), identity)
 
 
@@ -1034,7 +1168,7 @@ def run_dataset(
         cfg = cfg.model_copy(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
-    if ds_cls.task != "segmentation" and not plan.skip_knn:
+    if ds_cls.task == "classification" and not plan.skip_knn:
         from geo_eval_harness.knn import resolve_knn_device
 
         plan = replace(
@@ -1059,9 +1193,12 @@ def run_dataset(
     )
     common_meta["normalization"] = model.effective_normalization
     loaders = LoaderSplits(train_loader, val_loader, test_loader)
-    if ds_cls.task == "segmentation":
-        loaders = _cache_segmentation_loaders(cfg, ds_name, loaders)
-        for rows in run_segmentation(cfg, model, loaders, common_meta):
+    if ds_cls.task != "classification":
+        if ds_cls.task == "segmentation":
+            loaders = _cache_segmentation_loaders(cfg, ds_name, loaders)
+        for rows in run_dense_task(
+            ds_cls.task, cfg, model, loaders, common_meta, bench.target_scale
+        ):
             yield rows, [], []
         return
     for rows, id_rows, profile_rows in run_classification(

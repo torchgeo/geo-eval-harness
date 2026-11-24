@@ -19,6 +19,7 @@ V2_ROOT = Path("data/geobenchv2")
 
 _V2_REGISTRY: dict[str, str] = {
     "benv2": "GeoBenchBENV2",
+    "biomassters": "GeoBenchBioMassters",
     "burn_scars": "GeoBenchBurnScars",
     "caffe": "GeoBenchCaFFe",
     "cloudsen12": "GeoBenchCloudSen12",
@@ -37,6 +38,7 @@ _V2_REGISTRY: dict[str, str] = {
 # Pinned ``aialliance/<name>`` commits; archive digests are in checksums/geobench_v2.sha256.
 V2_REVISIONS: dict[str, str] = {
     "benv2": "20ac91314d2959d585faef744e07a2beb219759d",
+    "biomassters": "5ae1d147b53c71eb9b7f7ab1796a084866493e44",
     "burn_scars": "a31f44bd17e4889c33777576068a14461c9e436a",
     "caffe": "9c8b0e8886cbb9a91c4ef90d8676df9462d9afbd",
     "cloudsen12": "7b72e755b787231c2263ad70c9d04eba38bdbb93",

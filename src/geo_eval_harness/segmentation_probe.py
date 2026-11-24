@@ -147,6 +147,7 @@ class GPUTensorCache:
         device: torch.device | str,
         *,
         amp: bool = True,
+        target_dtype: torch.dtype = torch.long,
     ) -> "GPUTensorCache":
         """Place cached features on ``device``, using CPU if CUDA memory is insufficient.
 
@@ -154,6 +155,7 @@ class GPUTensorCache:
             cache: CPU-resident cached features.
             device: Target device.
             amp: Store float16 features on CUDA for mixed precision; ``False`` keeps float32.
+            target_dtype: Storage dtype for dense targets.
 
         Returns:
             A cache on the selected storage device, with dtype determined by ``device`` and ``amp``.
@@ -165,7 +167,7 @@ class GPUTensorCache:
                 sum(t.numel() for t in cache.layer_tensors)
                 * torch.empty((), dtype=dtype).element_size()
             )
-            needed += cache.masks.numel() * torch.empty((), dtype=torch.long).element_size()
+            needed += cache.masks.numel() * torch.empty((), dtype=target_dtype).element_size()
             free, _ = torch.cuda.mem_get_info(target_device)
             free += torch.cuda.memory_reserved(target_device) - torch.cuda.memory_allocated(
                 target_device
@@ -174,7 +176,7 @@ class GPUTensorCache:
                 logger.info("Keeping %.1f GiB of cached features in host memory", needed / 2**30)
                 target_device = torch.device("cpu")
         layer_tensors = [t.to(target_device, dtype=dtype) for t in cache.layer_tensors]
-        masks = cache.masks.to(target_device, dtype=torch.long)
+        masks = cache.masks.to(target_device, dtype=target_dtype)
         return cls(layer_tensors, masks, target_device)
 
     def shuffled_batches(
@@ -635,6 +637,7 @@ class SegmentationProbe(nn.Module):
         self,
         dataloader: "torch.utils.data.DataLoader",
         cache_dtype: torch.dtype = torch.float16,
+        target_dtype: torch.dtype = torch.long,
     ) -> "CachedFeaturesDataset":
         """Run the frozen backbone once over *dataloader* and cache features.
 
@@ -643,6 +646,7 @@ class SegmentationProbe(nn.Module):
             cache_dtype: Storage dtype for cached feature tensors. Use
                 ``torch.float16`` (default) to halve RAM, or ``torch.float32``
                 for full precision.
+            target_dtype: Storage dtype for dense targets.
 
         Returns:
             A :class:`CachedFeaturesDataset` with one entry per sample, pooling
@@ -670,7 +674,7 @@ class SegmentationProbe(nn.Module):
 
                 if masks.ndim == 4:
                     masks = masks.squeeze(1)
-                masks = masks.long()
+                masks = masks.to(dtype=target_dtype)
                 self._features.clear()
                 _ = forward_model_batch(
                     self.backbone,

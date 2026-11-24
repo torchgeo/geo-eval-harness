@@ -263,6 +263,7 @@ def _single_sensor_selections() -> list[tuple[str, list[str]]]:
 #: Band sets SMARTIES can project but without pretraining statistics for ``model`` normalization
 #: (aerial NIR, SAR without a declared unit). Their datasets keep ``model`` for the main bands.
 _DATASET_NORMALIZATION_ONLY = {
+    ("biomassters", "vv_asc,vh_asc,vv_desc,vh_desc"),
     ("flair2", "red,green,blue,nir"),
     ("treesatai", "nir,green,blue,red"),
     ("so2sat", "vh,vv"),

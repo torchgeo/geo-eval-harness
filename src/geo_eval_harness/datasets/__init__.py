@@ -38,6 +38,7 @@ __all__ = [
     "BRIGHTPostSARRGB",
     "BandSpec",
     "BenchDataset",
+    "BioMassters",
     "BurnScars",
     "CaFFe",
     "CloudSEN12",

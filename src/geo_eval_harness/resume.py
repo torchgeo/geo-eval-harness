@@ -60,9 +60,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     ``gradient_checkpointing`` and the probe sweep count only when set, ``amp`` only when not
     ``fp16``, ``runtime.matmul_precision`` only when not ``highest``, and ``neck_norm`` only when
     a neck uses it, so a run that leaves them unset matches rows stored without them.
-    ``task`` comes from the resolved dataset class. Only segmentation hashes cover the
-    ``segmentation`` section and the best-validation model-selection protocol, so segmentation
-    settings such as a preset's ``segmentation.layers`` never change the hash of classification,
+    ``task`` comes from the resolved dataset class. Dense-task hashes cover the
+    ``segmentation`` section; segmentation also covers its best-validation protocol. These
+    settings never change the hash of classification,
     profile, or intrinsic-dimension rows. Segmentation hashes also cover ``classification``.
     """
     classification_exclude = {"methods"}
@@ -91,6 +91,10 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         payload["segmentation"] = segmentation.model_dump(
             mode="json", exclude=_unset_segmentation_fields(segmentation)
         ) | {"selection_protocol": "best-validation-miou"}
+    if task == "pixelwise_regression":
+        payload["segmentation"] = config.segmentation.model_dump(mode="json") | {
+            "selection_protocol": "best-validation-rmse"
+        }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 
@@ -262,6 +266,17 @@ def plan_dataset_run(
         return DatasetRunPlan(
             metric_name="mIoU",
             skip_dataset=bool(cfg.output.resume and seg_key in completed_runs),
+            skip_knn=True,
+            skip_linear=True,
+            skip_id=True,
+            skip_profile=True,
+        )
+
+    if ds_cls.task == "pixelwise_regression":
+        regression_key = (ds_name, f"reg-{cfg.segmentation.head}", *model_key)
+        return DatasetRunPlan(
+            metric_name="RMSE",
+            skip_dataset=bool(cfg.output.resume and regression_key in completed_runs),
             skip_knn=True,
             skip_linear=True,
             skip_id=True,

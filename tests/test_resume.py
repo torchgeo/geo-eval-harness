@@ -153,6 +153,7 @@ def test_segmentation_settings_change_only_segmentation_hashes(segmentation: dic
     changed = _cfg(segmentation=segmentation)
     assert _hash(changed) == _hash(_cfg())
     assert _seg_hash(changed) != _seg_hash(_cfg())
+    assert _hash(changed, "biomassters") != _hash(_cfg(), "biomassters")
 
 
 def test_lora_settings_change_the_hash_only_when_lora_is_enabled() -> None:
