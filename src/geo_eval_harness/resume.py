@@ -92,7 +92,9 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
             mode="json", exclude=_unset_segmentation_fields(segmentation)
         ) | {"selection_protocol": "best-validation-miou"}
     if task == "pixelwise_regression":
-        payload["segmentation"] = config.segmentation.model_dump(mode="json")
+        payload["segmentation"] = config.segmentation.model_dump(mode="json") | {
+            "selection_protocol": "best-validation-rmse"
+        }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 

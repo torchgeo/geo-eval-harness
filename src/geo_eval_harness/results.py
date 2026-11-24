@@ -426,7 +426,7 @@ class EvaluationResult:
     f1: float | None = None
     boundary_iou: float | None = None
     boundary_iou_width: int | None = None
-    # Segmentation epoch restored for test evaluation and its validation mIoU, as
+    # Dense-task epoch restored for test evaluation and its validation score, as
     # format_setup_value text (an int column would turn into floats beside empty cells).
     best_val_epoch: str | None = None
     best_val_miou: str | None = None

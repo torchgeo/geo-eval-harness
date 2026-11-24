@@ -119,7 +119,7 @@ def test_cached_segmentation_records_probe_batch_size(tmp_path: Path):
     probe, solver = _mock_probe_and_solver()
     cache = mock.Mock()
     probe.extract_segmentation_features.return_value = cache
-    solver.best_epoch, solver.best_val_miou = 4, 0.5
+    solver.best_epoch, solver.best_score = 4, 0.5
     solver.evaluate_cached.return_value = (
         {
             "mIoU": 0.42,

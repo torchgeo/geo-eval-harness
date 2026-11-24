@@ -1,5 +1,6 @@
 """Offline tests for the pixelwise regression runner."""
 
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -47,13 +48,14 @@ def _config(output: Path, overrides: dict | None = None) -> RunConfig:
 
 def test_cached_regression_records_physical_rmse(tmp_path: Path) -> None:
     output = tmp_path / "out.csv"
-    cfg = _config(output)
+    epoch_path = tmp_path / "epochs.jsonl"
+    cfg = _config(output, {"output": {"epoch_metrics": str(epoch_path)}})
     probe = mock.Mock()
     probe.channels_list = [16, 32]
     probe.freeze_backbone = True
     cache = mock.Mock()
     probe.extract_segmentation_features.return_value = cache
-    solver = mock.Mock()
+    solver = mock.Mock(target_dtype=torch.float32, best_epoch=1, best_score=25.0)
     solver.evaluate_cached.return_value = ({"RMSE": 30.0}, torch.tensor([20.0, 40.0]))
 
     with (
@@ -79,18 +81,25 @@ def test_cached_regression_records_physical_rmse(tmp_path: Path) -> None:
         batch_size=cfg.segmentation.batch_size,
         epochs=cfg.segmentation.epochs,
         verbose=cfg.runtime.verbose,
+        on_epoch=mock.ANY,
     )
     result = pd.read_csv(output).iloc[0]
     assert result["method"] == "reg-fpn"
     assert result["metric_name"] == "RMSE"
     assert result["metric_value"] == 30.0
+    selection = json.loads(epoch_path.read_text())
+    assert selection["best_val_rmse"] == 25.0
+    assert selection["best_epoch"] == 1
+    assert selection["method"] == "reg-fpn"
+    assert result["best_val_epoch"] == 1
+    assert result["selection_metric"] == "val_RMSE"
 
 
 def test_uncached_regression_trains_from_images(tmp_path: Path) -> None:
     output = tmp_path / "out.csv"
     cfg = _config(output, {"segmentation": {"cache_features": False}})
     probe = mock.Mock(channels_list=[16, 32], freeze_backbone=True)
-    solver = mock.Mock()
+    solver = mock.Mock(target_dtype=torch.float32, best_epoch=1, best_score=25.0)
     solver.evaluate.return_value = ({"RMSE": 30.0}, torch.tensor([20.0, 40.0]))
 
     with (
