@@ -59,6 +59,7 @@ Segmentation
 .. autoexception:: NonFiniteFeaturesError
 
 .. currentmodule:: geo_eval_harness.segmentation_task
+.. autoclass:: DenseSolver
 .. autoclass:: SegmentationSolver
 .. autoclass:: SweepSegmentationSolver
 .. autoclass:: SegMetrics
