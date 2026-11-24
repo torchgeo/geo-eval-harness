@@ -66,8 +66,7 @@ Select just the probe you need:
        --methods linear
 
 Use ``--knn-device cpu`` to keep KNN on CPU while extracting features on
-another device. If the installed FAISS backend lacks GPU support, the runner
-logs its KNN CPU fallback.
+another device.
 
 Use a YAML file
 ---------------

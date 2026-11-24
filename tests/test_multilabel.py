@@ -1,19 +1,14 @@
 """Tests for multi-label support and KNNClassifier."""
 
-import builtins
-import logging
-import sys
-from contextlib import nullcontext
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import torch
 from sklearn.metrics import average_precision_score
+from sklearn.neighbors import NearestNeighbors
 
 import geo_eval_harness.knn as knn
 from geo_eval_harness.config.run import RunConfig
-from geo_eval_harness.knn import KNNClassifier, resolve_knn_device
+from geo_eval_harness.knn import KNNClassifier
 from geo_eval_harness.utils import FeatureSplit, FeatureSplits
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
@@ -65,17 +60,27 @@ def singlelabel_data():
     }
 
 
+def _reference_neighbors(train: np.ndarray, queries: np.ndarray, k: int, metric: str) -> np.ndarray:
+    if metric == "l2":
+        scores = -((queries[:, None] - train[None]) ** 2).sum(axis=2)
+    else:
+        if metric == "cosine":
+            train = train / np.linalg.norm(train, axis=1, keepdims=True)
+            queries = queries / np.linalg.norm(queries, axis=1, keepdims=True)
+        scores = queries @ train.T
+    return np.argsort(-scores, axis=1)[:, :k]
+
+
 @pytest.mark.parametrize("metric", ["l2", "ip", "cosine"])
 @pytest.mark.parametrize("multi_label", [False, True])
-def test_cpu_knn_uses_l2_neighbor_votes(metric: str, *, multi_label: bool) -> None:
-    """The CPU contract is L2 even when GPU-only metric options are supplied."""
-    train = np.array([[0.0], [1.0], [3.0], [10.0]], dtype=np.float32)
-    queries = np.array([[0.2], [9.0]], dtype=np.float32)
-    labels = np.array([[1, 0], [1, 1], [0, 1], [0, 1]]) if multi_label else np.array([2, 2, 5, 5])
+def test_knn_votes_follow_metric_neighbors(metric: str, *, multi_label: bool) -> None:
+    rng = np.random.default_rng(0)
+    train = rng.standard_normal((40, 6)).astype(np.float32)
+    queries = rng.standard_normal((9, 6)).astype(np.float32)
+    labels = (rng.random((40, 4)) > 0.5).astype(np.int64) if multi_label else rng.integers(0, 5, 40)
     classifier = KNNClassifier(n_neighbors=3, metric=metric).fit(train, labels)
-    distances = ((queries[:, None] - train[None]) ** 2).sum(axis=2)
-    neighbors = np.argsort(distances, axis=1)[:, :3]
-    votes = labels[neighbors] if multi_label else np.eye(6)[labels[neighbors]]
+    neighbors = _reference_neighbors(train, queries, 3, metric)
+    votes = labels[neighbors] if multi_label else np.eye(5)[labels[neighbors]]
     probabilities = votes.mean(axis=1)
     np.testing.assert_allclose(classifier.predict_proba(queries), probabilities, rtol=1e-6)
     np.testing.assert_array_equal(
@@ -83,6 +88,25 @@ def test_cpu_knn_uses_l2_neighbor_votes(metric: str, *, multi_label: bool) -> No
         probabilities > 0.5 if multi_label else probabilities.argmax(axis=1),
     )
     assert classifier.multi_label is multi_label
+
+
+def test_chunked_search_matches_exact_neighbors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chunk boundaries and a TF32-friendly matmul setting must not change the neighbours."""
+    rng = np.random.default_rng(1)
+    train = rng.standard_normal((500, 64)).astype(np.float32)
+    queries = rng.standard_normal((53, 64)).astype(np.float32)
+    monkeypatch.setattr(knn, "_MAX_SCORE_ENTRIES", 500 * 8)  # 8 queries per chunk
+    previous = torch.get_float32_matmul_precision()
+    torch.set_float32_matmul_precision("medium")
+    try:
+        found = (
+            KNNClassifier(n_neighbors=5).fit(train, np.zeros(500, dtype=np.int64))._search(queries)
+        )
+        assert torch.get_float32_matmul_precision() == "medium"
+    finally:
+        torch.set_float32_matmul_precision(previous)
+    expected = NearestNeighbors(n_neighbors=5, algorithm="brute").fit(train).kneighbors(queries)[1]
+    np.testing.assert_array_equal(np.sort(found, axis=1), np.sort(expected, axis=1))
 
 
 class TestKNNClassifier:
@@ -95,46 +119,14 @@ class TestKNNClassifier:
         np.testing.assert_allclose(clf.predict_proba(X), np.full((3, 3), 1 / 3), rtol=1e-6)
         np.testing.assert_array_equal(clf.predict(X), np.zeros(3))
 
-    @pytest.mark.parametrize("multi_label", [False, True])
-    def test_gpu_backend_receives_clamped_k_and_options(
-        self, monkeypatch: pytest.MonkeyPatch, *, multi_label: bool
-    ) -> None:
-        """FAISS GPU uses -1 neighbor IDs when asked for k > n_train."""
-        constructed: list[object] = []
-
-        class FakeFaissKNNClassifier:
-            def __init__(self, **kwargs) -> None:
-                self.kwargs = kwargs
-                constructed.append(self)
-
-            def fit(self, X, y) -> None:
-                del X, y
-
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: True)
-        monkeypatch.setattr(knn.torch.cuda, "device", lambda _device: nullcontext())
-        monkeypatch.setitem(
-            sys.modules,
-            "faissknn",
-            SimpleNamespace(
-                FaissKNNClassifier=FakeFaissKNNClassifier,
-                FaissKNNMultilabelClassifier=FakeFaissKNNClassifier,
-            ),
-        )
-        X = np.zeros((3, 2), dtype=np.float32)
-        y = np.array([[1, 0], [0, 1], [1, 1]]) if multi_label else np.array([2, 4, 2])
-
-        KNNClassifier(n_neighbors=10, device="cuda:1", metric="cosine", use_fp16=True).fit(X, y)
-
-        assert len(constructed) == 1
-        expected = {"n_neighbors": 3, "device": "cuda:1", "metric": "cosine", "use_fp16": True}
-        if not multi_label:
-            expected["n_classes"] = 5
-        assert constructed[0].kwargs == expected
-
     @pytest.mark.parametrize("n_neighbors", [0, -1, True, 1.5])
     def test_rejects_invalid_neighbor_count(self, n_neighbors):
         with pytest.raises(ValueError, match="positive integer"):
             KNNClassifier(n_neighbors=n_neighbors)
+
+    def test_rejects_unknown_metric(self):
+        with pytest.raises(ValueError, match="metric must be one of"):
+            KNNClassifier(metric="manhattan")  # type: ignore[arg-type]
 
 
 class TestBootstrapMAP:
@@ -168,86 +160,16 @@ class TestBootstrapMAP:
 
 
 _cuda_available = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-_faissknn_available = pytest.mark.skipif(
-    not knn.gpu_faiss_available(),
-    reason="GPU-enabled FAISS is not installed",
-)
 
 
 class TestKNNGPUPath:
-    """Requires CUDA and GPU-enabled FAISS."""
-
     @_cuda_available
-    @_faissknn_available
-    @pytest.mark.slow
-    def test_gpu_fp16_output_shapes(self, singlelabel_data):
-        d = singlelabel_data
-        clf = KNNClassifier(n_neighbors=5, device="cuda", use_fp16=True)
-        clf.fit(d["x_train"], d["y_train"])
-        preds = clf.predict(d["x_test"])
-        probs = clf.predict_proba(d["x_test"])
-        assert preds.shape == (len(d["x_test"]),)
-        assert probs.shape == (len(d["x_test"]), d["n_classes"])
-        np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-3)
-
-    @_cuda_available
-    @_faissknn_available
-    @pytest.mark.slow
     def test_gpu_predict_returns_numpy(self, singlelabel_data):
         d = singlelabel_data
         clf = KNNClassifier(n_neighbors=5, device="cuda")
         clf.fit(d["x_train"], d["y_train"])
         assert isinstance(clf.predict(d["x_test"]), np.ndarray)
         assert isinstance(clf.predict_proba(d["x_test"]), np.ndarray)
-
-    def test_gpu_missing_faissknn_raises_instead_of_cpu_fallback(
-        self, singlelabel_data, monkeypatch
-    ):
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "faissknn":
-                raise ImportError("blocked for test")
-            return real_import(name, *args, **kwargs)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-        d = singlelabel_data
-        clf = KNNClassifier(n_neighbors=5, device="cuda")
-        with pytest.raises(ImportError, match="blocked for test"):
-            clf.fit(d["x_train"], d["y_train"])
-
-    def test_explicit_gpu_with_cpu_faiss_raises_actionable_error(
-        self, singlelabel_data, monkeypatch
-    ):
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: False)
-        d = singlelabel_data
-        clf = KNNClassifier(n_neighbors=5, device="cuda")
-        with pytest.raises(RuntimeError, match="--knn-device cpu"):
-            clf.fit(d["x_train"], d["y_train"])
-
-
-class TestResolveKNNDevice:
-    def test_implicit_gpu_falls_back_to_cpu(self, monkeypatch, caplog: pytest.LogCaptureFixture):
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: False)
-
-        with caplog.at_level(logging.WARNING):
-            device = resolve_knn_device(None, "cuda:0")
-
-        assert device == "cpu"
-        assert "using CPU for KNN" in caplog.text
-
-    def test_implicit_gpu_uses_available_gpu_faiss(self, monkeypatch):
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: True)
-        assert resolve_knn_device(None, "cuda:1") == "cuda:1"
-
-    def test_explicit_gpu_requires_gpu_faiss(self, monkeypatch):
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: False)
-        with pytest.raises(RuntimeError, match="explicit KNN device 'cuda:1'"):
-            resolve_knn_device("cuda:1", "cuda:0")
-
-    def test_explicit_cpu_is_preserved(self, monkeypatch):
-        monkeypatch.setattr(knn, "gpu_faiss_available", lambda: False)
-        assert resolve_knn_device("cpu", "cuda:0") == "cpu"
 
 
 class TestUnifiedEvaluateKNN:

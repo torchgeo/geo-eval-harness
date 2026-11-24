@@ -1,6 +1,11 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+* KNN uses exact brute-force search in PyTorch on CPU, CUDA, and MPS, so ``faissknn`` and FAISS are no longer installed. ``KNNClassifier`` drops its ``use_fp16`` argument, and the ``cosine`` and ``ip`` metrics now apply on CPU as well as GPU.
+
 0.5.0 (2026-11-23)
 ------------------
 

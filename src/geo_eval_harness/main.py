@@ -178,7 +178,7 @@ def evaluate_knn(
     calibration_n_bins = cfg.classification.calibration.n_bins_knn
     n_bins = calibration_n_bins if calibration_n_bins is not None else n_neighbors + 1
     multi_label = y_train.ndim == 2
-    clf = KNNClassifier(n_neighbors=n_neighbors, device=device, use_fp16=False)
+    clf = KNNClassifier(n_neighbors=n_neighbors, device=device)
     clf.fit(x_train, y_train)
 
     if multi_label:
@@ -1035,12 +1035,8 @@ def run_dataset(
             update={"runtime": cfg.runtime.model_copy(update={"device": str(device)})}
         )
     if ds_cls.task != "segmentation" and not plan.skip_knn:
-        from geo_eval_harness.knn import resolve_knn_device
-
-        plan = replace(
-            plan,
-            knn_device=resolve_knn_device(cfg.classification.knn_device, cfg.runtime.device),
-        )
+        knn_device = cfg.classification.knn_device
+        plan = replace(plan, knn_device=cfg.runtime.device if knn_device is None else knn_device)
     train_dataset, train_loader, val_loader, test_loader = get_datasets(
         dataset_name=ds_name,
         partition_name=cfg.input.partition,

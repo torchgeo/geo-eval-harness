@@ -7,9 +7,7 @@ Installation
 
 .. note::
 
-   The install runs on **Linux**, **macOS**, and **Windows**. On Linux
-   x86_64 it automatically includes GPU-accelerated FAISS KNN (CUDA 12,
-   driver R525+); other platforms get CPU FAISS.
+   The install runs on **Linux**, **macOS**, and **Windows**.
 
 PyPI
 ----
@@ -42,9 +40,6 @@ development dependencies:
    $ git clone https://github.com/torchgeo/geo-eval-harness.git
    $ cd geo-eval-harness
    $ uv sync --extra dev
-
-The install pulls in ``faissknn[cuda]`` (GPU FAISS) on Linux x86_64 and
-``faissknn[cpu]`` everywhere else — no extra needed.
 
 The ``geo-eval-harness`` console script is then available via ``uv run``. Use ``--help`` to list commands or ``--version`` to print the installed version:
 

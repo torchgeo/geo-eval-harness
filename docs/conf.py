@@ -72,7 +72,6 @@ nitpick_ignore = [
     ("py:meth", "SegmentationProbe.extract_segmentation_features"),
     ("py:mod", "geo_eval_harness.main"),
     # Third-party types without links in their published documentation.
-    ("py:class", "faiss.swigfaiss_avx2.IndexFlatL2"),
     ("py:class", "geobench.task.Task"),
     ("py:class", "geobench_v2.GeoBenchDataModule"),
     ("py:class", "geobenchv2.task.Task"),

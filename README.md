@@ -28,10 +28,7 @@ cd geo-eval-harness
 uv sync --extra dev
 ```
 
-Requires Python 3.12+ and runs on **Linux**, **macOS**, and **Windows**. On
-Linux x86_64 the install automatically includes GPU-accelerated FAISS KNN
-(CUDA 12, driver R525+, also works on GPU-less machines); other platforms get
-CPU FAISS.
+Requires Python 3.12+ and runs on **Linux**, **macOS**, and **Windows**.
 
 The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
 

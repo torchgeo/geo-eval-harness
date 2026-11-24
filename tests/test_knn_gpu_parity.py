@@ -1,14 +1,13 @@
-"""CPU/CUDA parity for :class:`KNNClassifier`; requires CUDA and GPU-enabled FAISS."""
+"""CPU/CUDA parity for :class:`KNNClassifier`; requires CUDA."""
 
 import numpy as np
 import pytest
 import torch
 
-from geo_eval_harness.knn import KNNClassifier, gpu_faiss_available
+from geo_eval_harness.knn import KNNClassifier
 
 pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or not gpu_faiss_available(),
-    reason="requires torch CUDA and GPU-enabled FAISS for cpu/cuda parity",
+    not torch.cuda.is_available(), reason="requires torch CUDA for cpu/cuda parity"
 )
 
 N_TRAIN, N_TEST, DIM, K, N_CLASSES = 2000, 500, 64, 5, 10
@@ -57,7 +56,7 @@ def test_multilabel_parity(features: tuple[np.ndarray, np.ndarray]) -> None:
 @pytest.mark.slow
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires a nondefault CUDA device")
 @pytest.mark.parametrize("multilabel", [False, True])
-def test_nondefault_gpu_uses_its_own_stream(*, multilabel: bool) -> None:
+def test_nondefault_gpu_leaves_current_device_alone(*, multilabel: bool) -> None:
     rng = np.random.default_rng(3)
     train = rng.normal(size=(20000, 378)).astype(np.float32)
     query = rng.normal(size=(4000, 378)).astype(np.float32)
@@ -76,7 +75,7 @@ def test_nondefault_gpu_uses_its_own_stream(*, multilabel: bool) -> None:
 
 
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires a nondefault CUDA device")
-def test_unnumbered_cuda_agrees_with_faiss_default_device(
+def test_unnumbered_cuda_follows_current_device_at_fit(
     features: tuple[np.ndarray, np.ndarray],
 ) -> None:
     train, query = features
@@ -84,6 +83,8 @@ def test_unnumbered_cuda_agrees_with_faiss_default_device(
     expected = KNNClassifier(K, "cpu").fit(train, labels).predict(query)
     with torch.cuda.device(1):
         model = KNNClassifier(K, "cuda").fit(train, labels)
-        assert model.device == "cuda:0"
         np.testing.assert_array_equal(model.predict(query), expected)
-        assert torch.cuda.current_device() == 1
+    with torch.cuda.device(0):
+        np.testing.assert_array_equal(model.predict(query), expected)
+        assert model._train is not None
+        assert model._train.device == torch.device("cuda", 1)
