@@ -102,7 +102,7 @@ optional-dependencies.docs = [
   "sphinx-design>=0.5",
 ]
 optional-dependencies.id = [
-  "torchid>=0.3; python_version>='3.13'",
+  "torchid[cpu]>=0.3; python_version>='3.13'", # torchid imports faiss for its CPU kNN.
 ]
 optional-dependencies.lora = [
   "peft>=0.21", # LoRA segmentation fine-tuning.
