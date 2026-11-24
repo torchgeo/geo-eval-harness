@@ -32,12 +32,13 @@ from ._input_units import (
     InputUnit,
     convert_unit,
     detect_input_unit,
+    linear_power_to_db,
     to_reflectance,
     to_s2_dn,
     to_s2_tci,
 )
 from ._normalization import NormalizationStrategy, build_normalizer
-from ._pooling import pool_tokens
+from ._pooling import VALID_MODES, pool_tokens
 from ._seco import normalize_seco
 from .interface import BenchModel
 
@@ -187,9 +188,27 @@ _SATLAS_S2_MS_BANDS = ("B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "
 _SSL4EO_S2_BANDS = (
     "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B10", "B11", "B12"
 )  # fmt: skip
-_SSL4EO_S2_POLICY = BandMappingPolicy(
-    allow_missing=True, preferred_sensors=("s2",), band_fallbacks={}
-)
+_S1_VV_VH_BANDS = ("VV", "VH")
+
+
+def _normalized_meta_bands(meta: dict[str, Any]) -> tuple[str, ...]:
+    bands = meta.get("bands", ())
+    if not bands:
+        return ()
+    return tuple(
+        f"B{name[1:].upper():0>2}" if name[:1].upper() == "B" else name.upper() for name in bands
+    )
+
+
+def _band_selection_kind(meta: dict[str, Any]) -> str | None:
+    bands = _normalized_meta_bands(meta)
+    if bands == _SSL4EO_S2_BANDS:
+        return "s2_13"
+    if meta.get("dataset") != "SatlasPretrain" and bands == _S1_VV_VH_BANDS:
+        return "s1_vv_vh"
+    if meta.get("dataset") == "SatlasPretrain" and tuple(meta["bands"]) == _SATLAS_S2_MS_BANDS:
+        return "satlas_s2_ms"
+    return None
 
 
 class _TorchGeoBackboneBench(BenchModel):
@@ -215,9 +234,22 @@ class _TorchGeoBackboneBench(BenchModel):
         factory_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        weights = _resolve_torchgeo_weights(weights_class, weights_member)
+        band_selection = _band_selection_kind(getattr(weights, "meta", {}) or {})
+        requested_norm = NormalizationStrategy(
+            kwargs.get("normalization", NormalizationStrategy.BANDSPEC_ZSCORE)
+        )
         if self.expected_input_unit is None and self.weights_input_unit:
             self.expected_input_unit = _UNIT_EXPECTED_SOURCE.get(self.weights_input_unit)
-        super().__init__(bands=bands, **kwargs)
+        if band_selection is not None and requested_norm is NormalizationStrategy.MODEL_NATIVE:
+            # Band-selecting checkpoints handle their own sensor-specific unit conversion;
+            # skip BenchModel's generic model_native builder, which rejects mixed-sensor bands.
+            super().__init__(
+                bands=bands, **{**kwargs, "normalization": NormalizationStrategy.IDENTITY}
+            )
+            self.normalization = NormalizationStrategy.MODEL_NATIVE
+        else:
+            super().__init__(bands=bands, **kwargs)
         if normalization_input_unit is not None:
             if normalization_input_unit not in _UNIT_EXPECTED_SOURCE:
                 raise ValueError(
@@ -236,7 +268,6 @@ class _TorchGeoBackboneBench(BenchModel):
                 "skip_weight_normalize must be a non-negative integer, "
                 f"got {skip_weight_normalize!r}."
             )
-        weights = _resolve_torchgeo_weights(weights_class, weights_member)
         self.weights = weights
         model_factory = _resolve_torchgeo_factory(factory)
         self.backbone = model_factory(weights=weights, **(factory_kwargs or {}))
@@ -261,30 +292,36 @@ class _TorchGeoBackboneBench(BenchModel):
         )
         self._dataset_input_unit = (
             detect_input_unit(self.bands)
-            if native and self._weights_target_unit is not None
+            if native and self._weights_target_unit is not None and band_selection is None
             else None
         )
         self._satlas_s2_ms_indices: list[int] | None = None
-        self._ssl4eo_s2_unit: InputUnit | None = None
+        self._s2_target_bands: tuple[str, ...] | None = None
+        self._s2_unit: InputUnit | None = None
+        self._s1_vv_vh_indices: list[int] | None = None
+        self._s1_log_channels: list[int] = []
 
     def _prepare_input_conv(self, conv_path: str, weights_member: str) -> None:
-        """Select Sentinel-2 multispectral bands, or adapt ``conv_path`` to the band count.
+        """Select sensor bands by name, or adapt ``conv_path`` to the band count.
 
         Satlas Sentinel-2 multispectral checkpoints take their nine bands by name in
         :data:`_SATLAS_S2_MS_BANDS` order, and datasets missing any of them are rejected.
-        Other multi-band Satlas checkpoints (Landsat, Sentinel-1) are rejected. SSL4EO-S12
-        Sentinel-2 checkpoints take their 13 bands by name in :data:`_SSL4EO_S2_BANDS` order;
-        B10, which L2A products lack, is zero-filled, and datasets missing any other band are
-        rejected. Every other checkpoint keeps its first convolution adapted to the dataset's
-        band count.
+        Other multi-band Satlas checkpoints (Landsat, Sentinel-1) are rejected. 13-band
+        Sentinel-2 L1C checkpoints take their bands in :data:`_SSL4EO_S2_BANDS` order with
+        B10 zero-filled when absent; Sentinel-1 GRD checkpoints require VV and VH in
+        :data:`_S1_VV_VH_BANDS` order. Every other checkpoint keeps its first convolution
+        adapted to the dataset's band count.
         """
         meta = self.weights.meta
-        if tuple(f"B{name[1:].upper():0>2}" for name in meta.get("bands", ())) == _SSL4EO_S2_BANDS:
-            self._select_ssl4eo_s2_bands(weights_member)
+        kind = _band_selection_kind(meta)
+        if kind == "s2_13":
+            self._select_s2_bands(weights_member, _SSL4EO_S2_BANDS, allow_missing_b10=True)
+        elif kind == "s1_vv_vh":
+            self._select_s1_vv_vh_bands(weights_member)
+        elif kind == "satlas_s2_ms":
+            self._select_satlas_s2_ms_bands(weights_member)
         elif meta.get("dataset") != "SatlasPretrain":
             _adapt_first_conv(self.backbone, conv_path, len(self.bands))
-        elif tuple(meta["bands"]) == _SATLAS_S2_MS_BANDS:
-            self._select_satlas_s2_ms_bands(weights_member)
         elif meta["in_chans"] == 3:
             # Mark non-RGB results as "adapted": their input-convolution weights differ.
             _adapt_first_conv(self.backbone, conv_path, len(self.bands))
@@ -324,32 +361,83 @@ class _TorchGeoBackboneBench(BenchModel):
         inputs = torch.cat((tci, selected[:, 3:]), dim=1)
         return cast(nn.Sequential, self._weights_normalize)(inputs).clamp(0.0, 1.0)
 
-    def _select_ssl4eo_s2_bands(self, weights_member: str) -> None:
+    def _select_s2_bands(
+        self, weights_member: str, target_bands: tuple[str, ...], *, allow_missing_b10: bool
+    ) -> None:
         source_indices = resolve_src_indices(self.bands, preferred_sensors=("s2",))
-        present = [band for band in _SSL4EO_S2_BANDS if canonical_band_name(band) in source_indices]
-        missing = [band for band in _SSL4EO_S2_BANDS if band not in present and band != "B10"]
+        present = [band for band in target_bands if canonical_band_name(band) in source_indices]
+        missing = [
+            band
+            for band in target_bands
+            if band not in present and not (allow_missing_b10 and band == "B10")
+        ]
         if missing:
             raise BandCompatibilityError(
                 f"{weights_member} requires Sentinel-2 bands {missing}; "
                 f"available={sorted(source_indices)}."
             )
-        self._ssl4eo_s2_unit = detect_input_unit(
+        self._s2_target_bands = target_bands
+        self._s2_unit = detect_input_unit(
             [self.bands[source_indices[canonical_band_name(band)]] for band in present]
         )
 
-    def _normalize_ssl4eo_s2(self, images: torch.Tensor) -> torch.Tensor:
-        """Normalize and order the SSL4EO-S12 Sentinel-2 bands, zero-filling an absent B10.
+    def _normalize_s2(self, images: torch.Tensor) -> torch.Tensor:
+        """Normalize and order Sentinel-2 bands, zero-filling B10 for 13-band checkpoints.
 
         Under ``model_native`` the bands are ordered first, because the weights' ``Normalize``
         statistics follow the checkpoint's band order.
         """
-        bands = list(_SSL4EO_S2_BANDS)
+        target_bands = cast(tuple[str, ...], self._s2_target_bands)
+        policy = BandMappingPolicy(
+            allow_missing="B10" in target_bands, preferred_sensors=("s2",), band_fallbacks={}
+        )
         if self.normalization is not NormalizationStrategy.MODEL_NATIVE:
             normalized = super().normalize_inputs(images)
-            return map_to_model_bands(normalized, self.bands, bands, policy=_SSL4EO_S2_POLICY)[0]
-        ordered, _ = map_to_model_bands(images, self.bands, bands, policy=_SSL4EO_S2_POLICY)
-        dn = to_s2_dn(ordered, cast(InputUnit, self._ssl4eo_s2_unit))
+            return map_to_model_bands(normalized, self.bands, list(target_bands), policy=policy)[0]
+        ordered, _ = map_to_model_bands(images, self.bands, list(target_bands), policy=policy)
+        dn = to_s2_dn(ordered, cast(InputUnit, self._s2_unit))
         return cast(nn.Sequential, self._weights_normalize)(dn)
+
+    def _select_s1_vv_vh_bands(self, weights_member: str) -> None:
+        source_indices = resolve_src_indices(self.bands, preferred_sensors=("s1", "sar"))
+        missing = [band for band in ("vv", "vh") if band not in source_indices]
+        if missing:
+            raise BandCompatibilityError(
+                f"{weights_member} requires Sentinel-1 bands {missing}; "
+                f"available={sorted(source_indices)}."
+            )
+        indices = [source_indices["vv"], source_indices["vh"]]
+        if self.normalization is NormalizationStrategy.MODEL_NATIVE:
+            undeclared = [
+                self.bands[i].name
+                for i in indices
+                if self.bands[i].unit not in ("db", "linear_power")
+            ]
+            if undeclared:
+                raise UnsupportedNormalizationError(
+                    f"{weights_member} model_native normalization requires Sentinel-1 bands with "
+                    f"declared unit 'db' or 'linear_power'; got undeclared {undeclared}. "
+                    "Use --normalization dataset."
+                )
+            self._s1_log_channels = [
+                pos for pos, i in enumerate(indices) if self.bands[i].unit == "linear_power"
+            ]
+        self._s1_vv_vh_indices = indices
+
+    def _normalize_s1_vv_vh(self, images: torch.Tensor) -> torch.Tensor:
+        """Select Sentinel-1 VV/VH bands and apply dB conversion and pretrained normalization."""
+        indices = cast(list[int], self._s1_vv_vh_indices)
+        if self.normalization is not NormalizationStrategy.MODEL_NATIVE:
+            return super().normalize_inputs(images)[:, indices]
+        selected = images[:, indices]
+        if self._s1_log_channels:
+            selected = selected.clone()
+            selected[:, self._s1_log_channels] = linear_power_to_db(
+                selected[:, self._s1_log_channels]
+            )
+        if self._weights_normalize is not None:
+            return self._weights_normalize(selected)
+        return selected
 
     def _tiled_normalize(self, in_chans: int) -> nn.Sequential | None:
         """Build the pretrained normalization chain for ``in_chans`` channels.
@@ -395,6 +483,24 @@ class _TorchGeoBackboneBench(BenchModel):
         object.__setattr__(self, cache_key, tiled)
         return tiled
 
+    def _apply_weights_normalize(
+        self, images: torch.Tensor, weights_norm: nn.Sequential
+    ) -> torch.Tensor | None:
+        channel_counts: list[int] = []
+        for m in weights_norm.modules():
+            mean = getattr(m, "mean", None)
+            if mean is None:
+                continue
+            if isinstance(mean, torch.Tensor):
+                channel_counts.append(mean.shape[-1] if mean.ndim else mean.numel())
+            else:
+                channel_counts.append(len(mean))
+        in_chans = images.shape[1]
+        if not channel_counts or all(count in (1, in_chans) for count in channel_counts):
+            return weights_norm(images)
+        tiled = self._tiled_normalize(in_chans)
+        return tiled(images) if tiled is not None else None
+
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
         """Apply pretrained normalization for ``model_native``; otherwise use the parent strategy.
 
@@ -406,8 +512,10 @@ class _TorchGeoBackboneBench(BenchModel):
         """
         if self._satlas_s2_ms_indices is not None:
             return self._normalize_satlas_s2_ms(images)
-        if self._ssl4eo_s2_unit is not None:
-            return self._normalize_ssl4eo_s2(images)
+        if self._s2_target_bands is not None:
+            return self._normalize_s2(images)
+        if self._s1_vv_vh_indices is not None:
+            return self._normalize_s1_vv_vh(images)
         native = self.normalization is NormalizationStrategy.MODEL_NATIVE
         weights_norm = self._weights_normalize if native else None
         if self._weights_target_unit is not None and native:
@@ -415,21 +523,9 @@ class _TorchGeoBackboneBench(BenchModel):
                 images, cast(InputUnit, self._dataset_input_unit), self._weights_target_unit
             )
         if weights_norm is not None:
-            channel_counts: list[int] = []
-            for m in weights_norm.modules():
-                mean = getattr(m, "mean", None)
-                if mean is None:
-                    continue
-                if isinstance(mean, torch.Tensor):
-                    channel_counts.append(mean.shape[-1] if mean.ndim else mean.numel())
-                else:
-                    channel_counts.append(len(mean))
-            in_chans = images.shape[1]
-            if not channel_counts or all(count in (1, in_chans) for count in channel_counts):
-                return weights_norm(images)
-            tiled = self._tiled_normalize(in_chans)
-            if tiled is not None:
-                return tiled(images)
+            normalized = self._apply_weights_normalize(images, weights_norm)
+            if normalized is not None:
+                return normalized
         return super().normalize_inputs(images)
 
 
@@ -555,6 +651,75 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
         return self.backbone(images)
+
+
+class TorchGeoViTBench(_TorchGeoBackboneBench):
+    """Wrapper for torchgeo timm Vision Transformer models.
+
+    Supports patch-mean, CLS, or concatenated token pooling via ``pool_tokens``.
+    Multispectral Sentinel-2 and Sentinel-1 VV/VH checkpoints select their bands by name
+    (see ``_TorchGeoBackboneBench._prepare_input_conv``).
+
+    Args:
+        bands: Ordered :class:`BandSpec` list for the input channels.
+        factory: Factory function name in ``torchgeo.models``.
+        weights_class: Weights enum class name in ``torchgeo.models``.
+        weights_member: Weights enum member name on ``weights_class``.
+        auto_resize: Whether to bilinearly resize inputs to ``target_size``.
+        target_size: Spatial size used when ``auto_resize`` is enabled.
+        pool: Token pooling mode (``"mean"``, ``"cls"``, or ``"both"``).
+        dynamic_img_size: Allow timm ViT positional embedding interpolation across sizes.
+        normalization_input_unit: Optional override for the expected weights input unit.
+        skip_weight_normalize: Number of leading pretrained ``Normalize`` layers to skip.
+        **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
+    """
+
+    weights_input_unit = "s2_dn_div10000"
+    expected_input_unit = InputUnit.S2_DN
+
+    def __init__(  # noqa: PLR0913 - public YAML options
+        self,
+        bands: list[BandSpec],
+        *,
+        factory: str = "vit_small_patch16_224",
+        weights_class: str = "ViTSmall16_Weights",
+        weights_member: str = "SENTINEL2_ALL_FGMAE",
+        auto_resize: bool = True,
+        target_size: int | None = 224,
+        pool: str = "mean",
+        dynamic_img_size: bool = False,
+        normalization_input_unit: str | None = None,
+        skip_weight_normalize: int = 0,
+        **_kwargs: Any,
+    ) -> None:
+        if pool not in VALID_MODES:
+            raise ValueError(f"TorchGeoViTBench pool must be one of {VALID_MODES}, got {pool!r}.")
+        if dynamic_img_size:
+            _kwargs["factory_kwargs"] = {
+                **(_kwargs.get("factory_kwargs") or {}),
+                "dynamic_img_size": True,
+            }
+        super().__init__(
+            bands=bands,
+            factory=factory,
+            weights_class=weights_class,
+            weights_member=weights_member,
+            auto_resize=auto_resize,
+            target_size=target_size,
+            normalization_input_unit=normalization_input_unit,
+            skip_weight_normalize=skip_weight_normalize,
+            **_kwargs,
+        )
+        if hasattr(self.backbone, "head"):
+            self.backbone.head = nn.Identity()
+        self._prepare_input_conv("patch_embed.proj", weights_member)
+        self.pool = pool
+
+    def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
+        if self.auto_resize and self.target_size:
+            images = _auto_resize(images, self.target_size)
+        tokens = self.backbone.forward_features(images)
+        return pool_tokens(tokens, mode=self.pool)
 
 
 _SCALEMAE_PATCH_SIZE = 16
