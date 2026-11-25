@@ -1,6 +1,6 @@
-"""Landsat-Bench classification datasets: EuroSAT-L and BigEarthNet-L.
+"""EuroSAT-L and BigEarthNet-L classification datasets from Landsat-Bench.
 
-Landsat 8 Collection 2 Level-2 surface-reflectance variants (7 OLI bands, SR_B1..SR_B7)
+Both datasets provide 7 Landsat 8 Collection 2 Level-2 surface reflectance bands (SR_B1 to SR_B7)
 from Corley et al. (2025), https://github.com/isaaccorley/landsatbench.
 """
 
@@ -17,6 +17,7 @@ from torch.utils.data import Dataset
 from torchgeo.datasets import BigEarthNet as TGBigEarthNet
 
 from .base import BandSpec, BenchDataset
+from .eurosat import EuroSAT
 
 _LANDSAT8_BAND_META: tuple[tuple[str, str, float], ...] = (
     ("coastal_aerosol", "SR_B1", 0.443),
@@ -131,28 +132,17 @@ class _LandsatBenchDataset(BenchDataset):
 
 
 class EuroSATL(_LandsatBenchDataset):
-    """Landsat-8 land-use classification (10 classes), from Landsat-Bench.
+    """Landsat 8 land-use classification across 10 classes from Landsat-Bench.
 
-    27,000 Landsat 8 Collection 2 Level-2 chips corresponding to EuroSAT locations
-    (16,200 / 5,400 / 5,400 train/val/test), 7 OLI SR bands resized to 22x22.
-    Source: https://huggingface.co/datasets/isaaccorley/eurosat-l.
+    Contains 27,000 Collection 2 Level-2 chips at EuroSAT locations (16,200 train, 5,400 val,
+    5,400 test) with 7 OLI surface reflectance bands resized to 22x22. Hosted at
+    https://huggingface.co/datasets/isaaccorley/eurosat-l.
     """
 
     name = "eurosat-l"
     _data_dir = "eurosat-l"
     num_classes = 10
-    class_names: ClassVar[tuple[str, ...]] = (
-        "AnnualCrop",
-        "Forest",
-        "HerbaceousVegetation",
-        "Highway",
-        "Industrial",
-        "Pasture",
-        "PermanentCrop",
-        "Residential",
-        "River",
-        "SeaLake",
-    )
+    class_names: ClassVar[tuple[str, ...]] = EuroSAT.class_names
     multilabel = False
     split_sizes: ClassVar[dict[str, int]] = {"train": 16200, "val": 5400, "test": 5400}
     tile_size = 22
@@ -165,18 +155,18 @@ class EuroSATL(_LandsatBenchDataset):
 
 
 class EuroSATLSpatial(EuroSATL):
-    """EuroSAT-L with EuroSAT's longitude-based 60/20/20 train/val/test spatial splits."""
+    """EuroSAT-L with EuroSAT's longitude-based 60/20/20 train/val/test splits."""
 
     name = "eurosat-l-spatial"
     split_column = "spatial_split"
 
 
 class BigEarthNetL(_LandsatBenchDataset):
-    """Landsat-8 multi-label land-cover classification (19 classes), from Landsat-Bench.
+    """Landsat 8 multi-label land-cover classification across 19 classes from Landsat-Bench.
 
-    519,284 Landsat 8 Collection 2 Level-2 chips corresponding to BigEarthNet v1
-    (269,695 / 123,723 / 125,866 train/val/test), 7 OLI SR bands resized to 40x40.
-    Source: https://huggingface.co/datasets/isaaccorley/bigearthnet-l.
+    Contains 519,284 Collection 2 Level-2 chips for BigEarthNet v1 (269,695 train, 123,723 val,
+    125,866 test) with 7 OLI surface reflectance bands resized to 40x40. Hosted at
+    https://huggingface.co/datasets/isaaccorley/bigearthnet-l.
     """
 
     name = "bigearthnet-l"

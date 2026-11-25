@@ -1,4 +1,4 @@
-"""Landsat-Bench datasets: unified GeoTIFF + Parquet loading, band selection, and geography."""
+"""Tests for Landsat-Bench GeoTIFF and Parquet loading, band selection, and geography."""
 
 from collections import Counter
 from pathlib import Path
