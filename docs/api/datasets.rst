@@ -114,3 +114,8 @@ Other datasets
 --------------
 
 .. autoclass:: InfraBenchCLS
+.. autoclass:: EuroSATL
+   :no-show-inheritance:
+.. autoclass:: EuroSATLSpatial
+.. autoclass:: BigEarthNetL
+   :no-show-inheritance:
