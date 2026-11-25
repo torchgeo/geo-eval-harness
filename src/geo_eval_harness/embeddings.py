@@ -1,15 +1,20 @@
-"""Save the global embeddings of a classification run with stable sample IDs."""
+"""Save the global embeddings of a classification run with stable sample IDs and compare them."""
 
+import hashlib
+import itertools
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from geo_eval_harness import __version__
 from geo_eval_harness.results import sanitize_name
+
+MAX_CKA_SAMPLES = 10_000
 
 
 def write_embeddings(
@@ -58,3 +63,62 @@ def write_embeddings(
     pq.write_table(table, tmp)
     tmp.replace(path)
     return path
+
+
+def linear_cka(x: np.ndarray, y: np.ndarray) -> float:
+    """Return the linear CKA of two embeddings of the same samples (Kornblith et al., 2019).
+
+    Rows are samples and the widths may differ. The value lies in [0, 1], equals 1 for identical
+    features, and does not change when either embedding is rescaled or rotated. It is NaN when an
+    embedding is constant across samples.
+    """
+    x = x - x.mean(axis=0, dtype=np.float64)
+    y = y - y.mean(axis=0, dtype=np.float64)
+    denominator = np.linalg.norm(x.T @ x) * np.linalg.norm(y.T @ y)
+    return float(np.linalg.norm(y.T @ x) ** 2 / denominator) if denominator else float("nan")
+
+
+def cka_matrix(
+    paths: Sequence[Path], *, split: str = "test", max_samples: int = MAX_CKA_SAMPLES
+) -> pd.DataFrame:
+    """Return the linear CKA between every pair of embedding files on one split.
+
+    Every file must hold the same dataset, the same sample IDs in the same order, and the same
+    labels; otherwise a ``ValueError`` names the first file that differs. A split with more than
+    ``max_samples`` rows keeps the rows whose sample IDs have the smallest SHA-256 digests, so all
+    models are compared on the same subset.
+
+    Args:
+        paths: Files written by :func:`write_embeddings`.
+        split: Split to compare.
+        max_samples: Largest number of samples to compare.
+
+    Returns:
+        Square matrix indexed by ``<model name>@<config_hash>``.
+    """
+    records, tables = [], []
+    for path in paths:
+        table = pq.read_table(path)
+        records.append(json.loads(table.schema.metadata[b"geo_eval_harness"]))
+        tables.append(table.filter(pa.array(np.asarray(table["split"]) == split)))
+    for path, record, table in zip(paths[1:], records[1:], tables[1:], strict=True):
+        if (
+            record["dataset"] != records[0]["dataset"]
+            or not table["sample_id"].equals(tables[0]["sample_id"])
+            or not table["label"].equals(tables[0]["label"])
+        ):
+            raise ValueError(f"{path} does not hold the same {split} samples as {paths[0]}")
+    ids = tables[0]["sample_id"].to_pylist()
+    if not ids:
+        raise ValueError(f"{paths[0]} has no {split} rows")
+    digests = [hashlib.sha256(sample_id.encode()).hexdigest() for sample_id in ids]
+    keep = np.sort(np.argsort(digests)[:max_samples])
+    features = []
+    for table in tables:
+        column = table["embedding"].combine_chunks()
+        features.append(column.flatten().to_numpy().reshape(len(column), -1)[keep])
+    values = np.empty((len(features), len(features)))
+    for i, j in itertools.combinations_with_replacement(range(len(features)), 2):
+        values[i, j] = values[j, i] = linear_cka(features[i], features[j])
+    names = [f"{record['name']}@{record['config_hash']}" for record in records]
+    return pd.DataFrame(values, index=names, columns=names)

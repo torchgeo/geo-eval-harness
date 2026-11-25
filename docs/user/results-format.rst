@@ -231,6 +231,8 @@ Set ``output.embeddings`` to a directory to save the validation and test embeddi
 
 Validation and test loaders keep dataset order, so ``sample_id`` (``<split>/<index>``) names the same sample in every model's file. The training split is shuffled differently for each model and is not saved. The option is output only, so it does not change ``config_hash``; runs skipped by ``--resume`` write no embeddings.
 
+``python scripts/cka_matrix.py <file> <file> ... --output cka.csv`` writes the linear CKA between every pair of files on the test split (``--split val`` for validation). It fails when the files hold different datasets, sample IDs or labels, and compares at most ``--max-samples`` samples (10,000 by default), keeping the same sample IDs for every model.
+
 Atomic appends
 --------------
 
