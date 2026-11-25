@@ -194,9 +194,11 @@ def _iter_result_rows():
 
 
 def is_segmentation_row(row: dict) -> bool:
-    """Return whether a row is a segmentation measurement with setup columns."""
-    return str(row.get("method") or "").startswith(SEG_METHOD_PREFIX) and bool(
-        row.get("adaptation")
+    """Return whether a row is a segmentation mIoU measurement with setup columns."""
+    return (
+        str(row.get("method") or "").startswith(SEG_METHOD_PREFIX)
+        and bool(row.get("adaptation"))
+        and row.get("metric_name") == "mIoU"
     )
 
 
