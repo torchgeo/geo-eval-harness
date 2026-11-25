@@ -379,3 +379,21 @@ def test_presets_build_full_vit_l_offline() -> None:
     assert len(s2_model.blocks) == 24
     with torch.inference_mode():
         assert s2_model(torch.randn(1, 13, 96, 96)).shape == (1, 1024)
+
+
+def test_rgb_model_native_stretches_sentinel2_dn_like_tci(
+    tiny_variants: dict[str, SatMAEPPVariant],
+) -> None:
+    """DN 3558 is TCI saturation, so it normalizes like a full-scale 8-bit pixel."""
+    del tiny_variants
+    model = SatMAEPPBench(
+        bands=_rgb_bands(max_val=10000.0),
+        variant="rgb_vit_l",
+        pretrained=False,
+        normalization="model_native",
+    )
+    assert model._model_normalizer is not None
+    out = model._model_normalizer(torch.full((1, 3, 2, 2), 3558.0))
+    mean = torch.tensor(SATMAEPP_RGB_MEAN).view(1, 3, 1, 1)
+    std = torch.tensor(SATMAEPP_RGB_STD).view(1, 3, 1, 1)
+    torch.testing.assert_close(out, ((1.0 - mean) / std).expand(1, 3, 2, 2))

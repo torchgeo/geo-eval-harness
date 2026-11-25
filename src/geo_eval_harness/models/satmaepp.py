@@ -34,7 +34,7 @@ from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
 from ._band_mapping import BandMappingPolicy, map_to_model_bands
-from ._input_units import InputUnit, detect_input_unit, to_reflectance, to_s2_dn
+from ._input_units import InputUnit, detect_input_unit, to_rgb_display_scale, to_s2_dn
 from ._normalization import NormalizationStrategy, build_normalizer
 from ._pooling import VALID_MODES
 from .interface import BenchModel
@@ -243,7 +243,7 @@ def _build_model_normalizer(
         std = torch.tensor(SATMAEPP_RGB_STD, dtype=torch.float32).view(1, 3, 1, 1)
 
         def normalize_rgb(images: torch.Tensor) -> torch.Tensor:
-            x = to_reflectance(images, src_unit)
+            x = to_rgb_display_scale(images, src_unit)
             return (x - mean.to(x.device, x.dtype)) / std.to(x.device, x.dtype)
 
         return normalize_rgb
