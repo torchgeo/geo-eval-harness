@@ -81,10 +81,8 @@ NO_GEO: dict[str, str] = {
 
 # Variants reuse coordinates from the dataset with the same imagery.
 GEO_ALIAS: dict[str, str] = {
-    "bigearthnet-l": "m-bigearthnet",
     "bright-post-sar-rgb": "bright-post-sar",
-    "eurosat-l": "m-eurosat",
-    "eurosat-l-spatial": "m-eurosat",
+    "eurosat-l-spatial": "eurosat-l",
     "eurosat-spatial": "m-eurosat",
     "eurosat": "m-eurosat",
     "sen1floods11-s2": "sen1floods11-s1",
@@ -415,25 +413,16 @@ def _extract_infrabench(directory: Path) -> dict:
     }
 
 
-def _extract_lc100_l(directory: Path) -> dict | None:
-    """Read lon/lat coordinates encoded in LC100-L split PIDs (``<id>_<lon>_<lat>``)."""
+def _extract_landsatbench(directory: Path) -> dict | None:
+    """Read WGS84 centroids from a Landsat-Bench ``index.parquet`` table."""
     import pandas as pd
 
-    from .datasets.landsatbench import LC100_MISSING_PID
-
-    csv_dir = directory.parent if not (directory / "multilabel-train.csv").is_file() else directory
-    paths = [csv_dir / f"multilabel-{split}.csv" for split in ("train", "val", "test")]
-    if not all(path.is_file() for path in paths):
+    index_path = directory / "index.parquet"
+    if not index_path.is_file():
         return None
-    pids = [
-        pid
-        for path in paths
-        for pid in pd.read_csv(path, usecols=["PID"])["PID"].astype(str)
-        if pid != LC100_MISSING_PID
-    ]
-    coords = [pid.split("_") for pid in pids]
-    lon = np.array([float(parts[1]) for parts in coords], dtype=float)
-    lat = np.array([float(parts[2]) for parts in coords], dtype=float)
+    df = pd.read_parquet(index_path, columns=["lon", "lat"])
+    lon = df["lon"].to_numpy(dtype=float)
+    lat = df["lat"].to_numpy(dtype=float)
     valid = np.isfinite(lon) & np.isfinite(lat) & (np.abs(lon) <= 180) & (np.abs(lat) <= 90)
     if not valid.any():
         return None
@@ -441,7 +430,7 @@ def _extract_lc100_l(directory: Path) -> dict | None:
         "lon": lon[valid],
         "lat": lat[valid],
         "place": np.full(int(valid.sum()), None, dtype=object),
-        "version": "manifest",
+        "version": "index",
     }
 
 
@@ -532,8 +521,9 @@ def _build_record(name: str, data: dict, continents: Counter) -> GeoRecord:
 
 
 _NAMED_EXTRACTORS = {
+    "bigearthnet-l": (_extract_landsatbench, "index.parquet has no lon/lat coordinates"),
+    "eurosat-l": (_extract_landsatbench, "index.parquet has no lon/lat coordinates"),
     "infrabench-cls": (_extract_infrabench, "manifests have no lon/lat coordinates"),
-    "lc100-l": (_extract_lc100_l, "split CSVs have no lon/lat coordinates"),
     "oscd-post": (_extract_oscd, "city footprints have no coordinates"),
 }
 

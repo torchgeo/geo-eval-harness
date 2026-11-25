@@ -36,7 +36,6 @@ def require_dataset_data(name: str) -> None:
         "resisc45",
         "ucmerced",
         "bigearthnet-l",
-        "lc100-l",
         "hotosm_buildings",
         "openearthmap-sar",
         "open_cities",

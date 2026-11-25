@@ -223,7 +223,7 @@ All datasets are loaded from `./data/<canonical-subdir>` relative to the current
 `burn_scars`, `caffe`, `cloudsen12`, `dynamic_earthnet`, `flair2`, `fotw`, `kuro_siwo`, `pastis`, `spacenet2`, `spacenet7`
 
 ### Standalone classification (torchgeo / Hugging Face)
-`eurosat`, `eurosat-spatial`, `resisc45`, `ucmerced`, `aid`, `infrabench-cls`, `eurosat-l`, `eurosat-l-spatial`, `bigearthnet-l`, `lc100-l`
+`eurosat`, `eurosat-spatial`, `resisc45`, `ucmerced`, `aid`, `infrabench-cls`, `eurosat-l`, `eurosat-l-spatial`, `bigearthnet-l`
 
 ### Standalone segmentation (torchgeo / Hugging Face)
 `hotosm_buildings`, `openearthmap-sar`, `open_cities`, `loveda`, `levir-cd-post`, `sen1floods11-s1`, `sen1floods11-s2`, `bright-post-sar`, `bright-post-sar-rgb`, `oscd-post`, `planteur`, `planteur_loio_guadeloupe`, `planteur_loio_martinique`, `planteur_loio_guyane`, `planteur_loio_reunion`, `planteur_loio_mayotte`

@@ -9,7 +9,6 @@ Targets:
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``eurosat-l`` — pinned ``isaaccorley/eurosat-l``, into ``<output>/eurosat-l``.
 - ``bigearthnet-l`` — pinned ``isaaccorley/bigearthnet-l``, into ``<output>/bigearthnet-l``.
-- ``lc100-l`` — pinned ``isaaccorley/lc100-l``, into ``<output>/lc100-l``.
 - ``infrabench-cls``: pinned, verified Sentinel-1/2 tiles and spatial splits.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
@@ -35,13 +34,11 @@ Use ``--datasets`` to select a GeoBench subset.
 """
 
 import hashlib
-import io
 import logging
 import shutil
 import tarfile
 import urllib.request
 import zipfile
-from collections.abc import Buffer, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -71,15 +68,10 @@ AID_REPO = "isaaccorley/aid"
 AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
 
 EUROSAT_L_REPO = "isaaccorley/eurosat-l"
-EUROSAT_L_REVISION = "40282cda59fa453cf4a7a3ccaf4dfc6b353eb58b"
-EUROSAT_SPATIAL_REPO = "torchgeo/eurosat"
-EUROSAT_SPATIAL_REVISION = "1ce6f1bfb56db63fd91b6ecc466ea67f2509774c"
+EUROSAT_L_REVISION = "2db8fa8da738ccd8f06ce5861c3d204d07b49ea1"
 
 BIGEARTHNET_L_REPO = "isaaccorley/bigearthnet-l"
-BIGEARTHNET_L_REVISION = "792f53a06836ae42767b93ea14c1365d1a45bb26"
-
-LC100_L_REPO = "isaaccorley/lc100-l"
-LC100_L_REVISION = "ab9bf7972885ab9b734055440b041d9928bc10ca"
+BIGEARTHNET_L_REVISION = "4877101bb325f0a367e0f9fd367bae3e32f30bba"
 
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
@@ -129,7 +121,6 @@ DIRECT_DATASETS: tuple[str, ...] = (
     "infrabench-cls",
     "eurosat-l",
     "bigearthnet-l",
-    "lc100-l",
     "hotosm_buildings",
     "openearthmap-sar",
     "open_cities",
@@ -247,94 +238,36 @@ def download_aid(output_dir: Path) -> None:
     logger.info("AID download complete.")
 
 
-class _ChainedBinaryReader(io.RawIOBase):
-    """Stream multiple split archive parts sequentially without concatenating them on disk."""
-
-    def __init__(self, paths: Sequence[Path]) -> None:
-        self._paths = list(paths)
-        self._index = 0
-        self._current = self._paths[0].open("rb") if self._paths else None
-
-    def readable(self) -> bool:
-        return True
-
-    def readinto(self, buffer: Buffer, /) -> int:
-        while self._current is not None:
-            n = self._current.readinto(buffer)
-            if n:
-                return n
-            self._current.close()
-            self._index += 1
-            self._current = (
-                self._paths[self._index].open("rb") if self._index < len(self._paths) else None
-            )
-        return 0
-
-    def close(self) -> None:
-        if self._current is not None:
-            self._current.close()
-            self._current = None
-        super().close()
-
-
-def _fetch_hf_release(
+def _download_landsatbench(
     output_dir: Path, name: str, repo: str, revision: str, manifest: str
-) -> tuple[Path, dict[str, str]]:
+) -> None:
     target = Path(output_dir) / name
     target.mkdir(parents=True, exist_ok=True)
     checksums = load_checksums(manifest)
     logger.info("Downloading %s@%s -> %s", repo, revision, target)
     fetch_pinned(repo, revision, target, checksums, allow_patterns=list(checksums))
-    return target, checksums
+    for archive_path in sorted(target / f for f in checksums if f.endswith(".tar")):
+        with tarfile.open(archive_path, "r:") as archive:
+            archive.extractall(target, filter="data")
+    logger.info("%s download complete.", name)
 
 
 def download_eurosat_l(output_dir: Path) -> None:
-    """Download EuroSAT-L imagery plus standard and spatial split files."""
-    target, _ = _fetch_hf_release(
+    """Download the pinned ``isaaccorley/eurosat-l`` release into ``output_dir/eurosat-l``."""
+    _download_landsatbench(
         output_dir, "eurosat-l", EUROSAT_L_REPO, EUROSAT_L_REVISION, "eurosat_l.sha256"
     )
-    spatial_checksums = {
-        EuroSATSpatial.split_filenames[s]: EuroSATSpatial.split_sha256s[s]
-        for s in ("train", "val", "test")
-    }
-    fetch_pinned(
-        EUROSAT_SPATIAL_REPO,
-        EUROSAT_SPATIAL_REVISION,
-        target,
-        spatial_checksums,
-        allow_patterns=list(spatial_checksums),
-    )
-    with zipfile.ZipFile(target / "eurosat-l.zip") as archive:
-        archive.extractall(target)
-    logger.info("EuroSAT-L download complete.")
 
 
 def download_bigearthnet_l(output_dir: Path) -> None:
     """Download the pinned ``isaaccorley/bigearthnet-l`` release into ``output_dir``."""
-    target, _ = _fetch_hf_release(
+    _download_landsatbench(
         output_dir,
         "bigearthnet-l",
         BIGEARTHNET_L_REPO,
         BIGEARTHNET_L_REVISION,
         "bigearthnet_l.sha256",
     )
-    with tarfile.open(target / "bigearthnet-l.tar.gz", "r:gz") as archive:
-        archive.extractall(target, filter="data")
-    logger.info("BigEarthNet-L download complete.")
-
-
-def download_lc100_l(output_dir: Path) -> None:
-    """Download the pinned ``isaaccorley/lc100-l`` release into ``output_dir/lc100-l``."""
-    target, checksums = _fetch_hf_release(
-        output_dir, "lc100-l", LC100_L_REPO, LC100_L_REVISION, "lc100_l.sha256"
-    )
-    parts = sorted(target / name for name in checksums if ".tar.gz.part." in name)
-    with (
-        io.BufferedReader(_ChainedBinaryReader(parts)) as stream,
-        tarfile.open(fileobj=stream, mode="r|gz") as archive,
-    ):
-        archive.extractall(target, filter="data")
-    logger.info("LC100-L download complete.")
 
 
 def download_infrabench_cls(output_dir: Path) -> None:

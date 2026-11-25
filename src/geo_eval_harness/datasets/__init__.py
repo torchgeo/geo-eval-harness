@@ -31,7 +31,6 @@ __all__ = [
     "AID",
     "BENV2",
     "FLAIR2",
-    "LC100L",
     "PASTIS",
     "PLANTEUR",
     "RESISC45",
