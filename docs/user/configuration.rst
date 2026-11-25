@@ -299,6 +299,7 @@ Results and resume
      directory: results
      file: null
      resume: false
+     embeddings: null
      epoch_metrics: null
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
@@ -313,6 +314,8 @@ To keep every output from an image run outside the tracked reference results:
 The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. ``--output`` takes precedence over any directory, regardless of flag order, and a YAML ``output.file`` takes precedence over a YAML ``output.directory``. ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``. For image runs, the explicit file combines all selected measurement kinds in one CSV.
+
+``output.embeddings`` names a directory for the validation and test embeddings of classification runs. It is unset by default and has no CLI flag; see :ref:`classification-embeddings`.
 
 ``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
 

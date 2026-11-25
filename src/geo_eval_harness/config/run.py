@@ -23,6 +23,7 @@ class OutputConfig(OutputPaths):
     """Result storage settings."""
 
     resume: StrictBool = False
+    embeddings: OutputPath | None = None
     # JSON Lines file for per-epoch segmentation records; output-only, so not in the resume hash.
     epoch_metrics: OutputPath | None = None
 
