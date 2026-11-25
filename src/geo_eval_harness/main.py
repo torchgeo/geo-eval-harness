@@ -49,6 +49,7 @@ from geo_eval_harness.results import (
     bootstrap_accuracy,
     bootstrap_map,
     bootstrap_miou,
+    class_iou,
     format_setup_value,
     model_results_path,
     segmentation_setup_columns,
@@ -123,6 +124,7 @@ class SegmentationOutcome(NamedTuple):
     best_epoch: int | None
     best_val_miou: float | None
     weight_decay: float | None = None
+    class_iou: list[float] | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -652,7 +654,7 @@ def evaluate_segmentation(
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
-    collect_confusions = cfg.classification.bootstrap_samples > 0
+    collect_confusions = cfg.classification.bootstrap_samples > 0 or cfg.output.per_class_iou
     if use_cache:
         logger.info("Caching backbone features for train and val splits...")
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
@@ -689,6 +691,7 @@ def evaluate_segmentation(
         )
     actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
 
+    class_ious = None
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result
         metrics["ci_lower"], metrics["ci_upper"] = bootstrap_miou(
@@ -696,6 +699,8 @@ def evaluate_segmentation(
             n_boot=cfg.classification.bootstrap_samples,
             seed=seed,
         )
+        if cfg.output.per_class_iou:
+            class_ious = class_iou(confusion_matrices.sum(dim=0)).tolist()
     else:
         metrics = eval_result
     weight_decay = seg_cfg.weight_decay
@@ -709,6 +714,7 @@ def evaluate_segmentation(
         best_epoch=solver.best_epoch,
         best_val_miou=solver.best_val_miou,
         weight_decay=weight_decay,
+        class_iou=class_ious,
     )
 
 
@@ -778,8 +784,21 @@ def run_segmentation(
         best_val_epoch=format_setup_value(outcome.best_epoch),
         best_val_miou=format_setup_value(outcome.best_val_miou),
     ).to_row()
-    row.update(segmentation_setup_columns(cfg.segmentation))
-    yield [row]
+    rows = [row] + [
+        EvaluationResult(
+            **segmentation_meta,
+            method=cfg.segmentation.method,
+            metric_name=f"IoU_class_{index}",
+            metric_value=value,
+            ci_lower=float("nan"),
+            ci_upper=float("nan"),
+        ).to_row()
+        for index, value in enumerate(outcome.class_iou or [])
+    ]
+    setup = segmentation_setup_columns(cfg.segmentation)
+    for result_row in rows:
+        result_row.update(setup)
+    yield rows
 
 
 def _epoch_metrics_writer(
