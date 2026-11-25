@@ -1,0 +1,17 @@
+name: tgeo_vitb16_s2all_fgmae
+target: geo_eval_harness.models.TorchGeoViTBench
+kwargs:
+  factory: vit_base_patch16_224
+  weights_class: ViTBase16_Weights
+  weights_member: SENTINEL2_ALL_FGMAE
+  auto_resize: true
+  target_size: 224
+  pool: mean
+input:
+  bands: all
+segmentation:
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2

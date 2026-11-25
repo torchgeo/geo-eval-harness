@@ -1391,6 +1391,14 @@ def test_s1_rejects_missing_bands_or_undeclared_unit_for_model_native(
 _NEW_TORCHGEO_SSL_PRESETS = [
     "torchgeo/resnet50_s2_all_decur",
     "torchgeo/resnet50_s1_all_decur",
+    "torchgeo/vits16_s2_all_fgmae",
+    "torchgeo/vits16_s1_grd_fgmae",
+    "torchgeo/vitb16_s2_all_fgmae",
+    "torchgeo/vitb16_s1_grd_fgmae",
+    "torchgeo/vitl16_s2_all_fgmae",
+    "torchgeo/vitl16_s1_grd_fgmae",
+    "torchgeo/vith14_s2_all_fgmae",
+    "torchgeo/vith14_s1_grd_fgmae",
 ]
 
 

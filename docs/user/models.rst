@@ -321,6 +321,10 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/resnet50_s2_all_decur --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/resnet50_s1_all_decur --dataset sen1floods11-s1 --bands all
 
+   $ # FG-MAE
+   $ geo-eval-harness run --model torchgeo/vitb16_s2_all_fgmae --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/vitb16_s1_grd_fgmae --dataset sen1floods11-s1 --bands all
+
 :class:`~geo_eval_harness.models.TorchGeoViTBench` wraps ``torchgeo.models.vit_*`` timm Vision Transformers with configurable token pooling (``pool: mean``, ``cls``, or ``both``) and standard ``blocks.*`` segmentation hooks. 13-band Sentinel-2 checkpoints select their bands by canonical name with an optional zero-filled B10, and Sentinel-1 GRD checkpoints select ``VV`` and ``VH`` and convert declared ``linear_power`` inputs to dB under ``--normalization model``.
 
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
