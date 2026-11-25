@@ -12,6 +12,7 @@ import torchvision.transforms.functional as TF
 
 from geo_eval_harness import geography
 from geo_eval_harness.datasets.landsatbench import (
+    LC100L,
     BigEarthNetL,
     EuroSATL,
     EuroSATLSpatial,
@@ -65,23 +66,34 @@ def test_eurosat_l_loads_standard_and_spatial_splits(
     assert int(spatial[0]["label"]) == 9
 
 
-def test_bigearthnet_l_loads_multilabel_and_extracts_geography(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("bench_cls", "rel_path"),
+    [
+        (BigEarthNetL, "images/sample.tif"),
+        (LC100L, "images/0000001_10.50_45.25/scene.tif"),
+    ],
+)
+def test_multilabel_landsat_loads_labels_and_extracts_geography(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bench_cls: type[BigEarthNetL | LC100L],
+    rel_path: str,
 ) -> None:
+    name, n_classes, tile_size = bench_cls.name, bench_cls.num_classes, bench_cls.tile_size
     monkeypatch.chdir(tmp_path)
-    root = tmp_path / "data" / "bigearthnet-l"
+    root = tmp_path / "data" / name
     rng = np.random.default_rng(0)
     raw = rng.integers(7000, 18000, size=(7, 45, 45), dtype=np.int16)
-    path = root / "images/sample.tif"
+    path = root / rel_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(geotiff_bytes(raw))
-    vec = [1] + [0] * 18
+    vec = [1] + [0] * (n_classes - 1)
     pq.write_table(
         pa.table(
             {
-                "path": ["images/sample.tif"],
+                "path": [rel_path],
                 "split": ["train"],
-                "label": pa.array([vec], type=pa.list_(pa.int8(), 19)),
+                "label": pa.array([vec], type=pa.list_(pa.int8(), n_classes)),
                 "lon": [10.5],
                 "lat": [45.2],
             }
@@ -89,15 +101,15 @@ def test_bigearthnet_l_loads_multilabel_and_extracts_geography(
         root / "index.parquet",
     )
 
-    sample = BigEarthNetL().get_dataset("train", bands=("nir", "red"))[0]
-    expected_img = TF.resize(torch.from_numpy(raw[[4, 3]].astype(np.float32)), [40, 40])
+    sample = bench_cls().get_dataset("train", bands=("nir", "red"))[0]
+    expected_img = TF.resize(torch.from_numpy(raw[[4, 3]].astype(np.float32)), [tile_size] * 2)
     torch.testing.assert_close(sample["image"], expected_img)
-    assert sample["label"].shape == (19,)
+    assert sample["label"].shape == (n_classes,)
     assert sample["label"].dtype == torch.long
     assert int(sample["label"][0]) == 1
 
     monkeypatch.setattr(
         geography, "_attribute_continents", lambda lon, lat: Counter(Europe=len(lon))
     )
-    record = geography.extract_geography("bigearthnet-l")
+    record = geography.extract_geography(name)
     assert (record.status, record.version, record.n) == ("extracted", "index", 1)

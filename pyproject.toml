@@ -239,6 +239,7 @@ ignore_names = [
   "download_aid",
   "download_bigearthnet_l",
   "download_eurosat_l",
+  "download_lc100_l",
   "download_levir_cd_post",
   "download_loveda",
   "download_oscd_post",

@@ -1,6 +1,6 @@
-"""EuroSAT-L and BigEarthNet-L classification datasets from Landsat-Bench.
+"""EuroSAT-L, BigEarthNet-L, and LC100-L classification datasets from Landsat-Bench.
 
-Both datasets provide 7 Landsat 8 Collection 2 Level-2 surface reflectance bands (SR_B1 to SR_B7)
+All datasets provide 7 Landsat 8 Collection 2 Level-2 surface reflectance bands (SR_B1 to SR_B7)
 from Corley et al. (2025), https://github.com/isaaccorley/landsatbench.
 """
 
@@ -15,6 +15,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchgeo.datasets import BigEarthNet as TGBigEarthNet
+from torchgeo.datasets import CopernicusBenchLC100ClsS3
 
 from .base import BandSpec, BenchDataset
 from .eurosat import EuroSAT
@@ -181,4 +182,29 @@ class BigEarthNetL(_LandsatBenchDataset):
         means=(9405.194, 9649.677, 10425.686, 10444.589, 16067.627, 12699.184, 10596.475),
         stds=(6016.344, 6095.472, 5839.462, 6068.493, 6271.440, 4256.046, 3130.776),
         maxs=(63979.918, 65330.309, 65454.0, 65454.0, 65454.0, 65454.004, 65454.004),
+    )
+
+
+class LC100L(_LandsatBenchDataset):
+    """Landsat 8 global multi-label land-cover classification across 23 classes from Landsat-Bench.
+
+    Contains 8,634 Collection 2 Level-2 scenes paired with Copernicus-Bench LC100 labels (5,181
+    train, 1,727 val, 1,726 test; one test PID without Landsat coverage is excluded) with 7 OLI
+    surface reflectance bands resized to 224x224. Only the static scene listed for each PID is
+    indexed. Hosted at https://huggingface.co/datasets/isaaccorley/lc100-l.
+    """
+
+    name = "lc100-l"
+    _data_dir = "lc100-l"
+    num_classes = 23
+    class_names: ClassVar[tuple[str, ...]] = tuple(CopernicusBenchLC100ClsS3.classes)
+    multilabel = True
+    split_sizes: ClassVar[dict[str, int]] = {"train": 5181, "val": 1727, "test": 1726}
+    tile_size = 224
+
+    # Statistics from landsatbench/datasets/lc100.py (https://github.com/isaaccorley/landsatbench).
+    bands: ClassVar[list[BandSpec]] = _landsat8_bands(
+        means=(10349.788, 10614.703, 11293.564, 11854.381, 14793.030, 12222.565, 10831.328),
+        stds=(10919.979, 10937.509, 10435.630, 10778.187, 10573.886, 8040.635, 7096.610),
+        maxs=(65454.0, 65454.0, 65454.0, 65454.0, 65454.0, 65175.0, 61457.0),
     )
