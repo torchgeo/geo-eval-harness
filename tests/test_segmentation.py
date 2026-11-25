@@ -19,7 +19,7 @@ from torchmetrics.functional.classification import (
 
 from geo_eval_harness.boundary_iou import MulticlassBoundaryIoU
 from geo_eval_harness.config.schema import SegmentationConfig
-from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.results import bootstrap_miou, class_iou
 from geo_eval_harness.segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -412,6 +412,30 @@ def test_solver_evaluation_parity(
         assert isinstance(metrics, dict)
         metrics.pop("loss")
         assert metrics == pytest.approx(expected_metrics)
+
+
+def test_class_iou_scores_absent_classes_and_skips_ignored_pixels() -> None:
+    predictions = torch.tensor([[[0, 0], [1, 1]], [[1, 2], [4, 4]]])
+    masks = torch.tensor([[[0, 0], [0, 1]], [[1, 3], [255, 255]]])
+    images = F.one_hot(predictions, num_classes=NUM_CLASSES).permute(0, 3, 1, 2).float()
+    backbone = nn.Sequential(nn.Conv2d(NUM_CLASSES, NUM_CLASSES, 1, bias=False))
+    backbone.num_channels = NUM_CLASSES
+    probe = SegmentationProbe(backbone, ["0"], num_classes=NUM_CLASSES)
+    for module in probe.modules():
+        if isinstance(module, nn.Conv2d):
+            nn.init.dirac_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+    solver = SegmentationSolver(probe, num_classes=NUM_CLASSES, device="cpu")
+    result = solver.evaluate(make_loader(images, masks), collect_confusions=True)
+    assert isinstance(result, tuple)
+    metrics, confusions = result
+
+    iou = class_iou(confusions.sum(dim=0))
+
+    expected = torch.tensor([2 / 3, 2 / 3, 0.0, 0.0, math.nan], dtype=torch.float64)
+    torch.testing.assert_close(iou, expected, equal_nan=True)
+    assert iou.nanmean().item() == pytest.approx(metrics["mIoU"])
 
 
 @pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 1.0])])
