@@ -266,7 +266,9 @@ def test_download_geobench_v2_rejects_unknown_dataset(tmp_path: Path) -> None:
     "manifest",
     [
         "aid.sha256",
+        "bigearthnet_l.sha256",
         "bright_post_sar.sha256",
+        "eurosat_l.sha256",
         "geobench_v1.sha256",
         "geobench_v2.sha256",
         "hotosm_buildings.sha256",

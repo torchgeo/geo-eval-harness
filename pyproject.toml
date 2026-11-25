@@ -237,6 +237,8 @@ ignore_names = [
   "ClimplicitLocationEncoder",
   "construct_mapping",         # yaml.SafeLoader override, called by PyYAML
   "download_aid",
+  "download_bigearthnet_l",
+  "download_eurosat_l",
   "download_levir_cd_post",
   "download_loveda",
   "download_oscd_post",

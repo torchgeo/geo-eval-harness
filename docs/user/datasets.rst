@@ -38,6 +38,12 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``infrabench-cls``
      - ``data/infrabench_cls/``
      - Pinned Hugging Face tiles and GitHub spatial split, both checksum-verified
+   * - ``eurosat-l``
+     - ``data/eurosat-l/``
+     - Hugging Face ``isaaccorley/eurosat-l``, pinned commit + checksum-verified
+   * - ``bigearthnet-l``
+     - ``data/bigearthnet-l/``
+     - Hugging Face ``isaaccorley/bigearthnet-l``, pinned commit + checksum-verified
    * - ``open_cities``
      - ``data/open_cities/<city>/``
      - source.coop ``open-cities/ai-challenge`` tier 1, checksum-verified; masks built locally
@@ -86,6 +92,8 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download resisc45                                 # torchgeo RESISC45
    $ geo-eval-harness download aid                                      # isaaccorley/aid rehost
    $ geo-eval-harness download infrabench-cls
+   $ geo-eval-harness download eurosat-l                                # Landsat-Bench EuroSAT-L
+   $ geo-eval-harness download bigearthnet-l                            # Landsat-Bench BigEarthNet-L
    $ geo-eval-harness download open_cities                              # source.coop, ~34 GB
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
@@ -264,6 +272,9 @@ CLI name                Class
 ``resisc45``            :class:`~geo_eval_harness.datasets.RESISC45`  (45-class aerial scenes, RGB)
 ``aid``                 :class:`~geo_eval_harness.datasets.AID`  (30-class aerial scenes, RGB)
 ``infrabench-cls``       :class:`~geo_eval_harness.datasets.InfraBenchCLS` (13 infrastructure classes, S2 + S1)
+``eurosat-l``           :class:`~geo_eval_harness.datasets.EuroSATL`  (10-class land use, Landsat 8)
+``eurosat-l-spatial``   :class:`~geo_eval_harness.datasets.EuroSATLSpatial`  (longitude-based spatial split, Landsat 8)
+``bigearthnet-l``       :class:`~geo_eval_harness.datasets.BigEarthNetL`  (19-class multi-label, Landsat 8)
 
 ``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
 ``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)
