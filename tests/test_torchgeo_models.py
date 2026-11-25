@@ -1395,6 +1395,12 @@ def test_s1_rejects_missing_bands_or_undeclared_unit_for_model_native(
 _NEW_TORCHGEO_SSL_PRESETS = [
     "torchgeo/resnet50_s2_all_decur",
     "torchgeo/resnet50_s1_all_decur",
+    "torchgeo/resnet50_s2_all_softcon",
+    "torchgeo/resnet50_s1_grd_softcon",
+    "torchgeo/vits14_dinov2_s2_all_softcon",
+    "torchgeo/vits14_dinov2_s1_grd_softcon",
+    "torchgeo/vitb14_dinov2_s2_all_softcon",
+    "torchgeo/vitb14_dinov2_s1_grd_softcon",
     "torchgeo/vits16_s2_all_fgmae",
     "torchgeo/vits16_s1_grd_fgmae",
     "torchgeo/vitb16_s2_all_fgmae",
@@ -1431,3 +1437,41 @@ def test_new_torchgeo_ssl_presets_resolve_factory_and_weights(preset_name: str) 
         preset.kwargs["weights_class"], preset.kwargs["weights_member"]
     )
     assert weights.meta["in_chans"] in (2, 9, 12, 13)
+
+
+@pytest.mark.parametrize(
+    ("offset", "expected"), [(-3.0, 0.0), (-2.0, 0.0), (0.0, 0.5), (2.0, 1.0), (3.0, 1.0)]
+)
+def test_softcon_clip_sigma_maps_two_std_range_to_unit_interval(
+    monkeypatch: pytest.MonkeyPatch, offset: float, expected: float
+) -> None:
+    from torchgeo.models.resnet import _mean_s2, _std_s2
+
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()
+    )
+    model = TorchGeoResNetBench(
+        bands=_s2_multispectral_bands(),
+        weights_class="ResNet50_Weights",
+        weights_member="SENTINEL2_ALL_SOFTCON",
+        normalization="model_native",
+        clip_sigma=2.0,
+    )
+    # The 12 L2A input bands are the 13 SSL4EO-S12 bands without B10 (index 10).
+    kept = [*range(10), 11, 12]
+    dn = torch.tensor([_mean_s2[i] + offset * _std_s2[i] for i in kept])
+    out = model.normalize_inputs((dn / 10000.0).view(1, 12, 1, 1))
+    torch.testing.assert_close(out.flatten()[kept], torch.full((12,), expected), atol=1e-4, rtol=0)
+
+
+@pytest.mark.parametrize("clip_sigma", [0.0, -1.0])
+def test_clip_sigma_must_be_positive(clip_sigma: float) -> None:
+    with pytest.raises(ValueError, match="clip_sigma"):
+        TorchGeoResNetBench(
+            bands=_s2_multispectral_bands(),
+            weights_class="ResNet50_Weights",
+            weights_member="SENTINEL2_ALL_SOFTCON",
+            clip_sigma=clip_sigma,
+        )

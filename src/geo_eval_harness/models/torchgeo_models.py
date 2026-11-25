@@ -211,6 +211,30 @@ def _band_selection_kind(meta: dict[str, Any]) -> str | None:
     return None
 
 
+class _Clamp01(nn.Module):
+    """Clamp a tensor to ``[0, 1]``."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.clamp(0.0, 1.0)
+
+
+def _rescale_to_sigma_range(norms: nn.Sequential, sigma: float) -> nn.Sequential:
+    """Map ``mean - sigma * std`` to 0 and ``mean + sigma * std`` to 1, then clamp.
+
+    Each ``Normalize`` keeps its statistics but standardizes to a bounded range instead of a
+    z-score, as in the min-max preprocessing of the SoftCon authors.
+    """
+    layers: list[nn.Module] = []
+    for layer in norms:
+        mean = torch.as_tensor(layer.mean, dtype=torch.float32)
+        std = torch.as_tensor(layer.std, dtype=torch.float32)
+        layers.append(
+            type(layer)(mean=(mean - sigma * std).tolist(), std=(2.0 * sigma * std).tolist())
+        )
+    layers.append(_Clamp01())
+    return nn.Sequential(*layers)
+
+
 class _TorchGeoBackboneBench(BenchModel):
     """Shared scaffolding for torchgeo pretrained-weights wrappers.
 
@@ -231,9 +255,12 @@ class _TorchGeoBackboneBench(BenchModel):
         target_size: int | None,
         normalization_input_unit: str | None = None,
         skip_weight_normalize: int = 0,
+        clip_sigma: float | None = None,
         factory_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        if clip_sigma is not None and not clip_sigma > 0:
+            raise ValueError(f"clip_sigma must be positive, got {clip_sigma!r}.")
         weights = _resolve_torchgeo_weights(weights_class, weights_member)
         band_selection = _band_selection_kind(getattr(weights, "meta", {}) or {})
         requested_norm = NormalizationStrategy(
@@ -283,6 +310,10 @@ class _TorchGeoBackboneBench(BenchModel):
             self._weights_normalize = nn.Sequential(
                 *list(weights_normalize)[skip_weight_normalize:]
             )
+            if clip_sigma is not None:
+                self._weights_normalize = _rescale_to_sigma_range(
+                    self._weights_normalize, clip_sigma
+                )
         else:
             self._weights_normalize = None
         native = self.normalization is NormalizationStrategy.MODEL_NATIVE
@@ -460,6 +491,7 @@ class _TorchGeoBackboneBench(BenchModel):
         layers: list[nn.Module] = []
         for inner in self._weights_normalize:
             if not isinstance(inner, (_N1, _N2)):
+                layers.append(inner)
                 continue
             mean = inner.mean
             std = inner.std
@@ -550,6 +582,8 @@ class TorchGeoResNetBench(_TorchGeoBackboneBench):
         target_size: Spatial size used when ``auto_resize`` is enabled.
         normalization_input_unit: Optional override for the expected weights input unit.
         skip_weight_normalize: Number of leading pretrained ``Normalize`` layers to skip.
+        clip_sigma: When set, rescale the pretrained ``Normalize`` statistics so that
+            ``mean ± clip_sigma * std`` maps to ``[0, 1]``, and clamp the result.
         **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
@@ -671,6 +705,8 @@ class TorchGeoViTBench(_TorchGeoBackboneBench):
         dynamic_img_size: Allow timm ViT positional embedding interpolation across sizes.
         normalization_input_unit: Optional override for the expected weights input unit.
         skip_weight_normalize: Number of leading pretrained ``Normalize`` layers to skip.
+        clip_sigma: When set, rescale the pretrained ``Normalize`` statistics so that
+            ``mean ± clip_sigma * std`` maps to ``[0, 1]``, and clamp the result.
         **_kwargs: Additional keyword arguments forwarded to ``_TorchGeoBackboneBench``.
     """
 
