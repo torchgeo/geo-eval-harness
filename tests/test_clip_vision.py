@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 import timm
 import torch
+from timm.layers.activations import QuickGELU
 
 from geo_eval_harness.config.presets import build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
@@ -280,3 +281,54 @@ def test_segmentation_probe_hooks_clip_presets(
     with torch.inference_mode():
         logits = probe(torch.rand(1, 3, 224, 224))
     assert logits.shape == (1, 3, 224, 224)
+
+
+def _s2_dn_rgb_bands() -> list[BandSpec]:
+    return [
+        BandSpec(
+            name=name,
+            source_name=name,
+            sensor="s2",
+            mean=1000.0,
+            std=500.0,
+            min=0.0,
+            max=10000.0,
+        )
+        for name in ("red", "green", "blue")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("bands", "value"), [(_s2_dn_rgb_bands(), 3558.0), (_rgb_uint8_bands(), 255.0)]
+)
+def test_model_native_maps_saturated_display_values_to_one(
+    bands: list[BandSpec], value: float
+) -> None:
+    """Sentinel-2 DN is stretched like TCI, so DN 3558 and uint8 255 both normalize from 1.0."""
+    model = CLIPVisionBench(
+        bands=bands, variant="skyclip_vit_b32", pretrained=False, normalization="model_native"
+    )
+    out = model.normalize_inputs(torch.full((1, 3, 2, 2), value))
+    mean = torch.tensor(CLIP_MEAN).view(1, 3, 1, 1)
+    std = torch.tensor(CLIP_STD).view(1, 3, 1, 1)
+    torch.testing.assert_close(out, ((1.0 - mean) / std).expand(1, 3, 2, 2))
+
+
+@pytest.mark.parametrize(
+    ("variant", "quickgelu"),
+    [
+        ("skyclip_vit_b32", False),
+        ("skyclip_vit_l14", True),
+        ("georsclip_vit_b32", True),
+        ("georsclip_vit_l14", True),
+        ("georsclip_vit_h14", False),
+    ],
+)
+def test_vit_activation_matches_authors_checkpoint(variant: str, *, quickgelu: bool) -> None:
+    """SkyCLIP ViT-L/14 starts from OpenAI weights and GeoRSCLIP B/32 and L/14 do too, so they
+    use QuickGELU; strict state-dict loading cannot catch an activation mismatch."""
+    model = CLIPVisionBench(
+        bands=_rgb_uint8_bands(), variant=variant, pretrained=False, normalization="identity"
+    )
+    act = model.backbone.blocks[0].mlp.act
+    assert isinstance(act, QuickGELU) is quickgelu

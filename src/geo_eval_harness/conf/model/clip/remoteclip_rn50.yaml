@@ -6,8 +6,6 @@ kwargs:
   pretrained: true
   pool: proj
 input:
-  bands: rgb
-  image_size: 224
   normalization: model
 segmentation:
   layers:

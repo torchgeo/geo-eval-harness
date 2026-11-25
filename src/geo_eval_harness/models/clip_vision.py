@@ -7,12 +7,13 @@ and GeoRSCLIP (MIT/CC).
 
 All variants expect 3-channel RGB imagery normalized with standard OpenAI
 CLIP statistics (``mean=(0.48145466, 0.4578275, 0.40821073)``,
-``std=(0.26862954, 0.26130258, 0.27577711)``) under ``--normalization model``.
+``std=(0.26862954, 0.26130258, 0.27577711)``) under ``--normalization model``. Sentinel-2 DN
+inputs are first stretched to display scale like ESA's TCI (DN 3558 maps to 1).
 """
 
 import logging
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -23,7 +24,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
-from ._input_units import InputUnit
+from ._input_units import InputUnit, detect_input_unit, to_rgb_display_scale
 from ._normalization import NormalizationStrategy
 from ._pooling import VALID_MODES as _VIT_TOKEN_POOLS
 from ._pooling import pool_tokens
@@ -88,7 +89,7 @@ CLIP_VARIANTS: dict[str, CLIPVariantSpec] = {
         repo_id="torchgeo/vit_large_patch14_224_skyclip_50pct",
         revision="aa6b40850d1dbd643b11716c2a4b7c392d4dec69",
         filename="vit_large_patch14_224_skyclip_50pct-fc4be2dd.pth",
-        timm_name="vit_large_patch14_clip_224",
+        timm_name="vit_large_patch14_clip_quickgelu_224",
         proj_dim=768,
         checkpoint_format="timm",
     ),
@@ -236,6 +237,19 @@ def _convert_checkpoint(checkpoint: object, spec: CLIPVariantSpec) -> dict[str, 
     return convert_openclip_resnet_state_dict(state_dict)
 
 
+def _build_model_normalizer(bands: list[BandSpec]) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Build the CLIP RGB normalizer, stretching Sentinel-2 DN to display scale first."""
+    src = detect_input_unit(bands)
+    mean = torch.tensor(_CLIP_MEAN_LIST, dtype=torch.float32).view(1, 3, 1, 1)
+    std = torch.tensor(_CLIP_STD_LIST, dtype=torch.float32).view(1, 3, 1, 1)
+
+    def normalize(images: torch.Tensor) -> torch.Tensor:
+        x = to_rgb_display_scale(images, src)
+        return (x - mean.to(x.device, x.dtype)) / std.to(x.device, x.dtype)
+
+    return normalize
+
+
 class CLIPVisionBench(BenchModel):
     """Frozen remote-sensing CLIP vision tower backed by ``timm``.
 
@@ -279,6 +293,8 @@ class CLIPVisionBench(BenchModel):
         **_kwargs: object,
     ) -> None:
         super().__init__(bands=bands, normalization=normalization, **_kwargs)
+        if self.normalization is NormalizationStrategy.MODEL_NATIVE:
+            self._normalizer = _build_model_normalizer(bands)
         if self.num_channels != 3:
             raise ValueError(
                 f"CLIPVisionBench only supports 3-channel RGB input, got {self.num_channels}. "

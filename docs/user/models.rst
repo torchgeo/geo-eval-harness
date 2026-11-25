@@ -499,7 +499,7 @@ Remote-sensing CLIP vision encoders
 
 Available presets under :file:`src/geo_eval_harness/conf/model/clip/`:
 
-* **SkyCLIP** (MIT, rehosted by TorchGeo): ``clip/skyclip_vit_b32`` (512-d) and ``clip/skyclip_vit_l14`` (768-d).
+* **SkyCLIP** (MIT, rehosted by TorchGeo): ``clip/skyclip_vit_b32`` (512-d) and ``clip/skyclip_vit_l14`` (768-d, QuickGELU).
 * **RemoteCLIP** (Apache-2.0): ``clip/remoteclip_rn50`` (1024-d), ``clip/remoteclip_vit_b32`` (512-d), and ``clip/remoteclip_vit_l14`` (768-d).
 * **GeoRSCLIP** (MIT/CC): ``clip/georsclip_vit_b32`` (512-d, QuickGELU), ``clip/georsclip_vit_l14`` (768-d, QuickGELU), and ``clip/georsclip_vit_h14`` (1024-d).
 
