@@ -44,6 +44,7 @@ def _landsat8_bands(
             min=0.0,
             max=hi,
             wavelength_um=wavelength_um,
+            unit="landsat_c2_l2_dn",
         )
         for (name, source_name, wavelength_um), mean, std, hi in zip(
             _LANDSAT8_BAND_META, means, stds, maxs, strict=True
@@ -81,6 +82,7 @@ class _LandsatSplit(Dataset):
                 size=(self.tile_size, self.tile_size),
                 mode="bilinear",
                 align_corners=False,
+                antialias=True,
             ).squeeze(0)
         sample = {"image": image, "label": torch.tensor(self.labels[index], dtype=torch.long)}
         return sample if self.transform is None else self.transform(sample)

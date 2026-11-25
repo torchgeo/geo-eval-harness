@@ -75,11 +75,30 @@ def test_low_magnitude_band_does_not_split_raw_sensor_units() -> None:
         (InputUnit.S2_DN, InputUnit.S2_TCI, -50.0, 0.0),
         (InputUnit.REFLECTANCE_0_1, InputUnit.S2_TCI, 0.1779, 127.5),
         (InputUnit.UINT8, InputUnit.S2_TCI, 200.0, 200.0),
+        (InputUnit.LANDSAT_C2_L2_DN, InputUnit.REFLECTANCE_0_1, 10000.0, 0.075),
+        (InputUnit.LANDSAT_C2_L2_DN, InputUnit.REFLECTANCE_0_1, 0.0, 0.0),
+        (InputUnit.LANDSAT_C2_L2_DN, InputUnit.S2_DN, 10000.0, 750.0),
+        (InputUnit.LANDSAT_C2_L2_DN, InputUnit.UINT8, 10000.0, 19.125),
+        (InputUnit.LANDSAT_C2_L2_DN, InputUnit.S2_TCI, 10000.0, 750.0 * 255.0 / 3558.0),
     ],
 )
 def test_convert_unit_pairs(src: InputUnit, dst: InputUnit, value: float, expected: float) -> None:
     result = convert_unit(torch.tensor([value]), src, dst)
     assert torch.allclose(result, torch.tensor([expected]))
+
+
+def test_detect_landsat_c2_l2_dn_from_declared_unit() -> None:
+    band = BandSpec(
+        "landsat",
+        "red",
+        "SR_B4",
+        mean=9891.7,
+        std=4434.4,
+        min=0.0,
+        max=65454.0,
+        unit="landsat_c2_l2_dn",
+    )
+    assert detect_input_unit([band]) == InputUnit.LANDSAT_C2_L2_DN
 
 
 @pytest.mark.parametrize("unit", list(InputUnit))

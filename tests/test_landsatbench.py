@@ -8,6 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 import torch
+import torchvision.transforms.functional as TF
 
 from geo_eval_harness import geography
 from geo_eval_harness.datasets.landsatbench import (
@@ -69,7 +70,11 @@ def test_bigearthnet_l_loads_multilabel_and_extracts_geography(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "data" / "bigearthnet-l"
-    _write_landsat_geotiff(root / "images/sample.tif", 16, 18)
+    rng = np.random.default_rng(0)
+    raw = rng.integers(7000, 18000, size=(7, 45, 45), dtype=np.int16)
+    path = root / "images/sample.tif"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(geotiff_bytes(raw))
     vec = [1] + [0] * 18
     pq.write_table(
         pa.table(
@@ -85,10 +90,8 @@ def test_bigearthnet_l_loads_multilabel_and_extracts_geography(
     )
 
     sample = BigEarthNetL().get_dataset("train", bands=("nir", "red"))[0]
-    assert sample["image"].shape == (2, 40, 40)
-    torch.testing.assert_close(
-        sample["image"][:, -1, -1], torch.tensor([500.0, 400.0], dtype=torch.float32)
-    )
+    expected_img = TF.resize(torch.from_numpy(raw[[4, 3]].astype(np.float32)), [40, 40])
+    torch.testing.assert_close(sample["image"], expected_img)
     assert sample["label"].shape == (19,)
     assert sample["label"].dtype == torch.long
     assert int(sample["label"][0]) == 1
