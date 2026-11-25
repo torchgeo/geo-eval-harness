@@ -44,6 +44,9 @@ variables like ``GEOBENCH_ROOT``; if you keep data elsewhere, symlink
    * - ``bigearthnet-l``
      - ``data/bigearthnet-l/``
      - Hugging Face ``isaaccorley/bigearthnet-l``, pinned commit + checksum-verified
+   * - ``lc100-l``
+     - ``data/lc100-l/``
+     - Hugging Face ``isaaccorley/lc100-l``, pinned commit + checksum-verified
    * - ``open_cities``
      - ``data/open_cities/<city>/``
      - source.coop ``open-cities/ai-challenge`` tier 1, checksum-verified; masks built locally
@@ -94,6 +97,7 @@ The :doc:`/api/cli` accepts one or more dataset names. Collection aliases are av
    $ geo-eval-harness download infrabench-cls
    $ geo-eval-harness download eurosat-l                                # Landsat-Bench EuroSAT-L
    $ geo-eval-harness download bigearthnet-l                            # Landsat-Bench BigEarthNet-L
+   $ geo-eval-harness download lc100-l                                  # Landsat-Bench LC100-L
    $ geo-eval-harness download open_cities                              # source.coop, ~34 GB
 
    $ geo-eval-harness download ucmerced                                 # torchgeo UC Merced
@@ -275,6 +279,7 @@ CLI name                Class
 ``eurosat-l``           :class:`~geo_eval_harness.datasets.EuroSATL`  (10-class land use, Landsat 8)
 ``eurosat-l-spatial``   :class:`~geo_eval_harness.datasets.EuroSATLSpatial`  (longitude-based spatial split, Landsat 8)
 ``bigearthnet-l``       :class:`~geo_eval_harness.datasets.BigEarthNetL`  (19-class multi-label, Landsat 8)
+``lc100-l``             :class:`~geo_eval_harness.datasets.LC100L`  (23-class global multi-label, Landsat 8)
 
 ``ucmerced``            :class:`~geo_eval_harness.datasets.UCMerced`  (21-class aerial land use, RGB)
 ``hotosm_buildings``    :class:`~geo_eval_harness.datasets.HOTOSMBuildings`  (building segmentation, RGB; trains on a fixed 5k subset, see below)

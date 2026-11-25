@@ -9,6 +9,7 @@ Targets:
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
 - ``eurosat-l`` — pinned ``isaaccorley/eurosat-l``, into ``<output>/eurosat-l``.
 - ``bigearthnet-l`` — pinned ``isaaccorley/bigearthnet-l``, into ``<output>/bigearthnet-l``.
+- ``lc100-l`` — pinned ``isaaccorley/lc100-l``, into ``<output>/lc100-l``.
 - ``infrabench-cls``: pinned, verified Sentinel-1/2 tiles and spatial splits.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
@@ -73,6 +74,9 @@ EUROSAT_L_REVISION = "2db8fa8da738ccd8f06ce5861c3d204d07b49ea1"
 BIGEARTHNET_L_REPO = "isaaccorley/bigearthnet-l"
 BIGEARTHNET_L_REVISION = "4877101bb325f0a367e0f9fd367bae3e32f30bba"
 
+LC100_L_REPO = "isaaccorley/lc100-l"
+LC100_L_REVISION = "8f0e07f96b5bb254861f6c3d0ff4cb27ce39a9f8"
+
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
 
@@ -121,6 +125,7 @@ DIRECT_DATASETS: tuple[str, ...] = (
     "infrabench-cls",
     "eurosat-l",
     "bigearthnet-l",
+    "lc100-l",
     "hotosm_buildings",
     "openearthmap-sar",
     "open_cities",
@@ -268,6 +273,11 @@ def download_bigearthnet_l(output_dir: Path) -> None:
         BIGEARTHNET_L_REVISION,
         "bigearthnet_l.sha256",
     )
+
+
+def download_lc100_l(output_dir: Path) -> None:
+    """Download the pinned ``isaaccorley/lc100-l`` release into ``output_dir/lc100-l``."""
+    _download_landsatbench(output_dir, "lc100-l", LC100_L_REPO, LC100_L_REVISION, "lc100_l.sha256")
 
 
 def download_infrabench_cls(output_dir: Path) -> None:

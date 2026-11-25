@@ -119,3 +119,5 @@ Other datasets
 .. autoclass:: EuroSATLSpatial
 .. autoclass:: BigEarthNetL
    :no-show-inheritance:
+.. autoclass:: LC100L
+   :no-show-inheritance:

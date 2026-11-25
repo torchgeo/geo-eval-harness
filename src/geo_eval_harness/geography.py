@@ -524,6 +524,7 @@ _NAMED_EXTRACTORS = {
     "bigearthnet-l": (_extract_landsatbench, "index.parquet has no lon/lat coordinates"),
     "eurosat-l": (_extract_landsatbench, "index.parquet has no lon/lat coordinates"),
     "infrabench-cls": (_extract_infrabench, "manifests have no lon/lat coordinates"),
+    "lc100-l": (_extract_landsatbench, "index.parquet has no lon/lat coordinates"),
     "oscd-post": (_extract_oscd, "city footprints have no coordinates"),
 }
 
