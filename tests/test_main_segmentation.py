@@ -206,6 +206,30 @@ def test_dataset_row_does_not_depend_on_earlier_datasets(
     assert rows[0].to_numpy().tolist() == rows[1].to_numpy().tolist()
 
 
+def test_per_class_rows_leave_the_aggregate_row_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "geo_eval_harness.main.get_datasets", lambda **_kwargs: _synthetic_segmentation_loaders()
+    )
+    monkeypatch.setattr(
+        "geo_eval_harness.main.instantiate_dataset_model", _randomly_initialized_backbone
+    )
+    lines = []
+    for per_class_iou in (False, True):
+        out = tmp_path / f"{per_class_iou}.csv"
+        overrides = {
+            "segmentation": {"head": "linear", "layers": ["0"], "epochs": 2},
+            "output": {"per_class_iou": per_class_iou},
+        }
+        main(_cfg_for_segmentation(out, overrides))
+        lines.append(out.read_text().splitlines())
+
+    header, aggregate, *class_rows = lines[1]
+    assert [header, aggregate] == lines[0]
+    assert len(class_rows) == 2
+
+
 _TINY_VIT = {
     "name": "tiny-vit",
     "target": "geo_eval_harness.models.TimmPatchBenchModel",

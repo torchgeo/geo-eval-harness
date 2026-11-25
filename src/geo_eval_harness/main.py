@@ -654,7 +654,7 @@ def evaluate_segmentation(
     cache_dtype = {"float16": torch.float16, "float32": torch.float32}[seg_cfg.cache_dtype]
 
     probe, solver = build_seg_probe_and_solver(model, num_classes, seg_cfg, device)
-    collect_confusions = cfg.classification.bootstrap_samples > 0 or cfg.output.per_class_iou
+    collect_confusions = cfg.classification.bootstrap_samples > 0
     if use_cache:
         logger.info("Caching backbone features for train and val splits...")
         train_cache = probe.extract_segmentation_features(train_loader, cache_dtype=cache_dtype)
@@ -783,22 +783,24 @@ def run_segmentation(
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
         best_val_epoch=format_setup_value(outcome.best_epoch),
         best_val_miou=format_setup_value(outcome.best_val_miou),
-    ).to_row()
-    rows = [row] + [
-        EvaluationResult(
-            **segmentation_meta,
-            method=cfg.segmentation.method,
+    )
+    class_rows = [
+        replace(
+            row,
             metric_name=f"IoU_class_{index}",
             metric_value=value,
             ci_lower=float("nan"),
             ci_upper=float("nan"),
-        ).to_row()
+            fw_iou=None,
+            precision=None,
+            recall=None,
+            f1=None,
+            boundary_iou=None,
+        )
         for index, value in enumerate(outcome.class_iou or [])
     ]
     setup = segmentation_setup_columns(cfg.segmentation)
-    for result_row in rows:
-        result_row.update(setup)
-    yield rows
+    yield [result.to_row() | setup for result in (row, *class_rows)]
 
 
 def _epoch_metrics_writer(
