@@ -6,6 +6,8 @@ kwargs:
   pretrained: true
   s2_level: l2a
   auto_resize: false
+input:
+  bands: all
 segmentation:
   lora_target_modules: 'stages\.\d+\.\d+\.pwconv[12]'
   layers:

@@ -236,6 +236,7 @@ def test_preset_loads_and_matches_lora_targets() -> None:
         ModelConfig(name="mmearth/convnextv2_atto", kwargs={"pretrained": False})
     )
     assert preset.supports_model_normalization is True
+    assert preset.input.bands == "all"
     assert preset.segmentation.layers == ["stages.3", "stages.2", "stages.1", "stages.0"]
     model = build_model(preset, bands=_s2_bands(), normalization="bandspec_zscore")
     assert isinstance(model, MMEarthBench)
