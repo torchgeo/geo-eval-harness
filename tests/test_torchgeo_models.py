@@ -1399,6 +1399,14 @@ _NEW_TORCHGEO_SSL_PRESETS = [
     "torchgeo/vitl16_s1_grd_fgmae",
     "torchgeo/vith14_s2_all_fgmae",
     "torchgeo/vith14_s1_grd_fgmae",
+    "torchgeo/resnet50_s2_all_closp",
+    "torchgeo/resnet50_s2_all_geoclosp",
+    "torchgeo/resnet50_s1_grd_closp",
+    "torchgeo/resnet50_s1_grd_geoclosp",
+    "torchgeo/vits16_s2_all_closp",
+    "torchgeo/vits16_s1_grd_closp",
+    "torchgeo/vitl16_s2_all_closp",
+    "torchgeo/vitl16_s1_grd_closp",
 ]
 
 
