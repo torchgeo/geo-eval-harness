@@ -299,6 +299,7 @@ Results and resume
      file: null
      resume: false
      epoch_metrics: null
+     per_class_iou: false
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
 
@@ -314,6 +315,8 @@ The same flags apply to ``flops`` and standalone ``profile``. Beneath the root, 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. ``--output`` takes precedence over any directory, regardless of flag order, and a YAML ``output.file`` takes precedence over a YAML ``output.directory``. ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``. For image runs, the explicit file combines all selected measurement kinds in one CSV.
 
 ``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
+
+``output.per_class_iou`` adds a row with each class's IoU next to each segmentation ``mIoU`` row. It is off by default and has no CLI flag; see :ref:`segmentation-per-class-iou`.
 
 ``--resume`` / ``--no-resume`` control skipping completed measurements.
 Resume compares method/config keys and metric completeness; additive profile
