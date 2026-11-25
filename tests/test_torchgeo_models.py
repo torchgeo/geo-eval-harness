@@ -1306,6 +1306,48 @@ def test_torchgeo_vit_segmentation_hooks_extract_block_maps(
     assert logits.shape == (2, 2, 64, 64)
 
 
+def test_s2_l2a_seco_eco_selects_12_bands_without_cirrus(monkeypatch: pytest.MonkeyPatch) -> None:
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()
+    )
+    model = TorchGeoResNetBench(
+        bands=MEurosat().bands,
+        weights_class="ResNet50_Weights",
+        weights_member="SENTINEL2_ALL_SECO_ECO",
+        normalization="identity",
+    )
+    # m-eurosat order: B01..B08 (0..7), B09 (8), B10 (9), B11 (10), B12 (11), B8A (12).
+    images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
+    selected = model.normalize_inputs(images).flatten().tolist()
+    assert selected == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 12.0, 8.0, 10.0, 11.0]
+
+    native_model = TorchGeoResNetBench(
+        bands=_s2_multispectral_bands(),
+        weights_class="ResNet50_Weights",
+        weights_member="SENTINEL2_ALL_SECO_ECO",
+        normalization="model_native",
+    )
+    reflectance = torch.arange(1, 13, dtype=torch.float32).view(1, 12, 1, 1) / 100.0
+    torch.testing.assert_close(native_model.normalize_inputs(reflectance), reflectance)
+
+
+def test_s2_l2a_seco_eco_rejects_missing_band(monkeypatch: pytest.MonkeyPatch) -> None:
+    import geo_eval_harness.models.torchgeo_models as tg_models
+
+    monkeypatch.setattr(
+        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: _TinySatlasResNet()
+    )
+    with pytest.raises(BandCompatibilityError, match="B01"):
+        TorchGeoResNetBench(
+            bands=MSo2Sat().bands,
+            weights_class="ResNet50_Weights",
+            weights_member="SENTINEL2_ALL_SECO_ECO",
+            normalization="bandspec_zscore",
+        )
+
+
 def test_s1_vv_vh_band_ordering_and_db_normalization(monkeypatch: pytest.MonkeyPatch) -> None:
     import geo_eval_harness.models.torchgeo_models as tg_models
 
@@ -1421,6 +1463,7 @@ _NEW_TORCHGEO_SSL_PRESETS = [
     "torchgeo/vits16_s1_grd_closp",
     "torchgeo/vitl16_s2_all_closp",
     "torchgeo/vitl16_s1_grd_closp",
+    "torchgeo/resnet50_s2_all_seco_eco",
 ]
 
 

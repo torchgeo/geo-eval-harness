@@ -188,6 +188,10 @@ _SATLAS_S2_MS_BANDS = ("B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "
 _SSL4EO_S2_BANDS = (
     "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B10", "B11", "B12"
 )  # fmt: skip
+# Sentinel-2 L2A 12-band layout (without B10 cirrus), used by SeCo-Eco.
+_S2_L2A_BANDS = (
+    "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B11", "B12"
+)  # fmt: skip
 _S1_VV_VH_BANDS = ("VV", "VH")
 
 
@@ -204,6 +208,8 @@ def _band_selection_kind(meta: dict[str, Any]) -> str | None:
     bands = _normalized_meta_bands(meta)
     if bands == _SSL4EO_S2_BANDS:
         return "s2_13"
+    if bands == _S2_L2A_BANDS:
+        return "s2_12"
     if meta.get("dataset") != "SatlasPretrain" and bands == _S1_VV_VH_BANDS:
         return "s1_vv_vh"
     if meta.get("dataset") == "SatlasPretrain" and tuple(meta["bands"]) == _SATLAS_S2_MS_BANDS:
@@ -339,7 +345,8 @@ class _TorchGeoBackboneBench(BenchModel):
         :data:`_SATLAS_S2_MS_BANDS` order, and datasets missing any of them are rejected.
         Other multi-band Satlas checkpoints (Landsat, Sentinel-1) are rejected. 13-band
         Sentinel-2 L1C checkpoints take their bands in :data:`_SSL4EO_S2_BANDS` order with
-        B10 zero-filled when absent; Sentinel-1 GRD checkpoints require VV and VH in
+        B10 zero-filled when absent; 12-band Sentinel-2 L2A checkpoints require all bands in
+        :data:`_S2_L2A_BANDS` order; Sentinel-1 GRD checkpoints require VV and VH in
         :data:`_S1_VV_VH_BANDS` order. Every other checkpoint keeps its first convolution
         adapted to the dataset's band count.
         """
@@ -347,6 +354,8 @@ class _TorchGeoBackboneBench(BenchModel):
         kind = _band_selection_kind(meta)
         if kind == "s2_13":
             self._select_s2_bands(weights_member, _SSL4EO_S2_BANDS, allow_missing_b10=True)
+        elif kind == "s2_12":
+            self._select_s2_bands(weights_member, _S2_L2A_BANDS, allow_missing_b10=False)
         elif kind == "s1_vv_vh":
             self._select_s1_vv_vh_bands(weights_member)
         elif kind == "satlas_s2_ms":

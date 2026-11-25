@@ -338,7 +338,12 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
 
 SoftCon Sentinel-2 presets set ``clip_sigma: 2.0``. Under ``--normalization model`` this rescales the SSL4EO-S12 statistics so that ``mean ± 2·std`` maps to ``[0, 1]`` and clamps the result, matching the preprocessing in the SoftCon repository, instead of applying torchgeo's plain z-score.
 
-:class:`~geo_eval_harness.models.TorchGeoViTBench` wraps ``torchgeo.models.vit_*`` timm Vision Transformers with configurable token pooling (``pool: mean``, ``cls``, or ``both``) and standard ``blocks.*`` segmentation hooks. 13-band Sentinel-2 checkpoints select their bands by canonical name with an optional zero-filled B10, and Sentinel-1 GRD checkpoints select ``VV`` and ``VH`` and convert declared ``linear_power`` inputs to dB under ``--normalization model``.
+   $ # SeCo-Eco
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_seco_eco --dataset m-eurosat --bands all
+
+SeCo-Eco is evaluated best with the default dataset normalization. Its ``--normalization model`` path applies torchgeo's ``/10000`` scaling, which scored lower than dataset normalization on EuroSAT.
+
+:class:`~geo_eval_harness.models.TorchGeoViTBench` wraps ``torchgeo.models.vit_*`` timm Vision Transformers with configurable token pooling (``pool: mean``, ``cls``, or ``both``) and standard ``blocks.*`` segmentation hooks. 13-band Sentinel-2 L1C checkpoints select their bands by canonical name with an optional zero-filled B10, 12-band Sentinel-2 L2A checkpoints (SeCo-Eco) require all twelve bands, and Sentinel-1 GRD checkpoints select ``VV`` and ``VH`` and convert declared ``linear_power`` inputs to dB under ``--normalization model``.
 
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
