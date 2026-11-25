@@ -895,6 +895,10 @@ _SATLAS_MS_PRESETS = [
     "torchgeo/resnet152_s2ms_satlas_si",
     "torchgeo/swinv2t_s2ms_satlas_si",
     "torchgeo/swinv2b_s2ms_satlas_si",
+    "torchgeo/resnet50_s2ms_satlas_mi",
+    "torchgeo/resnet152_s2ms_satlas_mi",
+    "torchgeo/swinv2t_s2ms_satlas_mi",
+    "torchgeo/swinv2b_s2ms_satlas_mi",
 ]
 _SATLAS_WRAPPERS: dict[
     str, tuple[type[TorchGeoResNetBench | TorchGeoSwinBench], type[nn.Module]]
@@ -1399,6 +1403,10 @@ _NEW_TORCHGEO_SSL_PRESETS = [
     "torchgeo/vitl16_s1_grd_fgmae",
     "torchgeo/vith14_s2_all_fgmae",
     "torchgeo/vith14_s1_grd_fgmae",
+    "torchgeo/resnet50_s2ms_satlas_mi",
+    "torchgeo/resnet152_s2ms_satlas_mi",
+    "torchgeo/swinv2t_s2ms_satlas_mi",
+    "torchgeo/swinv2b_s2ms_satlas_mi",
     "torchgeo/resnet50_s2_all_closp",
     "torchgeo/resnet50_s2_all_geoclosp",
     "torchgeo/resnet50_s1_grd_closp",
