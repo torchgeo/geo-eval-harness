@@ -3,6 +3,7 @@
 import argparse
 import pathlib
 import re
+import sys
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,9 @@ from geo_eval_harness.models.mmearth import (
     remap_mmearth_state_dict,
 )
 from geo_eval_harness.segmentation_probe import SegmentationProbe
+
+# Official checkpoints pickle PosixPath, which cannot be instantiated on Windows.
+_PATH_CLS = pathlib.PurePosixPath if sys.platform == "win32" else pathlib.PosixPath
 
 TINY_SPEC = _MMEarthCheckpointSpec(
     filename="pt-all_mod_atto_1M_64_uncertainty_56-8.pth",
@@ -99,7 +103,7 @@ def _to_sparse_fcmae_checkpoint(dense_state: dict[str, torch.Tensor]) -> dict[st
     return {
         "model": sparse,
         "epoch": 199,
-        "args": argparse.Namespace(data_dir=pathlib.PosixPath("/tmp/mmearth")),
+        "args": argparse.Namespace(data_dir=_PATH_CLS("/tmp/mmearth")),
     }
 
 

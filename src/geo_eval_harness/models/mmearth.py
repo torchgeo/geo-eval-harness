@@ -376,11 +376,13 @@ class MMEarthBench(BenchModel):
         if not path.is_file():
             raise FileNotFoundError(f"MMEarth checkpoint does not exist: {path}")
         # Official ERDA checkpoints store training args (Namespace + PosixPath) alongside weights.
+        # PurePosixPath stands in for PosixPath, which cannot be instantiated on Windows.
         with torch.serialization.safe_globals(
             [
                 argparse.Namespace,
-                pathlib.PosixPath,
-                (pathlib.PosixPath, "pathlib.PosixPath"),
+                pathlib.PurePosixPath,
+                (pathlib.PurePosixPath, "pathlib.PosixPath"),
+                (pathlib.PurePosixPath, "pathlib._local.PosixPath"),
             ]
         ):
             checkpoint = torch.load(path, map_location="cpu", weights_only=True)
