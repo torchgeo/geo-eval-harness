@@ -190,7 +190,21 @@ and the runnable
 
 ## Citation
 
-To cite the software:
+If you use geo-eval-harness in your research, please cite our [paper](https://arxiv.org/abs/2611.33990):
+
+```bibtex
+@misc{lehmann2026geoevalharnessevaluationharnessgeospatial,
+      title={geo-eval-harness: An Evaluation Harness for Geospatial Foundation Models},
+      author={Nils Lehmann and Caleb Robinson and Isaac Corley and Jennifer Marcus and Inbal Becker-Reshef and Juan M. Lavista Ferres and Hannah Kerner},
+      year={2026},
+      eprint={2611.33990},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2611.33990},
+}
+```
+
+To cite the software itself:
 
 ```bibtex
 @misc{geoevalharness,

@@ -40,3 +40,4 @@ Install ``geo-eval-harness``, run a benchmark, and inspect its results. The guid
    glossary
    troubleshooting
    changelog
+   cite
