@@ -90,6 +90,18 @@ def _terratorch_prithvi(root: nn.Module) -> str | None:
     return f"TerraTorch PrithviViT blocks ({checkpoint_blocks(blocks)} blocks)"
 
 
+def _clay_v15(root: nn.Module) -> str | None:
+    from geo_eval_harness.models.clay_v15 import ClayV15Backbone
+
+    if not isinstance(root, ClayV15Backbone):
+        return None
+    # Clay's Transformer runs ``x = attn(x) + x; x = ff(x) + x`` itself, so each attention and
+    # feed-forward branch is checkpointed rather than the ModuleList pair that holds them.
+    layers = root.get_submodule("clay_encoder.transformer.layers")
+    branches = nn.ModuleList([branch for layer in layers for branch in layer])
+    return f"Clay v1.5 attention and feed-forward branches ({checkpoint_blocks(branches)} branches)"
+
+
 def _olmoearth(model: nn.Module) -> str | None:
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
@@ -102,20 +114,23 @@ def _olmoearth(model: nn.Module) -> str | None:
 def enable_gradient_checkpointing(model: nn.Module) -> str:
     """Checkpoint the backbone blocks of ``model`` in place and describe what was wrapped.
 
-    Supported: timm SwinV2 (timm's own ``set_grad_checkpointing``), TerraTorch Prithvi-EO ViTs and
-    OlmoEarth encoders (each transformer block wrapped with ``torch.utils.checkpoint``,
-    ``use_reentrant=False``, RNG state preserved). Works with LoRA adapters and full fine-tuning.
+    Supported: timm SwinV2 (timm's own ``set_grad_checkpointing``), TerraTorch Prithvi-EO ViTs,
+    Clay v1.5 (each attention and feed-forward branch) and OlmoEarth encoders (each transformer
+    block wrapped with ``torch.utils.checkpoint``, ``use_reentrant=False``, RNG state preserved).
+    Works with LoRA adapters and full fine-tuning.
 
     Raises:
         ValueError: If the backbone family is not supported.
     """
     root = getattr(model, "backbone", model)
-    mechanism = _olmoearth(model) or _terratorch_prithvi(root) or _timm_swinv2(root)
+    mechanism = (
+        _olmoearth(model) or _terratorch_prithvi(root) or _clay_v15(root) or _timm_swinv2(root)
+    )
     if mechanism is None:
         raise ValueError(
             f"segmentation.gradient_checkpointing is not supported for {type(model).__name__} "
             f"(backbone {type(root).__name__}). Supported: timm SwinV2, TerraTorch Prithvi-EO, "
-            "OlmoEarth."
+            "Clay v1.5, OlmoEarth."
         )
     logger.info("Gradient checkpointing: %s", mechanism)
     return mechanism
