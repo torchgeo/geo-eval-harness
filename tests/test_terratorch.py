@@ -558,6 +558,7 @@ def test_clay_core6_band_set_is_still_available(mock_registry: dict[str, Any]) -
         ("s2", ["b02", "b03", "b04"], 10.0),
         ("landsat", ["blue", "green", "red"], 30.0),
         ("aerial", ["red", "green", "blue"], 1.0),
+        ("worldview", ["red", "green", "blue"], 1.0),
     ],
 )
 def test_clay_gsd_follows_the_datasets_sensor(
@@ -632,11 +633,34 @@ def test_clay_v15_sentinel1_rejects_unusable_units(mock_registry: dict[str, Any]
             normalization="bandspec_zscore",
             backbone_name="clay_v1_5_large",
         )
+    with pytest.raises(ValueError, match="declare no unit"):
+        TerraTorchClayBench(
+            bands=_sar_bands(None), normalization="model_native", backbone_name="clay_v1_5_large"
+        )
     with pytest.raises(ValueError, match="declare unit"):
         TerraTorchClayBench(
-            bands=_sar_bands(None), normalization="bandspec_zscore", backbone_name="clay_v1_5_large"
+            bands=[*_sar_bands("db")[:1], *_sar_bands(None)[1:]],
+            normalization="bandspec_zscore",
+            backbone_name="clay_v1_5_large",
         )
     assert mock_registry["build_calls"] == []
+
+
+def test_clay_v15_takes_unitless_vv_vh_aliases_with_dataset_statistics(
+    mock_registry: dict[str, Any],
+) -> None:
+    """One SAR channel fed through ``vv``/``vh`` aliases (openearthmap-sar, bright-post-sar)."""
+    model = TerraTorchClayBench(
+        bands=_sar_bands(None, sensor="sar"),
+        normalization="bandspec_zscore",
+        backbone_name="clay_v1_5_large",
+        gsd=1.0,
+    )
+    assert model.model_bands == ["vv", "vh"]
+    assert model.gsd == 1.0
+    model.forward_patch_features(torch.zeros(1, 2, 256, 256))
+    waves = mock_registry["instances"][-1].last_forward_kwargs["waves"]
+    torch.testing.assert_close(waves, torch.tensor([3.5, 4.0]))
 
 
 def test_clay_v1_still_rejects_sar(mock_registry: dict[str, Any]) -> None:

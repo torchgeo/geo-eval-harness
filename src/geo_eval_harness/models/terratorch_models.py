@@ -279,6 +279,8 @@ _CLAY_SENSOR_GSD_M: dict[str, float] = {
     "sar": 10.0,
     "landsat": 30.0,
     "aerial": 1.0,
+    # Sub-metre-to-metre WorldView imagery shares the aerial convention.
+    "worldview": 1.0,
     "planet": 5.0,
 }
 
@@ -361,21 +363,29 @@ class TerraTorchClayBench(_TerraTorchBench):
             mean_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_MEAN, strict=True))
             std_by_band = dict(zip(CLAY_BANDS_S1, _CLAY_S1_STD, strict=True))
             units = {bands[i].unit for i in indices}
-            if (
-                units == {"linear_power"}
-                and NormalizationStrategy(
+            model_native = (
+                NormalizationStrategy(
                     kwargs.get("normalization", NormalizationStrategy.BANDSPEC_ZSCORE)
                 )
-                is not NormalizationStrategy.MODEL_NATIVE
-            ):
+                is NormalizationStrategy.MODEL_NATIVE
+            )
+            if units == {"linear_power"} and not model_native:
                 raise ValueError(
                     "Clay reads Sentinel-1 in dB. This dataset stores linear power, so its "
                     "dataset statistics do not apply; use --normalization model."
                 ) from None
-            if not units <= {"db", "linear_power"} or len(units) != 1:
+            # Bands without a unit (e.g. an uncalibrated SAR channel fed through ``vv``/``vh``
+            # aliases) can only be standardized with the dataset's own statistics.
+            if units == {None}:
+                if model_native:
+                    raise ValueError(
+                        "Clay's Sentinel-1 statistics apply to VV/VH in 'db' or 'linear_power'; "
+                        "these bands declare no unit, so use the dataset normalization."
+                    ) from None
+            elif not units <= {"db", "linear_power"} or len(units) != 1:
                 raise ValueError(
                     f"Clay Sentinel-1 input needs VV/VH bands that all declare unit 'db' or "
-                    f"'linear_power'; got {sorted(map(str, units))}."
+                    f"'linear_power', or all no unit; got {sorted(map(str, units))}."
                 ) from None
         self.backbone_name = backbone_name
         # model_native normalizes dataset channels before band mapping.

@@ -3,7 +3,8 @@
 
 """BRIGHT post-event SAR building damage segmentation."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from dataclasses import replace
 from importlib.resources import files
 from pathlib import Path
 from typing import ClassVar
@@ -77,6 +78,24 @@ class BRIGHTPostSAR(BenchDataset):
         ),
     ]
 
+    #: Opt-in aliases for models that only accept Sentinel-1 polarisations, as in
+    #: ``openearthmap-sar``: ``--bands vv`` (or ``vv,vh``) feeds the single X-band SAR channel under
+    #: that name with the same statistics. An adapter for comparison, not a physical match.
+    band_aliases: ClassVar[tuple[str, ...]] = ("vv", "vh")
+
+    @classmethod
+    def select_band_specs(cls, bands: "Iterable[str] | None") -> list[BandSpec]:
+        """Like the base class, plus the ``vv``/``vh`` aliases of the single ``sar`` band."""
+        if bands is None:
+            return list(cls.bands)
+        sar = cls.bands[0]
+        return [
+            replace(sar, name=b, source_name=b)
+            if b in cls.band_aliases
+            else super(BRIGHTPostSAR, cls).select_band_specs([b])[0]
+            for b in bands
+        ]
+
     @classmethod
     def data_root(cls) -> Path:
         """Return the fixed installation root."""
@@ -132,9 +151,9 @@ class BRIGHTPostSAR(BenchDataset):
         if partition != "default":
             raise ValueError("BRIGHT supports only the default partition")
         specs = self.select_band_specs(bands)
-        if specs != self.bands:
-            raise ValueError("BRIGHT requires exactly the single sar band")
-        transform = select_bands([0], 1, transform)
+        if not specs or len({b.name for b in specs}) != len(specs):
+            raise ValueError("BRIGHT needs the sar band (or its vv/vh aliases), each at most once")
+        transform = select_bands([0] * len(specs), 1, transform)
         return BRIGHTSegmentationDataset(self.split_paths(self.data_root(), split), transform)
 
 
@@ -151,6 +170,7 @@ class BRIGHTPostSARRGB(BRIGHTPostSAR):
 
     name = "bright-post-sar-rgb"
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
+    band_aliases: ClassVar[tuple[str, ...]] = ()
     bands: ClassVar[list[BandSpec]] = [
         BandSpec("aerial", name, "sar", mean=56.8231, std=45.8553, min=0, max=255)
         for name in ("red", "green", "blue")
