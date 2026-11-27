@@ -30,6 +30,7 @@ class KuroSiwo(_V2Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["vv", "vh"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 4000, "val": 1000, "test": 2000}
+    footprint_asset = "post_event"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [

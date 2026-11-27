@@ -59,7 +59,8 @@ class TestEntryPoints:
 
 class TestMain:
     @pytest.mark.parametrize(
-        "command", [None, "run", "models", "datasets", "download", "profile", "flops", "coord"]
+        "command",
+        [None, "run", "models", "datasets", "download", "profile", "flops", "coord", "embeddings"],
     )
     def test_help(self, command: str | None, capsys: pytest.CaptureFixture[str]) -> None:
         with pytest.raises(SystemExit) as error:

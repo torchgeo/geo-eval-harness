@@ -1,8 +1,11 @@
 """SpaceNet7 (GeoBench V2) benchmark dataset."""
 
+from dataclasses import replace
 from typing import ClassVar
 
-from .base import BandSpec
+from torch.utils.data import Dataset
+
+from .base import BandSpec, Footprint
 from .geobench_v2 import _OffsetMaskV2Dataset
 
 
@@ -20,6 +23,7 @@ class SpaceNet7(_OffsetMaskV2Dataset):
     multilabel = False
     rgb_bands: ClassVar[list[str]] = ["red", "green", "blue"]
     split_sizes: ClassVar[dict[str, int]] = {"train": 3500, "val": 652, "test": 1152}
+    footprint_asset = "images"
 
     # fmt: off
     bands: ClassVar[list[BandSpec]] = [
@@ -28,3 +32,9 @@ class SpaceNet7(_OffsetMaskV2Dataset):
         BandSpec("planet", "blue", "blue", mean=77.561, std=46.01, min=0, max=255),
     ]
     # fmt: on
+
+    def footprint(self, dataset: Dataset, index: int) -> Footprint:
+        """Flip the header's positive y spacing: rows run north to south from the origin."""
+        footprint = super().footprint(dataset, index)
+        a, b, c, d, e, f = footprint.transform
+        return replace(footprint, transform=(a, b, c, d, -abs(e), f))
