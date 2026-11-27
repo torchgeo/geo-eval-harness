@@ -9,7 +9,6 @@ Public interfaces for ``geo_eval_harness`` modules.
    datasets
    geography
    models
-   coordbench
    eval
    intrinsic_dim
    cli

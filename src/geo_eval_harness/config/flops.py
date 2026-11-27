@@ -129,8 +129,6 @@ class FlopsConfig(StrictModel):
         preset = load_model_preset(self.model, seed=self.runtime.seed).for_dataset(
             self.input.band_source
         )
-        if preset.track != "image":
-            raise ValueError(f"{self.model.name!r} is a coordinate encoder; use 'coord'")
         # Explicit constructor options also take precedence over dataset overrides.
         preset = preset.model_copy(update={"kwargs": {**preset.kwargs, **self.model.kwargs}})
         inputs = preset.input.model_dump(exclude_unset=True)

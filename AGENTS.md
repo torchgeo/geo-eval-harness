@@ -4,7 +4,7 @@ Guidelines for AI coding agents working in the geo-eval-harness repository.
 
 ## Project Overview
 
-**geo-eval-harness** is a Python benchmarking framework for evaluating geospatial foundation models on GeoBench datasets (V1 and V2) and location encoders on CoordBench. It uses PyTorch and strict Pydantic configuration with explicit CLI flags and YAML, and provides KNN-5, linear probing, and segmentation (mIoU) evaluation with bootstrapped confidence intervals. Legacy `key=value` and `+key=value` overrides are rejected.
+**geo-eval-harness** is a Python benchmarking framework for evaluating geospatial foundation models on GeoBench datasets (V1 and V2). It uses PyTorch and strict Pydantic configuration with explicit CLI flags and YAML, and provides KNN-5, linear probing, and segmentation (mIoU) evaluation with bootstrapped confidence intervals. Legacy `key=value` and `+key=value` overrides are rejected.
 
 ### Key Features
 - **Resume Mode**: Skip already-computed experiments when interrupted/restarted
@@ -15,10 +15,9 @@ Guidelines for AI coding agents working in the geo-eval-harness repository.
 
 ```
 src/geo_eval_harness/        # Main source package (importable as geo_eval_harness)
-  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/coord
+  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops
   ├── main.py              # Benchmark runner (classification + segmentation)
   ├── config/              # Python schemas, preset resolution, and catalog discovery
-  ├── coordbench/          # Location encoders, typed config, probes, and runner
   ├── resume.py            # config_hash-based resume/skip logic
   ├── results.py            # EvaluationResult schema + atomic per-model CSV writes
   ├── download.py          # Dataset downloads (all registered GeoBench, torchgeo, and HF datasets)
@@ -186,17 +185,14 @@ geo-eval-harness flops --model timm/resnet50
 
 # Measure a fixed real batch -> JSON stdout
 geo-eval-harness profile --model rcf --dataset m-eurosat --device cpu
-
-# Coordinate-only linear probe
-geo-eval-harness coord --model sincos --dataset california_housing --methods linear
 ```
 
 ## Configuration Architecture
 
 - The installed CLI, `python -m geo_eval_harness`, and `python -m geo_eval_harness.cli` dispatch the same commands. Do not reintroduce a legacy override parser or a second configuration engine.
-- `config/` groups Python configuration code; `conf/` contains packaged YAML. `config/run.py` defines `RunConfig` and `load_run_config`; `config/schema.py` holds shared configuration sections and safe YAML loading. Unknown fields, duplicate YAML keys, and wrong types are errors. Profile, FLOPs, and CoordBench have their own typed schemas.
+- `config/` groups Python configuration code; `conf/` contains packaged YAML. `config/run.py` defines `RunConfig` and `load_run_config`; `config/schema.py` holds shared configuration sections and safe YAML loading. Unknown fields, duplicate YAML keys, and wrong types are errors. Profile and FLOPs have their own typed schemas.
 - Benchmark commands declare flags in `commands/<name>_arguments.py` and dispatch directly through `commands.<name>` from `cli.py`. The run handler is `commands/_run.py`, with execution in `commands/_run_runtime.py`.
-- A run selects `model: {name: rcf}` or a custom `model: {name: my-model, target: my_package.MyModel, kwargs: {...}}`. Presets in `conf/model/` use `name`, `target`, `track`, `seed_from_run`, `kwargs`, `input`, `classification`, `segmentation`, and `dataset_overrides`. Metadata is never a constructor kwarg.
+- A run selects `model: {name: rcf}` or a custom `model: {name: my-model, target: my_package.MyModel, kwargs: {...}}`. Presets in `conf/model/` use `name`, `target`, `seed_from_run`, `kwargs`, `input`, `classification`, `segmentation`, and `dataset_overrides`. Metadata is never a constructor kwarg.
 - Preserve precedence: built-in defaults < model preset < preset's dataset defaults < explicit YAML < explicit flags. Use unset-aware serialization; explicit `false`, `null`, and `[]` must not be replaced by defaults.
 - `resolve_run_config` resolves effective settings per dataset. `build_model` receives runtime `BandSpec` objects and empirical-RCF datasets explicitly; never serialize them into YAML. Existing timm/RCF model dataclasses remain construction boundaries, not a competing configuration system.
 - Optional model dependencies stay lazy. Catalogs, schemas, and dry runs must not load weights or dataset samples.
@@ -206,7 +202,7 @@ geo-eval-harness coord --model sincos --dataset california_housing --methods lin
 - Each model writes to its own `results/models/<model name>.csv` (not one shared file), so re-running one model only touches that file. Rows are appended, never rewritten in place.
 - `--resume` skips a (dataset, method, bands, normalization, ...) combo only if an existing row's `config_hash` matches the current run's config. Changing a hashed config field invalidates the match. Classification hashes do not cover the `segmentation` section. Additive `profile` and `intrinsic_dim` settings do not invalidate equivalent classification results; their own metric completeness is checked separately.
 - One-time, hardware-dependent measurements (`geo-eval-harness flops`, intrinsic-dimension probes) live in their own side files — `results/compute_cost.csv`, `results/profiles/<model name>.csv`, and `results/intrinsic_dim/<model name>.csv` — so a routine metrics rerun doesn't touch them.
-- `--output-dir` / `output.directory` sets one root for all command outputs. Image runs use `models/`, `profiles/`, and `intrinsic_dim/` beneath it; `flops` and `coord` use `compute_cost.csv` and `coordbench_results.csv`. `--output` / `output.file` overrides the root and combines image-run measurements in one CSV, except that `--output-dir` without `--output` overrides a YAML `output.file`. Standalone `profile` defaults to JSON stdout, or writes `profile.json` under an explicit root. CoordBench retains its own CSV schema/resume key.
+- `--output-dir` / `output.directory` sets one root for all command outputs. Image runs use `models/`, `profiles/`, and `intrinsic_dim/` beneath it; `flops` uses `compute_cost.csv`. `--output` / `output.file` overrides the root and combines image-run measurements in one CSV, except that `--output-dir` without `--output` overrides a YAML `output.file`. Standalone `profile` defaults to JSON stdout, or writes `profile.json` under an explicit root.
 - Don't hand-edit `config_hash`/`KEY_COLS` logic without checking `resume.py`'s docstring first; it's easy to silently invalidate every existing row across `results/models/`.
 
 ## Datasets
@@ -379,7 +375,7 @@ class TestGeoBenchDatasetBasics:
 
 Core (see `pyproject.toml` for the authoritative list): `einops>=0.8`, `filelock>=3.12`, `geobenchv2>=0.9`, `geopandas>=0.14`, `h5py>=3.8`, `huggingface-hub>=0.20`, `lazy-loader>=0.4`, `numpy>=1.24`, `pandas>=2`, `pillow>=13`, `pyarrow>=14`, `pydantic>=2.10`, `pyyaml>=6.0.1`, `rasterio>=1.3`, `safetensors>=0.4`, `scikit-learn>=1.4.2`, `shapely>=2.0.4`, `timm>=1.0.20`, `torch>=2.6`, `torchgeo>=0.10.1,<0.11`, `torchmetrics>=1.4`, `torchvision>=0.21`, `tqdm>=4.66`, `transformers[torch]>=5.14` (SAM 3 encoder and the DPT segmentation head).
 
-Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
+Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
 
 ## Common Gotchas
 

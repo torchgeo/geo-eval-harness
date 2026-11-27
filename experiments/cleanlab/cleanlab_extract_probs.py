@@ -62,8 +62,7 @@ def build_name_to_config_map() -> dict[str, str]:
     out: dict[str, str] = {}
     for config_name in list_model_configs():
         preset = load_model_preset(ModelConfig(name=config_name))
-        if preset.track == "image":
-            out[preset.name] = config_name
+        out[preset.name] = config_name
     return out
 
 

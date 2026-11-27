@@ -27,7 +27,7 @@ The install puts the ``geo-eval-harness`` console script on your ``PATH``. Use `
    $ geo-eval-harness --help
    $ geo-eval-harness --version
 
-See `Optional extras`_ to add features such as CoordBench location encoders or OlmoEarth.
+See `Optional extras`_ to add features such as LoRA or OlmoEarth.
 
 From source with uv
 -------------------
@@ -68,7 +68,7 @@ Install optional dependencies for the features you need. Combine extras in one c
 .. code-block:: console
 
    $ # released package
-   $ pip install "geo-eval-harness[coordbench,olmoearth]"
+   $ pip install "geo-eval-harness[lora,olmoearth]"
    $ # source checkout
    $ uv sync --extra docs --extra dev
    $ # or
@@ -85,7 +85,6 @@ Install optional dependencies for the features you need. Combine extras in one c
 ================  ==============================================================
 Extra             Pulls in
 ================  ==============================================================
-``coordbench``    ``rshf`` for the SatCLIP, GeoCLIP, Climplicit, and SINR location encoders
 ``dev``           ruff, pytest, pytest-cov, pytest-xdist, pre-commit, mdformat, pyproject-fmt
 ``docs``          sphinx, pydata-sphinx-theme, myst-parser, sphinx-copybutton, sphinx-design
 ``id``            ``torchid`` for intrinsic-dimension metrics (Python ≥ 3.13 only)
@@ -96,8 +95,6 @@ Extra             Pulls in
 
 Datasets are not installed by these extras — see :doc:`datasets` for how to
 download GeoBench V1 / V2 with the bundled ``geo-eval-harness download`` command.
-CoordBench tables stream from Hugging Face through ``geo-eval-harness coord``; see
-:doc:`coordbench`.
 
 TerraTorch models
 -----------------

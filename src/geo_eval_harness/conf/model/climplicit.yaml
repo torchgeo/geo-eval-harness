@@ -1,5 +1,0 @@
-name: climplicit
-target: geo_eval_harness.coordbench.models.ClimplicitLocationEncoder
-track: coord
-kwargs:
-  repo: Jobedo/climplicit

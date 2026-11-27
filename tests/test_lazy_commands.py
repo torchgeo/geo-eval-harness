@@ -21,11 +21,6 @@ QUERIES = [
     ("geo_eval_harness.cli", ["flops", "--help"]),
     ("geo_eval_harness.cli", ["flops", "--config-help"]),
     ("geo_eval_harness.cli", ["flops", "--model", "rcf", "--dry-run"]),
-    ("geo_eval_harness.cli", ["coord", "--help"]),
-    (
-        "geo_eval_harness.cli",
-        ["coord", "--model", "sincos", "--dataset", "california_housing", "--dry-run"],
-    ),
     ("geo_eval_harness.config", []),
     ("geo_eval_harness.config.catalog", []),
     ("geo_eval_harness.config.schema", []),
@@ -132,7 +127,7 @@ def test_run_metadata_validation_loads_no_models_or_samples() -> None:
     code = """
 import json
 import sys
-blocked = {'olmoearth_pretrain_minimal', 'terratorch', 'rshf'}
+blocked = {'olmoearth_pretrain_minimal', 'terratorch'}
 class BlockRuntime:
     def find_spec(self, fullname, path=None, target=None):
         if (fullname.split('.')[0] in blocked
