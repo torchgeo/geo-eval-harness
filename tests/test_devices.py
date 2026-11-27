@@ -11,8 +11,10 @@ import torch
 from geo_eval_harness.devices import resolve_device
 
 
-@pytest.mark.parametrize("requested", ["cpu", torch.device("mps")])
-def test_non_cuda_devices_never_query_cuda(requested: str | torch.device) -> None:
+@pytest.mark.parametrize(
+    ("requested", "expected"), [("cpu", "cpu"), (torch.device("mps"), "mps:0"), ("mps:0", "mps:0")]
+)
+def test_non_cuda_devices_never_query_cuda(requested: str | torch.device, expected: str) -> None:
     with (
         mock.patch.object(torch.backends.mps, "is_available", return_value=True),
         mock.patch.object(torch.cuda, "is_available") as available,
@@ -20,7 +22,7 @@ def test_non_cuda_devices_never_query_cuda(requested: str | torch.device) -> Non
         mock.patch.object(torch.cuda, "device_count") as count,
         mock.patch.object(torch.cuda, "_lazy_init") as init,
     ):
-        assert resolve_device(requested) == torch.device(requested)
+        assert resolve_device(requested) == torch.device(expected)
     for query in (available, current, count, init):
         query.assert_not_called()
 

@@ -171,12 +171,12 @@ def _measure_backbone(
             return measure_profile(
                 model, x, device, n_warmup=timing.n_warmup, n_measure=timing.n_measure
             ), batch_size
-        except torch.cuda.OutOfMemoryError:  # allow-except: Retry with a smaller timing batch.
+        except torch.OutOfMemoryError:  # allow-except: Retry with a smaller timing batch.
             if batch_size <= 1:
                 raise
             batch_size //= 2
-            torch.cuda.empty_cache()
-            logger.warning("CUDA OOM — retrying at timing_batch_size=%d", batch_size)
+            _free(device)
+            logger.warning("%s OOM — retrying at timing_batch_size=%d", device, batch_size)
 
 
 def _probe_gflops(
@@ -511,3 +511,5 @@ def _now() -> str:
 def _free(device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.empty_cache()
+    elif device.type == "mps":
+        torch.mps.empty_cache()

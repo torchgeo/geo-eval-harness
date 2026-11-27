@@ -708,16 +708,17 @@ def test_measure_backbone_retries_cuda_oom(monkeypatch: pytest.MonkeyPatch) -> N
         assert (n_warmup, n_measure) == (1, 2)
         batches.append(sample.shape[0])
         if sample.shape[0] > 2:
-            raise torch.cuda.OutOfMemoryError("synthetic OOM")
+            raise torch.OutOfMemoryError("synthetic OOM")
         return {"gflops": 1.0}
 
     monkeypatch.setattr(flops_pipeline, "measure_profile", profile)
+    monkeypatch.setattr(torch, "randn", lambda *shape, device: torch.empty(shape))
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: cache_clears.append(None))
     metrics, batch_size = flops_pipeline._measure_backbone(
         nn.Identity(),
         3,
         8,
-        CPU,
+        torch.device("cuda"),
         ProfileTiming(batch_size=8, n_warmup=1, n_measure=2),
     )
     assert batches == [8, 4, 2]

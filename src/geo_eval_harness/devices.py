@@ -15,7 +15,7 @@ def resolve_device(requested: str | torch.device) -> torch.device:
         requested: Torch device or ``auto`` to choose CUDA when available, otherwise CPU.
 
     Returns:
-        Device for execution. Non-CUDA devices pass through without querying CUDA.
+        Device for execution. Bare ``mps`` resolves to ``mps:0``.
 
     Raises:
         DeviceError: If the device is malformed, unavailable, or out of range.
@@ -28,8 +28,10 @@ def resolve_device(requested: str | torch.device) -> torch.device:
         ValueError,
     ) as error:  # allow-except: normalize Torch parsing errors
         raise DeviceError(f"Invalid device request {requested!r}: {error}") from error
-    if device.type == "mps" and not torch.backends.mps.is_available():
-        raise DeviceError("Requested MPS, but MPS is unavailable")
+    if device.type == "mps":
+        if not torch.backends.mps.is_available():
+            raise DeviceError("Requested MPS, but MPS is unavailable")
+        return torch.device("mps", device.index or 0)
     if device.type != "cuda":
         return device
     # Torch stores indices as signed bytes and can silently wrap large string indices.
@@ -46,3 +48,12 @@ def resolve_device(requested: str | torch.device) -> torch.device:
             f"Requested CUDA index {index}, but only {count} CUDA devices are available"
         )
     return torch.device("cuda", index)
+
+
+def gpu_name(device: torch.device) -> str:
+    """Identify the GPU for profile records and hardware-specific resume keys."""
+    if device.type == "cuda":
+        return torch.cuda.get_device_name(device)
+    if device.type == "mps" and hasattr(torch.backends.mps, "get_name"):
+        return torch.backends.mps.get_name()
+    return ""
