@@ -193,11 +193,8 @@ def test_every_runtime_section_validates_its_device(section: type, device: str) 
     "section", [RunConfig.model_fields["runtime"].annotation, *_RUNTIME_SECTIONS]
 )
 def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
-    assert [section(device=name).device for name in ("cpu", "cuda", "cuda:1")] == [
-        "cpu",
-        "cuda",
-        "cuda:1",
-    ]
+    for device in ("auto", "cpu", "mps", "cuda", "cuda:1"):
+        assert section(device=device).device == device
 
 
 @pytest.mark.parametrize(
