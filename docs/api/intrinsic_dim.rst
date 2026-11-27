@@ -3,7 +3,7 @@ geo_eval_harness.intrinsic_dim
 
 .. module:: geo_eval_harness.intrinsic_dim
 
-Wrapper around the `torchid <https://github.com/jacobpennington/torchid>`__
+Wrapper around the `torchid <https://github.com/isaaccorley/torchid>`__
 intrinsic-dimension estimators plus dependency-free centered feature-spectrum
 diagnostics.  Used by
 :func:`geo_eval_harness.main.evaluate_intrinsic_dim` to attach
@@ -13,10 +13,6 @@ diagnostics.  Used by
 
 Enable the pass with ``intrinsic_dim.enabled: true`` in image YAML.
 ``intrinsic_dim.estimators: []`` requests only feature-spectrum diagnostics.
-
-The ``torchid`` dependency is optional and gated behind the ``[id]`` extra
-in :file:`pyproject.toml` (it requires Python ≥ 3.13).  When the dependency
-is not installed an :class:`ImportError` is raised on first use.
 
 Public API
 ----------

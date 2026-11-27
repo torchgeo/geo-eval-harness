@@ -4,15 +4,15 @@ requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
     "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "(python_full_version >= '3.14' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and ((platform_machine != 'x86_64' and sys_platform == 'linux') or (sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'))",
     "python_full_version >= '3.14' and platform_machine == 'x86_64' and sys_platform == 'linux'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
-    "(python_full_version == '3.13.*' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version == '3.13.*' and ((platform_machine != 'x86_64' and sys_platform == 'linux') or (sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'))",
     "python_full_version == '3.13.*' and platform_machine == 'x86_64' and sys_platform == 'linux'",
     "python_full_version < '3.13' and sys_platform == 'win32'",
     "python_full_version < '3.13' and sys_platform == 'emscripten'",
-    "(python_full_version < '3.13' and platform_machine != 'x86_64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version < '3.13' and ((platform_machine != 'x86_64' and sys_platform == 'linux') or (sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'))",
     "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'linux'",
 ]
 
@@ -959,6 +959,7 @@ dependencies = [
     { name = "timm" },
     { name = "torch" },
     { name = "torchgeo" },
+    { name = "torchid" },
     { name = "torchmetrics" },
     { name = "torchvision" },
     { name = "tqdm" },
@@ -984,7 +985,6 @@ all = [
     { name = "sphinx" },
     { name = "sphinx-copybutton" },
     { name = "sphinx-design" },
-    { name = "torchid", marker = "python_full_version >= '3.13'" },
     { name = "ty" },
     { name = "types-pyyaml" },
     { name = "vulture" },
@@ -1012,9 +1012,6 @@ docs = [
     { name = "sphinx-copybutton" },
     { name = "sphinx-design" },
 ]
-id = [
-    { name = "torchid", marker = "python_full_version >= '3.13'" },
-]
 lora = [
     { name = "peft" },
 ]
@@ -1029,7 +1026,6 @@ requires-dist = [
     { name = "filelock", specifier = ">=3.12" },
     { name = "geo-eval-harness", extras = ["dev"], marker = "extra == 'all'" },
     { name = "geo-eval-harness", extras = ["docs"], marker = "extra == 'all'" },
-    { name = "geo-eval-harness", extras = ["id"], marker = "extra == 'all'" },
     { name = "geo-eval-harness", extras = ["lora"], marker = "extra == 'all'" },
     { name = "geo-eval-harness", extras = ["lora"], marker = "extra == 'dev'" },
     { name = "geo-eval-harness", extras = ["olmoearth"], marker = "extra == 'all'" },
@@ -1067,7 +1063,7 @@ requires-dist = [
     { name = "timm", specifier = ">=1.0.20" },
     { name = "torch", specifier = ">=2.6" },
     { name = "torchgeo", specifier = ">=0.10.1,<0.11" },
-    { name = "torchid", marker = "python_full_version >= '3.13' and extra == 'id'", specifier = ">=0.6" },
+    { name = "torchid", specifier = ">=0.7.0" },
     { name = "torchmetrics", specifier = ">=1.4" },
     { name = "torchvision", specifier = ">=0.21" },
     { name = "tqdm", specifier = ">=4.66" },
@@ -1076,7 +1072,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.16" },
 ]
-provides-extras = ["all", "dev", "docs", "id", "lora", "olmoearth"]
+provides-extras = ["all", "dev", "docs", "lora", "olmoearth"]
 
 [[package]]
 name = "geobenchv2"
@@ -3914,17 +3910,16 @@ wheels = [
 
 [[package]]
 name = "torchid"
-version = "0.6.0"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
     { name = "torch" },
-    { name = "torchmetrics" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f0/c2/11e968b688958922b325f1a00d2ebf51eb6cc8d4a1eaf59c9d9448fa088e/torchid-0.6.0.tar.gz", hash = "sha256:6943721ce98d03420a6663b4107895d7a1e7c46adcc53c2d942d8c914ab12816", size = 32729, upload-time = "2026-11-25T00:13:29.469Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/e5/9f8b63574823a1518849819f0e2aeabee83d760f2ee29341f132de90078c/torchid-0.7.0.tar.gz", hash = "sha256:4217c985d77f68a292f3452dddaf8b4453f962f8ca3217fa8993f407209b6127", size = 34711, upload-time = "2026-11-27T21:06:13.969Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/12/38/2a9aa048d51344e2453516a42c773d8468199161dff9cc4d28a4ed19734f/torchid-0.6.0-py3-none-any.whl", hash = "sha256:cb9d49f45074e3658eec3928a1b4b440e89ea5bbe6782e3621f6cd95009e24fa", size = 40138, upload-time = "2026-11-25T00:13:28.614Z" },
+    { url = "https://files.pythonhosted.org/packages/bf/f2/5ed0c1b60fef70f05796f4acd2cb3d8b8b77e2253f4317d09bd9ca656610/torchid-0.7.0-py3-none-any.whl", hash = "sha256:b9ab8758c85d58264f182370849d7ac6f4ece807f0320f171c8255fbd6bbe1e2", size = 42083, upload-time = "2026-11-27T21:06:12.973Z" },
 ]
 
 [[package]]

@@ -87,7 +87,6 @@ Extra             Pulls in
 ================  ==============================================================
 ``dev``           ruff, pytest, pytest-cov, pytest-xdist, pre-commit, mdformat, pyproject-fmt
 ``docs``          sphinx, pydata-sphinx-theme, myst-parser, sphinx-copybutton, sphinx-design
-``id``            ``torchid`` for intrinsic-dimension metrics (Python ≥ 3.13 only)
 ``lora``          ``peft`` for LoRA segmentation fine-tuning (also included in ``dev``)
 ``olmoearth``     ``olmoearth-pretrain-minimal`` for the OlmoEarth backbone
 ``all``           every extra above

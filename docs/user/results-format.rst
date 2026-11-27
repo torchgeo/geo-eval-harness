@@ -75,11 +75,9 @@ Method values
                               when ``classification.feature_standardize`` is enabled. -> ``results/models/``
 ``linear`` / ``linear-std``   L-BFGS logistic regression with C-sweep on the validation set; ``-std`` is appended
                               when ``classification.feature_standardize`` is enabled. -> ``results/models/``
-``intrinsic_dim``             Optional intrinsic-dimension metrics on extracted embeddings (requires
-                              the ``[id]`` extra) plus dependency-free centered feature-spectrum
-                              diagnostics. Both are emitted when
-                              YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
-                              spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
+``intrinsic_dim``             Intrinsic-dimension estimates and centered feature-spectrum diagnostics on extracted embeddings.
+                              Enable both with ``intrinsic_dim.enabled: true`` or set ``estimators: []`` for
+                              spectrum-only output. -> ``results/intrinsic_dim/``
 ``profile``                   Optional throughput/latency/param-count measurement (requires
                               YAML ``profile: {enabled: true}``). -> ``results/profiles/``
 ``seg-<head>``                Segmentation probe with the configured head (``linear`` / ``conv_block`` /

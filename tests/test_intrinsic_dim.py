@@ -1,9 +1,6 @@
 """Tests for intrinsic dimension and feature-spectrum metrics."""
 
 import logging
-import sys
-from importlib.util import find_spec
-from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
@@ -24,11 +21,6 @@ from geo_eval_harness.intrinsic_dim import (
 from tests.support.numerical import isolated_torch_rng as isolated_torch_rng
 
 pytestmark = pytest.mark.usefixtures("isolated_torch_rng")
-
-torchid_available = find_spec("torchid") is not None
-requires_torchid = pytest.mark.skipif(
-    not torchid_available, reason="torchid not installed (requires Python >=3.13)"
-)
 
 
 class TestDeviceSelection:
@@ -209,9 +201,8 @@ class TestFeatureSpectrum:
 
 
 class TestErrorHandling:
-    def test_unknown_estimator_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_unknown_estimator_raises(self) -> None:
         """Estimator lookup failure raises instead of writing NaN."""
-        monkeypatch.setitem(sys.modules, "torchid", SimpleNamespace(estimators=SimpleNamespace()))
         X = np.random.default_rng(0).normal(size=(100, 5)).astype(np.float32)
         with pytest.raises(ValueError, match="Unknown torchid estimator"):
             compute_intrinsic_dim(
@@ -232,27 +223,10 @@ class TestErrorHandling:
 
 
 class TestLoadEstimator:
-    @requires_torchid
     def test_known_estimator_returns_class(self) -> None:
         from torchid.estimators import TwoNN
 
         assert _load_estimator("TwoNN") is TwoNN
-
-    def test_missing_torchid_raises_import_error(self) -> None:
-        import builtins
-
-        real_import = builtins.__import__
-
-        def _mock(name, *a, **kw):
-            if name == "torchid":
-                raise ImportError("mocked")
-            return real_import(name, *a, **kw)
-
-        with (
-            mock.patch.object(builtins, "__import__", side_effect=_mock),
-            pytest.raises(ImportError, match="mocked"),
-        ):
-            _load_estimator("TwoNN")
 
 
 class TestDropZeroDistanceRows:
@@ -291,7 +265,6 @@ class TestDegenerateManifoldError:
             compute_intrinsic_dim(X, estimators=["NaNEst"], device="cpu", max_samples=None)
 
 
-@requires_torchid
 class TestRealTorchid:
     @staticmethod
     def _swiss_roll(n: int) -> np.ndarray:
@@ -334,8 +307,22 @@ class TestRealTorchid:
         b = compute_intrinsic_dim(X, estimators=["TwoNN"], device="cpu", max_samples=500, seed=7)
         assert a == b
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-    def test_cuda_path(self) -> None:
+    @pytest.mark.parametrize(
+        "device",
+        [
+            pytest.param(
+                "cuda",
+                marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable"),
+            ),
+            pytest.param(
+                "mps",
+                marks=pytest.mark.skipif(
+                    not torch.backends.mps.is_available(), reason="MPS unavailable"
+                ),
+            ),
+        ],
+    )
+    def test_accelerator_path(self, device: str) -> None:
         X = self._uniform_cube(500, d=3)
-        out = compute_intrinsic_dim(X, estimators=["TwoNN"], device="cuda", max_samples=None)
+        out = compute_intrinsic_dim(X, estimators=["TwoNN"], device=device, max_samples=None)
         assert np.isfinite(out["TwoNN"])
