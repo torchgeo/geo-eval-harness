@@ -64,6 +64,7 @@ class KNNClassifier:
         self._effective_n_neighbors: int | None = None
         self._device: torch.device | None = None
         self._train: torch.Tensor | None = None
+        self._offset: torch.Tensor | None = None
         self._train_sq: torch.Tensor | None = None
         self._y: np.ndarray | None = None
         self._n_classes: int | None = None
@@ -86,7 +87,15 @@ class KNNClassifier:
         self._effective_n_neighbors = min(self.n_neighbors, len(X))
 
         self._device = resolve_device(self.device)
-        train = self._prepare(torch.from_numpy(X).to(self._device))
+        train = torch.from_numpy(X).to(self._device)
+        if self.metric == "l2":
+            # The point in the training bounds closest to zero removes common offsets before
+            # squaring, without shifting small feature values far from zero when outliers exist.
+            lower, upper = train.aminmax(dim=0)
+            self._offset = torch.zeros_like(lower).clamp(min=lower, max=upper)
+        else:
+            self._offset = None
+        train = self._prepare(train)
         self._train = train
         self._train_sq = (train * train).sum(dim=1) if self.metric == "l2" else None
 
@@ -99,6 +108,8 @@ class KNNClassifier:
         return self
 
     def _prepare(self, X: torch.Tensor) -> torch.Tensor:
+        if self._offset is not None:
+            return X - self._offset
         return F.normalize(X, dim=1) if self.metric == "cosine" else X
 
     def _search(self, X: np.ndarray) -> np.ndarray:
