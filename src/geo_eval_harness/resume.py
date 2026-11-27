@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -48,7 +49,9 @@ _UNHASHED_ADAPTATION_FIELDS = {
 }
 
 
-def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) -> str:
+def resume_config_hash(
+    config: RunConfig, model_cfg: ModelPreset, *, task: str, collection: str | None = None
+) -> str:
     """Fingerprint result-affecting settings for one resolved image run.
 
     Excludes the model and KNN devices and worker count, which only control execution. Includes
@@ -64,6 +67,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     ``segmentation`` section and the best-validation model-selection protocol, so segmentation
     settings such as a preset's ``segmentation.layers`` never change the hash of classification,
     profile, or intrinsic-dimension rows. Segmentation hashes also cover ``classification``.
+    ``collection`` identifies the contents of a stored embedding collection, so results from a
+    replaced collection are not resumed; image runs leave it out.
     """
     classification_exclude = {"methods"}
     if not config.classification.feature_standardize:
@@ -71,7 +76,7 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
     runtime_fields = {"seed", "batch_size"}
     if config.runtime.matmul_precision != "highest":
         runtime_fields.add("matmul_precision")
-    payload = {
+    payload: dict[str, Any] = {
         "schema_version": config.schema_version,
         "model": {
             "name": model_cfg.name,
@@ -91,6 +96,8 @@ def resume_config_hash(config: RunConfig, model_cfg: ModelPreset, *, task: str) 
         payload["segmentation"] = segmentation.model_dump(
             mode="json", exclude=_unset_segmentation_fields(segmentation)
         ) | {"selection_protocol": "best-validation-miou"}
+    if collection is not None:
+        payload["collection"] = collection
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode()).hexdigest()[:16]
 

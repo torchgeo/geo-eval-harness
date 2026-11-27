@@ -24,7 +24,7 @@ src/geo_eval_harness/        # Main source package (importable as geo_eval_harne
   ├── download.py          # Dataset downloads (all registered GeoBench, torchgeo, and HF datasets)
   ├── hub.py               # Exact-commit Hugging Face downloads verified against checksums/*.sha256
   ├── datasets/            # Per-dataset BenchDataset wrappers + V1/V2 base classes
-  ├── embeddings/          # Embedding products (AEF, TESSERA, OlmoEarth) read onto sample footprints, stored collections, PCA
+  ├── embeddings/          # Embedding products (AEF, TESSERA, OlmoEarth) read onto sample footprints, stored collections, PCA, evaluated as models
   ├── linear.py            # Custom LogisticRegression (PyTorch-based)
   ├── knn.py               # FAISS-backed KNN via faissknn
   ├── segmentation_task.py # Segmentation task solver

@@ -176,7 +176,7 @@ and the runnable
 
 ## Embedding products
 
-`geo-eval-harness embeddings` reads precomputed embedding products (AlphaEarth Foundations, TESSERA and OlmoEarth v1.3) onto the pixel grid of each sample, so embedding cells line up with the sample's pixels and labels. `embeddings download` does this for every sample of a supported GeoBench V2 dataset, and `embeddings retrieve` for any footprints, given as a table of bounds or a folder of georeferenced GeoTIFFs. `embeddings fetch` downloads published AEF and TESSERA collections at a pinned revision. See the [embedding products guide](https://torchgeo.org/geo-eval-harness/user/embedding-products.html).
+`geo-eval-harness embeddings` reads precomputed embedding products (AlphaEarth Foundations, TESSERA and OlmoEarth v1.3) onto the pixel grid of each sample, so embedding cells line up with the sample's pixels and labels. `embeddings download` does this for every sample of a supported GeoBench V2 dataset, and `embeddings retrieve` for any footprints, given as a table of bounds or a folder of georeferenced GeoTIFFs. `embeddings fetch` downloads published AEF and TESSERA collections at a pinned revision, and `geo-eval-harness run --model embeddings/aef` evaluates them with the usual KNN, linear and segmentation probes. See the [embedding products guide](https://torchgeo.org/geo-eval-harness/user/embedding-products.html).
 
 <!-- skip-on-docs-landing-start -->
 

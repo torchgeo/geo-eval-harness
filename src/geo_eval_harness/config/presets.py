@@ -58,7 +58,7 @@ class ModelPreset(PresetDefaults):
 
     name: str
     target: str
-    track: Literal["image", "coord"] = "image"
+    track: Literal["image", "coord", "embedding"] = "image"
     seed_from_run: bool = False
     supports_model_normalization: StrictBool | None = None
     supported_datasets: list[StrictStr] | None = Field(default=None, min_length=1)
@@ -70,6 +70,13 @@ class ModelPreset(PresetDefaults):
             raise UnsupportedNormalizationError(
                 f"{self.name!r} does not support --normalization model; use --normalization dataset"
             )
+
+    def require_encoder(self) -> None:
+        """Reject presets without an image encoder, such as coordinate encoders and products."""
+        if self.track == "coord":
+            raise ValueError(f"{self.name!r} is a coordinate encoder; use 'coord'")
+        if self.track == "embedding":
+            raise ValueError(f"{self.name!r} is a precomputed embedding product, not an encoder")
 
     def for_dataset(self, dataset: str) -> "ModelPreset":
         """Apply a dataset override without mutating the shared preset."""
@@ -104,7 +111,7 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     """Resolve preset and dataset defaults beneath explicitly supplied settings."""
     preset = load_model_preset(config.model, seed=config.runtime.seed).for_dataset(dataset)
     preset = preset.model_copy(update={"kwargs": {**preset.kwargs, **config.model.kwargs}})
-    if preset.track != "image":
+    if preset.track == "coord":
         raise ValueError(f"{config.model.name!r} is a coordinate encoder; use 'coord'")
     defaults = {
         key: getattr(preset, key).model_dump(exclude_unset=True)

@@ -1,17 +1,51 @@
-"""Load one split of a published embedding collection as a PyTorch dataset."""
+"""Load a published embedding collection as a PyTorch dataset for the standard probes."""
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pyarrow.parquet as pq
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import DataLoader, Dataset
 
+from geo_eval_harness.config.schema import StrictModel
+
+from . import EMBEDDINGS_ROOT, collection_dir
 from .codecs import CODECS
 from .collection import array_column, read_metadata, split_shards
 
-__all__ = ["EmbeddingDataset"]
+__all__ = ["EmbeddingDataset", "embedding_collection", "embedding_loaders"]
+
+
+class _CollectionSource(StrictModel):
+    """The collection an embedding preset names in its ``kwargs``."""
+
+    product: str
+    variant: str | None = None
+
+
+def embedding_collection(
+    kwargs: Mapping[str, Any], dataset: str, root: Path = EMBEDDINGS_ROOT
+) -> Path:
+    """Return the collection an embedding preset's *kwargs* name for *dataset*.
+
+    ``{"product": "aef", "variant": "pca16"}`` names ``<root>/aef/<dataset>_pca16``.
+
+    Raises:
+        FileNotFoundError: If the collection is missing.
+    """
+    source = _CollectionSource.model_validate(kwargs)
+    product = source.product
+    name = dataset if source.variant is None else f"{dataset}_{source.variant}"
+    directory = collection_dir(product, name, root)
+    if not (directory / "SHA256SUMS").exists():
+        raise FileNotFoundError(
+            f"No {product!r} embeddings for {name!r} in {directory}. Run "
+            f"`geo-eval-harness embeddings fetch --product {product} --dataset {name}`, or "
+            "`geo-eval-harness embeddings export` for a local download."
+        )
+    return directory
 
 
 class EmbeddingDataset(Dataset):
@@ -70,3 +104,20 @@ class EmbeddingDataset(Dataset):
         value = arrays[target].astype(np.int64) if target == "mask" else arrays[target].copy()
         item[target] = torch.from_numpy(value)
         return item
+
+
+def embedding_loaders(
+    directory: Path, *, batch_size: int, num_workers: int
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """Return the train, validation and test loaders of the collection in *directory*."""
+    train, val, test = (
+        DataLoader(
+            EmbeddingDataset(directory, split),
+            batch_size=batch_size,
+            shuffle=split == "train",
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+        )
+        for split in ("train", "val", "test")
+    )
+    return train, val, test
