@@ -76,6 +76,16 @@ uv run geo-eval-harness run --model embeddings/aef_pca16 --dataset fotw
 
 The presets are `embeddings/aef`, `embeddings/tessera` and `embeddings/olmoearth_v1_3`, the 64-dimensional `embeddings/olmoearth_v1_3_64`, and the `_pca16` variants, which read `<dataset>_pca16` collections. Each reads `data/embeddings/<product>/<dataset>` and fails with the `fetch` or `export` command to run if the collection is missing. Classification probes average the valid cells of each sample. Segmentation heads receive the full embedding map, with missing cells set to zero, and upsample it to the mask like any coarse encoder feature map. Stored embeddings are not normalized, so `--normalization` other than `none` is rejected. Products have no encoder to measure, so `profile` and `flops` reject them.
 
+## Visualizing downloads
+
+`scripts/visualize_embeddings.py` renders sheets that show each downloaded sample's source RGB, target, a PCA colouring of each product, and how many products have a valid vector per cell:
+
+```bash
+uv run python scripts/visualize_embeddings.py --root data/embedding-downloads --products aef tessera --datasets treesatai spacenet7 --split test --output-dir outputs/embedding-visualizations
+```
+
+Each PNG sheet shows a few samples, with each row labelled by sample ID and per-product coverage. PCA colours are fitted per sheet and product, so they are not comparable across sheets or products and do not represent classes. The script reads the datasets from `data/geobenchv2`.
+
 ## OlmoEarth v1.3
 
 `olmoearth-v1-3` is the full 128-dimensional embedding. `olmoearth-v1-3-64` reads only the first 64 dimensions, which form a complete embedding on their own (Matryoshka training), in half the time; download it as its own product and evaluate it with `embeddings/olmoearth_v1_3_64`. `embeddings/olmoearth_v1_3_pca16` evaluates `embeddings pca --product olmoearth-v1-3`, a 16-component PCA of the 128-dimensional collection.
