@@ -29,6 +29,7 @@ class Tessera(EmbeddingProduct):
     name = "tessera"
     channels = 128
     years = range(2017, 2026)
+    codec = "scaled-int8"
 
     bucket = "tessera-embeddings"
     prefix = "v1.1/dclimate.icechunk"

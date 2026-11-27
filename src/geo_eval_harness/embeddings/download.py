@@ -12,10 +12,10 @@ several processes, so source blocks are fetched once.
 import json
 import logging
 import math
-import multiprocessing
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from tqdm.auto import tqdm
 from geo_eval_harness.datasets.base import BenchDataset, Footprint
 
 from . import DOWNLOADS_ROOT, collection_dir
+from ._workers import worker_map
 from .grid import coarsen, ground_shape, lonlat
 from .products import EmbeddingProduct
 
@@ -135,28 +136,12 @@ class _Writer:
         return len(group)
 
 
-_writer: _Writer
-
-
-def _start_worker(*args: Any) -> None:
-    global _writer
-    _writer = _Writer(*args)
-
-
-def _write_group(group: list[Task]) -> int:
-    return _writer(group)
-
-
 def _write_groups(groups: list[list[Task]], writer_args: tuple, workers: int) -> Iterator[int]:
     """Yield the size of each finished group, reading in *workers* processes."""
-    if workers == 1:
-        writer = _Writer(*writer_args)
-        yield from map(writer, groups)
-        return
     # Consecutive groups go to the same worker, which keeps neighbouring blocks cached.
     chunksize = max(1, len(groups) // (workers * 16))
-    with multiprocessing.get_context("spawn").Pool(workers, _start_worker, writer_args) as pool:
-        yield from pool.imap_unordered(_write_group, groups, chunksize=chunksize)
+    writer = partial(_Writer, *writer_args)
+    return worker_map(writer, groups, workers, ordered=False, chunksize=chunksize)
 
 
 def _on_product_grid(

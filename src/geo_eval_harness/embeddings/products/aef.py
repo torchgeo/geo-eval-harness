@@ -35,6 +35,7 @@ class AEF(EmbeddingProduct):
     name = "aef"
     channels = 64
     years = range(2017, 2026)
+    codec = "signed-square-int8"
 
     base_url = "https://s3.us-west-2.amazonaws.com/"
     index_url = base_url + "us-west-2.opendata.source.coop/tge-labs/aef/v1/annual/aef_index.parquet"

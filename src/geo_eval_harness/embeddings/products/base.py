@@ -23,11 +23,14 @@ class EmbeddingProduct(ABC):
         name: Identifier used on the command line and as the collection directory.
         channels: Embedding dimension.
         years: Calendar years the product covers.
+        codec: Name of the :mod:`~geo_eval_harness.embeddings.codecs` codec that stores
+            the product in its native quantization.
     """
 
     name: ClassVar[str]
     channels: ClassVar[int]
     years: ClassVar[range]
+    codec: ClassVar[str] = "float16"
 
     def product_year(self, year: int) -> int:
         """Return the covered year closest to an observation *year*."""
