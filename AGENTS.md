@@ -15,7 +15,7 @@ Guidelines for AI coding agents working in the geo-eval-harness repository.
 
 ```
 src/geo_eval_harness/        # Main source package (importable as geo_eval_harness)
-  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/coord
+  ├── cli.py               # Unified CLI: run/models/datasets/download/profile/flops/coord/embeddings
   ├── main.py              # Benchmark runner (classification + segmentation)
   ├── config/              # Python schemas, preset resolution, and catalog discovery
   ├── coordbench/          # Location encoders, typed config, probes, and runner
@@ -24,6 +24,7 @@ src/geo_eval_harness/        # Main source package (importable as geo_eval_harne
   ├── download.py          # Dataset downloads (all registered GeoBench, torchgeo, and HF datasets)
   ├── hub.py               # Exact-commit Hugging Face downloads verified against checksums/*.sha256
   ├── datasets/            # Per-dataset BenchDataset wrappers + V1/V2 base classes
+  ├── embeddings/          # Embedding products (AEF, TESSERA, OlmoEarth) read onto sample footprints
   ├── linear.py            # Custom LogisticRegression (PyTorch-based)
   ├── knn.py               # FAISS-backed KNN via faissknn
   ├── segmentation_task.py # Segmentation task solver
@@ -379,7 +380,7 @@ class TestGeoBenchDatasetBasics:
 
 Core (see `pyproject.toml` for the authoritative list): `einops>=0.8`, `faissknn` (CPU or CUDA variant, picked by platform), `filelock>=3.12`, `geobenchv2>=0.9`, `geopandas>=0.14`, `h5py>=3.8`, `huggingface-hub>=0.20`, `lazy-loader>=0.4`, `numpy>=1.24`, `pandas>=2`, `pillow>=13`, `pyarrow>=14`, `pydantic>=2.10`, `pyyaml>=6.0.1`, `rasterio>=1.3`, `safetensors>=0.4`, `scikit-learn>=1.4.2`, `shapely>=2.0.4`, `timm>=1.0.20`, `torch>=2.6`, `torchgeo>=0.10.1,<0.11`, `torchmetrics>=1.4`, `torchvision>=0.21`, `tqdm>=4.66`, `transformers[torch]>=5.14` (SAM 3 encoder and the DPT segmentation head).
 
-Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
+Optional extras (`pip install 'geo-eval-harness[extra]'`, or `[all]` for every extra): `coordbench`, `dev`, `docs`, `embeddings` (TESSERA and OlmoEarth retrieval), `id` (intrinsic-dimension estimators), `lora`, `olmoearth`. TerraTorch requires the separate source installation in `docs/user/installation.rst`. Optional model wrappers import their dependencies lazily — don't add a top-level import for one at module scope.
 
 ## Common Gotchas
 

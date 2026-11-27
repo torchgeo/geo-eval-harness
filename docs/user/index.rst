@@ -17,6 +17,7 @@ Install ``geo-eval-harness``, run a benchmark, and inspect its results. The guid
    datasets
    models
    coordbench
+   embedding-products
    configuration
    results-format
    results-explorer
