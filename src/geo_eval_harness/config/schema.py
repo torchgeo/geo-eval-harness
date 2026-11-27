@@ -90,9 +90,9 @@ def _check_device(value: str) -> str:
 
 def _check_knn_device(value: str) -> str:
     """Reject malformed KNN device strings; 'auto' is only valid for ``runtime.device``."""
-    if value in {"cpu", "cuda"} or re.fullmatch(r"cuda:[0-9]+", value):
+    if value in {"cpu", "mps", "cuda"} or re.fullmatch(r"cuda:[0-9]+", value):
         return value
-    raise ValueError("knn_device must be 'cpu', 'cuda', or 'cuda:<index>'")
+    raise ValueError("knn_device must be 'cpu', 'mps', 'cuda', or 'cuda:<index>'")
 
 
 def _check_methods(value: list["Method"]) -> list["Method"]:
@@ -410,7 +410,7 @@ class SegmentationConfig(StrictModel):
 class RuntimeConfig(StrictModel):
     """Execution settings."""
 
-    device: Device = "cuda:0"
+    device: Device | Literal["mps"] = "cuda:0"
     batch_size: StrictInt = Field(default=64, gt=0)
     workers: StrictInt = Field(default=4, ge=0)
     seed: StrictInt = 0

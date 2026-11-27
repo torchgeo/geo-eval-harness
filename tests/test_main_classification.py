@@ -202,22 +202,24 @@ def test_device_resolution_and_resume(
 
 
 class TestDeviceResolution:
+    @pytest.mark.parametrize("device", ["cuda:0", "mps"])
     def test_implicit_knn_device_follows_model_device(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks, device: str
     ) -> None:
         cfg = _compose_cfg(
             tmp_path / "out.csv",
             overrides={
-                "runtime": {"device": "cuda:0"},
+                "runtime": {"device": device},
                 "classification": KNN_ONLY | {"knn_device": None},
             },
         )
         monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
 
         main(cfg)
 
-        assert runner.knn.call_args.kwargs["device"] == "cuda:0"
+        assert runner.knn.call_args.kwargs["device"] == device
 
     @pytest.mark.parametrize(
         ("device", "available", "message"),

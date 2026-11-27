@@ -14,6 +14,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from geo_eval_harness.devices import resolve_device
+
 Metric = Literal["l2", "ip", "cosine"]
 
 # Cap each query chunk's score matrix at 2**28 float32 entries (1 GiB).
@@ -29,14 +31,6 @@ def _full_precision_matmul() -> Iterator[None]:
         yield
     finally:
         torch.set_float32_matmul_precision(previous)
-
-
-def _resolve_device(device: str) -> torch.device:
-    """Return an indexed device so later calls do not follow the current CUDA device."""
-    resolved = torch.device(device)
-    if resolved.type == "cuda" and resolved.index is None:
-        return torch.device("cuda", torch.cuda.current_device())
-    return resolved
 
 
 class KNNClassifier:
@@ -91,7 +85,7 @@ class KNNClassifier:
         self._multi_label = y.ndim == 2
         self._effective_n_neighbors = min(self.n_neighbors, len(X))
 
-        self._device = _resolve_device(self.device)
+        self._device = resolve_device(self.device)
         train = self._prepare(torch.from_numpy(X).to(self._device))
         self._train = train
         self._train_sq = (train * train).sum(dim=1) if self.metric == "l2" else None

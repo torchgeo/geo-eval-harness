@@ -183,7 +183,7 @@ def test_round_trip_dump_is_valid() -> None:
 @pytest.mark.parametrize(
     "section", [RunConfig.model_fields["runtime"].annotation, *_RUNTIME_SECTIONS]
 )
-@pytest.mark.parametrize("device", ["gpu", "cuda:nope", "mps", " "])
+@pytest.mark.parametrize("device", ["gpu", "cuda:nope", "mps:bad", " "])
 def test_every_runtime_section_validates_its_device(section: type, device: str) -> None:
     with pytest.raises(ValidationError, match="device"):
         section(device=device)
