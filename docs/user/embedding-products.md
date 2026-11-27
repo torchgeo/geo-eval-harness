@@ -31,6 +31,39 @@ TESSERA and OlmoEarth need the `embeddings` extra (`pip install 'geo-eval-harnes
 
 `download` takes each sample's footprint from `BenchDataset.footprint`, which is implemented for `benv2`, `treesatai`, `spacenet7`, `fotw`, `kuro_siwo` and `dynamic_earthnet`. To add a dataset, implement `footprint(dataset, index)` on its wrapper. For GeoBench V2 datasets, setting `footprint_asset` to the name of the upstream asset whose STAC grid and time describe the sample is usually enough. Override `footprint` only when that header is wrong, as SpaceNet7 does for its positive y spacing.
 
+## Published collections
+
+A completed `download` is exported as a fixed collection, which can be published to Hugging Face and fetched at a pinned revision. A collection can also be reduced with PCA.
+
+```bash
+uv run geo-eval-harness embeddings export --product aef --dataset fotw --workers 8
+# Fit a 16-component PCA on training cells and store it as collection "fotw_pca16".
+uv run geo-eval-harness embeddings pca --product aef --dataset fotw --components 16
+# Or fetch published collections, verified against packaged checksums:
+uv run geo-eval-harness embeddings fetch --product aef --dataset fotw fotw_pca16
+```
+
+AEF and TESSERA are published to the public repositories [nilsleh/aef-embeddings-eval-datasets](https://huggingface.co/datasets/nilsleh/aef-embeddings-eval-datasets) and [nilsleh/tessera-embeddings-eval-datasets](https://huggingface.co/datasets/nilsleh/tessera-embeddings-eval-datasets). Each holds the full and `_pca16` collections of all six supported datasets, and `fetch` needs no login. `fetch --repo <id> --revision <commit>` reads another repository with the same layout.
+
+`export` refuses incomplete downloads and recomputes each sample's grid and year from the dataset to check the download. Its `--limit` takes one count for every split or one each for train, val and test, and is recorded in the metadata.
+
+A collection is a flat directory of zstd-compressed Parquet shards, one row per sample in index order. `data/embeddings/<product>/` mirrors the product's Hugging Face dataset repository:
+
+```
+data/embeddings/<product>/
+  <dataset>/
+    train-00000.parquet     # index, embedding, label or mask, grid, years, valid_fraction
+    val-00000.parquet
+    test-00000.parquet
+    metadata.json           # product version, codec, array dtypes and shapes, per-split coverage
+    SHA256SUMS
+  <dataset>_pca16/          # the same layout, plus pca.safetensors
+```
+
+Each row carries the sample's embedding grid (`crs`, `transform`, `height`, `width`), its `product_year` and `observation_year`, and `valid_fraction`. Embeddings keep their product's native quantization: AEF and OlmoEarth as signed-square int8 codes (`-128` missing), TESSERA as int8 codes with a float32 scale per cell (scale 0 missing), and PCA collections as float16. Masks are stored as uint8. `EmbeddingDataset` decodes rows to float32 with NaN for missing cells, exactly the float16 values of the download.
+
+`metadata.json` reports per-split coverage. Samples without product coverage are kept and counted in `empty_samples`. A PCA is fitted on valid cells of the distinct training embeddings, so samples that share one annual embedding, such as DynamicEarthNet's monthly samples of one area, count once. Components are not whitened. The PCA collection records its source collection and digest, seed and explained variance ratios, and `pca.safetensors` holds the fitted mean, components and explained variance.
+
 ## OlmoEarth v1.3
 
 `olmoearth-v1-3` is the full 128-dimensional embedding. `olmoearth-v1-3-64` reads only the first 64 dimensions, which form a complete embedding on their own (Matryoshka training), in half the time.
@@ -41,4 +74,4 @@ The embeddings are released under the [OlmoEarth Artifact License](https://sourc
 
 ## Adding a product
 
-Each product has its own module in `geo_eval_harness/embeddings/products/` (`aef.py`, `tessera.py`, `olmo_earth.py`). Add a new module that subclasses `EmbeddingProduct` from `products/base.py`, set `name`, `channels` and `years`, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `geo_eval_harness.embeddings.grid.paste` resamples a source window onto the grid, and `EmbeddingProduct.read_zone` reads one year from a Zarr group per UTM zone, as TESSERA and OlmoEarth do. Then register the class in `PRODUCTS` in `products/__init__.py`.
+Each product has its own module in `geo_eval_harness/embeddings/products/` (`aef.py`, `tessera.py`, `olmo_earth.py`). Add a new module that subclasses `EmbeddingProduct` from `products/base.py`, set `name`, `channels`, `years` and `codec`, the name of the codec in `embeddings/codecs.py` that stores the product exactly, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `geo_eval_harness.embeddings.grid.paste` resamples a source window onto the grid, and `EmbeddingProduct.read_zone` reads one year from a Zarr group per UTM zone, as TESSERA and OlmoEarth do. Then register the class in `PRODUCTS` in `products/__init__.py`.

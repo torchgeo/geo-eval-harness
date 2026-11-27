@@ -1,6 +1,8 @@
-"""Offline workflow: retrieve a toy product for dataset samples and arbitrary footprints."""
+"""Offline workflow: retrieve a toy product, then export, fetch and reduce its collection."""
 
 import json
+import pickle
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -8,13 +10,20 @@ import numpy as np
 import pandas as pd
 import pytest
 import rasterio
+import torch
 from affine import Affine
 
-from geo_eval_harness import datasets
+import geo_eval_harness.embeddings.fetch as fetch_module
+from geo_eval_harness import datasets, hub
 from geo_eval_harness.cli import main as cli
 from geo_eval_harness.datasets.base import Footprint
+from geo_eval_harness.embeddings.collection import iter_rows, read_metadata
+from geo_eval_harness.embeddings.dataset import EmbeddingDataset
 from geo_eval_harness.embeddings.download import download, locality_groups, retrieve
+from geo_eval_harness.embeddings.export import export
+from geo_eval_harness.embeddings.fetch import fetch
 from geo_eval_harness.embeddings.footprints import read_footprints
+from geo_eval_harness.embeddings.grid import coarsen
 from geo_eval_harness.embeddings.products import PRODUCTS
 from tests.support.embeddings import UTM, ToyBench, ToyProduct, utm_footprint
 
@@ -158,3 +167,93 @@ def test_retrieve_rejects_unusable_footprints(tmp_path: Path) -> None:
     pd.DataFrame({"id": ["a"], "crs": [UTM], "west": [0.0]}).to_csv(table, index=False)
     with pytest.raises(ValueError, match="lacks the footprint columns"):
         read_footprints(table)
+
+
+@pytest.mark.parametrize("task", ["classification", "segmentation"])
+def test_export_loads_exactly_the_download_with_its_grid(tmp_path: Path, task: str) -> None:
+    product, bench = ToyProduct(), ToyBench("fotw", task)
+    source = download(product, bench, root=tmp_path / "downloads")
+    directory = export(product, bench, source_root=tmp_path / "downloads", root=tmp_path / "out")
+    target = "mask" if task == "segmentation" else "label"
+    for split in ("train", "val", "test"):
+        loaded = pickle.loads(pickle.dumps(EmbeddingDataset(directory, split)))
+        assert len(loaded) == bench.split_sizes[split]
+        rows = list(iter_rows(directory, split))
+        split_dataset = bench.get_dataset(split)
+        for index in range(len(loaded)):
+            item = loaded[index]
+            with np.load(source / split / f"{index:06d}.npz") as sample:
+                assert np.array_equal(
+                    item["image"], sample["embedding"].astype(np.float32), equal_nan=True
+                )
+                assert np.array_equal(item[target], sample[target])
+                assert item[target].dtype == torch.from_numpy(sample[target]).dtype
+            footprint = bench.footprint(split_dataset, index)
+            grid = coarsen(replace(footprint, year=product.product_year(footprint.year)), (8, 8))
+            assert (rows[index]["crs"], tuple(rows[index]["transform"])) == (
+                grid.crs,
+                grid.transform,
+            )
+            assert (rows[index]["product_year"], rows[index]["observation_year"]) == (
+                grid.year,
+                footprint.year,
+            )  # fmt: skip
+    (source / "val" / "000004.npz").unlink()
+    with pytest.raises(ValueError, match="missing 1 of 6 samples"):
+        export(product, bench, source_root=tmp_path / "downloads", root=tmp_path / "out")
+
+
+def test_fetch_verifies_a_pinned_collection_against_its_published_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    remote = tmp_path / "remote"
+    download(ToyProduct(), ToyBench(), root=tmp_path / "downloads", limit=3)
+    export(ToyProduct(), ToyBench(), source_root=tmp_path / "downloads", root=remote,
+           limits={"train": 3, "val": 3, "test": 3})  # fmt: skip
+    requests = []
+
+    def snapshot_download(**kwargs: object) -> None:
+        requests.append((kwargs["repo_id"], kwargs["revision"], kwargs["allow_patterns"]))
+        shutil.copytree(remote / "toy", Path(str(kwargs["local_dir"])), dirs_exist_ok=True)
+
+    monkeypatch.setattr(hub, "snapshot_download", snapshot_download)
+    revision = "0" * 40
+    directory = fetch(
+        "toy", "m-eurosat", root=tmp_path / "local", repo_id="me/toy", revision=revision
+    )
+    assert requests == [("me/toy", revision, ["m-eurosat/*"])]
+    assert len(EmbeddingDataset(directory, "test")) == 3
+    with pytest.raises(ValueError, match="repo_id and revision go together"):
+        fetch("toy", "m-eurosat", repo_id="me/toy")
+
+    sums = remote / "toy" / "m-eurosat" / "SHA256SUMS"
+    monkeypatch.setitem(fetch_module.PUBLISHED, "toy", ("me/toy", revision))
+    digest = hub.sha256_file(sums)
+    monkeypatch.setattr(fetch_module, "load_checksums", lambda _: {"m-eurosat/SHA256SUMS": digest})
+    assert len(EmbeddingDataset(fetch("toy", "m-eurosat", root=tmp_path / "pinned"), "val")) == 3
+    with pytest.raises(ValueError, match="'benv2' is not published for 'toy'"):
+        fetch("toy", "benv2", root=tmp_path / "pinned")
+    sums.write_bytes(sums.read_bytes() + b"\n")
+    with pytest.raises(ValueError, match="SHA-256 checksum mismatch"):
+        fetch("toy", "m-eurosat", root=tmp_path / "pinned")
+
+
+def test_cli_exports_and_reduces_a_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(PRODUCTS, "toy", ToyProduct)
+    monkeypatch.setattr(datasets, "get_bench_dataset_class", lambda name: lambda: ToyBench(name))
+    download(ToyProduct(), ToyBench(), root=tmp_path / "downloads")
+    cli(["embeddings", "export", "--product", "toy", "--dataset", "m-eurosat", "--limit", "8", "4",
+         "4", "--workers", "2", "--source-root", str(tmp_path / "downloads"),
+         "--root", str(tmp_path)])  # fmt: skip
+    cli(["embeddings", "pca", "--product", "toy", "--dataset", "m-eurosat", "--components", "2",
+         "--root", str(tmp_path)])  # fmt: skip
+    metadata = read_metadata(tmp_path / "toy" / "m-eurosat_pca2")
+    assert metadata["channels"] == 2
+    assert metadata["pca"]["source"] == "toy/m-eurosat"
+    assert metadata["limits"] == {"train": 8, "val": 4, "test": 4}
+    assert metadata["splits"]["train"]["samples"] == 8
+    with pytest.raises(SystemExit, match="one value or one per split"):
+        cli(["embeddings", "export", "--product", "toy", "--dataset", "m-eurosat", "--limit", "1",
+             "2"])  # fmt: skip

@@ -23,6 +23,7 @@ class OlmoEarth(EmbeddingProduct):
     name = "olmoearth-v1-3"
     channels = 128
     years = range(2017, 2026)
+    codec = "signed-square-int8"
 
     url = "https://data.source.coop/olmoearth/olmoearth-v1-3-embeddings/embeddings.zarr"
 
