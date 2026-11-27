@@ -35,13 +35,15 @@ def test_explicit_mps_requires_availability() -> None:
         resolve_device("mps")
 
 
-def test_auto_without_cuda_does_not_query_indices() -> None:
+@pytest.mark.parametrize(("mps", "expected"), [(True, "mps:0"), (False, "cpu")])
+def test_auto_without_cuda_does_not_query_indices(*, mps: bool, expected: str) -> None:
     with (
+        mock.patch.object(torch.backends.mps, "is_available", return_value=mps),
         mock.patch.object(torch.cuda, "is_available", return_value=False),
         mock.patch.object(torch.cuda, "current_device") as current,
         mock.patch.object(torch.cuda, "device_count") as count,
     ):
-        assert resolve_device("auto") == torch.device("cpu")
+        assert resolve_device("auto") == torch.device(expected)
     current.assert_not_called()
     count.assert_not_called()
 
@@ -59,11 +61,13 @@ def test_available_cuda_resolves_current_or_explicit_index(
     requested: str | torch.device, expected: str, *, queries_current: bool
 ) -> None:
     with (
+        mock.patch.object(torch.backends.mps, "is_available") as mps,
         mock.patch.object(torch.cuda, "is_available", return_value=True) as available,
         mock.patch.object(torch.cuda, "current_device", return_value=1) as current,
         mock.patch.object(torch.cuda, "device_count", return_value=2) as count,
     ):
         assert resolve_device(requested) == torch.device(expected)
+    mps.assert_not_called()
     available.assert_called_once_with()
     count.assert_called_once_with()
     assert current.call_count == int(queries_current)

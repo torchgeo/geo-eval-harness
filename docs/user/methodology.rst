@@ -479,7 +479,7 @@ All evaluation paths share these settings:
      - Random seed. PyTorch's global generator is seeded with it at the start of each dataset, so a result does not depend on the datasets evaluated before it. Bootstrap resampling, subsampling, and ``seed_from_run`` models draw from their own generators created from the same seed; NumPy's global generator is not seeded.
    * - ``runtime.device``
      - ``auto``
-     - Current CUDA device when available, otherwise CPU.
+     - Current CUDA device, then MPS, then CPU, in order of preference.
    * - ``runtime.batch_size``
      - ``64``
      - Batch size for data loading.

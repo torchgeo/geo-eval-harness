@@ -19,7 +19,7 @@ import torch
 from sklearn.preprocessing import StandardScaler
 
 from geo_eval_harness.coordbench.config import RIDGE_ALPHAS
-from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.devices import float64_device, resolve_device
 from geo_eval_harness.knn import KNNClassifier
 
 logger = logging.getLogger(__name__)
@@ -192,7 +192,7 @@ def linear_probe_score(  # noqa: PLR0913 - public probe options.
         task_type: ``"regression"`` or ``"classification"``.
         folds: CV folds; with ``test_mask``, tune alpha on train data and score the holdout once.
         seed: RNG seed.
-        device: Torch device or ``auto`` for current CUDA when available, otherwise CPU.
+        device: Torch device or ``auto`` for CUDA, MPS, or CPU in that order.
         alphas: L2 grid to CV-select from.
         test_mask: Official held-out boolean mask; takes precedence over CV.
         fold_assign: Per-point fold ids for spatial-block CV; else random k-fold.
@@ -205,7 +205,7 @@ def linear_probe_score(  # noqa: PLR0913 - public probe options.
     Raises:
         ValueError: If the device is invalid, or explicit CUDA is unavailable or out of range.
     """
-    dev = resolve_device(device)
+    dev = float64_device(resolve_device(device))
     valid = _valid_mask(features, labels, task_type)
     feats = torch.as_tensor(features[valid], dtype=torch.float32, device=dev)
     class_idx: torch.Tensor | None = None

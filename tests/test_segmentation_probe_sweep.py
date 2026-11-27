@@ -181,10 +181,20 @@ def test_sweep_trains_from_images_without_a_cache() -> None:
     assert metrics["mIoU"] == pytest.approx(best, abs=1e-6)
 
 
-def test_standardizer_fit_from_cache_and_loader_agree_with_direct_moments() -> None:
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS"),
+        ),
+    ],
+)
+def test_standardizer_fit_from_cache_and_loader_agree_with_direct_moments(device: str) -> None:
     images, masks = _data()
     loader = DataLoader(TensorDataset(images, masks), batch_size=3)
-    probe = _probe(2, standardize=True)
+    probe = _probe(2, standardize=True).to(device)
     cache = probe.extract_segmentation_features(loader, cache_dtype=torch.float32)
     features = cache.layer_tensors[0].double()
     flat = features.transpose(0, 1).reshape(features.shape[1], -1)
@@ -194,12 +204,12 @@ def test_standardizer_fit_from_cache_and_loader_agree_with_direct_moments() -> N
     probe.fit_standardizer(cache, chunk_size=4)
     assert probe.standardizer is not None
     mean, std = probe.standardizer.stats(0)
-    torch.testing.assert_close(mean.double(), expected_mean, rtol=1e-5, atol=1e-5)
-    torch.testing.assert_close(std.double(), expected_std, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(mean.cpu().double(), expected_mean, rtol=1e-5, atol=1e-5)
+    torch.testing.assert_close(std.cpu().double(), expected_std, rtol=1e-5, atol=1e-5)
 
     probe.fit_standardizer(loader)
-    torch.testing.assert_close(probe.standardizer.stats(0)[0].double(), expected_mean)
-    torch.testing.assert_close(probe.standardizer.stats(0)[1].double(), expected_std)
+    torch.testing.assert_close(probe.standardizer.stats(0)[0].cpu().double(), expected_mean)
+    torch.testing.assert_close(probe.standardizer.stats(0)[1].cpu().double(), expected_std)
 
 
 def test_standardizer_cache_fit_matches_original_chunked_algorithm_bitwise() -> None:

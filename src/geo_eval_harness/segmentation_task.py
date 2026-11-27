@@ -20,6 +20,7 @@ from tqdm.auto import tqdm
 
 from .boundary_iou import MulticlassBoundaryIoU
 from .config.schema import Adaptation, SegmentationConfig
+from .devices import float64_device
 from .segmentation_checkpointing import enable_gradient_checkpointing
 from .segmentation_lora import apply_lora, has_lora_adapters, merged_lora, set_lora_train_mode
 from .segmentation_probe import (
@@ -76,7 +77,7 @@ class EpochRecord:
 
 def _macro_miou(confusion: torch.Tensor) -> float:
     """Return macro IoU over classes with a non-empty union, matching torchmetrics."""
-    confusion = confusion.double()
+    confusion = confusion.to(float64_device(confusion.device)).double()
     tp = confusion.diag()
     union = confusion.sum(0) + confusion.sum(1) - tp
     present = union > 0

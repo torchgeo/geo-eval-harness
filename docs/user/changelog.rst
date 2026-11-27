@@ -4,7 +4,7 @@ Changelog
 Unreleased
 ----------
 
-* ``geo-eval-harness run`` defaults to ``--device auto``, selecting the current CUDA device when available and CPU otherwise.
+* ``geo-eval-harness run`` defaults to ``--device auto``, preferring the current CUDA device, then MPS, then CPU.
 
 * Inference profiling supports Apple GPUs with ``--device mps`` in ``profile``, ``flops``, and image runs.
 

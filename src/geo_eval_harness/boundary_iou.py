@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 from torchmetrics import Metric
 
+from .devices import float64_device
+
 
 def _square_pool(mask: torch.Tensor, width: int, *, erode: bool) -> torch.Tensor:
     """Erode or dilate a binary mask, treating the image exterior as background."""
@@ -78,4 +80,6 @@ class MulticlassBoundaryIoU(Metric):
 
     def compute(self) -> torch.Tensor:
         """Return dataset-level mean Boundary IoU, excluding classes with an empty union."""
-        return torch.nanmean(self.intersection.double() / self.union)
+        device = float64_device(self.intersection.device)
+        intersection = self.intersection.to(device).double()
+        return torch.nanmean(intersection / self.union.to(device))

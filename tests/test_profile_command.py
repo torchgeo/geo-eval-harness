@@ -418,6 +418,7 @@ class TestProfileCommand:
         )
         batch.to.return_value = batch
         batch.detach.return_value = torch.ones(4, 3, 8, 8)
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
         monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)

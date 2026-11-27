@@ -36,7 +36,7 @@ If the feature cache exceeds system RAM, disable it in a file passed through ``-
 GPU startup errors
 ------------------
 
-An explicit CUDA request fails when CUDA is unavailable or the device index is invalid. Use ``--device auto`` (the default) to select the current CUDA device when available and CPU otherwise.
+An explicit CUDA request fails when CUDA is unavailable or the device index is invalid. With ``--device auto`` (the default), image runs prefer the current CUDA device, then MPS, then CPU.
 
 ``RuntimeError: The NVIDIA driver on your system is too old`` means the installed PyTorch build requires a newer driver. ``CUDA error: no kernel image is available for execution on the device`` means that build lacks kernels for the GPU architecture. Install a PyTorch build supported by both the GPU and driver, keeping the project's dependency requirements satisfied. ``uv sync --frozen`` installs the versions in :file:`uv.lock`.
 

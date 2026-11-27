@@ -20,7 +20,7 @@ from typing import override
 import numpy as np
 import torch
 
-from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.devices import float64_device, resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class LocationEncoder(ABC):
     """Frozen coordinate encoder: ``(lon, lat[, year]) -> (N, D)`` features.
 
     Args:
-        device: Torch device or ``auto`` for current CUDA when available, otherwise CPU.
+        device: Torch device or ``auto`` for CUDA, MPS, or CPU in that order.
         batch_size: Points per forward chunk.
 
     Raises:
@@ -334,6 +334,7 @@ class SatCLIPLocationEncoder(_RSHFEncoder):
         batch_size: int = 8192,
     ) -> None:
         super().__init__(device=device, batch_size=batch_size)
+        self.device = str(float64_device(torch.device(self.device)))
         from rshf.satclip import SatClip
 
         self.model = (

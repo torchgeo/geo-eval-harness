@@ -493,13 +493,14 @@ def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -
     assert received[1].batch_size == 4
 
 
-@pytest.mark.parametrize(("available", "expected"), [(False, "cpu"), (True, "cuda:1")])
+@pytest.mark.parametrize("expected", ["cpu", "mps:0", "cuda:1"])
 def test_auto_device_resolves_once_before_dataset_execution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, available: bool, expected: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expected: str
 ) -> None:
     import torch
 
     received = []
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: expected == "mps:0")
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
 
@@ -508,7 +509,9 @@ def test_auto_device_resolves_once_before_dataset_execution(
         return ()
 
     monkeypatch.setattr("geo_eval_harness.main.run_dataset", dataset_run)
-    with mock.patch.object(torch.cuda, "is_available", return_value=available) as query:
+    with mock.patch.object(
+        torch.cuda, "is_available", return_value=expected.startswith("cuda")
+    ) as query:
         main(
             [
                 "run",
@@ -516,8 +519,6 @@ def test_auto_device_resolves_once_before_dataset_execution(
                 "rcf",
                 "--dataset",
                 "m-eurosat",
-                "--device",
-                "auto",
                 "--output",
                 str(tmp_path / "out.csv"),
             ]

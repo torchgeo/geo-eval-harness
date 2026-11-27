@@ -110,12 +110,16 @@ def test_coordinate_cpu_paths_do_not_query_cuda(
     assert score > 0.99
 
 
-@pytest.mark.parametrize(("available", "expected"), [(False, "cpu"), (True, "cuda:1")])
+@pytest.mark.parametrize(
+    ("cuda", "mps", "expected"),
+    [(False, False, "cpu"), (False, True, "cpu"), (True, False, "cuda:1")],
+)
 def test_coordinate_auto_probe_selects_device_and_preserves_solution(
     points: tuple[np.ndarray, np.ndarray],
     monkeypatch: pytest.MonkeyPatch,
     *,
-    available: bool,
+    cuda: bool,
+    mps: bool,
     expected: str,
 ) -> None:
     features = SinCosLocationEncoder().encode(*points)
@@ -131,7 +135,8 @@ def test_coordinate_auto_probe_selects_device_and_preserves_solution(
         devices.append(str(kwargs.pop("device")))
         return arange(*args, **kwargs)
 
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     monkeypatch.setattr(torch, "as_tensor", cpu_tensor)
@@ -585,6 +590,7 @@ def test_rejects_non_location_custom_target() -> None:
 def test_auto_device_resolves_for_encoder_and_probe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, available: bool, expected: str
 ) -> None:
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)

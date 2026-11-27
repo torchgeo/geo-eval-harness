@@ -47,7 +47,7 @@ and 200 bootstrap resamples:
    $ geo-eval-harness run --model rcf --dataset m-eurosat \
        --output results/my_run.csv
 
-With the default ``--device auto``, image runs use the current CUDA device when available and CPU otherwise. A pretrained backbone may download its weights on first use.
+With the default ``--device auto``, image runs prefer the current CUDA device, then MPS, then CPU. A pretrained backbone may download its weights on first use.
 
 .. code-block:: console
 

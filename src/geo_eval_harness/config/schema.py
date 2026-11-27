@@ -83,9 +83,9 @@ class StrictModel(BaseModel):
 
 def _check_device(value: str) -> str:
     """Reject malformed device strings without importing Torch."""
-    if value in {"auto", "cpu", "mps"} or re.fullmatch(r"cuda(?::[0-9]+)?", value):
+    if value in {"auto", "cpu", "mps", "mps:0"} or re.fullmatch(r"cuda(?::[0-9]+)?", value):
         return value
-    raise ValueError("device must be 'auto', 'cpu', 'mps', 'cuda', or 'cuda:<index>'")
+    raise ValueError("device must be 'auto', 'cpu', 'mps', 'mps:0', 'cuda', or 'cuda:<index>'")
 
 
 def _check_knn_device(value: str) -> str:

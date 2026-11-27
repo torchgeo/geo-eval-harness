@@ -123,7 +123,7 @@ Pass a file to ``geo-eval-harness coord --config my-coord.yaml``:
      file: null
      resume: false
 
-Explicit flags override YAML, including ``--no-resume``. ``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select probes. ``--folds`` must be at least two. Other evaluation flags are ``--cell-deg``, ``--knn-k``, ``--knn-device``, and ``--ridge-alphas``. On Apple Silicon, ``--knn-device mps`` runs the KNN probe on the GPU. ``--device`` selects the encoder/linear-probe device, and ``--seed`` controls reproducibility.
+Explicit flags override YAML, including ``--no-resume``. ``--methods knn``, ``--methods linear``, and ``--methods knn linear`` select probes. ``--folds`` must be at least two. Other evaluation flags are ``--cell-deg``, ``--knn-k``, ``--knn-device``, and ``--ridge-alphas``. On Apple Silicon, ``--knn-device mps`` runs the KNN probe on the GPU. When MPS is selected, SatCLIP and the ridge probe run on CPU because they require float64. ``--device`` selects the encoder/linear-probe device, and ``--seed`` controls reproducibility.
 
 ``--dry-run`` validates and prints YAML without loading encoder weights or
 remote tables:
