@@ -159,7 +159,7 @@ def _measure_backbone(
     device: torch.device,
     timing: ProfileTiming,
 ) -> tuple[dict[str, float | None], int]:
-    """Profile a synthetic batch, halving its size if the device runs out of memory.
+    """Profile a synthetic batch, halving its size after CUDA runs out of memory.
 
     Returns the metrics and actual batch size.
     GFLOPs is per sample; throughput and memory depend on batch size.

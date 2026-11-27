@@ -202,9 +202,14 @@ def test_device_resolution_and_resume(
 
 
 class TestDeviceResolution:
-    @pytest.mark.parametrize("device", ["cuda:0", "mps"])
+    @pytest.mark.parametrize(("device", "expected"), [("cuda:0", "cuda:0"), ("mps", "mps:0")])
     def test_implicit_knn_device_follows_model_device(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks, device: str
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        runner: RunnerMocks,
+        device: str,
+        expected: str,
     ) -> None:
         cfg = _compose_cfg(
             tmp_path / "out.csv",
@@ -219,7 +224,7 @@ class TestDeviceResolution:
 
         main(cfg)
 
-        assert runner.knn.call_args.kwargs["device"] == device
+        assert runner.knn.call_args.kwargs["device"] == expected
 
     @pytest.mark.parametrize(
         ("device", "available", "message"),

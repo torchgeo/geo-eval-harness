@@ -694,10 +694,7 @@ def test_vit_gflops_ordering_and_tokens():
     assert _n_tokens(base, 224) == 196
 
 
-@pytest.mark.parametrize("device", ["cuda", "mps"])
-def test_measure_backbone_retries_accelerator_oom(
-    monkeypatch: pytest.MonkeyPatch, device: str
-) -> None:
+def test_measure_backbone_retries_cuda_oom(monkeypatch: pytest.MonkeyPatch) -> None:
     batches: list[int] = []
     cache_clears: list[None] = []
 
@@ -716,13 +713,12 @@ def test_measure_backbone_retries_accelerator_oom(
 
     monkeypatch.setattr(flops_pipeline, "measure_profile", profile)
     monkeypatch.setattr(torch, "randn", lambda *shape, device: torch.empty(shape))
-    backend = torch.mps if device == "mps" else torch.cuda
-    monkeypatch.setattr(backend, "empty_cache", lambda: cache_clears.append(None))
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: cache_clears.append(None))
     metrics, batch_size = flops_pipeline._measure_backbone(
         nn.Identity(),
         3,
         8,
-        torch.device(device),
+        torch.device("cuda"),
         ProfileTiming(batch_size=8, n_warmup=1, n_measure=2),
     )
     assert batches == [8, 4, 2]

@@ -188,8 +188,6 @@ def _validate_profile_inputs(
     if device.type not in {"cpu", "cuda", "mps"}:
         raise ValueError("device must be 'cpu', 'cuda', or 'mps'")
     device = resolve_device(device)
-    if device == torch.device("mps"):
-        device = torch.device("mps:0")
     if sample_batch.device != device:
         raise ValueError(f"sample_batch is on {sample_batch.device}, expected {device}")
     if precision not in {"float32", "float16", "bfloat16"}:
