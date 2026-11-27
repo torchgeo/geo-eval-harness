@@ -97,8 +97,6 @@ def build_jobs(models: list[str], sizes: list[int], heads: list[str]) -> list[Jo
         ]
     for name in names:
         preset = load_model_preset(model_selection(name))
-        if preset.track != "image":
-            continue
         modality = preset.kwargs.get("modality")
         source = "kuro_siwo" if modality in ("s1", "S1GRD") else "cloudsen12"
         if modality in ("s1", "S1GRD"):
