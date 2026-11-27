@@ -134,7 +134,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. Image runs default to ``auto``, which prefers the current CUDA device, then MPS, then CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` resolves to ``mps:0`` on supported Macs. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. Image runs default to ``auto``, which prefers the current CUDA device, then MPS, then CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` resolves to ``mps:0`` on supported Macs. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``, ``--seed``, ``--matmul-precision``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``, ``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and ``--normalization``.
 
@@ -309,7 +309,7 @@ To keep every output from an image run outside the tracked reference results:
    geo-eval-harness run --config docs/examples/image-run.yaml \
      --output-dir outputs/my-run
 
-The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
+The same flags apply to ``flops`` and standalone ``profile``. Beneath the root, they write ``compute_cost.csv`` and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. ``--output`` takes precedence over any directory, regardless of flag order, and a YAML ``output.file`` takes precedence over a YAML ``output.directory``. ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``. For image runs, the explicit file combines all selected measurement kinds in one CSV.
 
@@ -333,7 +333,6 @@ subdirectories. They are validated separately from run files:
 
    name: my-model
    target: my_package.MyBenchModel
-   track: image
    seed_from_run: false
    kwargs:
      feature_dim: 256
@@ -349,7 +348,7 @@ subdirectories. They are validated separately from run files:
        input:
          image_size: 128
 
-Only ``kwargs`` are constructor options. ``name``, ``target``, ``track``,
+Only ``kwargs`` are constructor options. ``name``, ``target``,
 ``seed_from_run``, preprocessing/evaluation defaults, and dataset overrides
 are preset metadata. ``seed_from_run: true`` explicitly injects the run seed
 for constructors that support it, without interpolation.
@@ -490,19 +489,3 @@ FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_co
 ``--model-target`` and ``--model-kwargs`` accept a custom constructor and a
 YAML mapping of constructor options; reusable custom models can use
 ``model.target`` and ``model.kwargs`` in the file instead.
-
-Coordinate evaluation
-----------------------
-
-``coord`` has its own ``model``, ``datasets``, ``evaluation``, ``runtime``,
-and ``output`` sections. It does not accept image-run ``input`` or
-``classification`` blocks:
-
-.. code-block:: console
-
-   $ geo-eval-harness coord --model sincos --dataset california_housing \
-       --methods linear --folds 2 --device cpu
-   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
-
-See :doc:`coordbench` for the full YAML, encoder targets, method selection,
-random/spatial/official splits, and coordinate CSV resume semantics.

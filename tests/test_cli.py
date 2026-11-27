@@ -19,7 +19,7 @@ from geo_eval_harness.config.presets import ModelPreset
 from geo_eval_harness.config.run import RunConfig
 
 
-@pytest.mark.parametrize("command", ["run", "profile", "flops", "coord"])
+@pytest.mark.parametrize("command", ["run", "profile", "flops"])
 def test_cli_dispatches_commands_directly(command: str, monkeypatch: pytest.MonkeyPatch) -> None:
     received: list[argparse.Namespace] = []
     monkeypatch.setattr(commands, command, received.append)
@@ -51,10 +51,6 @@ def test_run_dispatches_typed_config(monkeypatch: pytest.MonkeyPatch) -> None:
             ["run", "-m", "rcf", "-d", "m-eurosat", "--device", "cpu", "--verbose"],
             "INFO: progress\nWARNING: problem\n",
         ),
-        (
-            ["coord", "--model", "sincos", "--dataset", "country"],
-            "INFO: progress\nWARNING: problem\n",
-        ),
         (["profile", "-m", "rcf", "-d", "m-eurosat"], "WARNING: problem\n"),
     ],
 )
@@ -74,7 +70,6 @@ def test_commands_log_to_stderr_at_the_selected_level(
     monkeypatch.setattr(root, "handlers", [])
     monkeypatch.setattr(commands, "_run_runtime", SimpleNamespace(run=runtime))
     monkeypatch.setattr(commands, "_profile_runtime", SimpleNamespace(run=runtime))
-    monkeypatch.setattr("geo_eval_harness.coordbench.run.run_coordbench", runtime)
     try:
         cli_main(argv)
     finally:
@@ -308,7 +303,6 @@ class TestCatalog:
         preset = ModelPreset.model_validate(yaml.safe_load(capsys.readouterr().out))
         assert preset.name == "rcf"
         assert preset.target == "geo_eval_harness.models.RCFBench"
-        assert preset.track == "image"
 
     @pytest.mark.parametrize(
         ("dataset", "task"), [("m-eurosat", "classification"), ("burn_scars", "segmentation")]

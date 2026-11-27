@@ -116,21 +116,6 @@ For synthetic per-sample compute accounting without dataset samples:
 
 See :doc:`configuration` for the distinct profile and FLOPs YAML schemas.
 
-Benchmark a location encoder
-----------------------------
-
-CoordBench does not require an image download. It loads point-label tables
-from Hugging Face, so uncached tables require network access:
-
-.. code-block:: console
-
-   $ geo-eval-harness coord --model sincos --dataset california_housing \
-       --methods linear --folds 2 --device cpu \
-       --output results/coordbench_quickstart.csv
-
-See :doc:`coordbench` for pretrained encoders, spatial cross-validation,
-official holdouts, and a complete custom-encoder example.
-
 Resume and inspect results
 --------------------------
 

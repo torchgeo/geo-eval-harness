@@ -1,7 +1,7 @@
 Results format
 ==============
 
-All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside command-level files for compute cost and CoordBench:
+All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside a command-level file for compute cost:
 
 .. list-table::
    :header-rows: 1
@@ -22,9 +22,6 @@ All evaluation runs append rows to CSV files under ``results/`` (or ``--output-d
    * - ``results/compute_cost.csv`` (and ``compute_cost.md``, ``compute_cost_coverage.csv``, ``compute_cost_provenance.json``)
      - Compute-cost schema
      - Per-sample GFLOPs, parameter counts, and timing from ``geo-eval-harness flops``, plus curated sweep notes, coverage, and provenance.
-   * - ``results/coordbench_results.csv``
-     - :class:`~geo_eval_harness.coordbench.CoordResult`
-     - Coordinate-only location-encoder results from ``geo-eval-harness coord`` (see :doc:`coordbench`).
 
 Profile and intrinsic-dim rows are one-time model+hardware measurements, so
 they are kept out of the metrics file: rerunning a classification sweep
@@ -247,6 +244,3 @@ Resume checks each method separately, so ``--methods linear`` never requires a K
 Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results, and ``runtime.matmul_precision`` when it is not ``highest``. It excludes ``runtime.device``, ``classification.knn_device``, and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
 The hash of a classification, profile, or intrinsic-dimension row does not cover the ``segmentation`` section, so segmentation settings in a model preset or run config never change it. Segmentation hashes cover both the ``classification`` and ``segmentation`` sections and include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
-
-CoordBench uses a separate schema and output path. See :doc:`coordbench` and
-:class:`~geo_eval_harness.coordbench.CoordResult`.

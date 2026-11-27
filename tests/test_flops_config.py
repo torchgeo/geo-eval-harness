@@ -108,21 +108,17 @@ def test_every_packaged_image_preset_resolves_without_construction() -> None:
     for name in list_model_configs():
         config = FlopsConfig(model=ModelConfig(name=name))
         selected = load_model_preset(config.model)
-        if selected.track != "image":
-            with pytest.raises(ValueError, match="coordinate encoder"):
-                config.resolve()
-        else:
-            if selected.supported_datasets is not None:
-                config = config.model_copy(
-                    update={
-                        "input": config.input.model_copy(
-                            update={"band_source": selected.supported_datasets[0]}
-                        )
-                    }
-                )
-            resolved, preset = config.resolve()
-            assert resolved.input.image_size > 0, name
-            assert preset.target, name
+        if selected.supported_datasets is not None:
+            config = config.model_copy(
+                update={
+                    "input": config.input.model_copy(
+                        update={"band_source": selected.supported_datasets[0]}
+                    )
+                }
+            )
+        resolved, preset = config.resolve()
+        assert resolved.input.image_size > 0, name
+        assert preset.target, name
 
 
 def test_custom_constructor_is_not_imported() -> None:

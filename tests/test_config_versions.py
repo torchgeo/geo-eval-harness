@@ -7,7 +7,6 @@ from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.profile import ProfileConfig
 from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.config.schema import InputConfig, StrictModel
-from geo_eval_harness.coordbench.config import CoordConfig
 
 
 @pytest.mark.parametrize(
@@ -16,7 +15,6 @@ from geo_eval_harness.coordbench.config import CoordConfig
         (RunConfig, {"model": {"name": "rcf"}, "datasets": ["m-eurosat"]}),
         (ProfileConfig, {"model": {"name": "rcf"}, "dataset": "m-eurosat"}),
         (FlopsConfig, {"model": {"name": "rcf"}}),
-        (CoordConfig, {"model": {"name": "sincos"}}),
     ],
 )
 class TestSchemaVersions:

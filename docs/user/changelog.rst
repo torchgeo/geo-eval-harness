@@ -6,6 +6,7 @@ Unreleased
 
 * ``geo-eval-harness run`` defaults to ``--device auto``, preferring the current CUDA device, then MPS, then CPU.
 
+* CoordBench, the ``coord`` command, the location-encoder presets (``mind``, ``sincos``, ``satclip``, ``geoclip``, ``climplicit``, ``sinr``), and the ``coordbench`` extra are removed; location-encoder evaluation lives in `neuralftw <https://github.com/taylor-geospatial/neuralftw>`__. Model presets no longer accept a ``track`` field.
 * Inference profiling supports Apple GPUs with ``--device mps`` in ``profile``, ``flops``, and image runs.
 
 * KNN uses exact brute-force search in PyTorch on CPU, CUDA, and MPS, so ``faissknn`` and FAISS are no longer installed, including by the ``id`` extra (``torchid>=0.6``). ``KNNClassifier`` drops its ``use_fp16`` argument, and the ``cosine`` and ``ip`` metrics now apply on CPU as well as GPU.

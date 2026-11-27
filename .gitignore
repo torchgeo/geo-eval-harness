@@ -75,7 +75,6 @@ data/
 !results/compute_cost_provenance.json
 !results/c_sweep_experiment.csv
 !results/cls_token_experiment.csv
-!results/coordbench_results.csv
 !results/effect_of_lbfgs_vs_adam.csv
 !results/segmentation_protocol/
 !results/segmentation_protocol/metadata.json

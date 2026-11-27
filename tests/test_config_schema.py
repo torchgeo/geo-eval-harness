@@ -12,9 +12,8 @@ from pydantic import ValidationError
 from geo_eval_harness.config.flops import FlopsRuntimeConfig
 from geo_eval_harness.config.profile import ProfileRuntimeConfig
 from geo_eval_harness.config.run import RunConfig, load_run_config, validate_run_config
-from geo_eval_harness.coordbench.config import CoordRuntimeConfig
 
-_RUNTIME_SECTIONS = (CoordRuntimeConfig, FlopsRuntimeConfig, ProfileRuntimeConfig)
+_RUNTIME_SECTIONS = (FlopsRuntimeConfig, ProfileRuntimeConfig)
 
 
 def valid_config() -> dict:

@@ -143,7 +143,7 @@ def resolve_output_path(
 
 
 def default_methods() -> list[Method]:
-    """Return the default probe selection, shared by image and coordinate runs."""
+    """Return the default probe selection."""
     return ["knn", "linear"]
 
 
