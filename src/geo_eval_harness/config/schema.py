@@ -410,7 +410,7 @@ class SegmentationConfig(StrictModel):
 class RuntimeConfig(StrictModel):
     """Execution settings."""
 
-    device: Device = "cuda:0"
+    device: Device = "auto"
     batch_size: StrictInt = Field(default=64, gt=0)
     workers: StrictInt = Field(default=4, ge=0)
     seed: StrictInt = 0

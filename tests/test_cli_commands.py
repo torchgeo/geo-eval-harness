@@ -183,16 +183,16 @@ class TestRunRuntime:
         assert resolve_run_config(config, "m-eurosat")[0].input.image_size == 32
 
     @pytest.mark.parametrize(
-        ("device_flags", "available", "message"),
+        ("device", "available", "message"),
         [
-            ([], False, "Requested 'cuda:0', but CUDA is unavailable"),
-            (["--device", "cuda:2"], True, "CUDA index 2"),
+            ("cuda:0", False, "Requested 'cuda:0', but CUDA is unavailable"),
+            ("cuda:2", True, "CUDA index 2"),
         ],
     )
     def test_runtime_rejects_invalid_cuda_before_loading(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        device_flags: list[str],
+        device: str,
         *,
         available: bool,
         message: str,
@@ -206,7 +206,7 @@ class TestRunRuntime:
             mock.patch("geo_eval_harness.main.build_model") as build,
             pytest.raises(SystemExit, match=f"^error: .*{message}"),
         ):
-            main(["run", "--model", "rcf", "--dataset", "m-eurosat", *device_flags])
+            main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", device])
         data.assert_not_called()
         build.assert_not_called()
 

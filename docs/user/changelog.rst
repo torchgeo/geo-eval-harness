@@ -4,6 +4,8 @@ Changelog
 Unreleased
 ----------
 
+* ``geo-eval-harness run`` defaults to ``--device auto``, selecting the current CUDA device when available and CPU otherwise.
+
 * Inference profiling supports Apple GPUs with ``--device mps`` in ``profile``, ``flops``, and image runs.
 
 * KNN uses exact brute-force search in PyTorch on CPU, CUDA, and MPS, so ``faissknn`` and FAISS are no longer installed, including by the ``id`` extra (``torchid>=0.6``). ``KNNClassifier`` drops its ``use_fp16`` argument, and the ``cosine`` and ``ip`` metrics now apply on CPU as well as GPU.

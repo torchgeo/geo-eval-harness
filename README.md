@@ -69,7 +69,7 @@ geo-eval-harness datasets
 geo-eval-harness run --model timm/resnet50 --dataset m-eurosat
 ```
 
-The default device is `cuda:0`. Select CPU with `--device cpu`:
+By default, `run` uses the current CUDA device when available and CPU otherwise. Use `--device cpu` to select CPU explicitly.
 
 ```bash
 geo-eval-harness run --model rcf --dataset m-eurosat --device cpu
