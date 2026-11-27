@@ -764,61 +764,6 @@ wheels = [
 ]
 
 [[package]]
-name = "faiss-cpu"
-version = "1.14.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "packaging" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/8b/5d2cd7c9fd60bc4d1ca6e9f5e8b0eb57254a7b301daaa12d5853fdf48afe/faiss_cpu-1.14.2-cp310-abi3-macosx_14_0_arm64.whl", hash = "sha256:a20011b8a97318e6d5e29143a773277ca71f1c33140024aeec91f05ad56cdd04", size = 4621203, upload-time = "2026-05-22T19:58:27.415Z" },
-    { url = "https://files.pythonhosted.org/packages/84/b1/05876aa7ceafd67a8c53667f574c0354e50ebadfdaf0632d7d9f5c80fffe/faiss_cpu-1.14.2-cp310-abi3-macosx_15_0_x86_64.whl", hash = "sha256:6ba528b5803fe5206bbb38e6ea2c537de0d1482a47c5765982af4e4a48c135e2", size = 6681426, upload-time = "2026-05-22T19:58:29.193Z" },
-    { url = "https://files.pythonhosted.org/packages/35/b4/d130a1908ad548671cd5ee9a1b537c7d3753cfdf0b2b134f3c10ccc6b537/faiss_cpu-1.14.2-cp310-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b340c33212351f04d4f167cb7b22c9e756705a634d3b7b58987651f3ba1f6217", size = 9592827, upload-time = "2026-05-22T19:58:30.772Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/66/108f7075591b84852a6b285a81922e773c1c6d3b2c45da8ec4822f1bfab4/faiss_cpu-1.14.2-cp310-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ec4784d9a14973f2eead3a3480e6d14e74253b234e2c12717d4319f21dfadfcd", size = 18234781, upload-time = "2026-05-22T19:58:33.268Z" },
-    { url = "https://files.pythonhosted.org/packages/f2/42/af4df8012e0ed817df2c4094a816b538d99bfbbcbf567cd9f5f36d5fb9b4/faiss_cpu-1.14.2-cp312-cp312-win_amd64.whl", hash = "sha256:292124ba3d2bbeed920ef8519451cfba0f139b77db1607170cffbe68dc72e604", size = 16115701, upload-time = "2026-05-22T19:58:41.85Z" },
-    { url = "https://files.pythonhosted.org/packages/60/04/555551ceec73248e76b758014a6fba702349824270be27d0e5db1f740feb/faiss_cpu-1.14.2-cp313-cp313-win_amd64.whl", hash = "sha256:d81857f1fcf6c5dc76f75b35112158f731aeb7804ca971c51d74edf6e9b1b8c7", size = 16116212, upload-time = "2026-05-22T19:58:45.154Z" },
-    { url = "https://files.pythonhosted.org/packages/9e/59/ff73cb48bd1a98a355ff5a6a2018f3cfe4980ec2196b4938bf8af4fb828b/faiss_cpu-1.14.2-cp314-cp314-win_amd64.whl", hash = "sha256:b736813d853d36693f7b5affdc8788adfa73efa2f45ac6493c8ce2cbb2584f19", size = 16394291, upload-time = "2026-05-22T19:58:48.062Z" },
-]
-
-[[package]]
-name = "faiss-cuda"
-version = "1.14.3.post0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "nvidia-cublas-cu12" },
-    { name = "nvidia-cuda-runtime-cu12" },
-    { name = "packaging" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cf/d9/ff4dc8cbae70a4f5c76a953ac1e189044940be7a22808b1c3ff865a2a1e6/faiss_cuda-1.14.3.post0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d83e92f341a1f79b5ab52fa0982eab3fe80428fcb1a69591ab2021b95f568f33", size = 106476496, upload-time = "2026-07-11T21:36:01.577Z" },
-    { url = "https://files.pythonhosted.org/packages/63/2d/df6e0ec234d342d92a326db38e5b9f3d4c04bb88510609676ccd986252e4/faiss_cuda-1.14.3.post0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7c16bcd2338d880cd8f355c8c5b0cc3995693c75aee698a224168f7039b18423", size = 106476519, upload-time = "2026-07-11T21:36:07.536Z" },
-    { url = "https://files.pythonhosted.org/packages/4a/15/2b689760abf1531b32ae6452267a05e66bb4388b289b8f5560deebee0b17/faiss_cuda-1.14.3.post0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:973f14c1cd9528c60764aa5e32a7aadba22c2ecf9bd50fb206bf55010a7504d5", size = 106476833, upload-time = "2026-07-11T21:36:13.095Z" },
-]
-
-[[package]]
-name = "faissknn"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-    { name = "torch" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/16/2fcf9012f001c2a06c4cb930a129fbc62939c8574350a62e0d7ae8478c30/faissknn-0.4.1.tar.gz", hash = "sha256:d029125355814fda99789862d3c8d32c79a326415c5349fd10cc5f26b291d6e8", size = 7613, upload-time = "2026-07-11T21:42:03.958Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/1a/07caa3dd83111d8d28cf23d4153f96386d241026e7c71c8ee6fd116c159a/faissknn-0.4.1-py3-none-any.whl", hash = "sha256:3f1c4429c8900ca3dd4d7c0af42add1cebec76d113e5adf77929ab42b6816543", size = 7324, upload-time = "2026-07-11T21:42:03.1Z" },
-]
-
-[package.optional-dependencies]
-cpu = [
-    { name = "faiss-cpu" },
-]
-cuda = [
-    { name = "faiss-cuda" },
-]
-
-[[package]]
 name = "filelock"
 version = "4.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1007,9 +952,6 @@ version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "einops" },
-    { name = "faissknn" },
-    { name = "faissknn", extra = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'" },
-    { name = "faissknn", extra = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "filelock" },
     { name = "geobenchv2" },
     { name = "geopandas" },
@@ -1100,8 +1042,6 @@ olmoearth = [
 requires-dist = [
     { name = "einops", specifier = ">=0.8" },
     { name = "evaluma", marker = "extra == 'dev'", specifier = ">=0.3" },
-    { name = "faissknn", extras = ["cpu"], marker = "platform_machine != 'x86_64' or sys_platform != 'linux'", specifier = ">=0.4" },
-    { name = "faissknn", extras = ["cuda"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'", specifier = ">=0.4" },
     { name = "filelock", specifier = ">=3.12" },
     { name = "geo-eval-harness", extras = ["coordbench"], marker = "extra == 'all'" },
     { name = "geo-eval-harness", extras = ["dev"], marker = "extra == 'all'" },
@@ -1145,7 +1085,7 @@ requires-dist = [
     { name = "timm", specifier = ">=1.0.20" },
     { name = "torch", specifier = ">=2.6" },
     { name = "torchgeo", specifier = ">=0.10.1,<0.11" },
-    { name = "torchid", marker = "python_full_version >= '3.13' and extra == 'id'", specifier = ">=0.3" },
+    { name = "torchid", marker = "python_full_version >= '3.13' and extra == 'id'", specifier = ">=0.6" },
     { name = "torchmetrics", specifier = ">=1.4" },
     { name = "torchvision", specifier = ">=0.21" },
     { name = "tqdm", specifier = ">=4.66" },
@@ -2124,17 +2064,6 @@ wheels = [
 ]
 
 [[package]]
-name = "nvidia-cublas-cu12"
-version = "12.9.2.10"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "nvidia-cuda-nvrtc-cu12" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/c0/0a517bfe63ccd3b92eb254d264e28fca3c7cab75d07daea315250fb1bf73/nvidia_cublas_cu12-12.9.2.10-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:e4f53a8ca8c5d6e8c492d0d0a3d565ecb59a751b19cfdaa4f6da0ab2104c1702", size = 581240110, upload-time = "2026-04-08T18:52:31.532Z" },
-]
-
-[[package]]
 name = "nvidia-cuda-cupti"
 version = "13.0.85"
 source = { registry = "https://pypi.org/simple" }
@@ -2153,28 +2082,12 @@ wheels = [
 ]
 
 [[package]]
-name = "nvidia-cuda-nvrtc-cu12"
-version = "12.9.86"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b8/85/e4af82cc9202023862090bfca4ea827d533329e925c758f0cde964cb54b7/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl", hash = "sha256:210cf05005a447e29214e9ce50851e83fc5f4358df8b453155d5e1918094dcb4", size = 89568129, upload-time = "2025-06-05T20:02:41.973Z" },
-]
-
-[[package]]
 name = "nvidia-cuda-runtime"
 version = "13.0.96"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/87/4f/17d7b9b8e285199c58ce28e31b5c5bbaa4d8271af06a89b6405258245de2/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ef9bcbe90493a2b9d810e43d249adb3d02e98dd30200d86607d8d02687c43f55", size = 2261060, upload-time = "2025-10-09T08:55:15.78Z" },
     { url = "https://files.pythonhosted.org/packages/2e/24/d1558f3b68b1d26e706813b1d10aa1d785e4698c425af8db8edc3dced472/nvidia_cuda_runtime-13.0.96-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:7f82250d7782aa23b6cfe765ecc7db554bd3c2870c43f3d1821f1d18aebf0548", size = 2243632, upload-time = "2025-10-09T08:55:36.117Z" },
-]
-
-[[package]]
-name = "nvidia-cuda-runtime-cu12"
-version = "12.9.79"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/46/a92db19b8309581092a3add7e6fceb4c301a3fd233969856a8cbf042cd3c/nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:25bba2dfb01d48a9b59ca474a1ac43c6ebf7011f1b0b8cc44f54eb6ac48a96c3", size = 3493179, upload-time = "2025-06-05T20:00:53.735Z" },
 ]
 
 [[package]]
@@ -4096,7 +4009,7 @@ wheels = [
 
 [[package]]
 name = "torchid"
-version = "0.4.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -4104,9 +4017,9 @@ dependencies = [
     { name = "torch" },
     { name = "torchmetrics" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/27/a7/cb4d5a769984d9aded6a779d6ecdd7e172224ae675af3180a0cf196034cb/torchid-0.4.0.tar.gz", hash = "sha256:2a48c8a7f4b11bc495f3e63f22c9b09ef30e2c5f93555e3f78986722ac07c463", size = 27304, upload-time = "2026-05-20T10:38:03.921Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/c2/11e968b688958922b325f1a00d2ebf51eb6cc8d4a1eaf59c9d9448fa088e/torchid-0.6.0.tar.gz", hash = "sha256:6943721ce98d03420a6663b4107895d7a1e7c46adcc53c2d942d8c914ab12816", size = 32729, upload-time = "2026-11-25T00:13:29.469Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/af/086a1008be696190883531d1f07e25a96e6231eec49c17833e69ec6a77f6/torchid-0.4.0-py3-none-any.whl", hash = "sha256:5aebbe19c4381a9fb38e2bac3f2e71b3ce50b30cf03ae65253a92981e666003b", size = 34847, upload-time = "2026-05-20T10:38:02.998Z" },
+    { url = "https://files.pythonhosted.org/packages/12/38/2a9aa048d51344e2453516a42c773d8468199161dff9cc4d28a4ed19734f/torchid-0.6.0-py3-none-any.whl", hash = "sha256:cb9d49f45074e3658eec3928a1b4b440e89ea5bbe6782e3621f6cd95009e24fa", size = 40138, upload-time = "2026-11-25T00:13:28.614Z" },
 ]
 
 [[package]]

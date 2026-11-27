@@ -18,7 +18,7 @@ def resolve_device(requested: str | torch.device) -> torch.device:
         Device for execution. Non-CUDA devices pass through without querying CUDA.
 
     Raises:
-        DeviceError: If the request is malformed or explicit CUDA is unavailable or out of range.
+        DeviceError: If the device is malformed, unavailable, or out of range.
     """
     try:
         device = torch.device("cuda" if requested == "auto" else requested)
@@ -28,6 +28,8 @@ def resolve_device(requested: str | torch.device) -> torch.device:
         ValueError,
     ) as error:  # allow-except: normalize Torch parsing errors
         raise DeviceError(f"Invalid device request {requested!r}: {error}") from error
+    if device.type == "mps" and not torch.backends.mps.is_available():
+        raise DeviceError("Requested MPS, but MPS is unavailable")
     if device.type != "cuda":
         return device
     # Torch stores indices as signed bytes and can silently wrap large string indices.

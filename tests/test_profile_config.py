@@ -230,7 +230,6 @@ def test_satlas_s2rgb_presets_default_to_model_normalization(
         {"dataset": " "},
         {"model": {"name": "rcf", "unexpected": 1}},
         {"runtime": {"device": "cuda:nope"}},
-        {"runtime": {"device": "mps"}},
         {"runtime": {"batch_size": 0}},
         {"runtime": {"batch_size": True}},
         {"runtime": {"seed": -1}},

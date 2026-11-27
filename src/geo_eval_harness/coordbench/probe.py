@@ -2,7 +2,7 @@
 
 Freeze the encoder, embed a labeled dataset's ``(lon, lat)``, fit a head, report a
 held-out score. Two heads: ``linear`` (closed-form ridge in torch, CV-selected L2;
-R^2 for regression, one-hot-ridge accuracy for classification) and ``knn`` (FAISS
+R^2 for regression, one-hot-ridge accuracy for classification) and ``knn`` (exact
 k-NN on standardized features, classification only).
 
 Split precedence: official ``test_mask``, else ``fold_assign`` spatial-block CV, else
@@ -248,7 +248,7 @@ def knn_probe_score(  # noqa: PLR0913 - public probe options.
     test_mask: np.ndarray | None = None,
     fold_assign: np.ndarray | None = None,
 ) -> tuple[float, list[float]]:
-    """k-NN classification accuracy on standardized features (FAISS backend).
+    """k-NN classification accuracy on standardized features (exact search).
 
     Non-parametric: measures how well the embedding's local neighborhoods align
     with the label. Split precedence matches :func:`linear_probe_score`

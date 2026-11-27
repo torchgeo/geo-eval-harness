@@ -170,7 +170,6 @@ def test_device_resolution_and_resume(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    monkeypatch.setattr("geo_eval_harness.knn.gpu_faiss_available", lambda: False)
     set_precision = mock.Mock()
     monkeypatch.setattr(torch, "set_float32_matmul_precision", set_precision)
     with (
@@ -203,23 +202,24 @@ def test_device_resolution_and_resume(
 
 
 class TestDeviceResolution:
-    def test_implicit_gpu_knn_fallback_reaches_evaluator_as_cpu(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks
+    @pytest.mark.parametrize("device", ["cuda:0", "mps"])
+    def test_implicit_knn_device_follows_model_device(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks, device: str
     ) -> None:
         cfg = _compose_cfg(
             tmp_path / "out.csv",
             overrides={
-                "runtime": {"device": "cuda:0"},
+                "runtime": {"device": device},
                 "classification": KNN_ONLY | {"knn_device": None},
             },
         )
-        monkeypatch.setattr("geo_eval_harness.knn.gpu_faiss_available", lambda: False)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
 
         main(cfg)
 
-        assert runner.knn.call_args.kwargs["device"] == "cpu"
+        assert runner.knn.call_args.kwargs["device"] == device
 
     @pytest.mark.parametrize(
         ("device", "available", "message"),
@@ -263,19 +263,6 @@ class TestDeviceResolution:
         runner.build.assert_not_called()
         assert output.read_bytes() == before
         assert cfg.runtime.device == "auto"
-
-    def test_explicit_gpu_knn_without_gpu_faiss_fails_before_data_loading(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runner: RunnerMocks
-    ) -> None:
-        cfg = _compose_cfg(
-            tmp_path / "out.csv", overrides={"classification": KNN_ONLY | {"knn_device": "cuda"}}
-        )
-        monkeypatch.setattr("geo_eval_harness.knn.gpu_faiss_available", lambda: False)
-
-        with pytest.raises(RuntimeError, match="explicit KNN device 'cuda'"):
-            main(cfg)
-
-        runner.data.assert_not_called()
 
 
 class TestResume:

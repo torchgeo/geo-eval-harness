@@ -123,7 +123,7 @@ def test_all_typed_flags() -> None:
             "--knn-k",
             "7",
             "--knn-device",
-            "cpu",
+            "mps",
             "--device",
             "cpu",
             "--seed",
@@ -140,7 +140,7 @@ def test_all_typed_flags() -> None:
         "cell_deg": 2.5,
         "ridge_alphas": [0.1, 1.0, 10.0],
         "knn_k": 7,
-        "knn_device": "cpu",
+        "knn_device": "mps",
     }
     assert config.runtime.model_dump() == {"device": "cpu", "seed": 42}
     assert config.output.model_dump() == {

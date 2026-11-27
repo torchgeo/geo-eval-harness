@@ -14,6 +14,7 @@ from geo_eval_harness.devices import resolve_device
 @pytest.mark.parametrize("requested", ["cpu", torch.device("mps")])
 def test_non_cuda_devices_never_query_cuda(requested: str | torch.device) -> None:
     with (
+        mock.patch.object(torch.backends.mps, "is_available", return_value=True),
         mock.patch.object(torch.cuda, "is_available") as available,
         mock.patch.object(torch.cuda, "current_device") as current,
         mock.patch.object(torch.cuda, "device_count") as count,
@@ -22,6 +23,14 @@ def test_non_cuda_devices_never_query_cuda(requested: str | torch.device) -> Non
         assert resolve_device(requested) == torch.device(requested)
     for query in (available, current, count, init):
         query.assert_not_called()
+
+
+def test_explicit_mps_requires_availability() -> None:
+    with (
+        mock.patch.object(torch.backends.mps, "is_available", return_value=False),
+        pytest.raises(ValueError, match="MPS is unavailable"),
+    ):
+        resolve_device("mps")
 
 
 def test_auto_without_cuda_does_not_query_indices() -> None:

@@ -83,16 +83,16 @@ class StrictModel(BaseModel):
 
 def _check_device(value: str) -> str:
     """Reject malformed device strings without importing Torch."""
-    if value == "auto" or re.fullmatch(r"(cpu|cuda(?::[0-9]+)?)", value):
+    if value in {"auto", "cpu", "mps"} or re.fullmatch(r"cuda(?::[0-9]+)?", value):
         return value
-    raise ValueError("device must be 'auto', 'cpu', 'cuda', or 'cuda:<index>'")
+    raise ValueError("device must be 'auto', 'cpu', 'mps', 'cuda', or 'cuda:<index>'")
 
 
 def _check_knn_device(value: str) -> str:
-    """Reject malformed KNN device strings; FAISS has no 'auto' selection."""
-    if value in {"cpu", "cuda"} or re.fullmatch(r"cuda:[0-9]+", value):
-        return value
-    raise ValueError("knn_device must be 'cpu', 'cuda', or 'cuda:<index>'")
+    """Require an explicit device for a KNN override."""
+    if value == "auto":
+        raise ValueError("knn_device requires an explicit device")
+    return value
 
 
 def _check_methods(value: list["Method"]) -> list["Method"]:
@@ -118,7 +118,7 @@ def _check_output_path(value: str) -> str:
 
 type Method = Literal["knn", "linear"]
 type Device = Annotated[StrictStr, AfterValidator(_check_device)]
-type KnnDevice = Annotated[StrictStr, AfterValidator(_check_knn_device)]
+type KnnDevice = Annotated[Device, AfterValidator(_check_knn_device)]
 type Methods = Annotated[list[Method], AfterValidator(_check_methods)]
 type SchemaVersion = Annotated[Literal[1], BeforeValidator(_check_schema_version)]
 type OutputPath = Annotated[StrictStr, AfterValidator(_check_output_path)]

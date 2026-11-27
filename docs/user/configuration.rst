@@ -134,7 +134,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` selects the Apple GPU on supported Macs. Inference profiling supports CPU and CUDA. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``, ``--seed``, ``--matmul-precision``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``, ``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and ``--normalization``.
 
@@ -162,8 +162,7 @@ Classification
 Select ``--methods knn``, ``--methods linear``, or ``--methods knn linear``.
 Linear-only runs do not require a KNN result. ``--knn-k``,
 ``--knn-device``, and ``--bootstrap-samples`` override the corresponding
-fields. A null KNN device inherits the feature-extraction device; the backend
-logs a CPU fallback if GPU KNN is unavailable.
+fields. A null KNN device inherits the feature-extraction device. On Apple Silicon, use ``run --device mps`` for feature extraction and KNN, or ``--knn-device mps`` to select MPS for KNN independently.
 
 The linear probe selects regularization on validation data from ``c_count`` log-spaced values between the two log10 endpoints. All packaged image-model presets use 40 values from 10⁻⁶ to 10⁴; an explicit ``classification.linear`` section in the run YAML can override this grid for a study. The probe then optionally refits on train plus validation. ``--refit-train-val`` / ``--no-refit-train-val`` control that final refit. Temperature scaling
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
