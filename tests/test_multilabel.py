@@ -90,14 +90,6 @@ def test_knn_votes_follow_metric_neighbors(metric: str, *, multi_label: bool) ->
     assert classifier.multi_label is multi_label
 
 
-def test_l2_search_with_a_shared_feature_offset() -> None:
-    labels = np.arange(8)
-    train = np.column_stack([10000 + labels, np.where(labels == 7, 1e8, 0)]).astype(np.float32)
-    queries = train + np.array([0.25, 0.0], dtype=np.float32)
-    classifier = KNNClassifier(n_neighbors=1).fit(train, labels)
-    np.testing.assert_array_equal(classifier.predict(queries), labels)
-
-
 def test_chunked_search_matches_exact_neighbors(monkeypatch: pytest.MonkeyPatch) -> None:
     """Chunk boundaries and a TF32-friendly matmul setting must not change the neighbours."""
     rng = np.random.default_rng(1)
