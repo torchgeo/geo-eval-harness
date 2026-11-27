@@ -109,7 +109,7 @@ def test_every_packaged_image_preset_resolves_without_construction() -> None:
         config = FlopsConfig(model=ModelConfig(name=name))
         selected = load_model_preset(config.model)
         if selected.track != "image":
-            with pytest.raises(ValueError, match="coordinate encoder"):
+            with pytest.raises(ValueError, match=r"coordinate encoder|precomputed embedding"):
                 config.resolve()
         else:
             if selected.supported_datasets is not None:

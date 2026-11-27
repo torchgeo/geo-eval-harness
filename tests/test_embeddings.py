@@ -1,4 +1,4 @@
-"""Offline tests for embedding footprints, grids, products, codecs, collections and PCA."""
+"""Offline tests for embedding footprints, grids, products, collections, PCA and the model."""
 
 import shutil
 import urllib.request
@@ -31,6 +31,8 @@ from geo_eval_harness.embeddings.products import (
     decode_signed_square,
     decode_tessera,
 )
+from geo_eval_harness.models.embedding import PrecomputedEmbedding, embedding_bands
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 from tests.support.embeddings import UTM, utm_footprint
 
 
@@ -349,3 +351,17 @@ def test_collection_rows_must_share_array_shapes_and_follow_the_index(tmp_path: 
         CollectionWriter(tmp_path / "a").write_split("train", rows)
     with pytest.raises(ValueError, match="train row 0 has index 1"):
         CollectionWriter(tmp_path / "b").write_split("train", rows[1:])
+
+
+def test_model_pools_valid_cells_and_exposes_a_filled_feature_map(tmp_path: Path) -> None:
+    bands = embedding_bands(_write_collection(tmp_path, {"train": np.zeros((1, 3, 2, 2))}))
+    model = PrecomputedEmbedding(bands)
+    images = torch.ones(2, 3, 2, 2)
+    images[0, :, 0, 0] = float("nan")
+    images[1] = float("nan")
+    assert torch.equal(model(images), torch.tensor([[1.0] * 3, [0.0] * 3]))
+    probe = SegmentationProbe(model, ["feature_map"], num_classes=2, head_type="linear")
+    assert probe.channels_list == [3]
+    assert not torch.isnan(probe(images)).any()
+    with pytest.raises(ValueError, match="not normalized"):
+        PrecomputedEmbedding(bands, normalization="bandspec_zscore")

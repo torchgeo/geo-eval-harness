@@ -1,0 +1,13 @@
+name: embeddings/aef_pca16
+target: geo_eval_harness.models.PrecomputedEmbedding
+track: embedding
+kwargs:
+  product: aef
+  variant: pca16
+input:
+  bands: all
+  image_size: null
+  normalization: none
+segmentation:
+  layers:
+    - feature_map

@@ -33,6 +33,8 @@ from geo_eval_harness.datasets import (
     list_datasets,
 )
 from geo_eval_harness.devices import resolve_device
+from geo_eval_harness.embeddings.collection import collection_digest
+from geo_eval_harness.embeddings.dataset import embedding_collection, embedding_loaders
 from geo_eval_harness.intrinsic_dim import (
     FEATURE_SPECTRUM_METRICS,
     DegenerateManifoldError,
@@ -42,6 +44,7 @@ from geo_eval_harness.intrinsic_dim import (
 )
 from geo_eval_harness.linear import LogisticRegression
 from geo_eval_harness.model_profile import ProfileTiming, measure_cpu_throughput, measure_profile
+from geo_eval_harness.models.embedding import embedding_bands
 from geo_eval_harness.models.interface import BenchModel
 from geo_eval_harness.results import (
     EvaluationResult,
@@ -1009,6 +1012,44 @@ def _cache_segmentation_loaders(
     )
 
 
+def load_model_and_data(
+    cfg: RunConfig, model_cfg: ModelPreset, ds_cls: type[BenchDataset], collection: Path | None
+) -> tuple[BenchModel, LoaderSplits]:
+    """Load the three splits and build the model for their channels.
+
+    Embedding products read their stored *collection* instead of dataset imagery.
+    """
+    device = torch.device(cfg.runtime.device)
+    if collection is not None:
+        loaders = embedding_loaders(
+            collection, batch_size=cfg.runtime.batch_size, num_workers=cfg.runtime.workers
+        )
+        # The preset's kwargs name the collection; the model itself takes none.
+        model: BenchModel = build_model(
+            model_cfg.model_copy(update={"kwargs": {}}),
+            bands=embedding_bands(collection),
+            normalization=NORMALIZATIONS[cfg.input.normalization],
+        )
+        model.to(device).eval()
+        return model, LoaderSplits(*loaders)
+    train_dataset, *loaders = get_datasets(
+        dataset_name=ds_cls.name,
+        partition_name=cfg.input.partition,
+        batch_size=cfg.runtime.batch_size,
+        num_workers=cfg.runtime.workers,
+        return_val=True,
+        image_size=cfg.input.image_size,
+        interpolation=cfg.input.interpolation,
+        bands=cfg.input.bands,
+        time_steps=cfg.input.time_steps,
+    )
+    model = instantiate_dataset_model(cfg, model_cfg, ds_cls(), train_dataset, device)
+    loaders = LoaderSplits(*loaders)
+    if ds_cls.task == "segmentation":
+        loaders = _cache_segmentation_loaders(cfg, ds_cls.name, loaders)
+    return model, loaders
+
+
 def run_dataset(
     cfg: RunConfig,
     ds_name: str,
@@ -1021,7 +1062,15 @@ def run_dataset(
     ds_cls = get_bench_dataset_class(ds_name)
 
     cfg, model_cfg = resolve_run_config(cfg, ds_name)
-    config_hash = resume_config_hash(cfg, model_cfg, task=ds_cls.task)
+    collection = (
+        embedding_collection(model_cfg.kwargs, ds_name) if model_cfg.track == "embedding" else None
+    )
+    config_hash = resume_config_hash(
+        cfg,
+        model_cfg,
+        task=ds_cls.task,
+        collection=None if collection is None else collection_digest(collection),
+    )
     common_meta = dataset_metadata(cfg, ds_name, ds_cls, model_cfg, config_hash)
     plan = plan_dataset_run(cfg, ds_cls, common_meta, completed)
     if plan.skip_dataset:
@@ -1041,26 +1090,9 @@ def run_dataset(
             plan,
             knn_device=resolve_knn_device(cfg.classification.knn_device, cfg.runtime.device),
         )
-    train_dataset, train_loader, val_loader, test_loader = get_datasets(
-        dataset_name=ds_name,
-        partition_name=cfg.input.partition,
-        batch_size=cfg.runtime.batch_size,
-        num_workers=cfg.runtime.workers,
-        return_val=True,
-        image_size=cfg.input.image_size,
-        interpolation=cfg.input.interpolation,
-        bands=cfg.input.bands,
-        time_steps=cfg.input.time_steps,
-    )
-
-    bench = ds_cls()
-    model = instantiate_dataset_model(
-        cfg, model_cfg, bench, train_dataset, torch.device(cfg.runtime.device)
-    )
+    model, loaders = load_model_and_data(cfg, model_cfg, ds_cls, collection)
     common_meta["normalization"] = model.effective_normalization
-    loaders = LoaderSplits(train_loader, val_loader, test_loader)
     if ds_cls.task == "segmentation":
-        loaders = _cache_segmentation_loaders(cfg, ds_name, loaders)
         for rows in run_segmentation(cfg, model, loaders, common_meta):
             yield rows, [], []
         return

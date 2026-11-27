@@ -1,4 +1,4 @@
-"""Offline workflow: retrieve a toy product, then export, fetch and reduce its collection."""
+"""Offline workflow: retrieve a toy product, export, fetch and reduce it, then evaluate it."""
 
 import json
 import pickle
@@ -25,7 +25,9 @@ from geo_eval_harness.embeddings.fetch import fetch
 from geo_eval_harness.embeddings.footprints import read_footprints
 from geo_eval_harness.embeddings.grid import coarsen
 from geo_eval_harness.embeddings.products import PRODUCTS
+from geo_eval_harness.main import main
 from tests.support.embeddings import UTM, ToyBench, ToyProduct, utm_footprint
+from tests.support.runner import _compose_cfg
 
 pytestmark = pytest.mark.integration
 
@@ -257,3 +259,40 @@ def test_cli_exports_and_reduces_a_collection(
     with pytest.raises(SystemExit, match="one value or one per split"):
         cli(["embeddings", "export", "--product", "toy", "--dataset", "m-eurosat", "--limit", "1",
              "2"])  # fmt: skip
+
+
+def test_run_evaluates_stored_embeddings_like_a_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class AefToy(ToyProduct):
+        name = "aef"
+
+    monkeypatch.chdir(tmp_path)
+    for bench in (ToyBench(), ToyBench("fotw", "segmentation")):
+        download(AefToy(), bench)
+        export(AefToy(), bench)
+    output = tmp_path / "results.csv"
+    model = {"name": "embeddings/aef"}
+    main(_compose_cfg(output, {"model": model, "datasets": ["m-eurosat"]}))
+    segmentation = {"head": "linear", "epochs": 30, "learning_rate": 0.1, "batch_size": 4}
+    main(_compose_cfg(output, {"model": model, "datasets": ["fotw"], "segmentation": segmentation}))
+
+    rows = pd.read_csv(output).set_index("method")
+    assert rows.loc["knn5", "metric_value"] == pytest.approx(1.0)
+    assert rows.loc["linear", "metric_value"] == pytest.approx(1.0)
+    assert rows.loc["seg-linear", "metric_value"] > 0.4
+
+    resumed = {"model": model, "datasets": ["m-eurosat"], "output": {"resume": True}}
+    main(_compose_cfg(output, resumed))
+    assert len(pd.read_csv(output)) == len(rows)
+    export(AefToy(), ToyBench(), limits={"train": 10})
+    main(_compose_cfg(output, resumed))
+    assert len(pd.read_csv(output)) == len(rows) + 2
+
+
+def test_run_reports_a_missing_collection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(
+        FileNotFoundError, match="embeddings fetch --product aef --dataset m-eurosat_pca16"
+    ):
+        main(_compose_cfg(tmp_path / "out.csv", {"model": {"name": "embeddings/aef_pca16"}}))

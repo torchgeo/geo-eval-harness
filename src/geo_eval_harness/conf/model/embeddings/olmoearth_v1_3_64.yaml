@@ -1,0 +1,12 @@
+name: embeddings/olmoearth_v1_3_64
+target: geo_eval_harness.models.PrecomputedEmbedding
+track: embedding
+kwargs:
+  product: olmoearth-v1-3-64
+input:
+  bands: all
+  image_size: null
+  normalization: none
+segmentation:
+  layers:
+    - feature_map

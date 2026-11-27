@@ -64,9 +64,21 @@ Each row carries the sample's embedding grid (`crs`, `transform`, `height`, `wid
 
 `metadata.json` reports per-split coverage. Samples without product coverage are kept and counted in `empty_samples`. A PCA is fitted on valid cells of the distinct training embeddings, so samples that share one annual embedding, such as DynamicEarthNet's monthly samples of one area, count once. Components are not whitened. The PCA collection records its source collection and digest, seed and explained variance ratios, and `pca.safetensors` holds the fitted mean, components and explained variance.
 
+## Evaluating products as models
+
+`geo-eval-harness run` evaluates a collection like a model, with the usual KNN, linear and segmentation probes, so products can be compared with image encoders on the same samples and labels.
+
+```bash
+# Results go to results/models/embeddings_aef.csv and embeddings_aef_pca16.csv.
+uv run geo-eval-harness run --model embeddings/aef --dataset fotw
+uv run geo-eval-harness run --model embeddings/aef_pca16 --dataset fotw
+```
+
+The presets are `embeddings/aef`, `embeddings/tessera` and `embeddings/olmoearth_v1_3`, the 64-dimensional `embeddings/olmoearth_v1_3_64`, and the `_pca16` variants, which read `<dataset>_pca16` collections. Each reads `data/embeddings/<product>/<dataset>` and fails with the `fetch` or `export` command to run if the collection is missing. Classification probes average the valid cells of each sample. Segmentation heads receive the full embedding map, with missing cells set to zero, and upsample it to the mask like any coarse encoder feature map. Stored embeddings are not normalized, so `--normalization` other than `none` is rejected. Products have no encoder to measure, so `profile` and `flops` reject them.
+
 ## OlmoEarth v1.3
 
-`olmoearth-v1-3` is the full 128-dimensional embedding. `olmoearth-v1-3-64` reads only the first 64 dimensions, which form a complete embedding on their own (Matryoshka training), in half the time.
+`olmoearth-v1-3` is the full 128-dimensional embedding. `olmoearth-v1-3-64` reads only the first 64 dimensions, which form a complete embedding on their own (Matryoshka training), in half the time; download it as its own product and evaluate it with `embeddings/olmoearth_v1_3_64`. `embeddings/olmoearth_v1_3_pca16` evaluates `embeddings pca --product olmoearth-v1-3`, a 16-component PCA of the 128-dimensional collection.
 
 Only 2023 to 2025 are global; 2017 to 2022 cover selected countries while upstream backfills them. Samples from years that are not yet filled at their location are stored as missing and counted in `empty_samples`. Because runs resume by skipping existing files, delete an output directory and retrieve it again once the backfill is complete.
 
@@ -74,4 +86,4 @@ The embeddings are released under the [OlmoEarth Artifact License](https://sourc
 
 ## Adding a product
 
-Each product has its own module in `geo_eval_harness/embeddings/products/` (`aef.py`, `tessera.py`, `olmo_earth.py`). Add a new module that subclasses `EmbeddingProduct` from `products/base.py`, set `name`, `channels`, `years` and `codec`, the name of the codec in `embeddings/codecs.py` that stores the product exactly, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `geo_eval_harness.embeddings.grid.paste` resamples a source window onto the grid, and `EmbeddingProduct.read_zone` reads one year from a Zarr group per UTM zone, as TESSERA and OlmoEarth do. Then register the class in `PRODUCTS` in `products/__init__.py`.
+Each product has its own module in `geo_eval_harness/embeddings/products/` (`aef.py`, `tessera.py`, `olmo_earth.py`). Add a new module that subclasses `EmbeddingProduct` from `products/base.py`, set `name`, `channels`, `years` and `codec`, the name of the codec in `embeddings/codecs.py` that stores the product exactly, and implement `read(grid)`, which returns float32 `(channels, H, W)` values on `grid` for `grid.year`, with NaN where data is missing. `geo_eval_harness.embeddings.grid.paste` resamples a source window onto the grid, and `EmbeddingProduct.read_zone` reads one year from a Zarr group per UTM zone, as TESSERA and OlmoEarth do. Then register the class in `PRODUCTS` in `products/__init__.py` and add a preset like `conf/model/embeddings/aef.yaml`.

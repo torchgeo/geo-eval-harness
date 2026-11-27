@@ -3,6 +3,7 @@
 from ._input_units import InputUnit
 from ._normalization import NormalizationStrategy
 from .anysat import AnySatBenchModel
+from .embedding import PrecomputedEmbedding
 from .eosfm import EoSFMBenchModel
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
@@ -58,6 +59,7 @@ __all__: list[str] = [
     "NormalizationStrategy",
     "OlmoEarthBenchModel",
     "PatchLinearHead",
+    "PrecomputedEmbedding",
     "RCFBench",
     "RCFModelSettings",
     "SAM3Encoder",

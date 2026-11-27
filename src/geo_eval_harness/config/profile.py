@@ -78,4 +78,5 @@ def resolve_profile_config(config: ProfileConfig) -> tuple[ProfileConfig, ModelP
         }
     )
     effective, preset = resolve_run_config(run, config.dataset)
+    preset.require_encoder()
     return config.model_copy(update={"input": effective.input}), preset
