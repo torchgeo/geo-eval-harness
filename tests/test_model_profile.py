@@ -158,9 +158,21 @@ def test_count_gflops_propagates_errors_without_retry(error) -> None:
     assert len(calls) == 1
 
 
-def test_measure_profile_cpu_returns_dict() -> None:
-    model = nn.Linear(4, 2)
-    sample_batch = torch.rand(4, 4)
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="MPS unavailable"
+            ),
+        ),
+    ],
+)
+def test_measure_profile_without_cuda(device: str) -> None:
+    model = nn.Linear(4, 2).to(device)
+    sample_batch = torch.rand(4, 4, device=device)
     with (
         mock.patch.object(torch.cuda, "is_available") as available,
         mock.patch.object(torch.cuda, "current_device") as current,
@@ -169,7 +181,7 @@ def test_measure_profile_cpu_returns_dict() -> None:
         result = measure_profile(
             model,
             sample_batch=sample_batch,
-            device=torch.device("cpu"),
+            device=torch.device(device),
             n_warmup=0,
             n_measure=2,
         )
@@ -205,13 +217,14 @@ def test_measure_profile_does_not_hide_counter_errors(monkeypatch: pytest.Monkey
         ("cuda", False, "CUDA is unavailable"),
         ("cuda:2", True, "CUDA index 2"),
         ("cuda:0", True, "sample_batch is on"),
-        ("meta", False, "device must be 'cpu' or 'cuda'"),
-        ("mps", False, "device must be 'cpu' or 'cuda'"),
+        ("meta", False, "device must be 'cpu', 'cuda', or 'mps'"),
+        ("mps", False, "MPS is unavailable"),
     ],
 )
 def test_profile_rejects_invalid_devices(
     monkeypatch: pytest.MonkeyPatch, device: str, *, cuda_available: bool, message: str
 ) -> None:
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda_available)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
     with pytest.raises(ValueError, match=message):
@@ -242,38 +255,66 @@ def test_precision_context_rejects_unknown_precision() -> None:
         model_profile._precision_context(torch.device("cpu"), "invalid")
 
 
-def test_mocked_cuda_timing_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("requested", "resolved", "has_stats"),
+    [("cuda", "cuda:1", True), ("mps", "mps:0", True), ("mps", "mps:0", False)],
+)
+def test_accelerator_timing_boundaries(
+    monkeypatch: pytest.MonkeyPatch, requested: str, resolved: str, *, has_stats: bool
+) -> None:
     events: list[str] = []
+    device = torch.device(resolved)
 
     class Identity(nn.Module):
         def forward(self, sample: Any) -> Any:
             events.append("forward")
             return sample
 
-    def synchronize(device: torch.device) -> None:
-        assert device == torch.device("cuda:1")
-        events.append("sync")
+    if requested == "cuda":
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
+        monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
 
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
-    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
-    monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
-    monkeypatch.setattr(
-        torch.cuda, "reset_peak_memory_stats", lambda device: events.append("reset")
-    )
-    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda device: 2 * 1024**3)
-    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda device: 3 * 1024**3)
+        def synchronize(indexed_device: torch.device) -> None:
+            assert indexed_device == device
+            events.append("sync")
+
+        monkeypatch.setattr(torch.cuda, "synchronize", synchronize)
+        allocator = torch.cuda
+    else:
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
+        monkeypatch.setattr(torch.mps, "synchronize", lambda: events.append("sync"))
+        monkeypatch.setattr(torch, "__version__", "2.13" if has_stats else "2.12")
+        allocator = torch.accelerator
+    if has_stats:
+        monkeypatch.setattr(
+            allocator,
+            "reset_peak_memory_stats",
+            lambda device: events.append("reset"),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            allocator, "max_memory_allocated", lambda device: 2 * 1024**3, raising=False
+        )
+        monkeypatch.setattr(allocator, "memory_reserved", lambda device: 3 * 1024**3, raising=False)
     sample = cast(
-        torch.Tensor,
-        SimpleNamespace(device=torch.device("cuda:1"), dtype=torch.float32, shape=(2, 3), ndim=2),
+        torch.Tensor, SimpleNamespace(device=device, dtype=torch.float32, shape=(2, 3), ndim=2)
     )
     result = profile_inference(
-        Identity(), sample, device=torch.device("cuda"), n_warmup=1, n_measure=1
+        Identity(), sample, device=torch.device(requested), n_warmup=1, n_measure=2
     )
-    assert events == ["forward", "sync", "reset", "forward", "sync"]
-    assert result.peak_gpu_mem_gb == 2
-    assert result.reserved_gpu_mem_gb == 3
-    assert result.device == "cuda:1"
+    assert events == [
+        "forward",
+        "sync",
+        *(["reset"] if has_stats else []),
+        "forward",
+        "sync",
+        "forward",
+        "sync",
+    ]
+    assert result.peak_gpu_mem_gb == (2 if has_stats else None)
+    assert result.reserved_gpu_mem_gb == (3 if has_stats else None)
+    assert result.device == resolved
 
 
 @pytest.mark.parametrize(

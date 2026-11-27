@@ -3,6 +3,8 @@
 
 """Runtime Torch device selection and CUDA validation."""
 
+import subprocess
+
 import torch
 
 from .errors import DeviceError
@@ -46,3 +48,14 @@ def resolve_device(requested: str | torch.device) -> torch.device:
             f"Requested CUDA index {index}, but only {count} CUDA devices are available"
         )
     return torch.device("cuda", index)
+
+
+def gpu_name(device: torch.device) -> str:
+    """Identify the GPU for profile records and hardware-specific resume keys."""
+    if device.type == "cuda":
+        return torch.cuda.get_device_name(device)
+    if device.type == "mps":
+        if hasattr(torch.backends.mps, "get_name"):
+            return torch.backends.mps.get_name()
+        return subprocess.check_output(["/usr/sbin/sysctl", "-n", "hw.model"], text=True).strip()
+    return ""

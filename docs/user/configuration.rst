@@ -134,7 +134,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` selects the Apple GPU on supported Macs. Inference profiling supports CPU and CUDA. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` selects the Apple GPU on supported Macs. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``, ``--seed``, ``--matmul-precision``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``, ``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and ``--normalization``.
 
@@ -415,7 +415,7 @@ operation support depends on the model and device.
 ``--count-flops`` / ``--no-count-flops`` add or omit FLOP counting.
 The JSON includes effective preprocessing, device, precision, timing, and
 memory metadata. Local dataset samples must already be available.
-Profiling supports only CPU and CUDA measurement devices.
+Use ``--device mps`` to profile on an Apple GPU. CUDA and MPS timings include synchronization after warmup and after each measured forward pass. Peak allocated and reserved memory are available on CUDA and on MPS with PyTorch 2.13 or later. Other devices and older MPS builds report null for these fields.
 
 Synthetic compute measurements
 -------------------------------
