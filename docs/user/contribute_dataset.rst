@@ -212,7 +212,7 @@ and produces sensible results:
    $ uv run geo-eval-harness run --model imagestats --dataset my_dataset --device cpu \
        --methods knn --bootstrap-samples 10
 
-These are classification smoke commands. ``imagestats`` computes four summary statistics per channel, so RGB inputs produce 12-dimensional embeddings without downloading weights. Use a separate ``output.file`` in a run YAML when recording exploratory results. The default runtime device is ``cuda:0``; pass ``--device cpu`` when no GPU is available.
+These are classification smoke commands. ``imagestats`` computes four summary statistics per channel, so RGB inputs produce 12-dimensional embeddings without downloading weights. Use a separate ``output.file`` in a run YAML when recording exploratory results.
 
 Compare class counts, sample labels, image channels, and the reported score with a simple baseline. Above-chance accuracy is a useful sanity check, not proof of correct loading; near-chance results can also mean the features are unsuitable.
 

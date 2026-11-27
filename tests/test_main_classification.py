@@ -202,7 +202,9 @@ def test_device_resolution_and_resume(
 
 
 class TestDeviceResolution:
-    @pytest.mark.parametrize(("device", "expected"), [("cuda:0", "cuda:0"), ("mps", "mps:0")])
+    @pytest.mark.parametrize(
+        ("device", "expected"), [("cuda:0", "cuda:0"), ("mps", "mps:0"), ("auto", "mps:0")]
+    )
     def test_implicit_knn_device_follows_model_device(
         self,
         tmp_path: Path,
@@ -218,7 +220,7 @@ class TestDeviceResolution:
                 "classification": KNN_ONLY | {"knn_device": None},
             },
         )
-        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: expected.startswith("cuda"))
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
         monkeypatch.setattr(torch.backends.mps, "is_available", lambda: True)
 
@@ -260,6 +262,7 @@ class TestDeviceResolution:
         before = output.read_bytes()
         cfg.runtime.device = "auto"
         cfg.output.resume = True
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
         main(cfg)

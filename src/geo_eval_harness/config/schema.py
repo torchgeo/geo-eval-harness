@@ -83,9 +83,9 @@ class StrictModel(BaseModel):
 
 def _check_device(value: str) -> str:
     """Reject malformed device strings without importing Torch."""
-    if value in {"auto", "cpu", "mps"} or re.fullmatch(r"cuda(?::[0-9]+)?", value):
+    if value in {"auto", "cpu", "mps", "mps:0"} or re.fullmatch(r"cuda(?::[0-9]+)?", value):
         return value
-    raise ValueError("device must be 'auto', 'cpu', 'mps', 'cuda', or 'cuda:<index>'")
+    raise ValueError("device must be 'auto', 'cpu', 'mps', 'mps:0', 'cuda', or 'cuda:<index>'")
 
 
 def _check_knn_device(value: str) -> str:
@@ -410,7 +410,7 @@ class SegmentationConfig(StrictModel):
 class RuntimeConfig(StrictModel):
     """Execution settings."""
 
-    device: Device = "cuda:0"
+    device: Device = "auto"
     batch_size: StrictInt = Field(default=64, gt=0)
     workers: StrictInt = Field(default=4, ge=0)
     seed: StrictInt = 0

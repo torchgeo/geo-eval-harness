@@ -198,7 +198,7 @@ def compute_intrinsic_dim(
         X: Feature matrix of shape ``(n_samples, n_features)``.
         estimators: Names of torchid global estimators (see
             ``SUPPORTED_ESTIMATORS``).
-        device: Torch device; ``"auto"`` or ``None`` selects current CUDA if available, else CPU.
+        device: Torch device; ``"auto"`` or ``None`` selects CUDA, MPS, or CPU in that order.
         max_samples: Cap row count via random subsampling for speed/memory.
             ``None`` disables subsampling.
         seed: RNG seed for subsampling determinism.

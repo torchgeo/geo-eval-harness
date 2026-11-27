@@ -23,7 +23,7 @@ def valid_config() -> dict:
 
 def test_defaults_and_modern_shape() -> None:
     config = validate_run_config(valid_config())
-    assert config.runtime.device == "cuda:0"
+    assert config.runtime.device == "auto"
     assert config.input.normalization == "dataset"
     assert config.classification.linear.c_count == 40
     assert config.output.directory == "results"

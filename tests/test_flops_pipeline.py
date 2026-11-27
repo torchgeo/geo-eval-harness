@@ -755,9 +755,10 @@ def test_terramind_pipeline_preserves_name_and_measures_only_its_modality(
     assert {row["name"] for row in rows} == {"tt_terramind_v1_base_rgb"}
 
 
-def test_auto_device_uses_cpu_when_cuda_is_unavailable(
+def test_auto_device_uses_cpu_without_an_accelerator(
     flops_run: FlopsRun, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     cfg, rows, events = flops_run
     cfg.runtime.device = "auto"

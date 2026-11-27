@@ -72,6 +72,7 @@ class TestDeviceSelection:
                 self.dimension_ = float(features.shape[1])
                 return self
 
+        monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
         monkeypatch.setattr(torch.cuda, "is_available", lambda: available)
         monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
         monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)

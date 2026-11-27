@@ -12,7 +12,7 @@ def resolve_device(requested: str | torch.device) -> torch.device:
     """Resolve a Torch device, using the current CUDA index for ``auto`` and bare ``cuda``.
 
     Args:
-        requested: Torch device or ``auto`` to choose CUDA when available, otherwise CPU.
+        requested: Torch device or ``auto`` to select CUDA, MPS, or CPU in that order.
 
     Returns:
         Device for execution. Bare ``mps`` resolves to ``mps:0``.
@@ -39,7 +39,7 @@ def resolve_device(requested: str | torch.device) -> torch.device:
         raise DeviceError(f"Invalid device request {requested!r}: CUDA index is too large")
     if not torch.cuda.is_available():
         if requested == "auto":
-            return torch.device("cpu")
+            return torch.device("mps:0" if torch.backends.mps.is_available() else "cpu")
         raise DeviceError(f"Requested {requested!r}, but CUDA is unavailable; use 'cpu' or 'auto'")
     index = torch.cuda.current_device() if device.index is None else device.index
     count = torch.cuda.device_count()
@@ -48,6 +48,14 @@ def resolve_device(requested: str | torch.device) -> torch.device:
             f"Requested CUDA index {index}, but only {count} CUDA devices are available"
         )
     return torch.device("cuda", index)
+
+
+def float64_device(device: torch.device) -> torch.device:
+    """Use CPU for double-precision operations on MPS, which lacks float64.
+
+    Move tensors to the returned device before casting so the conversion runs there.
+    """
+    return torch.device("cpu") if device.type == "mps" else device
 
 
 def gpu_name(device: torch.device) -> str:
