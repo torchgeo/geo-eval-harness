@@ -308,7 +308,7 @@ def bootstrap_map(
     return map_mean, lower, upper
 
 
-def class_iou(confusion: torch.Tensor) -> torch.Tensor:
+def per_class_iou(confusion: torch.Tensor) -> torch.Tensor:
     """Return each class's IoU from a confusion matrix with label rows and prediction columns.
 
     A class absent from the labels and never predicted has an empty union and gets NaN, which
@@ -344,7 +344,7 @@ def bootstrap_miou(
     scores = torch.empty(n_boot, dtype=torch.float64)
     for index in range(n_boot):
         sample = torch.randint(n_samples, (n_samples,), generator=generator)
-        scores[index] = class_iou(confusions[sample].sum(dim=0)).nanmean()
+        scores[index] = per_class_iou(confusions[sample].sum(dim=0)).nanmean()
 
     lower = (100.0 - ci) / 2.0
     return float(torch.nanquantile(scores, lower / 100.0)), float(

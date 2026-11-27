@@ -49,9 +49,9 @@ from geo_eval_harness.results import (
     bootstrap_accuracy,
     bootstrap_map,
     bootstrap_miou,
-    class_iou,
     format_setup_value,
     model_results_path,
+    per_class_iou,
     segmentation_setup_columns,
 )
 from geo_eval_harness.resume import (
@@ -124,7 +124,7 @@ class SegmentationOutcome(NamedTuple):
     best_epoch: int | None
     best_val_miou: float | None
     weight_decay: float | None = None
-    class_iou: list[float] | None = None
+    class_ious: list[float] | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -700,7 +700,7 @@ def evaluate_segmentation(
             seed=seed,
         )
         if cfg.output.per_class_iou:
-            class_ious = class_iou(confusion_matrices.sum(dim=0)).tolist()
+            class_ious = per_class_iou(confusion_matrices.sum(dim=0)).tolist()
     else:
         metrics = eval_result
     weight_decay = seg_cfg.weight_decay
@@ -714,7 +714,7 @@ def evaluate_segmentation(
         best_epoch=solver.best_epoch,
         best_val_miou=solver.best_val_miou,
         weight_decay=weight_decay,
-        class_iou=class_ious,
+        class_ious=class_ious,
     )
 
 
@@ -797,7 +797,7 @@ def run_segmentation(
             f1=None,
             boundary_iou=None,
         )
-        for index, value in enumerate(outcome.class_iou or [])
+        for index, value in enumerate(outcome.class_ious or [])
     ]
     setup = segmentation_setup_columns(cfg.segmentation)
     yield [result.to_row() | setup for result in (row, *class_rows)]
