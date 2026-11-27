@@ -14,10 +14,10 @@ import logging
 import math
 import multiprocessing
 import re
-from collections.abc import Iterator, Sequence, Sized
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -198,7 +198,7 @@ def download(  # noqa: PLR0913
     logger.info("%s/%s: %d x %d cells per sample", product.name, bench.name, *shape)
     for split in splits:
         dataset = bench.get_dataset(split, bands=bands)
-        total = len(cast("Sized", dataset))
+        total = len(dataset)  # type: ignore[arg-type]
         count = total if limit is None else min(limit, total)
         pending = []
         for index in range(count):

@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import torch
 import torch.nn as nn
@@ -180,10 +180,6 @@ def stac_footprint(row: "pd.Series") -> Footprint:
     return Footprint(str(row["stac:crs"]), (a, b, x0, d, e, y0), (height, width), year)
 
 
-class _AssetSource(Protocol):
-    def assets(self, index: int) -> "pd.DataFrame": ...
-
-
 class _TimeFirstDataset(Dataset):
     """Return upstream ``(C, T, H, W)`` time series as ``(T, C, H, W)``."""
 
@@ -256,7 +252,7 @@ class _V2Dataset(BenchDataset):
             return super().footprint(dataset, index)
         if isinstance(dataset, _TimeFirstDataset):
             dataset = dataset.dataset
-        assets = cast("_AssetSource", dataset).assets(index)
+        assets = dataset.assets(index)  # type: ignore[attr-defined]
         rows = assets[assets["tortilla:id"] == self.footprint_asset]
         if len(rows) != 1:
             raise ValueError(f"{self.name}[{index}] has no unique {self.footprint_asset!r} asset")
