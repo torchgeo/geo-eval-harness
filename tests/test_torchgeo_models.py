@@ -1,5 +1,7 @@
 """Tests for torchgeo model wrappers and preprocessing."""
 
+from dataclasses import replace
+from functools import partial
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -15,6 +17,8 @@ from geo_eval_harness.datasets.m_eurosat import MEurosat
 from geo_eval_harness.datasets.m_forestnet import MForestnet
 from geo_eval_harness.datasets.m_so2sat import MSo2Sat
 from geo_eval_harness.datasets.resisc45 import RESISC45
+from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
+from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.models._input_units import InputUnit
 from geo_eval_harness.models.torchgeo_models import (
     TorchGeoCromaBench,
@@ -954,7 +958,7 @@ def test_satlas_ms_native_scales_tci_and_non_tci_bands(
 def test_satlas_ms_rejects_datasets_missing_required_bands(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with pytest.raises(BandCompatibilityError, match="rededge1"):
+    with pytest.raises(BandCompatibilityError, match="B05"):
         _satlas_ms_model(
             monkeypatch,
             "torchgeo/swinv2b_s2ms_satlas_si",
@@ -1176,3 +1180,37 @@ def test_segmentation_step_updates_torchgeo_backbone(
     assert trainable
     assert all(p.grad is not None for p in trainable.values())
     assert any(not torch.equal(before[n], p) for n, p in trainable.items())
+
+
+@pytest.fixture
+def s1_resnet(monkeypatch: pytest.MonkeyPatch) -> partial[TorchGeoResNetBench]:
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    return partial(
+        TorchGeoResNetBench, weights_member="SENTINEL1_ALL_DECUR", normalization="model_native"
+    )
+
+
+def test_s1_selects_vv_vh_and_converts_only_linear_power(
+    s1_resnet: partial[TorchGeoResNetBench],
+) -> None:
+    vv, vh = Sen1Floods11S1.bands
+    bands = [*_rgb_bands(), vh, replace(vv, unit="linear_power")]
+    images = torch.tensor([1000.0, 1000.0, 1000.0, -20.26, 10 ** (-12.59 / 10)]).view(1, 5, 1, 1)
+    torch.testing.assert_close(
+        s1_resnet(bands).normalize_inputs(images), torch.zeros(1, 2, 1, 1), atol=1e-5, rtol=0
+    )
+
+
+def test_s1_requires_both_bands_and_declared_native_units(
+    s1_resnet: partial[TorchGeoResNetBench],
+) -> None:
+    vv, vh = Sen1Floods11S1.bands
+    with pytest.raises(BandCompatibilityError, match="VH"):
+        s1_resnet([vv], normalization="identity")
+    bands = [replace(vh, unit=None), vv]
+    with pytest.raises(UnsupportedNormalizationError, match="linear_power"):
+        s1_resnet(bands)
+    images = torch.tensor([1.0, 2.0]).view(1, 2, 1, 1)
+    assert s1_resnet(bands, normalization="identity").normalize_inputs(
+        images
+    ).flatten().tolist() == [2.0, 1.0]

@@ -95,6 +95,23 @@ def test_presets_and_dataset_defaults_respect_explicit_values(
     assert preset.segmentation.layers == ["deep"]
 
 
+def test_sar_band_defaults_and_explicit_overrides() -> None:
+    model = {"name": "torchgeo/resnet50_s1_all_decur"}
+    inferred, _ = FlopsConfig.model_validate({"model": model}).resolve()
+    assert inferred.input.band_source == "kuro_siwo"
+    assert inferred.input.band_configs == inferred.segmentation.band_configs == ["all"]
+    explicit, _ = FlopsConfig.model_validate(
+        {
+            "model": model,
+            "input": {"band_source": "cloudsen12", "band_configs": ["rgb"]},
+            "segmentation": {"band_configs": []},
+        }
+    ).resolve()
+    assert explicit.input.band_source == "cloudsen12"
+    assert explicit.input.band_configs == ["rgb"]
+    assert explicit.segmentation.band_configs == []
+
+
 def test_explicit_null_target_and_empty_kwargs_preserve_selection() -> None:
     config = FlopsConfig.model_validate(
         {"model": {"name": "rcf", "target": None, "kwargs": {}}, "runtime": {"seed": 41}}

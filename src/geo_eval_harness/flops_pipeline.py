@@ -445,7 +445,7 @@ def main(config: FlopsConfig) -> None:
     completed = _load_completed(output_path) if cfg.output.resume else frozenset()
 
     n_written = 0
-    n_skipped = 0
+    resumed = False
 
     for band_config in cfg.input.band_configs:
         if _is_terramind(preset):
@@ -458,7 +458,6 @@ def main(config: FlopsConfig) -> None:
 
         model = _build_model(preset, band_specs, normalization, band_config)
         if model is None:
-            n_skipped += 1
             continue
         model.to(device).eval()
         model.probe_input_size = image_size
@@ -475,11 +474,11 @@ def main(config: FlopsConfig) -> None:
 
         cls_key = cell_key(base_meta, "classification")
         if cls_key in completed:
+            resumed = True
             logger.info("Skip (%s, %s, classification) — already done", model_name, band_config)
         else:
             row = classification_row(cfg, model, base_meta, device)
             if row is None:
-                n_skipped += 1
                 del model
                 _free(device)
                 continue
@@ -493,13 +492,15 @@ def main(config: FlopsConfig) -> None:
         del model
         _free(device)
 
-    logger.info(
-        "Wrote %d rows for %s (%d cells skipped) → %s",
-        n_written,
-        model_name,
-        n_skipped,
-        output_path,
-    )
+    if n_written:
+        logger.info("Wrote %d rows for %s → %s", n_written, model_name, output_path)
+    elif resumed:
+        logger.info("All compatible measurements for %s are already in %s", model_name, output_path)
+    else:
+        raise BandCompatibilityError(
+            f"No compatible inputs for {model_name} with {cfg.input.band_source} "
+            f"and band configs {cfg.input.band_configs}."
+        )
 
 
 def _now() -> str:

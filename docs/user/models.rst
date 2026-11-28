@@ -317,6 +317,11 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/panopticon --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
 
+   $ # DeCUR
+   $ geo-eval-harness run --model torchgeo/resnet50_s1_all_decur --dataset sen1floods11-s1 --normalization model
+
+Sentinel-1 GRD checkpoints select VV and VH by name. With ``--normalization model``, the model converts bands declared as linear power to dB before applying the checkpoint's channel statistics.
+
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.

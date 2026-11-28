@@ -465,7 +465,7 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-``--band-source`` selects the dataset metadata. ``--band-configs rgb all`` selects RGB or all source bands. ``s2`` also selects all source bands, including twelve Sentinel-2 bands for the default CloudSen12 source. Use ``all`` for SAR or other sensor inputs so the CSV labels the selection correctly.
+By default, Sentinel-1 checkpoints use both VV and VH from Kuro Siwo. Fixed multispectral checkpoints use all CloudSen12 bands, and RGB-only modalities use RGB. Other models measure both RGB and all twelve CloudSen12 bands. Use ``--band-source`` and ``--band-configs`` to override these choices. Both ``all`` and ``s2`` select every source band. Segmentation uses the selected inputs unless you specify ``--seg-band-configs``.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and

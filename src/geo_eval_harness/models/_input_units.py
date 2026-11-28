@@ -5,11 +5,13 @@ SAR wrappers convert linear power to dB when required by their normalization pol
 They then apply model-specific per-band normalization.
 """
 
+from collections.abc import Callable, Sequence
 from enum import StrEnum
 
 import torch
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.errors import UnsupportedNormalizationError
 
 
 class InputUnit(StrEnum):
@@ -128,6 +130,29 @@ def to_s2_tci(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
 def linear_power_to_db(images: torch.Tensor) -> torch.Tensor:
     """Convert SAR linear power to dB, flooring power at 1e-6 without mutating inputs."""
     return 10.0 * torch.log10(images.clamp(min=1e-6))
+
+
+def sar_db_converter(
+    bands: list[BandSpec], indices: Sequence[int]
+) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Return a converter from the bands' declared SAR unit to dB for the selected channels."""
+    undeclared = [bands[i].name for i in indices if bands[i].unit not in ("db", "linear_power")]
+    if undeclared:
+        raise UnsupportedNormalizationError(
+            f"Model-native SAR normalization needs SAR bands in 'db' or 'linear_power'; "
+            f"{undeclared} declare no unit. Use --normalization dataset."
+        )
+    log_channels = [i for i in indices if bands[i].unit == "linear_power"]
+
+    if not log_channels:
+        return lambda x: x
+
+    def convert(x: torch.Tensor) -> torch.Tensor:
+        x = x.clone()
+        x[:, log_channels] = linear_power_to_db(x[:, log_channels])
+        return x
+
+    return convert
 
 
 def convert_unit(images: torch.Tensor, src: InputUnit, dst: InputUnit) -> torch.Tensor:
