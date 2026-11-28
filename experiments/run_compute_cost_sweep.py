@@ -20,17 +20,13 @@ import yaml
 from timm.models import get_pretrained_cfg, is_model_in_modules
 
 from geo_eval_harness.config.catalog import list_model_configs
-from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.flops import FlopsConfig, flops_band_inputs
 from geo_eval_harness.config.presets import ModelPreset, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig, load_yaml
 from geo_eval_harness.devices import resolve_device
 from geo_eval_harness.flops_identity import measurement_metadata, source_fingerprint
-from geo_eval_harness.models._torchgeo_bands import S1_BANDS, checkpoint_band_order
 from geo_eval_harness.models.terrafm import TERRAFM_INPUT_SIZE
-from geo_eval_harness.models.torchgeo_models import (
-    _PANOPTICON_PATCH_SIZE,
-    _resolve_torchgeo_weights,
-)
+from geo_eval_harness.models.torchgeo_models import _PANOPTICON_PATCH_SIZE
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
@@ -88,20 +84,6 @@ def image_grid_size(preset: ModelPreset, size: int) -> int:
     return size
 
 
-def sweep_inputs(preset: ModelPreset) -> tuple[str, list[str]]:
-    """Choose a synthetic band source and compatible selections from checkpoint metadata."""
-    kwargs = preset.kwargs
-    if "weights_class" in kwargs and "weights_member" in kwargs:
-        weights = _resolve_torchgeo_weights(kwargs["weights_class"], kwargs["weights_member"])
-        order = checkpoint_band_order(weights.meta)
-        if order:
-            return ("kuro_siwo" if order == S1_BANDS else "cloudsen12"), ["all"]
-    modality = kwargs.get("modality")
-    if modality in ("s1", "S1GRD"):
-        return "kuro_siwo", ["all"]
-    return "cloudsen12", ["rgb"] if modality == "RGB" else ["rgb", "all"]
-
-
 def build_jobs(models: list[str], sizes: list[int], heads: list[str]) -> list[Job]:
     """Discover image models and their declared modality without loading weights."""
     jobs = []
@@ -115,7 +97,7 @@ def build_jobs(models: list[str], sizes: list[int], heads: list[str]) -> list[Jo
         ]
     for name in names:
         preset = load_model_preset(model_selection(name))
-        source, selections = sweep_inputs(preset)
+        source, selections = flops_band_inputs(preset, multispectral="all")
         selected = preset.for_dataset(source)
         selected_heads = tuple(heads) if selected.segmentation.layers else ()
         for size in dict.fromkeys(image_grid_size(selected, value) for value in sizes):

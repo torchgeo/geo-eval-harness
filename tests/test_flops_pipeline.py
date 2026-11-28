@@ -407,7 +407,7 @@ def test_completed_profile_survives_incompatible_segmentation_head(
         ValueError("input channels implementation is broken"),
     ],
 )
-def test_forward_pass_only_skips_explicit_band_errors(flops_config, monkeypatch, caplog, error):
+def test_forward_pass_reports_band_errors(flops_config, monkeypatch, caplog, error):
     class BrokenForward(nn.Module):
         def forward(self, images):
             raise error
@@ -416,7 +416,8 @@ def test_forward_pass_only_skips_explicit_band_errors(flops_config, monkeypatch,
         "geo_eval_harness.flops_pipeline.build_model", lambda *args, **kwargs: BrokenForward()
     )
     if isinstance(error, BandCompatibilityError):
-        main(flops_config)
+        with pytest.raises(BandCompatibilityError, match="No compatible inputs"):
+            main(flops_config)
         assert "unsupported selection" in caplog.text
     else:
         with pytest.raises(ValueError, match="implementation is broken"):
