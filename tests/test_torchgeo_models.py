@@ -1,5 +1,7 @@
 """Tests for torchgeo model wrappers and preprocessing."""
 
+from dataclasses import replace
+from functools import partial
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
@@ -10,11 +12,15 @@ from torchvision.transforms import Normalize
 from torchvision.transforms.v2 import Normalize as NormalizeV2
 
 from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.config.presets import build_model, load_model_preset
+from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets.base import BandSpec, BenchDataset
 from geo_eval_harness.datasets.m_eurosat import MEurosat
 from geo_eval_harness.datasets.m_forestnet import MForestnet
 from geo_eval_harness.datasets.m_so2sat import MSo2Sat
 from geo_eval_harness.datasets.resisc45 import RESISC45
+from geo_eval_harness.datasets.sen1floods11 import Sen1Floods11S1
+from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.models._input_units import InputUnit
 from geo_eval_harness.models.torchgeo_models import (
     TorchGeoCromaBench,
@@ -24,7 +30,9 @@ from geo_eval_harness.models.torchgeo_models import (
     TorchGeoResNetBench,
     TorchGeoScaleMAEBench,
     TorchGeoSwinBench,
+    TorchGeoViTBench,
     _adapt_first_conv,
+    _checkpoint_normalization,
     _extract_normalize_transforms,
     _resolve_dofa_wavelengths,
     _resolve_panopticon_chn_ids,
@@ -872,8 +880,6 @@ def test_satlas_s2_presets_scale_dn_like_tci(
 ) -> None:
     """Satlas S2 RGB checkpoints divide L1C TCI by 255; TCI saturates at DN 3558."""
     import geo_eval_harness.models.torchgeo_models as tg_models
-    from geo_eval_harness.config.presets import load_model_preset
-    from geo_eval_harness.config.schema import ModelConfig
 
     monkeypatch.setattr(
         tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: backbone()
@@ -888,60 +894,41 @@ def test_satlas_s2_presets_scale_dn_like_tci(
     )
 
 
-_SATLAS_MS_PRESETS = [
-    "torchgeo/resnet50_s2ms_satlas_si",
-    "torchgeo/resnet152_s2ms_satlas_si",
-    "torchgeo/swinv2t_s2ms_satlas_si",
-    "torchgeo/swinv2b_s2ms_satlas_si",
-]
-_SATLAS_WRAPPERS: dict[
-    str, tuple[type[TorchGeoResNetBench | TorchGeoSwinBench], type[nn.Module]]
-] = {
-    "geo_eval_harness.models.TorchGeoResNetBench": (TorchGeoResNetBench, _TinySatlasResNet),
-    "geo_eval_harness.models.TorchGeoSwinBench": (TorchGeoSwinBench, _TinySatlasSwin),
-}
-
-
-def _satlas_ms_model(
-    monkeypatch: pytest.MonkeyPatch,
-    name: str,
-    bands: list[BandSpec],
-    normalization: str,
-) -> TorchGeoResNetBench | TorchGeoSwinBench:
-    import geo_eval_harness.models.torchgeo_models as tg_models
-    from geo_eval_harness.config.presets import load_model_preset
-    from geo_eval_harness.config.schema import ModelConfig
-
-    preset = load_model_preset(ModelConfig(name=name), seed=0)
-    wrapper, backbone = _SATLAS_WRAPPERS[preset.target]
-    monkeypatch.setattr(
-        tg_models, "_resolve_torchgeo_factory", lambda _name: lambda weights: backbone()
-    )
-    assert preset.input.bands == "all"
-    return wrapper(bands=bands, normalization=normalization, **preset.kwargs)
-
-
-@pytest.mark.parametrize("name", _SATLAS_MS_PRESETS)
-def test_satlas_ms_presets_use_satlas_band_order(
-    monkeypatch: pytest.MonkeyPatch, name: str
+@pytest.mark.parametrize("variant", ["si", "mi"])
+@pytest.mark.parametrize(
+    ("backbone", "factory", "weights_class"),
+    [
+        ("resnet50", "resnet50", "ResNet50_Weights"),
+        ("resnet152", "resnet152", "ResNet152_Weights"),
+        ("swinv2t", "swin_v2_t", "Swin_V2_T_Weights"),
+        ("swinv2b", "swin_v2_b", "Swin_V2_B_Weights"),
+    ],
+)
+def test_satlas_ms_preset_checkpoint(
+    backbone: str, factory: str, weights_class: str, variant: str
 ) -> None:
-    """Satlas orders R, G, B first, then B05-B07, B08 (not B8A), B11, B12."""
-    model = _satlas_ms_model(monkeypatch, name, MEurosat().bands, "identity")
-    assert model.weights.meta["bands"] == (
-        "B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "B12"
-    )  # fmt: skip
+    preset = load_model_preset(ModelConfig(name=f"torchgeo/{backbone}_s2ms_satlas_{variant}"))
+    assert preset.kwargs["factory"] == factory
+    assert preset.kwargs["weights_class"] == weights_class
+    assert preset.kwargs["weights_member"] == f"SENTINEL2_{variant.upper()}_MS_SATLAS"
+    assert preset.input.bands == "all"
+
+
+def test_satlas_ms_band_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    preset = load_model_preset(ModelConfig(name="torchgeo/resnet50_s2ms_satlas_si"))
+    model = build_model(preset, bands=MEurosat().bands, normalization="identity")
     # m-eurosat order: coastal, blue, green, red, red_edge_1-3, nir, B09, B10, swir_1-2, red_edge_4.
     images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
     selected = model.normalize_inputs(images).flatten().tolist()
     assert selected == [3.0, 2.0, 1.0, 4.0, 5.0, 6.0, 7.0, 10.0, 11.0]
 
 
-@pytest.mark.parametrize("name", _SATLAS_MS_PRESETS)
-def test_satlas_ms_native_scales_tci_and_non_tci_bands(
-    monkeypatch: pytest.MonkeyPatch, name: str
-) -> None:
+def test_satlas_ms_native_scales_tci_and_non_tci_bands(monkeypatch: pytest.MonkeyPatch) -> None:
     """R/G/B use L1C TCI (saturating at DN 3558); other bands are DN / 8160 clipped to 1."""
-    model = _satlas_ms_model(monkeypatch, name, MEurosat().bands, "model_native")
+    monkeypatch.setattr("torchgeo.models.swin_v2_b", lambda weights: _TinySatlasSwin())
+    preset = load_model_preset(ModelConfig(name="torchgeo/swinv2b_s2ms_satlas_mi"))
+    model = build_model(preset, bands=MEurosat().bands, normalization="model_native")
     dn = [0.0, 1779.0, 3558.0, 10000.0, 4080.0, 8160.0, 0.0, 2040.0, 0.0, 0.0, 20000.0, -5.0, 0.0]
     images = torch.tensor(dn).view(1, 13, 1, 1)
     # red, green, blue, rededge1, rededge2, rededge3, nir, swir1, swir2
@@ -951,16 +938,10 @@ def test_satlas_ms_native_scales_tci_and_non_tci_bands(
     )
 
 
-def test_satlas_ms_rejects_datasets_missing_required_bands(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    with pytest.raises(BandCompatibilityError, match="rededge1"):
-        _satlas_ms_model(
-            monkeypatch,
-            "torchgeo/swinv2b_s2ms_satlas_si",
-            MForestnet().bands,
-            "bandspec_zscore",
-        )
+def test_satlas_ms_rejects_datasets_missing_required_bands() -> None:
+    preset = load_model_preset(ModelConfig(name="torchgeo/swinv2b_s2ms_satlas_si"))
+    with pytest.raises(BandCompatibilityError, match="B05"):
+        build_model(preset, bands=MForestnet().bands, normalization="bandspec_zscore")
 
 
 @pytest.mark.parametrize(
@@ -986,8 +967,11 @@ def test_rejects_other_multiband_satlas_checkpoints(
         wrapper(bands=MEurosat().bands, weights_class=weights_class, weights_member=weights_member)
 
 
-def _ssl4eo_s2_model(
-    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec], normalization: str
+def _s2_model(
+    monkeypatch: pytest.MonkeyPatch,
+    bands: list[BandSpec],
+    normalization: str,
+    member: str = "SENTINEL2_ALL_MOCO",
 ) -> TorchGeoResNetBench:
     import geo_eval_harness.models.torchgeo_models as tg_models
 
@@ -997,23 +981,32 @@ def _ssl4eo_s2_model(
     return TorchGeoResNetBench(
         bands=bands,
         weights_class="ResNet50_Weights",
-        weights_member="SENTINEL2_ALL_MOCO",
+        weights_member=member,
         normalization=normalization,
     )
 
 
-def test_ssl4eo_s2_checkpoints_use_checkpoint_band_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SSL4EO-S12 orders B01-B08, B8A, B09-B12; m-eurosat lists B8A last."""
-    model = _ssl4eo_s2_model(monkeypatch, MEurosat().bands, "identity")
+@pytest.mark.parametrize(
+    ("member", "expected"),
+    [
+        ("SENTINEL2_ALL_MOCO", [*range(8), 12, 8, 9, 10, 11]),
+        ("SENTINEL2_ALL_SECO_ECO", [*range(8), 12, 8, 10, 11]),
+    ],
+)
+def test_s2_checkpoints_use_checkpoint_band_order(
+    monkeypatch: pytest.MonkeyPatch, member: str, expected: list[int]
+) -> None:
+    """m-eurosat lists B8A last and includes B10, which L2A checkpoints omit."""
+    model = _s2_model(monkeypatch, MEurosat().bands, "identity", member)
     images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
     selected = model.normalize_inputs(images).flatten().tolist()
-    assert selected == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 12.0, 8.0, 9.0, 10.0, 11.0]
+    assert selected == expected
 
 
 def test_ssl4eo_s2_native_zero_fills_cirrus_absent_from_l2a(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model = _ssl4eo_s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
+    model = _s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
     reflectance = torch.arange(1, 13, dtype=torch.float32).view(1, 12, 1, 1) / 100
     expected = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.0, 0.11, 0.12]
     torch.testing.assert_close(
@@ -1026,7 +1019,7 @@ def test_ssl4eo_s2_rejects_datasets_missing_required_bands(
     monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec]
 ) -> None:
     with pytest.raises(BandCompatibilityError, match="B01"):
-        _ssl4eo_s2_model(monkeypatch, bands, "bandspec_zscore")
+        _s2_model(monkeypatch, bands, "bandspec_zscore")
 
 
 class _TinyConvNet(nn.Module):
@@ -1061,7 +1054,9 @@ class _TinyPatchEmbed(nn.Module):
 
 
 class _TinyViT(nn.Module):
-    """Scale-MAE stand-in with a trainable patch embedding and token block."""
+    """ViT with a trainable patch embedding and token block."""
+
+    num_prefix_tokens = 1
 
     def __init__(self, **_kwargs: Any) -> None:
         super().__init__()
@@ -1106,6 +1101,7 @@ def _install_tiny_backbone(monkeypatch: pytest.MonkeyPatch, backbone: type[nn.Mo
 _GRADIENT_CASES = [
     pytest.param(TorchGeoResNetBench, _TinyConvNet, "mix", 3, id="resnet"),
     pytest.param(TorchGeoEarthLocBench, _TinyEarthLoc, "backbone.mix", 3, id="earthloc"),
+    pytest.param(TorchGeoViTBench, _TinyViT, "block", 3, id="vit"),
     pytest.param(TorchGeoScaleMAEBench, _TinyViT, "block", 3, id="scalemae"),
     pytest.param(TorchGeoCromaBench, _TinyTrainableCroma, "s2_proj", 12, id="croma"),
 ]
@@ -1176,3 +1172,77 @@ def test_segmentation_step_updates_torchgeo_backbone(
     assert trainable
     assert all(p.grad is not None for p in trainable.values())
     assert any(not torch.equal(before[n], p) for n, p in trainable.items())
+
+
+@pytest.fixture
+def s1_resnet(monkeypatch: pytest.MonkeyPatch) -> partial[TorchGeoResNetBench]:
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    return partial(
+        TorchGeoResNetBench, weights_member="SENTINEL1_ALL_DECUR", normalization="model_native"
+    )
+
+
+@pytest.mark.parametrize(
+    ("member", "expected"),
+    [
+        ("SENTINEL1_ALL_DECUR", [0.0, 0.0]),
+        ("SENTINEL1_GRD_CLOSP", [-12.59, -20.26]),
+    ],
+)
+def test_s1_selects_vv_vh_and_converts_only_linear_power(
+    s1_resnet: partial[TorchGeoResNetBench],
+    member: str,
+    expected: list[float],
+) -> None:
+    vv, vh = Sen1Floods11S1.bands
+    bands = [*_rgb_bands(), vh, replace(vv, unit="linear_power")]
+    images = torch.tensor([1000.0, 1000.0, 1000.0, -20.26, 10 ** (-12.59 / 10)]).view(1, 5, 1, 1)
+    torch.testing.assert_close(
+        s1_resnet(bands, weights_member=member).normalize_inputs(images),
+        torch.tensor(expected).view(1, 2, 1, 1),
+        atol=1e-5,
+        rtol=0,
+    )
+
+
+def test_s1_requires_both_bands_and_declared_native_units(
+    s1_resnet: partial[TorchGeoResNetBench],
+) -> None:
+    vv, vh = Sen1Floods11S1.bands
+    with pytest.raises(BandCompatibilityError, match="VH"):
+        s1_resnet([vv], normalization="identity")
+    bands = [replace(vh, unit=None), vv]
+    with pytest.raises(UnsupportedNormalizationError, match="linear_power"):
+        s1_resnet(bands)
+    images = torch.tensor([1.0, 2.0]).view(1, 2, 1, 1)
+    assert s1_resnet(bands, normalization="identity").normalize_inputs(
+        images
+    ).flatten().tolist() == [2.0, 1.0]
+
+
+def test_sigma_clipping_follows_all_checkpoint_normalization_stages() -> None:
+    weights = SimpleNamespace(
+        transforms=nn.Sequential(
+            Normalize(mean=[0.0], std=[255.0]), Normalize(mean=[0.5], std=[0.25])
+        )
+    )
+    normalize = _checkpoint_normalization(weights, "test", skip=0, clip_sigma=2.0)
+    assert normalize is not None
+    image = torch.tensor([0.0, 127.5, 255.0]).view(1, 1, 1, 3)
+    torch.testing.assert_close(normalize(image).flatten(), torch.tensor([0.0, 0.5, 1.0]))
+
+
+def test_softcon_scales_and_clips_pretrained_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from torchgeo.models import ResNet50_Weights
+
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    preset = load_model_preset(ModelConfig(name="torchgeo/resnet50_s2_all_softcon"))
+    model = build_model(preset, bands=MEurosat().bands, normalization="model_native")
+    stats = _extract_normalize_transforms(ResNet50_Weights.SENTINEL2_ALL_SOFTCON)
+    assert stats is not None
+    mean, std = stats[0].mean[0], stats[0].std[0]
+    dn = mean + torch.tensor([-3.0, -1.0, 0.0, 1.0, 3.0]) * std
+    image = dn.view(1, 1, 1, 5).expand(1, 13, 1, 5)
+    torch.testing.assert_close(
+        model.normalize_inputs(image)[0, 0, 0], torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0])
+    )

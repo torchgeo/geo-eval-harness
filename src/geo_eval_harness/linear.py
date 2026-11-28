@@ -18,7 +18,7 @@ class LogisticRegression:
     Supports both single-label (softmax cross-entropy) and multi-label
     (sigmoid BCE) classification via the ``multi_label`` flag.
 
-    ``device=None`` uses CPU; ``"auto"`` selects current CUDA when available, otherwise CPU.
+    ``device=None`` uses CPU; ``"auto"`` selects CUDA, MPS, or CPU in that order.
     Explicit CUDA requests raise ``ValueError`` when unavailable or out of range.
 
     Objective::

@@ -6,7 +6,7 @@ BandSpecs and empirical-RCF datasets are passed directly to construction, never 
 
 import importlib
 from copy import deepcopy
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field, StrictBool, StrictStr
 
@@ -58,7 +58,6 @@ class ModelPreset(PresetDefaults):
 
     name: str
     target: str
-    track: Literal["image", "coord"] = "image"
     seed_from_run: bool = False
     supports_model_normalization: StrictBool | None = None
     supported_datasets: list[StrictStr] | None = Field(default=None, min_length=1)
@@ -104,8 +103,6 @@ def resolve_run_config(config: RunConfig, dataset: str) -> tuple[RunConfig, Mode
     """Resolve preset and dataset defaults beneath explicitly supplied settings."""
     preset = load_model_preset(config.model, seed=config.runtime.seed).for_dataset(dataset)
     preset = preset.model_copy(update={"kwargs": {**preset.kwargs, **config.model.kwargs}})
-    if preset.track != "image":
-        raise ValueError(f"{config.model.name!r} is a coordinate encoder; use 'coord'")
     defaults = {
         key: getattr(preset, key).model_dump(exclude_unset=True)
         for key in ("input", "classification", "segmentation")

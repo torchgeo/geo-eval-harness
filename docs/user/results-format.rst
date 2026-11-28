@@ -1,7 +1,7 @@
 Results format
 ==============
 
-All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside command-level files for compute cost and CoordBench:
+All evaluation runs append rows to CSV files under ``results/`` (or ``--output-dir``). Image-benchmark rows are flattened :class:`~geo_eval_harness.results.EvaluationResult` records describing a single ``(dataset, method, model, config)`` measurement, split by *kind* across per-model files keyed by ``<model name>.csv``, alongside a command-level file for compute cost:
 
 .. list-table::
    :header-rows: 1
@@ -22,9 +22,6 @@ All evaluation runs append rows to CSV files under ``results/`` (or ``--output-d
    * - ``results/compute_cost.csv`` (and ``compute_cost.md``, ``compute_cost_coverage.csv``, ``compute_cost_provenance.json``)
      - Compute-cost schema
      - Per-sample GFLOPs, parameter counts, and timing from ``geo-eval-harness flops``, plus curated sweep notes, coverage, and provenance.
-   * - ``results/coordbench_results.csv``
-     - :class:`~geo_eval_harness.coordbench.CoordResult`
-     - Coordinate-only location-encoder results from ``geo-eval-harness coord`` (see :doc:`coordbench`).
 
 Profile and intrinsic-dim rows are one-time model+hardware measurements, so
 they are kept out of the metrics file: rerunning a classification sweep
@@ -78,11 +75,9 @@ Method values
                               when ``classification.feature_standardize`` is enabled. -> ``results/models/``
 ``linear`` / ``linear-std``   L-BFGS logistic regression with C-sweep on the validation set; ``-std`` is appended
                               when ``classification.feature_standardize`` is enabled. -> ``results/models/``
-``intrinsic_dim``             Optional intrinsic-dimension metrics on extracted embeddings (requires
-                              the ``[id]`` extra) plus dependency-free centered feature-spectrum
-                              diagnostics. Both are emitted when
-                              YAML ``intrinsic_dim: {enabled: true}``; set ``estimators: []`` for
-                              spectrum-only output without ``torchid``. -> ``results/intrinsic_dim/``
+``intrinsic_dim``             Intrinsic-dimension estimates and centered feature-spectrum diagnostics on extracted embeddings.
+                              Enable both with ``intrinsic_dim.enabled: true`` or set ``estimators: []`` for
+                              spectrum-only output. -> ``results/intrinsic_dim/``
 ``profile``                   Optional throughput/latency/param-count measurement (requires
                               YAML ``profile: {enabled: true}``). -> ``results/profiles/``
 ``seg-<head>``                Segmentation probe with the configured head (``linear`` / ``conv_block`` /
@@ -192,6 +187,13 @@ Column                       Value on a segmentation row
 
 The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Linear-probe rows with ``merge_val`` false also remain distinct from rows refit on train plus validation, and the ranking explorer ranks only the refit rows. Resume uses the configuration hash.
 
+.. _segmentation-per-class-iou:
+
+Per-class segmentation IoU
+--------------------------
+
+Set ``output.per_class_iou`` to add one row per class next to each segmentation ``mIoU`` row, with ``metric_name`` ``IoU_class_<index>``. The values use the same test predictions as ``mIoU`` and exclude ``ignore_index`` pixels. A class absent from the test labels and never predicted gets NaN and is left out of ``mIoU``, so the non-NaN values average to ``mIoU``; a class absent from the labels but predicted gets 0. The option is output only, so it does not change ``config_hash``; enabling it later does not add per-class rows to runs that ``--resume`` skips.
+
 .. _segmentation-epoch-metrics:
 
 Per-epoch segmentation metrics
@@ -247,6 +249,3 @@ Resume checks each method separately, so ``--methods linear`` never requires a K
 Resume requires an exact ``config_hash`` match. The hash covers the resolved model, preprocessing, and evaluation settings plus ``runtime.seed`` and ``runtime.batch_size``, since batch size can change floating-point results, and ``runtime.matmul_precision`` when it is not ``highest``. It excludes ``runtime.device``, ``classification.knn_device``, and ``runtime.workers``, so completed results and profile measurements are reused on another device or worker count; use ``--no-resume`` or a separate output file to remeasure performance.
 
 The hash of a classification, profile, or intrinsic-dimension row does not cover the ``segmentation`` section, so segmentation settings in a model preset or run config never change it. Segmentation hashes cover both the ``classification`` and ``segmentation`` sections and include the best-validation-mIoU selection policy described in :ref:`segmentation-model-selection`.
-
-CoordBench uses a separate schema and output path. See :doc:`coordbench` and
-:class:`~geo_eval_harness.coordbench.CoordResult`.

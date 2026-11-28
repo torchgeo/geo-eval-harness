@@ -7,9 +7,7 @@ Installation
 
 .. note::
 
-   The install runs on **Linux**, **macOS**, and **Windows**. On Linux
-   x86_64 it automatically includes GPU-accelerated FAISS KNN (CUDA 12,
-   driver R525+); other platforms get CPU FAISS.
+   The install runs on **Linux**, **macOS**, and **Windows**.
 
 PyPI
 ----
@@ -29,7 +27,7 @@ The install puts the ``geo-eval-harness`` console script on your ``PATH``. Use `
    $ geo-eval-harness --help
    $ geo-eval-harness --version
 
-See `Optional extras`_ to add features such as CoordBench location encoders or OlmoEarth.
+See `Optional extras`_ to add features such as LoRA or OlmoEarth.
 
 From source with uv
 -------------------
@@ -42,9 +40,6 @@ development dependencies:
    $ git clone https://github.com/torchgeo/geo-eval-harness.git
    $ cd geo-eval-harness
    $ uv sync --extra dev
-
-The install pulls in ``faissknn[cuda]`` (GPU FAISS) on Linux x86_64 and
-``faissknn[cpu]`` everywhere else — no extra needed.
 
 The ``geo-eval-harness`` console script is then available via ``uv run``. Use ``--help`` to list commands or ``--version`` to print the installed version:
 
@@ -73,7 +68,7 @@ Install optional dependencies for the features you need. Combine extras in one c
 .. code-block:: console
 
    $ # released package
-   $ pip install "geo-eval-harness[coordbench,olmoearth]"
+   $ pip install "geo-eval-harness[lora,olmoearth]"
    $ # source checkout
    $ uv sync --extra docs --extra dev
    $ # or
@@ -90,10 +85,8 @@ Install optional dependencies for the features you need. Combine extras in one c
 ================  ==============================================================
 Extra             Pulls in
 ================  ==============================================================
-``coordbench``    ``rshf`` for the SatCLIP, GeoCLIP, Climplicit, and SINR location encoders
 ``dev``           ruff, pytest, pytest-cov, pytest-xdist, pre-commit, mdformat, pyproject-fmt
 ``docs``          sphinx, pydata-sphinx-theme, myst-parser, sphinx-copybutton, sphinx-design
-``id``            ``torchid`` for intrinsic-dimension metrics (Python ≥ 3.13 only)
 ``lora``          ``peft`` for LoRA segmentation fine-tuning (also included in ``dev``)
 ``olmoearth``     ``olmoearth-pretrain-minimal`` for the OlmoEarth backbone
 ``all``           every extra above
@@ -101,8 +94,6 @@ Extra             Pulls in
 
 Datasets are not installed by these extras — see :doc:`datasets` for how to
 download GeoBench V1 / V2 with the bundled ``geo-eval-harness download`` command.
-CoordBench tables stream from Hugging Face through ``geo-eval-harness coord``; see
-:doc:`coordbench`.
 
 TerraTorch models
 -----------------

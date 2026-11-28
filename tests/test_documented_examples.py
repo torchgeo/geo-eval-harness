@@ -14,7 +14,7 @@ EXAMPLES = Path(__file__).resolve().parents[1] / "docs" / "examples"
 def test_documented_yaml_runs_with_current_configuration(
     path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    command = {"coord-run": "coord", "profile": "profile", "flops": "flops"}.get(path.stem, "run")
+    command = {"profile": "profile", "flops": "flops"}.get(path.stem, "run")
     main([command, "--config", str(path), "--dry-run"])
     output = capsys.readouterr()
     assert yaml.safe_load(output.out)

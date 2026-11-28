@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 
 from geo_eval_harness.config.schema import NECK_HEADS
+from geo_eval_harness.devices import float64_device
 from geo_eval_harness.models import anyup
 from geo_eval_harness.models.interface import forward_model_batch
 from geo_eval_harness.models.segmentation_heads import (
@@ -358,7 +359,8 @@ class SegmentationProbe(nn.Module):
                 features = [layer[finite] for layer in chunk]
             if not sums:
                 sums = [
-                    torch.zeros(f.shape[1], dtype=torch.float64, device=f.device) for f in features
+                    torch.zeros(f.shape[1], dtype=torch.float64, device=float64_device(f.device))
+                    for f in features
                 ]
                 sq_sums = [torch.zeros_like(total) for total in sums]
                 counts = [0] * len(features)

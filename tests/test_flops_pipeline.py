@@ -154,20 +154,14 @@ def test_unknown_probe_head_is_rejected():
         _probe_gflops(_WidthModel(8).eval(), (3, 32, 32), CPU, "typo", 10)
 
 
-class _PatchModel(nn.Module):
-    def __init__(self, patch: int) -> None:
-        super().__init__()
-        self.patch_embed = nn.Conv2d(3, 8, kernel_size=patch, stride=patch)
-        self.patch_embed.patch_size = (patch, patch)
+@pytest.mark.parametrize("pad", [True, False])
+def test_n_tokens_matches_patch_embedding_at_sweep_sizes(*, pad: bool) -> None:
+    from timm.layers import PatchEmbed
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.patch_embed(x).flatten(2).transpose(1, 2)
-
-
-def test_n_tokens_tracks_image_size_over_patch_squared():
-    model = _PatchModel(16)
-    assert _n_tokens(model, 224) == (224 // 16) ** 2 == 196
-    assert _n_tokens(model, 112) == (112 // 16) ** 2 == 49
+    embed = PatchEmbed(img_size=None, patch_size=14, embed_dim=4, dynamic_img_pad=pad)
+    for size in (224, 256, 512):
+        tokens = embed(torch.zeros(1, 3, size, size))
+        assert _n_tokens(embed, size) == tokens.shape[1]
 
 
 def test_n_tokens_does_not_treat_physical_patch_size_as_pixel_stride():
@@ -407,7 +401,7 @@ def test_completed_profile_survives_incompatible_segmentation_head(
         ValueError("input channels implementation is broken"),
     ],
 )
-def test_forward_pass_only_skips_explicit_band_errors(flops_config, monkeypatch, caplog, error):
+def test_forward_pass_reports_band_errors(flops_config, monkeypatch, caplog, error):
     class BrokenForward(nn.Module):
         def forward(self, images):
             raise error
@@ -416,7 +410,8 @@ def test_forward_pass_only_skips_explicit_band_errors(flops_config, monkeypatch,
         "geo_eval_harness.flops_pipeline.build_model", lambda *args, **kwargs: BrokenForward()
     )
     if isinstance(error, BandCompatibilityError):
-        main(flops_config)
+        with pytest.raises(BandCompatibilityError, match="No compatible inputs"):
+            main(flops_config)
         assert "unsupported selection" in caplog.text
     else:
         with pytest.raises(ValueError, match="implementation is broken"):
@@ -708,16 +703,17 @@ def test_measure_backbone_retries_cuda_oom(monkeypatch: pytest.MonkeyPatch) -> N
         assert (n_warmup, n_measure) == (1, 2)
         batches.append(sample.shape[0])
         if sample.shape[0] > 2:
-            raise torch.cuda.OutOfMemoryError("synthetic OOM")
+            raise torch.OutOfMemoryError("synthetic OOM")
         return {"gflops": 1.0}
 
     monkeypatch.setattr(flops_pipeline, "measure_profile", profile)
+    monkeypatch.setattr(torch, "randn", lambda *shape, device: torch.empty(shape))
     monkeypatch.setattr(torch.cuda, "empty_cache", lambda: cache_clears.append(None))
     metrics, batch_size = flops_pipeline._measure_backbone(
         nn.Identity(),
         3,
         8,
-        CPU,
+        torch.device("cuda"),
         ProfileTiming(batch_size=8, n_warmup=1, n_measure=2),
     )
     assert batches == [8, 4, 2]
@@ -754,9 +750,10 @@ def test_terramind_pipeline_preserves_name_and_measures_only_its_modality(
     assert {row["name"] for row in rows} == {"tt_terramind_v1_base_rgb"}
 
 
-def test_auto_device_uses_cpu_when_cuda_is_unavailable(
+def test_auto_device_uses_cpu_without_an_accelerator(
     flops_run: FlopsRun, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     cfg, rows, events = flops_run
     cfg.runtime.device = "auto"

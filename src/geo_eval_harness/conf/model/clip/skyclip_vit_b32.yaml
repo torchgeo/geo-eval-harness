@@ -2,9 +2,11 @@ name: clip/skyclip_vit_b32
 target: geo_eval_harness.models.CLIPVisionBench
 supports_model_normalization: true
 kwargs:
-  variant: skyclip_vit_b32
-  pretrained: true
-  pool: proj
+  model_name: vit_base_patch32_clip_224
+  projection_dim: 512
+  repo_id: torchgeo/vit_base_patch32_224_skyclip_50pct
+  revision: 7f82439a2d0f79e1965ae71cdba8b911ed2f15cf
+  filename: vit_base_patch32_224_skyclip_50pct-5e3a3c68.pth
 input:
   normalization: model
 segmentation:

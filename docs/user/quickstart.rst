@@ -44,12 +44,10 @@ and 200 bootstrap resamples:
 
 .. code-block:: console
 
-   $ geo-eval-harness run --model rcf --dataset m-eurosat --device cpu \
+   $ geo-eval-harness run --model rcf --dataset m-eurosat \
        --output results/my_run.csv
 
-The image default is ``cuda:0``. Use ``--device cpu`` on a machine without
-CUDA, or ``--device auto`` to choose automatically. A pretrained backbone
-may download its weights on first use:
+With the default ``--device auto``, image runs prefer the current CUDA device, then MPS, then CPU. A pretrained backbone may download its weights on first use.
 
 .. code-block:: console
 
@@ -66,8 +64,7 @@ Select just the probe you need:
        --methods linear
 
 Use ``--knn-device cpu`` to keep KNN on CPU while extracting features on
-another device. If the installed FAISS backend lacks GPU support, the runner
-logs its KNN CPU fallback.
+another device.
 
 Use a YAML file
 ---------------
@@ -118,21 +115,6 @@ For synthetic per-sample compute accounting without dataset samples:
        --seg-heads --output results/my_compute_cost.csv
 
 See :doc:`configuration` for the distinct profile and FLOPs YAML schemas.
-
-Benchmark a location encoder
-----------------------------
-
-CoordBench does not require an image download. It loads point-label tables
-from Hugging Face, so uncached tables require network access:
-
-.. code-block:: console
-
-   $ geo-eval-harness coord --model sincos --dataset california_housing \
-       --methods linear --folds 2 --device cpu \
-       --output results/coordbench_quickstart.csv
-
-See :doc:`coordbench` for pretrained encoders, spatial cross-validation,
-official holdouts, and a complete custom-encoder example.
 
 Resume and inspect results
 --------------------------

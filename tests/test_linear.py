@@ -72,7 +72,8 @@ def test_logistic_regression_uses_current_cuda(
     set_precision.assert_not_called()
 
 
-def test_auto_device_fits_on_cpu_when_cuda_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_device_fits_on_cpu_without_an_accelerator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     X, y = _xy()
     automatic = LogisticRegression(device="auto").fit(X, y)

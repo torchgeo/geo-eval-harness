@@ -12,9 +12,8 @@ from pydantic import ValidationError
 from geo_eval_harness.config.flops import FlopsRuntimeConfig
 from geo_eval_harness.config.profile import ProfileRuntimeConfig
 from geo_eval_harness.config.run import RunConfig, load_run_config, validate_run_config
-from geo_eval_harness.coordbench.config import CoordRuntimeConfig
 
-_RUNTIME_SECTIONS = (CoordRuntimeConfig, FlopsRuntimeConfig, ProfileRuntimeConfig)
+_RUNTIME_SECTIONS = (FlopsRuntimeConfig, ProfileRuntimeConfig)
 
 
 def valid_config() -> dict:
@@ -24,7 +23,7 @@ def valid_config() -> dict:
 
 def test_defaults_and_modern_shape() -> None:
     config = validate_run_config(valid_config())
-    assert config.runtime.device == "cuda:0"
+    assert config.runtime.device == "auto"
     assert config.input.normalization == "dataset"
     assert config.classification.linear.c_count == 40
     assert config.output.directory == "results"
@@ -183,7 +182,7 @@ def test_round_trip_dump_is_valid() -> None:
 @pytest.mark.parametrize(
     "section", [RunConfig.model_fields["runtime"].annotation, *_RUNTIME_SECTIONS]
 )
-@pytest.mark.parametrize("device", ["gpu", "cuda:nope", "mps", " "])
+@pytest.mark.parametrize("device", ["gpu", "cuda:nope", "mps:bad", " "])
 def test_every_runtime_section_validates_its_device(section: type, device: str) -> None:
     with pytest.raises(ValidationError, match="device"):
         section(device=device)
@@ -193,11 +192,8 @@ def test_every_runtime_section_validates_its_device(section: type, device: str) 
     "section", [RunConfig.model_fields["runtime"].annotation, *_RUNTIME_SECTIONS]
 )
 def test_every_runtime_section_accepts_supported_devices(section: type) -> None:
-    assert [section(device=name).device for name in ("cpu", "cuda", "cuda:1")] == [
-        "cpu",
-        "cuda",
-        "cuda:1",
-    ]
+    for device in ("auto", "cpu", "mps", "cuda", "cuda:1"):
+        assert section(device=device).device == device
 
 
 @pytest.mark.parametrize(

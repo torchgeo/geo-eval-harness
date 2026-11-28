@@ -317,6 +317,36 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/panopticon --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
 
+   $ # DeCUR
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_decur --dataset m-eurosat --normalization model
+   $ geo-eval-harness run --model torchgeo/resnet50_s1_all_decur --dataset sen1floods11-s1 --normalization model
+
+   $ # FG-MAE
+   $ geo-eval-harness run --model torchgeo/vitb16_s2_all_fgmae --dataset m-eurosat --image-size 256
+   $ geo-eval-harness run --model torchgeo/vitb16_s1_grd_fgmae --dataset sen1floods11-s1
+
+   $ # CLOSP and GeoCLOSP
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_closp --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/resnet50_s1_grd_geoclosp --dataset sen1floods11-s1 --bands all
+
+   $ # Satlas multi-image multispectral Sentinel-2
+   $ geo-eval-harness run --model torchgeo/swinv2b_s2ms_satlas_mi --dataset m-eurosat --bands all --normalization model
+
+   $ # SoftCon
+   $ geo-eval-harness run --model torchgeo/vitb14_dinov2_s2_all_softcon --dataset m-eurosat --bands all --normalization model
+   $ geo-eval-harness run --model torchgeo/vits14_dinov2_s1_grd_softcon --dataset sen1floods11-s1 --bands all
+
+   $ # SeCo-Eco
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_seco_eco --dataset m-eurosat --bands all
+
+:class:`~geo_eval_harness.models.TorchGeoViTBench` uses the grid selected by ``--image-size``. It interpolates positional embeddings and zero-pads partial edge patches. Classification supports ``pool: mean``, ``cls``, and ``both``. Segmentation uses ``blocks.*`` hooks. Model-native normalization supports Sentinel-1 VV/VH and 13-band Sentinel-2 L1C weights. Other ViT weights can use dataset normalization.
+
+SoftCon Sentinel-2 presets use ``clip_sigma: 2.0``. Under ``--normalization model``, the mean maps to 0.5 and values two standard deviations below and above it map to 0 and 1. Values outside that range are clipped.
+
+SeCo-Eco requires all twelve Sentinel-2 L2A bands. Dataset normalization is the preset default and scored highest on EuroSAT. With ``--normalization model``, the checkpoint divides digital numbers by 10,000.
+
+Sentinel-1 GRD checkpoints select VV and VH by name. With ``--normalization model``, the model converts bands declared as linear power to dB before applying the checkpoint's channel statistics.
+
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.
@@ -489,21 +519,13 @@ any other size at forward time.  ``--image-size none`` is therefore not supporte
 Remote-sensing CLIP vision encoders
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-:class:`~geo_eval_harness.models.CLIPVisionBench` loads frozen vision towers from SkyCLIP, RemoteCLIP, and GeoRSCLIP directly into ``timm`` CLIP backbones with zero additional dependencies (no ``open_clip`` required). Checkpoints download from pinned Hugging Face commits and are verified against packaged SHA-256 digests before loading; pass ``model.kwargs.checkpoint_path`` to verify and load a local file instead.
+:class:`~geo_eval_harness.models.CLIPVisionBench` loads a pinned, SHA-256-verified vision tower into timm. To use a local copy, set ``model.kwargs.checkpoint_path``. The default input is RGB at 224 pixels with OpenAI CLIP normalization. Sentinel-2 DN inputs use a display stretch that saturates at 3558 DN.
 
 .. code-block:: console
 
    $ geo-eval-harness run --model clip/skyclip_vit_b32 --dataset m-eurosat
-   $ geo-eval-harness run --model clip/remoteclip_vit_l14 --dataset m-eurosat
-   $ geo-eval-harness run --model clip/georsclip_vit_h14 --dataset m-eurosat
 
-Available presets under :file:`src/geo_eval_harness/conf/model/clip/`:
-
-* **SkyCLIP** (MIT, rehosted by TorchGeo): ``clip/skyclip_vit_b32`` (512-d) and ``clip/skyclip_vit_l14`` (768-d, QuickGELU).
-* **RemoteCLIP** (Apache-2.0): ``clip/remoteclip_rn50`` (1024-d), ``clip/remoteclip_vit_b32`` (512-d), and ``clip/remoteclip_vit_l14`` (768-d).
-* **GeoRSCLIP** (MIT/CC): ``clip/georsclip_vit_b32`` (512-d, QuickGELU), ``clip/georsclip_vit_l14`` (768-d, QuickGELU), and ``clip/georsclip_vit_h14`` (1024-d).
-
-All presets expect 3-channel RGB imagery at 224 px and default to ``--normalization model``, which rescales inputs to ``[0, 1]`` and applies OpenAI CLIP statistics (``mean=(0.48145466, 0.4578275, 0.40821073)``, ``std=(0.26862954, 0.26130258, 0.27577711)``). ``pool`` defaults to ``proj`` (the CLIP image projection embedding); ViT presets also support ``cls``, ``mean``, and ``both`` on pre-projection tokens, and ``clip/remoteclip_rn50`` also supports ``avg``. Segmentation hooks ``blocks.11/8/5/2`` (ViT-B), ``blocks.23/17/11/5`` (ViT-L), ``blocks.31/23/15/7`` (ViT-H), or ``stages.3/2/1/0`` (RN50).
+SkyCLIP offers ViT-B/32 and ViT-L/14 under ``clip/skyclip_vit_b32`` and ``clip/skyclip_vit_l14``. The default ``pool: proj`` returns the projected image embedding. ViTs also accept ``cls``, ``mean``, and ``both`` for pre-projection tokens. Set ``model.kwargs.normalize: true`` for unit-length embeddings.
 
 AnySat
 ^^^^^^

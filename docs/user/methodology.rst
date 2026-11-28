@@ -104,8 +104,7 @@ Procedure
 
 1. Extract train and test embeddings (see above).
 2. Fit a nearest-neighbour classifier (default **k = 5**, configurable with ``classification.knn_k``)
-   (:class:`~geo_eval_harness.knn.KNNClassifier`, backed by FAISS) on the
-   train embeddings.
+   (:class:`~geo_eval_harness.knn.KNNClassifier`) on the train embeddings.
 3. Predict labels for every test sample.
 4. Compute test-set accuracy (or micro-mAP for multilabel datasets).
 5. Compute **95% bootstrap confidence intervals**
@@ -117,8 +116,7 @@ Key details
 
 * The runner uses the requested ``knn_k`` without tuning it.
 * No validation use — the validation split is extracted but ignored.
-* FAISS is used for efficient L2 nearest-neighbour search and runs on
-  CPU or GPU.
+* Neighbours come from exact brute-force L2 search in PyTorch, which runs on CPU or GPU.
 * Feature vectors are cast to ``float32`` and labels to ``int64`` before
   indexing.
 * Embeddings are used as-is unless ``classification.feature_standardize``
@@ -480,8 +478,8 @@ All evaluation paths share these settings:
      - ``0``
      - Random seed. PyTorch's global generator is seeded with it at the start of each dataset, so a result does not depend on the datasets evaluated before it. Bootstrap resampling, subsampling, and ``seed_from_run`` models draw from their own generators created from the same seed; NumPy's global generator is not seeded.
    * - ``runtime.device``
-     - ``cuda:0``
-     - PyTorch device.
+     - ``auto``
+     - Current CUDA device, then MPS, then CPU, in order of preference.
    * - ``runtime.batch_size``
      - ``64``
      - Batch size for data loading.

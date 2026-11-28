@@ -183,16 +183,16 @@ class TestRunRuntime:
         assert resolve_run_config(config, "m-eurosat")[0].input.image_size == 32
 
     @pytest.mark.parametrize(
-        ("device_flags", "available", "message"),
+        ("device", "available", "message"),
         [
-            ([], False, "Requested 'cuda:0', but CUDA is unavailable"),
-            (["--device", "cuda:2"], True, "CUDA index 2"),
+            ("cuda:0", False, "Requested 'cuda:0', but CUDA is unavailable"),
+            ("cuda:2", True, "CUDA index 2"),
         ],
     )
     def test_runtime_rejects_invalid_cuda_before_loading(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        device_flags: list[str],
+        device: str,
         *,
         available: bool,
         message: str,
@@ -206,7 +206,7 @@ class TestRunRuntime:
             mock.patch("geo_eval_harness.main.build_model") as build,
             pytest.raises(SystemExit, match=f"^error: .*{message}"),
         ):
-            main(["run", "--model", "rcf", "--dataset", "m-eurosat", *device_flags])
+            main(["run", "--model", "rcf", "--dataset", "m-eurosat", "--device", device])
         data.assert_not_called()
         build.assert_not_called()
 
@@ -438,7 +438,6 @@ def test_dry_run_rejects_unsupported_method_and_band_selections(flags: list[str]
 @pytest.mark.parametrize(
     ("intrinsic_dim", "diagnostic"),
     [
-        ("{enabled: true, estimators: [TwoNN]}", "geo-eval-harness[id]"),
         ("{estimators: [twonn]}", "intrinsic_dim.estimators"),
         ("{max_samples: 1}", "intrinsic_dim.max_samples"),
     ],
@@ -447,10 +446,8 @@ def test_dry_run_rejects_unusable_intrinsic_dim_settings(
     intrinsic_dim: str,
     diagnostic: str,
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr("geo_eval_harness.commands._run.find_spec", lambda name: None)
     path = tmp_path / "config.yaml"
     path.write_text(
         f"model: {{name: rcf}}\ndatasets: [m-eurosat]\nintrinsic_dim: {intrinsic_dim}\n"
@@ -493,13 +490,14 @@ def test_public_download_and_profile_dispatch(monkeypatch: pytest.MonkeyPatch) -
     assert received[1].batch_size == 4
 
 
-@pytest.mark.parametrize(("available", "expected"), [(False, "cpu"), (True, "cuda:1")])
+@pytest.mark.parametrize("expected", ["cpu", "mps:0", "cuda:1"])
 def test_auto_device_resolves_once_before_dataset_execution(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, available: bool, expected: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, expected: str
 ) -> None:
     import torch
 
     received = []
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: expected == "mps:0")
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 1)
     monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
 
@@ -508,7 +506,9 @@ def test_auto_device_resolves_once_before_dataset_execution(
         return ()
 
     monkeypatch.setattr("geo_eval_harness.main.run_dataset", dataset_run)
-    with mock.patch.object(torch.cuda, "is_available", return_value=available) as query:
+    with mock.patch.object(
+        torch.cuda, "is_available", return_value=expected.startswith("cuda")
+    ) as query:
         main(
             [
                 "run",
@@ -516,8 +516,6 @@ def test_auto_device_resolves_once_before_dataset_execution(
                 "rcf",
                 "--dataset",
                 "m-eurosat",
-                "--device",
-                "auto",
                 "--output",
                 str(tmp_path / "out.csv"),
             ]
