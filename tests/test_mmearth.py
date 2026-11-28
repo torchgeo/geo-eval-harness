@@ -10,20 +10,26 @@ from geo_eval_harness.config.presets import build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets.m_eurosat import MEurosat
 from geo_eval_harness.datasets.m_so2sat import MSo2Sat
-from geo_eval_harness.models.mmearth import MMEarthBench, _dense_encoder_state
+from geo_eval_harness.models.mmearth import MMEarthBench, _remap_encoder_state
+from geo_eval_harness.segmentation_lora import apply_lora
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
-def test_sparse_encoder_kernel_orientation() -> None:
-    state = {
-        "encoder.downsample_layers.0.1.kernel": torch.arange(24).view(4, 2, 3),
-        "encoder.stages.0.0.dwconv.kernel": torch.arange(8).view(4, 2),
-        "mask_token": torch.ones(1),
-    }
-    dense = _dense_encoder_state(state)
-    assert set(dense) == {"downsample_layers.0.1.weight", "stages.0.0.conv_dw.weight"}
+def test_remap_encoder_state() -> None:
+    dense = _remap_encoder_state(
+        {
+            "encoder.downsample_layers.0.1.kernel": torch.arange(24).view(4, 2, 3),
+            "encoder.stages.0.0.dwconv.kernel": torch.arange(8).view(4, 2),
+            "encoder.stages.0.0.grn.gamma": torch.ones(1, 1, 1, 2),
+            "encoder.stages.0.0.pwconv1.linear.bias": torch.ones(1, 2),
+            "mask_token": torch.ones(1),
+        }
+    )
+    assert len(dense) == 4
     assert dense["downsample_layers.0.1.weight"][2, 1].tolist() == [[5, 17], [11, 23]]
     assert dense["stages.0.0.conv_dw.weight"][1, 0].tolist() == [[1, 5], [3, 7]]
+    assert dense["stages.0.0.mlp.grn.weight"].shape == (2,)
+    assert dense["stages.0.0.mlp.fc1.bias"].shape == (2,)
 
 
 @pytest.mark.parametrize(
@@ -61,6 +67,8 @@ def test_preset_embedding_and_segmentation_taps() -> None:
         probe = SegmentationProbe(model, preset.segmentation.layers, num_classes=2, head_type="fpn")
         assert probe.feature_hw_list == [(3, 3), (7, 7), (15, 15), (30, 30)]
         assert probe(image).shape == (1, 2, 32, 32)
+    assert preset.segmentation.lora_target_modules is not None
+    assert len(apply_lora(model, preset.segmentation.lora_target_modules, rank=2, alpha=4.0)) == 24
 
 
 def test_local_checkpoint_is_verified_before_loading(tmp_path: Path) -> None:

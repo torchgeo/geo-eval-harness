@@ -17,7 +17,7 @@ from geo_eval_harness.hub import load_checksums, verify_checksums
 
 from ._band_mapping import resolve_src_indices
 from ._input_units import InputUnit
-from ._normalization import NormalizationStrategy, build_model_native_normalizer
+from ._normalization import NormalizationStrategy, build_normalizer
 from .interface import BenchModel
 
 # MMEarth64 statistics in encoder order, with L2A (mean, std) then L1C (mean, std) in DN.
@@ -39,10 +39,10 @@ _S2_STATS = {
 # fmt: on
 
 _CHECKPOINT = "pt-all_mod_atto_1M_64_uncertainty_56-8"
-_URL = f"https://sid.erda.dk/share_redirect/g23YOnaaTp/{_CHECKPOINT}/checkpoint-199.pth"
+_ERDA_URL = f"https://sid.erda.dk/share_redirect/g23YOnaaTp/{_CHECKPOINT}/checkpoint-199.pth"
 
 
-def _encoder_weights(checkpoint_path: str | Path | None) -> dict[str, torch.Tensor]:
+def _load_encoder_weights(checkpoint_path: str | Path | None) -> dict[str, torch.Tensor]:
     """Verify the official checkpoint and extract its dense ConvNeXt encoder weights."""
     filename = f"{_CHECKPOINT}.pth"
     digest = load_checksums("mmearth.sha256")[filename]
@@ -50,7 +50,7 @@ def _encoder_weights(checkpoint_path: str | Path | None) -> dict[str, torch.Tens
         path = Path(torch.hub.get_dir()) / "checkpoints" / filename
         if not path.is_file():
             path.parent.mkdir(parents=True, exist_ok=True)
-            torch.hub.download_url_to_file(_URL, str(path), hash_prefix=digest)
+            torch.hub.download_url_to_file(_ERDA_URL, str(path), hash_prefix=digest)
     else:
         path = Path(checkpoint_path).expanduser()
     verify_checksums(path.parent, {path.name: digest})
@@ -64,10 +64,10 @@ def _encoder_weights(checkpoint_path: str | Path | None) -> dict[str, torch.Tens
         ]
     ):
         checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    return _dense_encoder_state(checkpoint["model"])
+    return _remap_encoder_state(checkpoint["model"])
 
 
-def _dense_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _remap_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
     """Convert the FCMAE encoder's MinkowskiEngine kernels and names to timm's layout."""
     encoder = {}
     for key, value in state.items():
@@ -90,7 +90,7 @@ def _dense_encoder_state(state: dict[str, torch.Tensor]) -> dict[str, torch.Tens
     return encoder
 
 
-def _convnext_block(width: int) -> ConvNeXtBlock:
+def _make_convnext_block(width: int) -> ConvNeXtBlock:
     """Build a ConvNeXt-V2 block with MMEarth's response normalization epsilon."""
     block = ConvNeXtBlock(width, use_grn=True, ls_init_value=None)
     cast(GlobalResponseNorm, block.mlp.grn).eps = 1e-4
@@ -101,6 +101,8 @@ class MMEarthBench(BenchModel):
     """MMEarth's 12-band Sentinel-2 ConvNeXt-V2 Atto with four NCHW segmentation stages."""
 
     feature_layout = "nchw"
+    handles_own_normalization = True
+    expected_input_unit = InputUnit.S2_DN
 
     def __init__(
         self,
@@ -108,27 +110,29 @@ class MMEarthBench(BenchModel):
         *,
         checkpoint_path: str | Path | None = None,
         pretrained: bool = True,
-        s2_level: Literal["l1c", "l2a"] = "l2a",
+        s2_level: Literal["l2a", "l1c"] = "l2a",
         normalization: NormalizationStrategy | str = NormalizationStrategy.BANDSPEC_ZSCORE,
     ) -> None:
-        if s2_level not in ("l1c", "l2a"):
+        if s2_level not in ("l2a", "l1c"):
             raise ValueError(f"s2_level must be 'l2a' or 'l1c', got {s2_level!r}.")
-        self.handles_own_normalization = normalization == NormalizationStrategy.MODEL_NATIVE
         super().__init__(bands=bands, normalization=normalization)
         source = resolve_src_indices(bands, preferred_sensors=("s2",))
         # The upstream GEO-Bench loader duplicates B02 and B8A for absent B01 and B09.
-        for missing, substitute in (("coastal", "blue"), ("watervapor", "nir_narrow")):
-            if substitute in source:
-                source.setdefault(missing, source[substitute])
+        for target, fallback in (("coastal", "blue"), ("watervapor", "nir_narrow")):
+            if fallback in source:
+                source.setdefault(target, source[fallback])
         if missing_bands := [name for name in _S2_STATS if name not in source]:
-            raise BandCompatibilityError(f"MMEarth requires Sentinel-2 bands {missing_bands}.")
+            raise BandCompatibilityError(f"MMEarth is missing Sentinel-2 bands {missing_bands}.")
         self.band_indices = [source[name] for name in _S2_STATS]
-        if self.handles_own_normalization:
-            level = 0 if s2_level == "l2a" else 1
-            mean, std = zip(*(stats[level] for stats in _S2_STATS.values()), strict=True)
-            self._normalizer = build_model_native_normalizer(
-                [bands[i] for i in self.band_indices], InputUnit.S2_DN, list(mean), list(std)
-            )
+        stats_index = 0 if s2_level == "l2a" else 1
+        mean, std = zip(*(stats[stats_index] for stats in _S2_STATS.values()), strict=True)
+        self._normalizer = build_normalizer(
+            self.normalization,
+            [bands[i] for i in self.band_indices],
+            expected_input_unit=self.expected_input_unit,
+            pretrain_mean=list(mean),
+            pretrain_std=list(std),
+        )
 
         widths = (40, 80, 160, 320)
         depths = (2, 2, 6, 2)
@@ -143,21 +147,19 @@ class MMEarthBench(BenchModel):
             for in_width, out_width in pairwise(widths)
         )
         self.stages = nn.ModuleList(
-            nn.Sequential(*(_convnext_block(width) for _ in range(depth)))
+            nn.Sequential(*(_make_convnext_block(width) for _ in range(depth)))
             for width, depth in zip(widths, depths, strict=True)
         )
         # FCMAE omits the final affine parameters; upstream linear probing fixes them to one/zero.
         self.norm = nn.LayerNorm(widths[-1], eps=1e-6, elementwise_affine=False)
         if pretrained:
-            self.load_state_dict(_encoder_weights(checkpoint_path))
+            self.load_state_dict(_load_encoder_weights(checkpoint_path))
 
     def normalize_inputs(self, images: torch.Tensor) -> torch.Tensor:
-        """Apply dataset statistics in source order or checkpoint statistics in encoder order."""
+        """Select the 12 Sentinel-2 bands in encoder order and normalize them."""
         if images.shape[1] != self.num_channels:
             raise ValueError(f"Expected {self.num_channels} channels, got {images.shape[1]}.")
-        if self.handles_own_normalization:
-            return self._normalizer(images[:, self.band_indices])
-        return super().normalize_inputs(images)[:, self.band_indices]
+        return self._normalizer(images[:, self.band_indices])
 
     def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
         features = self.stages[0](self.stem(self.initial_conv(images)))
