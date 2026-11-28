@@ -23,7 +23,9 @@ _CLIP_STD = list(OPENAI_CLIP_STD)
 
 
 class CLIPVisionBench(BenchModel):
-    """CLIP vision tower with a verified checkpoint and optional token pooling."""
+    """CLIP vision tower with a verified checkpoint and optional pooling."""
+
+    feature_layout = "nchw"
 
     def __init__(  # noqa: PLR0913 - packaged checkpoint metadata and public readout options
         self,
@@ -45,16 +47,18 @@ class CLIPVisionBench(BenchModel):
         is_vit = is_model_in_modules(model_name, {"vision_transformer"})
         pools = ("proj", *VALID_MODES) if is_vit else ("proj", "avg")
         if pool not in pools:
-            raise ValueError(f"Unsupported CLIP pooling {pool!r} for {model_name}.")
+            raise ValueError(
+                f"Unsupported CLIP pooling {pool!r} for {model_name}; choose from {pools}."
+            )
         self.handles_own_normalization = normalization == NormalizationStrategy.MODEL_NATIVE
         super().__init__(bands, normalization)
         self._input_unit = detect_input_unit(bands) if self.handles_own_normalization else None
         self.pool = pool
         self.normalize = normalize
 
-        options: dict[str, Any] = {}
-        if is_vit:
-            options.update(dynamic_img_size=True, dynamic_img_pad=True)
+        options: dict[str, Any] = (
+            {"dynamic_img_size": True, "dynamic_img_pad": True} if is_vit else {}
+        )
         if pretrained:
             digest = load_checksums("clip_vision.sha256")[filename]
             path = fetch_pinned_file(
