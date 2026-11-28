@@ -171,6 +171,7 @@ _MULTISPECTRAL_INPUTS = {
     "torchgeo/croma_base": ("cloudsen12", "all"),
     "torchgeo/croma_large": ("cloudsen12", "all"),
     "universat_base_seg": ("burn_scars", "all"),
+    "satmaepp/s2_vit_l": ("m-eurosat", "all"),
     "smarties/base": ("m-eurosat", "all"),
     "smarties/large": ("m-eurosat", "all"),
 }
@@ -200,7 +201,8 @@ def test_preset_lora_targets_train_with_pretrained_weights(preset_name: str) -> 
 
     apply_lora(model, segmentation.lora_target_modules, rank=4, alpha=8.0)
 
-    images = torch.rand(2, len(model_bands), 224, 224)
+    size = preset.input.image_size or 224
+    images = torch.rand(2, len(model_bands), size, size)
     _assert_only_lora_trains(model, list(segmentation.layers), images)
 
 
