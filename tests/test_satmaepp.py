@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from geo_eval_harness.bands import BandCompatibilityError
 from geo_eval_harness.config.presets import build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets.m_eurosat import MEurosat
@@ -34,6 +35,8 @@ def test_rgb_preset_uses_bgr_display_values_and_resolved_grid() -> None:
     torch.testing.assert_close(model(image), tokens[:, 1:].mean(dim=1))
     probe = SegmentationProbe(model, layer_names=["blocks.1"], num_classes=2)
     assert probe.feature_hw_list == [(3, 3)]
+    with pytest.raises(BandCompatibilityError, match="red"):
+        satmaepp.SatMAEPPBench(bands[1:], pretrained=True)
 
 
 @pytest.mark.usefixtures("tiny_vit")
@@ -46,6 +49,8 @@ def test_checkpoint_skips_decoder_and_interpolates_only_patch_positions(tmp_path
     torch.save({"model": state, "args": argparse.Namespace()}, path)
     resized = satmaepp.SatMAEPPBench(bands, image_size=48, pretrained=False)
     resized._load_checkpoint(path)
+    assert resized.backbone.pos_embed is not None
+    assert not resized.backbone.pos_embed.requires_grad
     assert resized.backbone.pos_embed.shape == (1, 10, 32)
     torch.testing.assert_close(resized.backbone.pos_embed[:, 0], state["pos_embed"][:, 0])
     torch.testing.assert_close(
