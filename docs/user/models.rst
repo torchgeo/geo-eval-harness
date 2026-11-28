@@ -318,6 +318,7 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
 
    $ # DeCUR
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_decur --dataset m-eurosat --normalization model
    $ geo-eval-harness run --model torchgeo/resnet50_s1_all_decur --dataset sen1floods11-s1 --normalization model
 
 Sentinel-1 GRD checkpoints select VV and VH by name. With ``--normalization model``, the model converts bands declared as linear power to dB before applying the checkpoint's channel statistics.
