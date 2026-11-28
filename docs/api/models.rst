@@ -100,6 +100,11 @@ TerraFM
 
 .. autoclass:: TerraFMBench
 
+MMEarth
+^^^^^^^
+
+.. autoclass:: MMEarthBench
+
 TerraTorch
 ^^^^^^^^^^
 

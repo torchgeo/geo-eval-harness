@@ -91,6 +91,15 @@ TerraFM
 
 The presets default to dataset z-scoring. With ``--normalization model``, the wrapper converts Sentinel-2 inputs to DN and linear-power Sentinel-1 inputs to dB, then applies TerraFM's ``(x - (mean - 2 * std)) / (4 * std)`` scaling. ``model.kwargs.native_stats`` selects ``pretrain`` statistics (default) or ``dataset`` statistics for that scaling. With ``pretrain`` statistics, Sentinel-1 bands must declare unit ``db`` or ``linear_power``; other SAR inputs raise an error. The 12-band Sentinel-2 order follows Major-TOM L2A, excluding B10; this ordering is assumed rather than documented upstream. Each preset processes one modality, and checkpoint loading rejects missing or mismatched weights.
 
+MMEarth
+^^^^^^^
+
+``mmearth/convnextv2_atto`` loads the 12-band Sentinel-2 ConvNeXt-V2 Atto encoder from `MMEarth <https://github.com/vishalned/MMEarth-train>`_ (`ECCV 2024 <https://arxiv.org/abs/2405.02771>`_). The official FCMAE checkpoint downloads from ERDA into the torch hub cache. You can also supply the downloaded file with ``model.kwargs.checkpoint_path``. Both paths verify its SHA-256 before loading.
+
+The encoder takes B8A before B08. For missing coastal aerosol (B01) and water vapour (B09), it uses blue (B02) and narrow NIR (B8A), respectively. The default dataset normalization uses each source band's statistics. With ``--normalization model``, the encoder converts optical bands to Sentinel-2 DN and applies the MMEarth64 L2A statistics. Set ``model.kwargs.s2_level: l1c`` for L1C inputs.
+
+Classification uses the 320-dimensional normalized, global-average-pooled embedding. Segmentation uses the four resolution stages. Set ``--image-size none`` to evaluate at the dataset's native resolution.
+
 SMARTIES
 ^^^^^^^^
 

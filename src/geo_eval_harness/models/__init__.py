@@ -7,6 +7,7 @@ from .eosfm import EoSFMBenchModel
 from .handcrafted import HandcraftedBench
 from .image_stats import ImageStatsBench
 from .interface import BenchModel
+from .mmearth import MMEarthBench
 from .olmoearth import OlmoEarthBenchModel
 from .rcf import RCFBench, RCFModelSettings
 from .sam3 import SAM3Encoder
@@ -55,6 +56,7 @@ __all__: list[str] = [
     "ImageStatsBench",
     "InputUnit",
     "LinearHead",
+    "MMEarthBench",
     "NeckedHead",
     "NormalizationStrategy",
     "OlmoEarthBenchModel",

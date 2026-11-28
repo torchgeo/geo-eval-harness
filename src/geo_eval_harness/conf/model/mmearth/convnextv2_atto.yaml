@@ -1,0 +1,13 @@
+name: mmearth/convnextv2_atto
+target: geo_eval_harness.models.MMEarthBench
+supports_model_normalization: true
+flops_band_config: all
+input:
+  bands: all
+segmentation:
+  lora_target_modules: 'stages\.\d+\.\d+\.mlp\.fc[12]'
+  layers:
+    - stages.3
+    - stages.2
+    - stages.1
+    - stages.0
