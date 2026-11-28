@@ -16,6 +16,7 @@ S1_BANDS = ("VV", "VH")
 _S2_L1C_BANDS = (
     "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B8A", "B09", "B10", "B11", "B12"
 )  # fmt: skip
+_S2_L2A_BANDS = tuple(band for band in _S2_L1C_BANDS if band != "B10")
 _SATLAS_S2_BANDS = ("B04", "B03", "B02", "B05", "B06", "B07", "B08", "B11", "B12")
 
 
@@ -28,7 +29,7 @@ def checkpoint_band_order(meta: dict[str, Any]) -> tuple[str, ...]:
         return bands
     # TorchGeo spells the Sentinel-2 bands B1..B8, B8a, B9..B12.
     normalized = tuple(f"B{b[1:].upper():0>2}" if b.startswith("B") else b for b in bands)
-    return _S2_L1C_BANDS if normalized == _S2_L1C_BANDS else ()
+    return normalized if normalized in (_S2_L1C_BANDS, _S2_L2A_BANDS) else ()
 
 
 class CheckpointBands:
