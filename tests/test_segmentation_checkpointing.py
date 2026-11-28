@@ -58,6 +58,32 @@ def _tiny_prithvi(monkeypatch: pytest.MonkeyPatch) -> tuple[nn.Module, list[str]
     return model, ["blocks.3", "blocks.2", "blocks.1", "blocks.0"], targets, 64
 
 
+def _tiny_clay_v15(monkeypatch: pytest.MonkeyPatch) -> tuple[nn.Module, list[str], str, int]:
+    from terratorch.models.backbones.clay_v15.model import Encoder
+
+    from geo_eval_harness.models.terratorch_models import TerraTorchClayBench
+
+    def build() -> nn.Module:
+        return Encoder(
+            mask_ratio=0.0,
+            patch_size=8,
+            shuffle=False,
+            dim=64,
+            depth=4,
+            heads=4,
+            dim_head=16,
+            mlp_ratio=2.0,
+        )
+
+    monkeypatch.setattr("geo_eval_harness.models.clay_v15._build_encoder", build)
+    model = TerraTorchClayBench(
+        _rgb(), backbone_name="clay_v1_5_large", pretrained=False, target_size=64
+    )
+    targets = r"clay_encoder\.transformer\.layers\.\d+\.\d+\.(to_qkv|to_out|net\.[13])"
+    layers = [f"clay_encoder.transformer.layers.{i}.1" for i in (3, 2, 1, 0)]
+    return model, layers, targets, 64
+
+
 def _olmoearth_nano() -> tuple[nn.Module, list[str], str, int]:
     from geo_eval_harness.models.olmoearth import OlmoEarthBenchModel
 
@@ -73,6 +99,7 @@ def _olmoearth_nano() -> tuple[nn.Module, list[str], str, int]:
 FAMILIES: dict[str, Callable[..., tuple[nn.Module, list[str], str, int]]] = {
     "timm_swinv2": lambda _mp: _tiny_swinv2(),
     "terratorch_prithvi": _tiny_prithvi,
+    "clay_v15": _tiny_clay_v15,
     "olmoearth": lambda _mp: _olmoearth_nano(),
 }
 
@@ -123,6 +150,8 @@ def _modes(targets: str, layers: list[str]) -> dict[str, dict[str, object]]:
         ("timm_swinv2", "lora"),
         pytest.param("terratorch_prithvi", "lora", marks=requires_terratorch),
         pytest.param("terratorch_prithvi", "full", marks=requires_terratorch),
+        pytest.param("clay_v15", "lora", marks=requires_terratorch),
+        pytest.param("clay_v15", "full", marks=requires_terratorch),
         pytest.param("olmoearth", "lora", marks=pytest.mark.slow),
         pytest.param("olmoearth", "full", marks=pytest.mark.slow),
     ],
@@ -163,7 +192,9 @@ def test_checkpointing_leaves_loss_features_and_gradients_unchanged(
     assert calls == calls_ckpt == dict.fromkeys(layers, 1)
 
 
-@pytest.mark.parametrize("family", ["timm_swinv2", PRITHVI])
+@pytest.mark.parametrize(
+    "family", ["timm_swinv2", PRITHVI, pytest.param("clay_v15", marks=requires_terratorch)]
+)
 def test_checkpointing_wraps_blocks_once(family: str, monkeypatch: pytest.MonkeyPatch) -> None:
     model, *_ = FAMILIES[family](monkeypatch)
     first = enable_gradient_checkpointing(model)
@@ -171,8 +202,13 @@ def test_checkpointing_wraps_blocks_once(family: str, monkeypatch: pytest.Monkey
     if family == "timm_swinv2":
         assert all(stage.grad_checkpointing for stage in model.backbone.layers)
     else:
-        block = model.backbone.blocks[0]
-        assert block.forward.__wrapped__.__func__ is type(block).forward
+        if family == "clay_v15":
+            layer = model.backbone.clay_encoder.transformer.layers[0]
+            blocks = [layer[0], layer[1]]
+        else:
+            blocks = [model.backbone.blocks[0]]
+        for block in blocks:
+            assert block.forward.__wrapped__.__func__ is type(block).forward
 
 
 def test_checkpointing_rejects_an_unsupported_backbone() -> None:

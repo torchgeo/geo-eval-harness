@@ -109,3 +109,24 @@ def test_rgb_variant_rejects_unsupported_partition_and_bands() -> None:
         BRIGHTPostSARRGB().get_dataset("train", partition="custom")
     with pytest.raises(ValueError, match="sar"):
         BRIGHTPostSARRGB().get_dataset("train", bands=("sar",))
+
+
+def test_vv_vh_aliases_feed_the_single_sar_channel() -> None:
+    """Opt-in aliases for Sentinel-1-only models: same statistics, default selection unchanged."""
+    specs = BRIGHTPostSAR.select_band_specs(["vv", "vh"])
+    assert [b.name for b in specs] == ["vv", "vh"]
+    assert {(b.mean, b.std, b.sensor) for b in specs} == {(56.8231, 45.8553, "sar")}
+    assert [b.name for b in BRIGHTPostSAR.select_band_specs(None)] == ["sar"]
+    with pytest.raises(ValueError, match="unknown band 'vv'"):
+        BRIGHTPostSARRGB.select_band_specs(["vv"])
+
+
+@pytest.mark.usefixtures("small_bright_post_sar")
+def test_vv_vh_aliases_repeat_the_sar_tile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_bright_post_sar_files(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    sample = BRIGHTPostSAR().get_dataset("train", bands=("vv", "vh"))[0]
+    assert sample["image"].shape[0] == 2
+    assert torch.equal(sample["image"][0], sample["image"][1])
+    with pytest.raises(ValueError, match="at most once"):
+        BRIGHTPostSAR().get_dataset("train", bands=("vv", "vv"))

@@ -62,6 +62,7 @@ Clay v1.5 Large
 
 Inputs default to 256 pixels and must be square with sides divisible by eight. Set ``--image-size`` to change the input size or ``model.kwargs.checkpoint_path`` to load a local checkpoint containing the complete ``model.encoder.*`` weights.
 
+Clay v1.5 reads all ten Sentinel-2 L2A bands of its ``metadata.yaml`` (blue, green, red, red edge 1-3, NIR, B8A, SWIR 1-2) with its own wavelengths and statistics; a dataset's B8A reaches Clay as its 0.865 µm band, and a dataset lacking bands passes fewer (``model.kwargs.band_set: core6`` restores the earlier six-band mapping). The ground sample distance Clay is told defaults to its nominal value for the dataset's sensor (Sentinel 10 m, Landsat 30 m, aerial and WorldView 1 m, PlanetScope 5 m) multiplied by the ratio the pipeline resized the tile by; ``model.kwargs.gsd`` sets the native resolution of a dataset that differs. A dataset with Sentinel-1 VV and VH and no optical band feeds Clay v1.5 both in dB with its pseudo-wavelengths of 3.5 and 4.0 µm; linear-power datasets need ``--normalization model``, which converts to dB and uses Clay's ``sentinel-1-rtc`` statistics. A single uncalibrated SAR channel exposed through its dataset's ``vv``/``vh`` aliases (``openearthmap-sar``, ``bright-post-sar``) declares no unit and is standardized with the dataset statistics only; it is an adapter for comparison, not a physical match, and its ``sar`` sensor tag implies 10 m, so set ``model.kwargs.gsd`` for these sub-metre sets.
 Prithvi-EO
 ^^^^^^^^^^
 
