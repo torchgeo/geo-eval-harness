@@ -10,12 +10,12 @@ import torch.nn as nn
 
 from geo_eval_harness.datasets import get_bench_dataset_class
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.models._input_units import sar_db_converter
 from geo_eval_harness.models.terratorch_models import (
     TerraTorchClayBench,
     TerraTorchPrithviBench,
     TerraTorchTerraMindBench,
     _build_backbone,
-    _sar_to_db,
 )
 
 terratorch_available = find_spec("terratorch") is not None
@@ -404,7 +404,7 @@ def test_terramind_sar_to_db_converts_only_selected_linear_channels() -> None:
     images = torch.tensor([7.0, -20.0, 0.1]).view(1, 3, 1, 1)
     original = images.clone()
 
-    actual = _sar_to_db(bands, [2, 1])(images)
+    actual = sar_db_converter(bands, [2, 1])(images)
 
     torch.testing.assert_close(actual, torch.tensor([7.0, -20.0, -10.0]).view_as(images))
     torch.testing.assert_close(images, original)

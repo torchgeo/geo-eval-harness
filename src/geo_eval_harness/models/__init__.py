@@ -40,7 +40,6 @@ from .torchgeo_models import (
     TorchGeoResNetBench,
     TorchGeoScaleMAEBench,
     TorchGeoSwinBench,
-    TorchGeoViTBench,
 )
 from .universat import UniverSatBenchModel
 
@@ -79,7 +78,6 @@ __all__: list[str] = [
     "TorchGeoResNetBench",
     "TorchGeoScaleMAEBench",
     "TorchGeoSwinBench",
-    "TorchGeoViTBench",
     "UNetHead",
     "UPerNetHead",
     "UniverSatBenchModel",

@@ -51,7 +51,6 @@ torchgeo encoders
 
 .. autoclass:: TorchGeoResNetBench
 .. autoclass:: TorchGeoSwinBench
-.. autoclass:: TorchGeoViTBench
 .. autoclass:: TorchGeoScaleMAEBench
 .. autoclass:: TorchGeoDOFABench
 .. autoclass:: TorchGeoEarthLocBench

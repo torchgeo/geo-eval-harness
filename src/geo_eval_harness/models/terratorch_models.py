@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from geo_eval_harness.datasets.base import BandSpec
 
 from ._band_mapping import BandMappingPolicy, hls_band_specs, map_to_model_bands, select_src_bands
-from ._input_units import InputUnit, convert_unit, detect_input_unit, linear_power_to_db
+from ._input_units import InputUnit, convert_unit, detect_input_unit, sar_db_converter
 from ._normalization import NormalizationStrategy
 from ._optional import TERRATORCH_INSTALL, require_package
 from ._pooling import VALID_MODES, pool_tokens
@@ -329,27 +329,6 @@ _TERRAMIND_SAR_MODALITIES = frozenset({"S1GRD", "S1RTC"})
 _SAR_SENSORS = ("s1", "sar")
 
 
-def _sar_to_db(bands: list[BandSpec], indices: list[int]) -> Callable[[torch.Tensor], torch.Tensor]:
-    """Return a converter from the bands' declared SAR unit to dB for the selected channels."""
-    units = {bands[i].unit for i in indices}
-    undeclared = [bands[i].name for i in indices if bands[i].unit not in ("db", "linear_power")]
-    if undeclared:
-        raise ValueError(
-            f"TerraMind S1 model_native normalization needs SAR bands in 'db' or 'linear_power'; "
-            f"{undeclared} declare no unit. Use a dataset normalization (e.g. bandspec_zscore)."
-        )
-    if units == {"db"}:
-        return lambda x: x
-    log_channels = [i for i in indices if bands[i].unit == "linear_power"]
-
-    def _f(x: torch.Tensor) -> torch.Tensor:
-        x = x.clone()
-        x[:, log_channels] = linear_power_to_db(x[:, log_channels])
-        return x
-
-    return _f
-
-
 class TerraTorchTerraMindBench(_TerraTorchBench):
     """TerraMind v1 — native modality input, ``{modality: (B, C, H, W)}``.
 
@@ -417,7 +396,7 @@ class TerraTorchTerraMindBench(_TerraTorchBench):
 
         key = _TERRAMIND_MODALITY_KEYS[self.modality]
         if self.modality in _TERRAMIND_SAR_MODALITIES:
-            to_native = _sar_to_db(self.bands, self._band_indices)
+            to_native = sar_db_converter(self.bands, self._band_indices)
         else:
             src = detect_input_unit(self.bands)
             native = _TERRAMIND_NATIVE_UNITS[self.modality]
