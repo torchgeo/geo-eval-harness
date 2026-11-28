@@ -26,6 +26,9 @@ from geo_eval_harness.segmentation_probe import SegmentationProbe
         ("remoteclip_rn50", "resnet50_clip"),
         ("remoteclip_vit_b32", "vit_base_patch32_clip_224"),
         ("remoteclip_vit_l14", "vit_large_patch14_clip_224"),
+        ("georsclip_vit_b32", "vit_base_patch32_clip_quickgelu_224"),
+        ("georsclip_vit_l14", "vit_large_patch14_clip_quickgelu_224"),
+        ("georsclip_vit_h14", "vit_huge_patch14_clip_224"),
     ],
 )
 def test_clip_preset(variant: str, architecture: str) -> None:
