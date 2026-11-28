@@ -214,7 +214,6 @@ class TestSideMeasurements:
                 "geo_eval_harness.main.compute_intrinsic_dim", side_effect=_dimension_per_estimator
             ),
             mock.patch("geo_eval_harness.main.measure_profile", return_value=PROFILE_METRICS),
-            mock.patch("geo_eval_harness.commands._run.find_spec"),
         ):
             cli_main(flags)
 

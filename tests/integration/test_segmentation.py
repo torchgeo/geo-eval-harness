@@ -128,6 +128,7 @@ def _segmentation_config(output: Path, *, cached: bool) -> RunConfig:
 
 def _segmentation_arguments(output: Path, *, cached: bool) -> list[str]:
     config = _segmentation_config(output, cached=cached)
+    config.output.per_class_iou = True
     path = output.with_suffix(".yaml")
     path.write_text(yaml.safe_dump(config.model_dump_yaml()))
     return ["run", "--config", str(path)]
@@ -194,8 +195,9 @@ def test_real_solver_learns_target_with_consistent_cached_and_uncached_updates(
 
 def _assert_segmentation_results(output: Path, *, cached: bool) -> None:
     rows = pd.read_csv(output)
-    assert len(rows) == 1
-    row = rows.iloc[0]
+    row, per_class = rows.iloc[0], rows.iloc[1:]
+    assert per_class["metric_name"].tolist() == [f"IoU_class_{index}" for index in range(4)]
+    assert per_class["metric_value"].mean() == row["metric_value"]
     assert row["dataset"] == "caffe"
     assert row["method"] == "seg-linear"
     assert row["metric_name"] == "mIoU"

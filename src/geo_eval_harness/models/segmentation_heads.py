@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from geo_eval_harness.devices import float64_device
+
 if TYPE_CHECKING:
     from transformers.models.upernet.modeling_upernet import UperNetPyramidPoolingModule
 
@@ -267,7 +269,7 @@ class FeatureStandardizer(nn.Module):
 
 def feature_moments(features: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, int]:
     """Return per-channel float64 sums and squared sums of ``(B, C, H, W)`` features."""
-    values = features.to(dtype=torch.float64, copy=True)
+    values = features.to(float64_device(features.device)).to(dtype=torch.float64, copy=True)
     total = values.sum(dim=(0, 2, 3))
     sq_total = values.square_().sum(dim=(0, 2, 3))
     return total, sq_total, features.shape[0] * features.shape[2] * features.shape[3]
@@ -416,9 +418,9 @@ def _bilinear_matrix(size_in: int, size_out: int, device: torch.device) -> torch
     """
     key = (size_in, size_out, device)
     if key not in _INTERPOLATION_MATRICES:
-        eye = torch.eye(size_in, dtype=torch.float64, device=device)[None, None]
+        eye = torch.eye(size_in, dtype=torch.float64, device=float64_device(device))[None, None]
         weights = F.interpolate(eye, size=(size_out, size_in), mode="bilinear", align_corners=False)
-        _INTERPOLATION_MATRICES[key] = weights[0, 0].float()
+        _INTERPOLATION_MATRICES[key] = weights[0, 0].float().to(device)
     return _INTERPOLATION_MATRICES[key]
 
 

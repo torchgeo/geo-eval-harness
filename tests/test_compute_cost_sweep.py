@@ -35,14 +35,24 @@ def test_catalog_covers_new_models_and_declared_sar_input() -> None:
             "timm/convnext_tiny_dinov3",
             "timm/vit/vit_large_patch16_dinov3",
             "terratorch/terramind_v1_base_s1",
+            "torchgeo/resnet50_s1_all_decur",
+            "torchgeo/resnet50_s2_all_decur",
         ],
         [224, 512],
         ["linear", "upernet", "unet"],
     )
-    assert len(jobs) == 10
+    assert len(jobs) == 14
     assert {job.size for job in jobs} == {224, 512}
     assert all(job.heads == ("linear", "upernet", "unet") for job in jobs)
-    sar = [job for job in jobs if job.preset.endswith("_s1")]
+    sar = [
+        job
+        for job in jobs
+        if job.preset in {"terratorch/terramind_v1_base_s1", "torchgeo/resnet50_s1_all_decur"}
+    ]
+    assert {
+        (job.source, job.bands) for job in jobs if job.preset == "torchgeo/resnet50_s2_all_decur"
+    } == {("cloudsen12", "all")}
+    assert len(sar) == 4
     assert all((job.source, job.bands) == ("kuro_siwo", "all") for job in sar)
 
 

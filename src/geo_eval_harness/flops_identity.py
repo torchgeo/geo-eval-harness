@@ -11,6 +11,7 @@ import torch
 
 from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.presets import ModelPreset
+from geo_eval_harness.devices import gpu_name
 
 KEY_COLUMNS = ("name", "band_config", "image_size", "task", "head_type", "config_hash")
 
@@ -47,7 +48,7 @@ def measurement_metadata(
     config: FlopsConfig, preset: ModelPreset, device: torch.device
 ) -> dict[str, Any]:
     """Bind resume to the resolved settings, model options, and GPU model."""
-    gpu_name = torch.cuda.get_device_name(device) if device.type == "cuda" else ""
+    hardware = gpu_name(device)
     values = config.model_dump(mode="json", exclude={"output"})
     values["runtime"].pop("verbose", None)
     values["segmentation"].pop("heads")
@@ -55,7 +56,7 @@ def measurement_metadata(
     identity = {
         "config": values,
         "preset": preset.model_dump(mode="json"),
-        "gpu_name": gpu_name,
+        "gpu_name": hardware,
         "package_versions": _package_versions(),
         "source_hash": source_fingerprint(),
     }
@@ -69,7 +70,7 @@ def measurement_metadata(
         "model_preset": config.model.name,
         "normalization": config.input.normalization,
         "device": str(device),
-        "gpu_name": gpu_name,
+        "gpu_name": hardware,
         "torch_version": torch.__version__,
         "source_hash": identity["source_hash"],
         "package_versions": json.dumps(identity["package_versions"], sort_keys=True),

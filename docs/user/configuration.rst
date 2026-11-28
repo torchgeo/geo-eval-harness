@@ -85,7 +85,7 @@ Input and runtime
      interpolation: bilinear
      normalization: dataset
    runtime:
-     device: cuda:0
+     device: auto
      batch_size: 64
      workers: 4
      seed: 0
@@ -134,7 +134,7 @@ Normalization choices map to the model interface as follows:
 automatic substitute for dataset normalization. Wrappers that own their
 normalization retain their documented behavior.
 
-Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, coordinate encoders/probes, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. ``auto`` selects the current CUDA device when available, otherwise CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid. Use ``auto`` to allow CPU fallback. The image default is ``cuda:0``.
+Torch execution uses one device policy across image runs, profiling, synthetic compute measurements, and intrinsic-dimension estimation. ``cpu`` uses CPU without checking CUDA. Image runs default to ``auto``, which prefers the current CUDA device, then MPS, then CPU. Explicit ``cuda`` selects the current CUDA device; ``cuda:N`` selects index N. Explicit ``mps`` resolves to ``mps:0`` on supported Macs. Explicit CUDA requests raise an error when CUDA is unavailable or the index is invalid.
 
 Runtime flags are ``--device``, ``--batch-size``, ``--workers``, ``--seed``, ``--matmul-precision``, and ``--verbose`` / ``--no-verbose``. Input flags are ``--bands``, ``--partition``, ``--time-steps``, ``--image-size``, ``--interpolation``, and ``--normalization``.
 
@@ -162,8 +162,7 @@ Classification
 Select ``--methods knn``, ``--methods linear``, or ``--methods knn linear``.
 Linear-only runs do not require a KNN result. ``--knn-k``,
 ``--knn-device``, and ``--bootstrap-samples`` override the corresponding
-fields. A null KNN device inherits the feature-extraction device; the backend
-logs a CPU fallback if GPU KNN is unavailable.
+fields. A null KNN device inherits the feature-extraction device. On Apple Silicon, use ``run --device mps`` for feature extraction and KNN, or ``--knn-device mps`` to select MPS for KNN independently.
 
 The linear probe selects regularization on validation data from ``c_count`` log-spaced values between the two log10 endpoints. All packaged image-model presets use 40 values from 10⁻⁶ to 10⁴; an explicit ``classification.linear`` section in the run YAML can override this grid for a study. The probe then optionally refits on train plus validation. ``--refit-train-val`` / ``--no-refit-train-val`` control that final refit. Temperature scaling
 (``--temp-scale`` / ``--no-temp-scale``) requires linear probing and
@@ -300,6 +299,7 @@ Results and resume
      file: null
      resume: false
      epoch_metrics: null
+     per_class_iou: false
 
 ``--output-dir`` sets ``output.directory``, the common root for all command outputs. Image runs append classification and segmentation CSVs under ``models/``, profiling CSVs under ``profiles/``, and intrinsic-dimension CSVs under ``intrinsic_dim/``. Filenames remain ``<model name>.csv``.
 
@@ -310,11 +310,13 @@ To keep every output from an image run outside the tracked reference results:
    geo-eval-harness run --config docs/examples/image-run.yaml \
      --output-dir outputs/my-run
 
-The same flags apply to ``flops``, ``coord``, and standalone ``profile``. Beneath the root, they write ``compute_cost.csv``, ``coordbench_results.csv``, and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
+The same flags apply to ``flops`` and standalone ``profile``. Beneath the root, they write ``compute_cost.csv`` and ``profile.json``, respectively. The CSV commands default to the ``results`` root; standalone profiling defaults to stdout when neither destination is supplied.
 
 ``--output`` / ``output.file`` selects an exact path, relative to the working directory or absolute. ``--output`` takes precedence over any directory, regardless of flag order, and a YAML ``output.file`` takes precedence over a YAML ``output.directory``. ``--output-dir`` without ``--output`` writes beneath that directory even when the YAML sets ``output.file``. For image runs, the explicit file combines all selected measurement kinds in one CSV.
 
 ``output.epoch_metrics`` names a JSON Lines file for per-epoch segmentation training records. It is unset by default and has no CLI flag; see :ref:`segmentation-epoch-metrics`.
+
+``output.per_class_iou`` adds a row with each class's IoU next to each segmentation ``mIoU`` row. It is off by default and has no CLI flag; see :ref:`segmentation-per-class-iou`.
 
 ``--resume`` / ``--no-resume`` control skipping completed measurements.
 Resume compares method/config keys and metric completeness; additive profile
@@ -334,7 +336,6 @@ subdirectories. They are validated separately from run files:
 
    name: my-model
    target: my_package.MyBenchModel
-   track: image
    seed_from_run: false
    kwargs:
      feature_dim: 256
@@ -350,7 +351,7 @@ subdirectories. They are validated separately from run files:
        input:
          image_size: 128
 
-Only ``kwargs`` are constructor options. ``name``, ``target``, ``track``,
+Only ``kwargs`` are constructor options. ``name``, ``target``,
 ``seed_from_run``, preprocessing/evaluation defaults, and dataset overrides
 are preset metadata. ``seed_from_run: true`` explicitly injects the run seed
 for constructors that support it, without interpolation.
@@ -416,7 +417,7 @@ operation support depends on the model and device.
 ``--count-flops`` / ``--no-count-flops`` add or omit FLOP counting.
 The JSON includes effective preprocessing, device, precision, timing, and
 memory metadata. Local dataset samples must already be available.
-Profiling supports only CPU and CUDA measurement devices.
+Use ``--device mps`` to profile on an Apple GPU. CUDA and MPS timings include synchronization after warmup and after each measured forward pass. Peak allocated and reserved memory are available on CUDA and on MPS with PyTorch 2.13 or later. Other devices and older MPS builds report null for these fields.
 
 Synthetic compute measurements
 -------------------------------
@@ -464,7 +465,7 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-``--band-source`` selects the dataset metadata. ``--band-configs rgb all`` selects RGB or all source bands. ``s2`` also selects all source bands, including twelve Sentinel-2 bands for the default CloudSen12 source. Use ``all`` for SAR or other sensor inputs so the CSV labels the selection correctly.
+By default, Sentinel-1 checkpoints use both VV and VH from Kuro Siwo. Fixed multispectral checkpoints use all CloudSen12 bands, and RGB-only modalities use RGB. Other models measure both RGB and all twelve CloudSen12 bands. Use ``--band-source`` and ``--band-configs`` to override these choices. Both ``all`` and ``s2`` select every source band. Segmentation uses the selected inputs unless you specify ``--seg-band-configs``.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and
@@ -478,7 +479,7 @@ and dataset defaults; explicit ``[]`` clears them.
 
 ``segmentation.neck_policy: auto`` (``--seg-neck-policy auto``) inspects the configured feature maps to choose the ViT pyramid neck for one or four equal-resolution transformer maps, or the ``vit_fine`` neck for three equal-resolution maps followed by a finer map. Native feature pyramids retain their spatial scales. An explicit non-default ``probe.neck`` is preserved. The linear segmentation head also accepts the ViT neck.
 
-Segmentation rows count the complete backbone, neck, and decoder forward pass and time that same inference path in float32. ``gflops_head`` includes the neck; ``gflops_total`` includes the backbone, neck, and head. Rows record the actual hooked ``feature_shapes``, ``layers``, ``neck``, GPU name, precision, and timing batch size. ``n_tokens`` is omitted when the model defines patch size in metres instead of pixels. FLOP totals cover registered PyTorch operators, so unregistered operations can make them lower bounds.
+Segmentation rows count the complete backbone, neck, and decoder forward pass and time that same inference path in float32. ``gflops_head`` includes the neck; ``gflops_total`` includes the backbone, neck, and head. Rows record the actual hooked ``feature_shapes``, ``layers``, ``neck``, GPU name, precision, and timing batch size. ``n_tokens`` counts spatial patches, including padded edge patches for dynamic ViTs. It is omitted when the model defines patch size in metres instead of pixels. FLOP totals cover registered PyTorch operators, so unregistered operations can make them lower bounds.
 
 Resume identifies the resolved model, settings, hardware, and image size with ``config_hash``. Changing resolution, probe settings, timing, or GPU starts a distinct measurement.
 
@@ -491,19 +492,3 @@ FLOPs are always counted for one sample. ``--output-dir`` relocates ``compute_co
 ``--model-target`` and ``--model-kwargs`` accept a custom constructor and a
 YAML mapping of constructor options; reusable custom models can use
 ``model.target`` and ``model.kwargs`` in the file instead.
-
-Coordinate evaluation
-----------------------
-
-``coord`` has its own ``model``, ``datasets``, ``evaluation``, ``runtime``,
-and ``output`` sections. It does not accept image-run ``input`` or
-``classification`` blocks:
-
-.. code-block:: console
-
-   $ geo-eval-harness coord --model sincos --dataset california_housing \
-       --methods linear --folds 2 --device cpu
-   $ geo-eval-harness coord --config docs/examples/coord-run.yaml --dry-run
-
-See :doc:`coordbench` for the full YAML, encoder targets, method selection,
-random/spatial/official splits, and coordinate CSV resume semantics.

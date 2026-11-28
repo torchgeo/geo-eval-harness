@@ -326,6 +326,31 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/panopticon --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/deo_s2 --dataset m-eurosat --bands all
 
+   $ # DeCUR
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_decur --dataset m-eurosat --normalization model
+   $ geo-eval-harness run --model torchgeo/resnet50_s1_all_decur --dataset sen1floods11-s1 --normalization model
+
+   $ # FG-MAE
+   $ geo-eval-harness run --model torchgeo/vitb16_s2_all_fgmae --dataset m-eurosat --image-size 256
+   $ geo-eval-harness run --model torchgeo/vitb16_s1_grd_fgmae --dataset sen1floods11-s1
+
+   $ # CLOSP and GeoCLOSP
+   $ geo-eval-harness run --model torchgeo/resnet50_s2_all_closp --dataset m-eurosat --bands all
+   $ geo-eval-harness run --model torchgeo/resnet50_s1_grd_geoclosp --dataset sen1floods11-s1 --bands all
+
+   $ # Satlas multi-image multispectral Sentinel-2
+   $ geo-eval-harness run --model torchgeo/swinv2b_s2ms_satlas_mi --dataset m-eurosat --bands all --normalization model
+
+   $ # SoftCon
+   $ geo-eval-harness run --model torchgeo/vitb14_dinov2_s2_all_softcon --dataset m-eurosat --bands all --normalization model
+   $ geo-eval-harness run --model torchgeo/vits14_dinov2_s1_grd_softcon --dataset sen1floods11-s1 --bands all
+
+:class:`~geo_eval_harness.models.TorchGeoViTBench` uses the grid selected by ``--image-size``. It interpolates positional embeddings and zero-pads partial edge patches. Classification supports ``pool: mean``, ``cls``, and ``both``. Segmentation uses ``blocks.*`` hooks. Model-native normalization supports Sentinel-1 VV/VH and 13-band Sentinel-2 L1C weights. Other ViT weights can use dataset normalization.
+
+SoftCon Sentinel-2 presets use ``clip_sigma: 2.0``. Under ``--normalization model``, the mean maps to 0.5 and values two standard deviations below and above it map to 0 and 1. Values outside that range are clipped.
+
+Sentinel-1 GRD checkpoints select VV and VH by name. With ``--normalization model``, the model converts bands declared as linear power to dB before applying the checkpoint's channel statistics.
+
 SeCo ResNet presets support ``--normalization model`` with ordered RGB bands. Sentinel-2 DN and reflectance are converted to the 8-bit scale used by SeCo's image export, then clipped and quantized with its RGB quantiles before ImageNet normalization. The spatial size follows the run configuration. Other band sets can use dataset normalization.
 
 Scale-MAE constructs its positional grid at the resolved input size. With ``--image-size none``, image runs and profiling use the dataset's native spatial size. The size must be a multiple of the 16-pixel patch; other sizes are rejected because the patch embedding would drop the trailing pixels.

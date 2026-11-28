@@ -6,13 +6,12 @@
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/geo-eval-harness.svg)](https://pypi.org/project/geo-eval-harness/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/torchgeo/geo-eval-harness/blob/main/LICENSE)
 
-Evaluate geospatial image models and location encoders with classification, segmentation, and coordinate prediction tasks. Configure runs with CLI flags or validated YAML.
+Evaluate geospatial image models with classification and segmentation tasks. Configure runs with CLI flags or validated YAML.
 
 - Image classification uses frozen embeddings with KNN-5 or logistic regression.
 - Segmentation supports frozen backbones, LoRA, and full fine-tuning with linear, convolutional, FPN, DPT, UPerNet, and U-Net heads.
-- CoordBench evaluates location encoders with random, spatial-block, and official holdouts.
 - Runs append results to CSV files. `--resume` skips completed evaluations with matching configurations.
-- Custom image models implement `BenchModel._forward_patch_features`; custom location encoders implement `LocationEncoder._encode`. See the [custom model guide](https://torchgeo.org/geo-eval-harness/user/eval_own_model.html) and [contribution guide](https://torchgeo.org/geo-eval-harness/user/contribute_model.html).
+- Custom models implement `BenchModel._forward_patch_features`. See the [custom model guide](https://torchgeo.org/geo-eval-harness/user/eval_own_model.html) and [contribution guide](https://torchgeo.org/geo-eval-harness/user/contribute_model.html).
 
 ## Installation
 
@@ -28,10 +27,7 @@ cd geo-eval-harness
 uv sync --extra dev
 ```
 
-Requires Python 3.12+ and runs on **Linux**, **macOS**, and **Windows**. On
-Linux x86_64 the install automatically includes GPU-accelerated FAISS KNN
-(CUDA 12, driver R525+, also works on GPU-less machines); other platforms get
-CPU FAISS.
+Requires Python 3.12+ and runs on **Linux**, **macOS**, and **Windows**.
 
 The Python package is `geo_eval_harness`; use `import geo_eval_harness` and `python -m geo_eval_harness`. TerraTorch models require the separate [source installation](https://torchgeo.org/geo-eval-harness/user/installation.html#terratorch-models).
 
@@ -72,7 +68,7 @@ geo-eval-harness datasets
 geo-eval-harness run --model timm/resnet50 --dataset m-eurosat
 ```
 
-The default device is `cuda:0`. Select CPU with `--device cpu`:
+By default, `run` prefers the current CUDA device, then MPS, then CPU. Use `--device cpu` to select CPU explicitly.
 
 ```bash
 geo-eval-harness run --model rcf --dataset m-eurosat --device cpu
@@ -106,7 +102,7 @@ geo-eval-harness flops --model rcf --device cpu --band-configs rgb \
   --seg-heads --output results/my_compute_cost.csv
 ```
 
-`run`, `flops`, `coord`, and `profile` share `--output-dir` for a common output root and `--output` for an exact file path that takes precedence. Image runs retain their `models/`, `profiles/`, and `intrinsic_dim/` subdirectories. Standalone profiling writes `profile.json` beneath an explicit output root.
+`run`, `flops`, and `profile` share `--output-dir` for a common output root and `--output` for an exact file path that takes precedence. Image runs retain their `models/`, `profiles/`, and `intrinsic_dim/` subdirectories. Standalone profiling writes `profile.json` beneath an explicit output root.
 
 Both accept `--config` and `--dry-run`. See
 [`docs/examples/profile.yaml`](https://github.com/torchgeo/geo-eval-harness/blob/main/docs/examples/profile.yaml),
@@ -143,37 +139,6 @@ python -m geo_eval_harness run --model handcrafted_level2 \
 
 All four presets default to all bands and identity normalization. Custom YAML can set `model: {name: handcrafted, kwargs: {level: 3}}`; preprocessing belongs under `input`, not constructor kwargs.
 
-## CoordBench — location encoders
-
-`geo-eval-harness coord` runs the **coordinate-only** track: point
-`(lon, lat)` in, a downstream label out. Benchmarks are streamed directly from
-the unified [`taylor-geospatial/coordbench`](https://huggingface.co/datasets/taylor-geospatial/coordbench)
-HuggingFace dataset (PDFM, SatCLIP, SustainBench, CDC PLACES, MOSAIKS/USAVars,
-the DeepMind/AlphaEarth suite, and more — no local download). A frozen encoder
-is probed with **KNN** and a **ridge linear** head under **random** or
-**spatial-block** cross-validation (regression → R², classification → accuracy).
-
-```bash
-# MIND on the full suite, using random and spatial cross-validation
-geo-eval-harness coord --model mind --dataset all --split both
-
-# One dataset family with the sine/cosine baseline and a linear probe
-geo-eval-harness coord --model sincos --dataset pdfm --methods linear
-```
-
-`--model mind` ([MIND](https://huggingface.co/taylor-geospatial/MIND),
-distilled from AlphaEarth/Climplicit/GeoCLIP/SINR) and `--model sincos` work with
-the base install. The other pretrained encoders (SatCLIP / GeoCLIP / Climplicit /
-SINR, via `rshf`) need the `coordbench` extra:
-`pip install "geo-eval-harness[coordbench]"`,
-then `--model climplicit` (etc.). Results land in
-`results/coordbench_results.csv`. Add your own encoder by subclassing
-`LocationEncoder` (implement `_encode`) and setting `model.target` to its
-importable Python name, with constructor options under `model.kwargs`. See the
-[CoordBench guide](https://torchgeo.org/geo-eval-harness/user/coordbench.html)
-and the runnable
-[`FourierLocationEncoder` example](https://github.com/torchgeo/geo-eval-harness/blob/main/docs/examples/coordbench_location_encoder.py).
-
 <!-- skip-on-docs-landing-start -->
 
 ## Learn more
@@ -190,7 +155,21 @@ and the runnable
 
 ## Citation
 
-To cite the software:
+If you use geo-eval-harness in your research, please cite our [paper](https://arxiv.org/abs/2611.33990):
+
+```bibtex
+@misc{lehmann2026geoevalharnessevaluationharnessgeospatial,
+      title={geo-eval-harness: An Evaluation Harness for Geospatial Foundation Models},
+      author={Nils Lehmann and Caleb Robinson and Isaac Corley and Jennifer Marcus and Inbal Becker-Reshef and Juan M. Lavista Ferres and Hannah Kerner},
+      year={2026},
+      eprint={2611.33990},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2611.33990},
+}
+```
+
+To cite the software itself:
 
 ```bibtex
 @misc{geoevalharness,

@@ -1,17 +1,30 @@
-"""CPU/CUDA parity for :class:`KNNClassifier`; requires CUDA and GPU-enabled FAISS."""
+"""CPU and accelerator parity for :class:`KNNClassifier`."""
 
 import numpy as np
 import pytest
 import torch
 
-from geo_eval_harness.knn import KNNClassifier, gpu_faiss_available
-
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available() or not gpu_faiss_available(),
-    reason="requires torch CUDA and GPU-enabled FAISS for cpu/cuda parity",
-)
+from geo_eval_harness.knn import KNNClassifier
 
 N_TRAIN, N_TEST, DIM, K, N_CLASSES = 2000, 500, 64, 5, 10
+
+
+@pytest.fixture(
+    params=[
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable"),
+        ),
+        pytest.param(
+            "mps",
+            marks=pytest.mark.skipif(
+                not torch.backends.mps.is_available(), reason="MPS unavailable"
+            ),
+        ),
+    ]
+)
+def device(request: pytest.FixtureRequest) -> str:
+    return request.param
 
 
 @pytest.fixture
@@ -22,42 +35,42 @@ def features() -> tuple[np.ndarray, np.ndarray]:
     return x_train, x_test
 
 
-def test_singlelabel_parity(features: tuple[np.ndarray, np.ndarray]) -> None:
+def test_singlelabel_parity(features: tuple[np.ndarray, np.ndarray], device: str) -> None:
     x_train, x_test = features
     rng = np.random.default_rng(1)
     y_train = rng.integers(0, N_CLASSES, size=N_TRAIN).astype(np.int64)
 
     cpu = KNNClassifier(n_neighbors=K, device="cpu").fit(x_train, y_train)
-    cu = KNNClassifier(n_neighbors=K, device="cuda").fit(x_train, y_train)
+    gpu = KNNClassifier(n_neighbors=K, device=device).fit(x_train, y_train)
 
-    assert (cpu.predict(x_test) == cu.predict(x_test)).all()
+    assert (cpu.predict(x_test) == gpu.predict(x_test)).all()
 
     pp_cpu = cpu.predict_proba(x_test)
-    pp_cu = cu.predict_proba(x_test)
-    assert pp_cpu.shape == pp_cu.shape
-    np.testing.assert_allclose(pp_cpu, pp_cu, atol=1e-5)
+    pp_gpu = gpu.predict_proba(x_test)
+    assert pp_cpu.shape == pp_gpu.shape
+    np.testing.assert_allclose(pp_cpu, pp_gpu, atol=1e-5)
 
 
-def test_multilabel_parity(features: tuple[np.ndarray, np.ndarray]) -> None:
+def test_multilabel_parity(features: tuple[np.ndarray, np.ndarray], device: str) -> None:
     x_train, x_test = features
     rng = np.random.default_rng(2)
     y_train = (rng.random((N_TRAIN, N_CLASSES)) > 0.7).astype(np.int64)
 
     cpu = KNNClassifier(n_neighbors=K, device="cpu").fit(x_train, y_train)
-    cu = KNNClassifier(n_neighbors=K, device="cuda").fit(x_train, y_train)
+    gpu = KNNClassifier(n_neighbors=K, device=device).fit(x_train, y_train)
 
     p_cpu = cpu.predict(x_test)
-    p_cu = cu.predict(x_test)
-    assert p_cpu.shape == p_cu.shape
-    assert (p_cpu == p_cu).all()
+    p_gpu = gpu.predict(x_test)
+    assert p_cpu.shape == p_gpu.shape
+    assert (p_cpu == p_gpu).all()
 
-    np.testing.assert_allclose(cpu.predict_proba(x_test), cu.predict_proba(x_test), atol=1e-5)
+    np.testing.assert_allclose(cpu.predict_proba(x_test), gpu.predict_proba(x_test), atol=1e-5)
 
 
 @pytest.mark.slow
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires a nondefault CUDA device")
 @pytest.mark.parametrize("multilabel", [False, True])
-def test_nondefault_gpu_uses_its_own_stream(*, multilabel: bool) -> None:
+def test_nondefault_gpu_leaves_current_device_alone(*, multilabel: bool) -> None:
     rng = np.random.default_rng(3)
     train = rng.normal(size=(20000, 378)).astype(np.float32)
     query = rng.normal(size=(4000, 378)).astype(np.float32)
@@ -76,7 +89,7 @@ def test_nondefault_gpu_uses_its_own_stream(*, multilabel: bool) -> None:
 
 
 @pytest.mark.skipif(torch.cuda.device_count() < 2, reason="requires a nondefault CUDA device")
-def test_unnumbered_cuda_agrees_with_faiss_default_device(
+def test_unnumbered_cuda_follows_current_device_at_fit(
     features: tuple[np.ndarray, np.ndarray],
 ) -> None:
     train, query = features
@@ -84,6 +97,8 @@ def test_unnumbered_cuda_agrees_with_faiss_default_device(
     expected = KNNClassifier(K, "cpu").fit(train, labels).predict(query)
     with torch.cuda.device(1):
         model = KNNClassifier(K, "cuda").fit(train, labels)
-        assert model.device == "cuda:0"
         np.testing.assert_array_equal(model.predict(query), expected)
-        assert torch.cuda.current_device() == 1
+    with torch.cuda.device(0):
+        np.testing.assert_array_equal(model.predict(query), expected)
+        assert model._train is not None
+        assert model._train.device == torch.device("cuda", 1)

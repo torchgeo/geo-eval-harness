@@ -59,7 +59,7 @@ def add_profile_arguments(parser: argparse.ArgumentParser) -> None:
         help="One dataset name (not repeatable)",
     )
     parser.add_argument(
-        "--device", default=argparse.SUPPRESS, help="auto, cpu, cuda, or cuda:<index>"
+        "--device", default=argparse.SUPPRESS, help="auto, cpu, mps, cuda, or cuda:<index>"
     )
     parser.add_argument("--batch-size", type=int, default=argparse.SUPPRESS)
     parser.add_argument("--warmup", type=int, default=argparse.SUPPRESS)

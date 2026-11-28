@@ -1,3 +1,0 @@
-name: sincos
-target: geo_eval_harness.coordbench.models.SinCosLocationEncoder
-track: coord

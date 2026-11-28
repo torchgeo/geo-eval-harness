@@ -19,7 +19,9 @@ def add_flops_arguments(parser: argparse.ArgumentParser) -> None:
         default=argparse.SUPPRESS,
         help="YAML mapping of explicit constructor options",
     )
-    parser.add_argument("--device", default=argparse.SUPPRESS, help="auto, cpu, cuda, or cuda:N")
+    parser.add_argument(
+        "--device", default=argparse.SUPPRESS, help="auto, cpu, mps, cuda, or cuda:N"
+    )
     parser.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     parser.add_argument(
         "--verbose", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS

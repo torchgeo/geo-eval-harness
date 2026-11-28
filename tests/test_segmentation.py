@@ -19,7 +19,7 @@ from torchmetrics.functional.classification import (
 
 from geo_eval_harness.boundary_iou import MulticlassBoundaryIoU
 from geo_eval_harness.config.schema import SegmentationConfig
-from geo_eval_harness.results import bootstrap_miou
+from geo_eval_harness.results import bootstrap_miou, per_class_iou
 from geo_eval_harness.segmentation_probe import (
     CachedFeaturesDataset,
     GPUTensorCache,
@@ -412,6 +412,13 @@ def test_solver_evaluation_parity(
         assert isinstance(metrics, dict)
         metrics.pop("loss")
         assert metrics == pytest.approx(expected_metrics)
+
+
+def test_per_class_iou_scores_absent_classes() -> None:
+    # Label rows, prediction columns: class 2 is predicted but unlabeled, class 3 is absent.
+    confusion = torch.tensor([[2, 0, 1, 0], [1, 1, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+    expected = torch.tensor([0.5, 0.5, 0.0, math.nan], dtype=torch.float64)
+    torch.testing.assert_close(per_class_iou(confusion), expected, equal_nan=True)
 
 
 @pytest.mark.parametrize("class_weight", [None, torch.tensor([0.5, 2.0, 1.0])])

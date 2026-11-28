@@ -171,14 +171,22 @@ def _evaluation_mode(model: nn.Module) -> Generator[None, None, None]:
             module.train(training)
 
 
+def _synchronize(device: torch.device) -> None:
+    """Wait for queued accelerator work at timing boundaries."""
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    elif device.type == "mps":
+        torch.mps.synchronize()
+
+
 def _validate_profile_inputs(
     model: nn.Module, sample_batch: torch.Tensor, device: torch.device, precision: str
 ) -> torch.device:
-    """Validate float32 inputs before autocast and resolve the CUDA device index."""
+    """Validate float32 inputs before autocast and resolve the measurement device."""
     if sample_batch.ndim == 0 or sample_batch.shape[0] <= 0:
         raise ValueError("sample_batch must have a non-empty batch dimension")
-    if device.type not in {"cpu", "cuda"}:
-        raise ValueError("device must be 'cpu' or 'cuda'")
+    if device.type not in {"cpu", "cuda", "mps"}:
+        raise ValueError("device must be 'cpu', 'cuda', or 'mps'")
     device = resolve_device(device)
     if sample_batch.device != device:
         raise ValueError(f"sample_batch is on {sample_batch.device}, expected {device}")
@@ -230,24 +238,28 @@ def profile_inference(  # noqa: PLR0913 - public profiling options
     device = _validate_profile_inputs(model, sample_batch, device, precision)
     model = _with_dates(model, sample_batch, doy)
     batch_size = sample_batch.shape[0]
-    is_cuda = device.type == "cuda"
+    allocator = None
+    if device.type == "cuda":
+        allocator = torch.cuda
+    elif device.type == "mps" and torch.__version__ >= "2.13":
+        # MPS implements PyTorch's accelerator allocator statistics starting in 2.13.
+        allocator = torch.accelerator
     with _evaluation_mode(model), torch.inference_mode(), _precision_context(device, precision):
         for _ in range(n_warmup):
             model(sample_batch)
-        if is_cuda:
-            torch.cuda.synchronize(device)
-            torch.cuda.reset_peak_memory_stats(device)
+        _synchronize(device)
+        if allocator is not None:
+            allocator.reset_peak_memory_stats(device)
         timings: list[float] = []
         started = time.perf_counter()
         for _ in range(n_measure):
             pass_started = time.perf_counter()
             model(sample_batch)
-            if is_cuda:
-                torch.cuda.synchronize(device)
+            _synchronize(device)
             timings.append((time.perf_counter() - pass_started) * 1000)
         elapsed = time.perf_counter() - started
-        peak_gpu_mem_gb = torch.cuda.max_memory_allocated(device) / 1024**3 if is_cuda else None
-        reserved_gpu_mem_gb = torch.cuda.memory_reserved(device) / 1024**3 if is_cuda else None
+        peak_gpu_mem_gb = allocator.max_memory_allocated(device) / 1024**3 if allocator else None
+        reserved_gpu_mem_gb = allocator.memory_reserved(device) / 1024**3 if allocator else None
         if count_flops:
             flops = FlopMeasurement(
                 _count_gflops(model, sample_batch, device=device, precision=precision), "measured"

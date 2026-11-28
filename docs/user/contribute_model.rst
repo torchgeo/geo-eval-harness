@@ -60,7 +60,6 @@ Date-aware wrappers may override ``BenchModel.forward_batch(images, *, doy=None)
 
    name: new_model
    target: geo_eval_harness.models.NewModel
-   track: image
    kwargs:
      pretrained: true
 

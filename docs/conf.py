@@ -47,7 +47,6 @@ nitpick_ignore = [
     ("py:class", "geo_eval_harness.models.torchgeo_models._TorchGeoBackboneBench"),
     ("py:class", "geo_eval_harness.models._normalization.NormalizationStrategy"),
     ("py:class", "geo_eval_harness.models._input_units.InputUnit"),
-    ("py:class", "geo_eval_harness.coordbench.models._RSHFEncoder"),
     ("py:class", "geo_eval_harness.segmentation_probe.CachedFeaturesDataset"),
     ("py:class", "geo_eval_harness.segmentation_probe.GPUTensorCache"),
     ("py:class", "CachedFeaturesDataset"),
@@ -72,7 +71,6 @@ nitpick_ignore = [
     ("py:meth", "SegmentationProbe.extract_segmentation_features"),
     ("py:mod", "geo_eval_harness.main"),
     # Third-party types without links in their published documentation.
-    ("py:class", "faiss.swigfaiss_avx2.IndexFlatL2"),
     ("py:class", "geobench.task.Task"),
     ("py:class", "geobench_v2.GeoBenchDataModule"),
     ("py:class", "geobenchv2.task.Task"),

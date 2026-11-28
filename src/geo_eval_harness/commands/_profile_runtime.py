@@ -22,7 +22,7 @@ from ..config.presets import NORMALIZATIONS, ModelPreset, build_model
 from ..config.profile import ProfileConfig, resolve_profile_config
 from ..config.schema import resolve_output_path
 from ..datasets import BandSpec, get_bench_dataset_class, get_datasets
-from ..devices import resolve_device
+from ..devices import gpu_name, resolve_device
 from ..errors import MissingDatasetError
 from ..model_profile import ProfileResult, profile_inference
 
@@ -117,9 +117,7 @@ def _record(
         "image_size": config.input.image_size,
         "interpolation": config.input.interpolation,
         "device": str(device),
-        "hardware": (
-            torch.cuda.get_device_name(device) if device.type == "cuda" else platform.platform()
-        ),
+        "hardware": gpu_name(device) or platform.platform(),
         "torch_version": torch.__version__,
         "python_version": sys.version.split()[0],
         "scope": "encoder inference on one real dataset batch",
