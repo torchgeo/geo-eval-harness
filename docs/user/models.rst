@@ -114,6 +114,17 @@ Sentinel-2 uses the L2A statistics (BigEarthNet) unless ``s2_level: l1c`` select
 
 Upstream downstream evaluations compute percentiles per dataset instead, which ``BandSpec`` does not record. Bands without pretraining statistics fail under ``model``; the presets use ``dataset`` normalization for Dynamic EarthNet, SpaceNet 2, both ForestNets, Infra-Bench CLS, and OpenEarthMap-SAR (``--bands vv,vh``). Aerial NIR and SAR bands without a declared ``BandSpec.unit`` elsewhere need ``--normalization dataset``.
 
+SatMAE++
+^^^^^^^^
+
+The ``satmaepp/rgb_vit_l`` preset runs the ViT-L/16 encoder pretrained on fMoW-RGB by `Noman et al. (CVPR 2024) <https://github.com/techmn/satmae_pp>`_. The wrapper orders channels as BGR for the OpenCV-trained checkpoint. With model normalization it stretches Sentinel-2 DN to display RGB and standardizes with the fMoW-RGB statistics.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model satmaepp/rgb_vit_l --dataset m-eurosat --normalization model
+
+The default input is 224 pixels. Use ``--image-size`` to select another multiple of 16. Position embeddings are interpolated to the selected patch grid. The default pooling is patch mean, with ``cls`` and ``both`` available through ``model.kwargs.pool``.
+
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

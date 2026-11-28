@@ -127,6 +127,18 @@ def to_s2_tci(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
     return (dn * (255.0 / _S2_TCI_SATURATION_DN)).clamp(0.0, 255.0)
 
 
+def to_rgb_display_scale(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
+    """Bring RGB values into the ``[0, 1]`` scale of 8-bit display imagery.
+
+    Sentinel-2 DN is stretched like ESA's TCI, where DN 3558 maps to 1, because plain
+    reflectance (mean near 0.1) is much darker than the natural images that RGB-pretrained
+    models saw. Other units use :func:`to_reflectance`.
+    """
+    if src == InputUnit.S2_DN:
+        return to_s2_tci(images, src) / 255.0
+    return to_reflectance(images, src)
+
+
 def linear_power_to_db(images: torch.Tensor) -> torch.Tensor:
     """Convert SAR linear power to dB, flooring power at 1e-6 without mutating inputs."""
     return 10.0 * torch.log10(images.clamp(min=1e-6))
