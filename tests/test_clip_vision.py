@@ -24,6 +24,7 @@ def test_clip_preset_declares_rgb_and_checksum(name: str) -> None:
     config, preset = FlopsConfig(model=ModelConfig(name=name)).resolve()
     assert config.input.band_configs == config.segmentation.band_configs == ["rgb"]
     assert preset.kwargs["filename"] in load_checksums("clip_vision.sha256")
+    assert timm.is_model(preset.kwargs["model_name"])
     quickgelu = name in {"clip/skyclip_vit_l14", "clip/georsclip_vit_b32", "clip/georsclip_vit_l14"}
     assert ("quickgelu" in preset.kwargs["model_name"]) == quickgelu
 
