@@ -329,6 +329,9 @@ RGB-only self-supervised checkpoints from torchgeo's model hub.
    $ geo-eval-harness run --model torchgeo/resnet50_s2_all_closp --dataset m-eurosat --bands all
    $ geo-eval-harness run --model torchgeo/resnet50_s1_grd_geoclosp --dataset sen1floods11-s1 --bands all
 
+   $ # Satlas multi-image multispectral Sentinel-2
+   $ geo-eval-harness run --model torchgeo/swinv2b_s2ms_satlas_mi --dataset m-eurosat --bands all --normalization model
+
 :class:`~geo_eval_harness.models.TorchGeoViTBench` uses the grid selected by ``--image-size``. It interpolates positional embeddings and zero-pads partial edge patches. Classification supports ``pool: mean``, ``cls``, and ``both``. Segmentation uses ``blocks.*`` hooks. Model-native normalization supports Sentinel-1 VV/VH and 13-band Sentinel-2 L1C weights. Other ViT weights can use dataset normalization.
 
 Sentinel-1 GRD checkpoints select VV and VH by name. With ``--normalization model``, the model converts bands declared as linear power to dB before applying the checkpoint's channel statistics.
