@@ -1,6 +1,7 @@
 name: clip/skyclip_vit_b32
 target: geo_eval_harness.models.CLIPVisionBench
 supports_model_normalization: true
+flops_band_config: rgb
 kwargs:
   model_name: vit_base_patch32_clip_224
   projection_dim: 512

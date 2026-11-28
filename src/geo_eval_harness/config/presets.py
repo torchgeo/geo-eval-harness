@@ -6,7 +6,7 @@ BandSpecs and empirical-RCF datasets are passed directly to construction, never 
 
 import importlib
 from copy import deepcopy
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, StrictBool, StrictStr
 
@@ -58,6 +58,7 @@ class ModelPreset(PresetDefaults):
 
     name: str
     target: str
+    flops_band_config: Literal["rgb", "all"] | None = None
     seed_from_run: bool = False
     supports_model_normalization: StrictBool | None = None
     supported_datasets: list[StrictStr] | None = Field(default=None, min_length=1)
