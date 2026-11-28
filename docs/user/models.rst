@@ -527,6 +527,8 @@ Remote-sensing CLIP vision encoders
 
 SkyCLIP offers ViT-B/32 and ViT-L/14 under ``clip/skyclip_vit_b32`` and ``clip/skyclip_vit_l14``. The default ``pool: proj`` returns the projected image embedding. ViTs also accept ``cls``, ``mean``, and ``both`` for pre-projection tokens. Set ``model.kwargs.normalize: true`` for unit-length embeddings.
 
+RemoteCLIP provides ``clip/remoteclip_rn50``, ``clip/remoteclip_vit_b32``, and ``clip/remoteclip_vit_l14``. The ResNet preset uses attention pooling for the projection and also accepts ``pool: avg`` for spatially averaged features.
+
 AnySat
 ^^^^^^
 

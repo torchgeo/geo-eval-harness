@@ -1,0 +1,14 @@
+name: clip/remoteclip_vit_l14
+target: geo_eval_harness.models.CLIPVisionBench
+flops_band_config: rgb
+kwargs:
+  model_name: vit_large_patch14_clip_224
+  projection_dim: 768
+  repo_id: chendelong/RemoteCLIP
+  revision: bf1d8a3ccf2ddbf7c875705e46373bfe542bce38
+  filename: RemoteCLIP-ViT-L-14.pt
+input:
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["blocks.23", "blocks.17", "blocks.11", "blocks.5"]
