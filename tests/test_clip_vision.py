@@ -1,6 +1,10 @@
 """CLIP checkpoint presets and vision readouts."""
 
+from functools import partial
+from pathlib import Path
+
 import pytest
+import timm
 import torch
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
@@ -9,7 +13,8 @@ from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.presets import build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
 from geo_eval_harness.datasets.m_eurosat import MEurosat
-from geo_eval_harness.hub import load_checksums
+from geo_eval_harness.hub import load_checksums, sha256_file
+from geo_eval_harness.models import CLIPVisionBench
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
@@ -25,6 +30,27 @@ def test_clip_preset(variant: str, architecture: str) -> None:
     assert config.input.band_configs == config.segmentation.band_configs == ["rgb"]
     assert preset.kwargs["model_name"] == architecture
     assert preset.kwargs["filename"] in load_checksums("clip_vision.sha256")
+
+
+def test_verified_checkpoint_preserves_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        timm, "create_model", partial(timm.create_model, depth=1, embed_dim=32, num_heads=2)
+    )
+    preset = load_model_preset(ModelConfig(name="clip/skyclip_vit_b32"))
+    bench = MEurosat()
+    bands = bench.select_band_specs(bench.rgb_bands)
+    reference = build_model(preset, bands=bands, pretrained=False)
+    path = tmp_path / "vision.pth"
+    torch.save(reference.backbone.state_dict(), path)
+    checksums = {preset.kwargs["filename"]: sha256_file(path)}
+    monkeypatch.setattr("geo_eval_harness.models.clip_vision.load_checksums", lambda _: checksums)
+    loaded = build_model(preset, bands=bands, checkpoint_path=str(path))
+    assert isinstance(loaded, CLIPVisionBench)
+    with torch.inference_mode():
+        image = torch.ones(1, 3, 224, 224)
+        torch.testing.assert_close(loaded(image), reference(image))
 
 
 def test_clip_rgb_preprocessing_and_patch_readout() -> None:
