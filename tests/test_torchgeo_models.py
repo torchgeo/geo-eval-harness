@@ -894,10 +894,9 @@ def test_satlas_s2_presets_scale_dn_like_tci(
 
 
 _SATLAS_MS_PRESETS = [
-    "torchgeo/resnet50_s2ms_satlas_si",
-    "torchgeo/resnet152_s2ms_satlas_si",
-    "torchgeo/swinv2t_s2ms_satlas_si",
-    "torchgeo/swinv2b_s2ms_satlas_si",
+    f"torchgeo/{backbone}_s2ms_satlas_{variant}"
+    for backbone in ("resnet50", "resnet152", "swinv2t", "swinv2b")
+    for variant in ("si", "mi")
 ]
 _SATLAS_WRAPPERS: dict[
     str, tuple[type[TorchGeoResNetBench | TorchGeoSwinBench], type[nn.Module]]
