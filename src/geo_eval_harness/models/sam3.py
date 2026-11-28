@@ -1,6 +1,6 @@
 """SAM3 image encoder wrapper for geo-eval-harness.
 
-Uses SAM3's ViT-H vision encoder (with built-in FPN neck) as a frozen backbone
+Uses SAM3's Perception Encoder-derived vision transformer as a frozen backbone
 for dense segmentation probing. Only RGB (3-channel) input is supported.
 
 Each ``Sam3ViTLayer`` bakes its RoPE grid into buffers at construction from
@@ -24,14 +24,11 @@ Checkpoint:
     encoder-only wrapper never runs.
 
 Layer naming for SegmentationProbe:
-    The FPN neck produces 4 multi-scale feature maps, each with 256 channels.
-    Their spatial dimensions scale with the input resolution
-    (``scale_factors = [4.0, 2.0, 1.0, 0.5]``):
-        neck.fpn_layers.3 — coarsest (scale 0.5x)
-        neck.fpn_layers.2 — medium   (scale 1x)
-        neck.fpn_layers.1 — fine     (scale 2x)
-        neck.fpn_layers.0 — finest   (scale 4x)
-    Use coarse-to-fine order for FPN/DPT heads.
+    The default taps ``backbone.layers.7/15/23/31`` read the four global-attention
+    blocks in that order. Each emits an NHWC map with 1024 channels on the same
+    14-pixel patch grid; the harness's ``vit`` neck builds a coarse-to-fine pyramid.
+    The built-in FPN remains available through ``neck.fpn_layers.3/2/1/0``
+    (256 channels, scales 0.5/1/2/4) with ``segmentation.neck: none``.
 """
 
 import logging
@@ -58,7 +55,7 @@ _STANDARD_STD = [0.5, 0.5, 0.5]
 
 
 class SAM3Encoder(BenchModel):
-    """Frozen SAM3 vision encoder (ViT-H + FPN neck) as a benchmark backbone.
+    """Frozen SAM3 vision encoder (32-block ViT + FPN neck) as a benchmark backbone.
 
     The full SAM3 model is loaded but only the vision encoder is retained.
     The text encoder, geometry encoder, DETR encoder/decoder, and mask decoder
@@ -129,6 +126,7 @@ class SAM3Encoder(BenchModel):
         del full_model
 
         self.image_size = image_size
+        self.probe_input_size = image_size
         for param in self.backbone.parameters():
             param.requires_grad = False
         self.backbone.eval()
@@ -140,9 +138,9 @@ class SAM3Encoder(BenchModel):
         """Run the vision encoder on (already-normalized) images.
 
         Called by :class:`~geo_eval_harness.segmentation_probe.SegmentationProbe`
-        during feature extraction. Forward hooks on ``neck.fpn_layers.*`` capture
-        the multi-scale FPN outputs; the return value itself is not used by the
-        probe.
+        during feature extraction. Forward hooks capture the configured ViT blocks
+        or FPN levels; the pooled return value is used for classification, not by
+        the segmentation probe.
 
         Args:
             images: ``(B, 3, H, W)`` normalized float tensor, where ``H`` and

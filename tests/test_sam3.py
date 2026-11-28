@@ -10,9 +10,13 @@ import torch
 from transformers import Sam3Config, Sam3Model, Sam3VisionConfig, Sam3VisionModel, Sam3ViTConfig
 
 from geo_eval_harness import hub
+from geo_eval_harness.config.presets import build_model, resolve_run_config
+from geo_eval_harness.config.run import RunConfig
 from geo_eval_harness.datasets.base import BandSpec
 from geo_eval_harness.models import sam3
 from geo_eval_harness.models.sam3 import SAM3Encoder
+from geo_eval_harness.models.segmentation_heads import NeckedHead
+from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
 def _bands(n: int) -> list[BandSpec]:
@@ -79,10 +83,10 @@ def mock_sam3_pretrained(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dic
                 backbone_config=Sam3ViTConfig(
                     hidden_size=32,
                     intermediate_size=64,
-                    num_hidden_layers=2,
+                    num_hidden_layers=state.get("depth", 2),
                     num_attention_heads=4,
                     window_size=4,
-                    global_attn_indexes=[1],
+                    global_attn_indexes=state.get("global_attn_indexes", [1]),
                 ),
                 fpn_hidden_size=32,
             )
@@ -150,6 +154,7 @@ def test_image_size_reaches_backbone(image_size: int, mock_sam3_pretrained: dict
     config = mock_sam3_pretrained["configs"][0].vision_config.backbone_config
     assert config.image_size == image_size
     assert config.pretrain_image_size == 336
+    assert model.probe_input_size == image_size
     output = model(torch.randn(1, 3, image_size, image_size))
     assert output.shape == (1, 32)
     assert torch.isfinite(output).all()
@@ -179,3 +184,50 @@ def test_forward_size_mismatch_raises() -> None:
     model = SAM3Encoder(bands=_rgb_bands(), image_size=224, normalization="identity")
     with pytest.raises(ValueError, match="built for 224x224"):
         model(torch.zeros(2, 3, 256, 256))
+
+
+@pytest.mark.parametrize("fpn_override", [False, True])
+def test_resolved_segmentation_probe_trains_without_changing_encoder(
+    mock_sam3_pretrained: dict[str, Any], *, fpn_override: bool
+) -> None:
+    mock_sam3_pretrained.update(depth=32, global_attn_indexes=[7, 15, 23, 31])
+    segmentation: dict[str, Any] = {"head": "upernet"}
+    if fpn_override:
+        segmentation.update(neck="none", layers=[f"neck.fpn_layers.{i}" for i in (3, 2, 1, 0)])
+    config, preset = resolve_run_config(
+        RunConfig.model_validate(
+            {
+                "model": {"name": "sam3_encoder"},
+                "datasets": ["burn_scars"],
+                "input": {"image_size": 56},
+                "segmentation": segmentation,
+            }
+        ),
+        "burn_scars",
+    )
+    model = build_model(preset, bands=_rgb_bands(), normalization="identity")
+    probe = SegmentationProbe(
+        model,
+        config.segmentation.layers,
+        2,
+        head_type=config.segmentation.head,
+        neck=config.segmentation.neck,
+        hidden_dim=16,
+        amp=False,
+    )
+    if not fpn_override:
+        assert probe.layer_names == [f"backbone.layers.{i}" for i in (7, 15, 23, 31)]
+        assert isinstance(probe.head, NeckedHead)
+        assert probe.feature_hw_list == [(4, 4)] * 4
+    encoder_before = {name: tensor.clone() for name, tensor in model.state_dict().items()}
+    optimizer = torch.optim.SGD(probe.head.parameters(), lr=0.01)
+    probe.train()
+    logits = probe(torch.randn(2, 3, 56, 56))
+    assert logits.shape == (2, 2, 56, 56)
+    loss = torch.nn.functional.cross_entropy(logits, torch.randint(0, 2, (2, 56, 56)))
+    loss.backward()
+    assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in probe.head.parameters())
+    assert all(p.grad is None for p in model.parameters())
+    optimizer.step()
+    for name, tensor in model.state_dict().items():
+        torch.testing.assert_close(tensor, encoder_before[name], rtol=0, atol=0)
