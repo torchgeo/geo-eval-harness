@@ -154,20 +154,14 @@ def test_unknown_probe_head_is_rejected():
         _probe_gflops(_WidthModel(8).eval(), (3, 32, 32), CPU, "typo", 10)
 
 
-class _PatchModel(nn.Module):
-    def __init__(self, patch: int) -> None:
-        super().__init__()
-        self.patch_embed = nn.Conv2d(3, 8, kernel_size=patch, stride=patch)
-        self.patch_embed.patch_size = (patch, patch)
+@pytest.mark.parametrize("pad", [True, False])
+def test_n_tokens_matches_patch_embedding_at_sweep_sizes(*, pad: bool) -> None:
+    from timm.layers import PatchEmbed
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.patch_embed(x).flatten(2).transpose(1, 2)
-
-
-def test_n_tokens_tracks_image_size_over_patch_squared():
-    model = _PatchModel(16)
-    assert _n_tokens(model, 224) == (224 // 16) ** 2 == 196
-    assert _n_tokens(model, 112) == (112 // 16) ** 2 == 49
+    embed = PatchEmbed(img_size=None, patch_size=14, embed_dim=4, dynamic_img_pad=pad)
+    for size in (224, 256, 512):
+        tokens = embed(torch.zeros(1, 3, size, size))
+        assert _n_tokens(embed, size) == tokens.shape[1]
 
 
 def test_n_tokens_does_not_treat_physical_patch_size_as_pixel_stride():

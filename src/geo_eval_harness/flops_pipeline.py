@@ -17,6 +17,7 @@ from typing import Any
 import pandas as pd
 import torch
 from filelock import FileLock
+from timm.layers import PatchEmbed
 from torch import nn
 
 from geo_eval_harness.bands import BandCompatibilityError
@@ -212,15 +213,14 @@ def _probe_gflops(
 
 
 def _n_tokens(model: nn.Module, image_size: int) -> int | None:
-    """Return the patch-token count, or ``None`` for CNN backbones.
-
-    ``forward_patch_features`` returns pooled ``(B, D)`` embeddings, not token counts.
-    Use the patch grid, ``n_tokens ~ (image_size / patch)^2``, excluding CLS and register tokens.
-    """
+    """Count spatial patches at the measured size, including padded edges when enabled."""
     if getattr(model, "patch_size_unit", "pixels") != "pixels":
         return None
     patch: tuple[int, int] | None = None
     for module in model.modules():
+        if isinstance(module, PatchEmbed):
+            height, width = module.dynamic_feat_size((image_size, image_size))
+            return height * width
         p = getattr(module, "patch_size", None)
         if isinstance(p, (tuple, list)) and len(p) == 2:
             patch = (int(p[0]), int(p[1]))

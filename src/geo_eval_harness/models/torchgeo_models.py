@@ -35,7 +35,7 @@ from ._input_units import (
     to_s2_dn,
 )
 from ._normalization import NormalizationStrategy, build_normalizer
-from ._pooling import pool_tokens
+from ._pooling import VALID_MODES, pool_tokens
 from ._seco import normalize_seco
 from ._torchgeo_bands import CheckpointBands, checkpoint_band_order
 from .interface import BenchModel
@@ -209,6 +209,10 @@ class _TorchGeoBackboneBench(BenchModel):
         self.handles_own_normalization = bool(order) and native
         if self.expected_input_unit is None and self.weights_input_unit:
             self.expected_input_unit = _UNIT_EXPECTED_SOURCE.get(self.weights_input_unit)
+        if self.input_conv_path and native and not order and self.expected_input_unit is None:
+            raise UnsupportedNormalizationError(
+                f"{weights_member} has no supported model-native input unit. Use --normalization dataset."
+            )
         super().__init__(bands=bands, **kwargs)
         self._checkpoint_bands = (
             CheckpointBands(bands, order, weights_member, native=native) if order else None
@@ -467,6 +471,56 @@ class TorchGeoSwinBench(_TorchGeoBackboneBench):
         if self.auto_resize and self.target_size:
             images = _auto_resize(images, self.target_size)
         return self.backbone(images)
+
+
+class TorchGeoViTBench(_TorchGeoBackboneBench):
+    """TorchGeo timm ViT using the loader's image grid and the checkpoint's band order.
+
+    ``pool`` selects patch mean, CLS, or their concatenation (``both``). Positional
+    embeddings interpolate to the input grid and partial edge patches are zero-padded.
+    """
+
+    input_conv_path = "patch_embed.proj"
+    wants_resolved_image_size = True
+    wants_native_image_size = True
+
+    def __init__(  # noqa: PLR0913 - public YAML options
+        self,
+        bands: list[BandSpec],
+        *,
+        factory: str = "vit_small_patch16_224",
+        weights_class: str = "ViTSmall16_Weights",
+        weights_member: str = "SENTINEL2_ALL_FGMAE",
+        image_size: int | None = None,
+        pool: str = "mean",
+        **kwargs: Any,
+    ) -> None:
+        if pool not in VALID_MODES:
+            raise ValueError(f"pool must be one of {VALID_MODES}, got {pool!r}.")
+        super().__init__(
+            bands,
+            factory=factory,
+            weights_class=weights_class,
+            weights_member=weights_member,
+            auto_resize=False,
+            target_size=None,
+            factory_kwargs={"dynamic_img_size": True, "dynamic_img_pad": True},
+            **kwargs,
+        )
+        self.backbone.head = nn.Identity()
+        self.probe_input_size = image_size
+        self.pool = pool
+
+    def _forward_patch_features(self, images: torch.Tensor) -> torch.Tensor:
+        self._input_hw = (images.shape[-2], images.shape[-1])
+        tokens = self.backbone.forward_features(images)
+        return pool_tokens(tokens, self.pool, num_prefix_tokens=self.backbone.num_prefix_tokens)
+
+    def tokens_to_grid(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Reshape a hooked block to the patch grid of the current image."""
+        grid = self.backbone.patch_embed.dynamic_feat_size(self._input_hw)
+        patches = tokens[:, self.backbone.num_prefix_tokens :]
+        return patches.transpose(1, 2).reshape(tokens.shape[0], tokens.shape[2], *grid)
 
 
 _SCALEMAE_PATCH_SIZE = 16
