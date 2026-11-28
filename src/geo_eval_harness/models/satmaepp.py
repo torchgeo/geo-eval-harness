@@ -9,6 +9,7 @@ from timm.models.vision_transformer import VisionTransformer
 from torchvision.transforms.functional import normalize
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
+from geo_eval_harness.errors import UnsupportedNormalizationError
 from geo_eval_harness.hub import fetch_pinned_file, load_checksums
 
 from ._band_mapping import resolve_src_indices
@@ -28,6 +29,7 @@ class SatMAEPPBench(BenchModel):
     wants_resolved_image_size = True
     wants_native_image_size = True
     band_order: tuple[str, ...] = ("blue", "green", "red")
+    native_units: tuple[InputUnit, ...] | None = None
     patch_size = 16
     default_image_size = 224
     checkpoint = "checkpoint_ViT-L_pretrain_fmow_rgb"
@@ -72,6 +74,11 @@ class SatMAEPPBench(BenchModel):
                     "SatMAE++ model normalization needs at least one matching band."
                 )
             self._unit = detect_input_unit(selected)
+            if self.native_units and self._unit not in self.native_units:
+                raise UnsupportedNormalizationError(
+                    f"{self.checkpoint} does not support model normalization for {self._unit}. "
+                    "Use --normalization dataset."
+                )
         self.backbone = self._build_encoder(size)
         if pretrained:
             filename = self.checkpoint + ".pth"

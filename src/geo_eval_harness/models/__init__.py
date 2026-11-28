@@ -11,6 +11,7 @@ from .olmoearth import OlmoEarthBenchModel
 from .rcf import RCFBench, RCFModelSettings
 from .sam3 import SAM3Encoder
 from .satmaepp import SatMAEPPBench
+from .satmaepp_sentinel import SatMAEPPSentinelBench
 from .segmentation_heads import (
     ConvBlockHead,
     DPTHead,
@@ -64,6 +65,7 @@ __all__: list[str] = [
     "RCFModelSettings",
     "SAM3Encoder",
     "SatMAEPPBench",
+    "SatMAEPPSentinelBench",
     "SmartiesBench",
     "TerraFMBench",
     "TerraTorchClayBench",

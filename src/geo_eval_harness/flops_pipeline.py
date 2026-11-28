@@ -216,11 +216,12 @@ def _n_tokens(model: nn.Module, image_size: int) -> int | None:
     """Count spatial patches at the measured size, including padded edges when enabled."""
     if getattr(model, "patch_size_unit", "pixels") != "pixels":
         return None
+    groups = getattr(model, "num_patch_groups", 1)
     patch: tuple[int, int] | None = None
     for module in model.modules():
         if isinstance(module, PatchEmbed):
             height, width = module.dynamic_feat_size((image_size, image_size))
-            return height * width
+            return groups * height * width
         p = getattr(module, "patch_size", None)
         if isinstance(p, (tuple, list)) and len(p) == 2:
             patch = (int(p[0]), int(p[1]))
@@ -232,7 +233,7 @@ def _n_tokens(model: nn.Module, image_size: int) -> int | None:
     if patch is None or patch[0] <= 0 or patch[1] <= 0:
         return None
     # Use measured image_size, not grid_size: non-native resolutions change the attention cost.
-    return (image_size // patch[0]) * (image_size // patch[1])
+    return groups * (image_size // patch[0]) * (image_size // patch[1])
 
 
 def _flops_row(

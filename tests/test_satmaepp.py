@@ -55,3 +55,30 @@ def test_checkpoint_skips_decoder_and_interpolates_only_patch_positions(tmp_path
     torch.save(state, path)
     with pytest.raises(RuntimeError, match="cls_token"):
         resized._load_checkpoint(path)
+
+
+@pytest.mark.usefixtures("tiny_vit")
+def test_sentinel_group_tokens_and_spatial_features() -> None:
+    from geo_eval_harness.config.flops import FlopsConfig
+    from geo_eval_harness.flops_pipeline import _n_tokens
+
+    selection = ModelConfig(name="satmaepp/s2_vit_l", kwargs={"pretrained": False})
+    settings, preset = FlopsConfig(model=selection).resolve()
+    assert settings.input.band_configs == ["all"]
+    assert preset.input.image_size == 96
+    preset.input.image_size = 32
+    model = build_model(preset, bands=MEurosat().bands, normalization="model_native").eval()
+    dn = torch.zeros(1, 13, 32, 32)
+    dn[:, 1] = 1184.3824625
+    pixels = model.normalize_inputs(dn)
+    torch.testing.assert_close(pixels[:, 0], torch.full((1, 32, 32), 127 / 255))
+    dn[:, 0] = 10000  # The checkpoint excludes coastal aerosol.
+    torch.testing.assert_close(model.normalize_inputs(dn), pixels)
+    tokens = model.backbone.forward_features(pixels)
+    assert tokens.shape == (1, 49, 32)
+    assert _n_tokens(model, 32) == tokens.shape[1] - 1
+    torch.testing.assert_close(model(dn), tokens[:, 1:].mean(dim=1))
+    grid = model.tokens_to_grid(tokens)
+    torch.testing.assert_close(grid[0, :, 0, 0], tokens[0, [1, 17, 33]].mean(dim=0))
+    probe = SegmentationProbe(model, layer_names=["blocks.1"], num_classes=2)
+    assert probe.feature_hw_list == [(4, 4)]

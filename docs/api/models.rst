@@ -82,6 +82,8 @@ SMARTIES
 SatMAE++
 ^^^^^^^^
 
+.. autoclass:: SatMAEPPSentinelBench
+
 .. autoclass:: SatMAEPPBench
 
 EoS-FM
