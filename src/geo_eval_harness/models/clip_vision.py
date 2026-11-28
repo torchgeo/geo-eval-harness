@@ -45,7 +45,7 @@ class CLIPVisionBench(BenchModel):
         if [canonical_band_name(b.name) for b in bands] != ["red", "green", "blue"]:
             raise BandCompatibilityError("CLIP expects RGB channels in order. Use --bands rgb.")
         is_vit = is_model_in_modules(model_name, {"vision_transformer"})
-        pools = ("proj", *VALID_MODES) if is_vit else ("proj", "avg")
+        pools = ("proj", *VALID_MODES) if is_vit else ("proj", "mean")
         if pool not in pools:
             raise ValueError(
                 f"Unsupported CLIP pooling {pool!r} for {model_name}; choose from {pools}."
@@ -53,6 +53,7 @@ class CLIPVisionBench(BenchModel):
         self.handles_own_normalization = normalization == NormalizationStrategy.MODEL_NATIVE
         super().__init__(bands, normalization)
         self._input_unit = detect_input_unit(bands) if self.handles_own_normalization else None
+        self._is_vit = is_vit
         self.pool = pool
         self.normalize = normalize
 
@@ -80,7 +81,7 @@ class CLIPVisionBench(BenchModel):
         self._input_hw = (images.shape[-2], images.shape[-1])
         if self.pool == "proj":
             features = self.backbone(images)
-        elif self.pool == "avg":
+        elif not self._is_vit:
             features = self.backbone.forward_features(images).mean(dim=(-2, -1))
         else:
             tokens = self.backbone.forward_features(images)
