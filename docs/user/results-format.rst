@@ -187,6 +187,13 @@ Column                       Value on a segmentation row
 
 The setup columns join the de-duplication key of ``geo_eval_harness.results.load_results``, which excludes ``config_hash``. Runs with different training setups remain distinct. Numeric setup columns compare by value (``1e-3`` equals ``0.001``). Linear-probe rows with ``merge_val`` false also remain distinct from rows refit on train plus validation, and the ranking explorer ranks only the refit rows. Resume uses the configuration hash.
 
+.. _segmentation-per-class-iou:
+
+Per-class segmentation IoU
+--------------------------
+
+Set ``output.per_class_iou`` to add one row per class next to each segmentation ``mIoU`` row, with ``metric_name`` ``IoU_class_<index>``. The values use the same test predictions as ``mIoU`` and exclude ``ignore_index`` pixels. A class absent from the test labels and never predicted gets NaN and is left out of ``mIoU``, so the non-NaN values average to ``mIoU``; a class absent from the labels but predicted gets 0. The option is output only, so it does not change ``config_hash``; enabling it later does not add per-class rows to runs that ``--resume`` skips.
+
 .. _segmentation-epoch-metrics:
 
 Per-epoch segmentation metrics

@@ -27,6 +27,7 @@ import pandas as pd
 import torch
 
 from geo_eval_harness.config.schema import Adaptation, SegmentationConfig
+from geo_eval_harness.devices import float64_device
 from geo_eval_harness.resume import KEY_COLS, _canonical_key_cell
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,17 @@ def bootstrap_map(
     return map_mean, lower, upper
 
 
+def per_class_iou(confusion: torch.Tensor) -> torch.Tensor:
+    """Return each class's IoU from a confusion matrix with label rows and prediction columns.
+
+    A class absent from the labels and never predicted has an empty union and gets NaN, which
+    leaves it out of mIoU. A class absent from the labels but predicted gets 0.
+    """
+    confusion = confusion.to(float64_device(confusion.device)).double()
+    intersection = confusion.diagonal()
+    return intersection / (confusion.sum(dim=0) + confusion.sum(dim=1) - intersection)
+
+
 def bootstrap_miou(
     confusion_matrices: torch.Tensor,
     n_boot: int = 1000,
@@ -332,13 +344,7 @@ def bootstrap_miou(
     scores = torch.empty(n_boot, dtype=torch.float64)
     for index in range(n_boot):
         sample = torch.randint(n_samples, (n_samples,), generator=generator)
-        confusion = confusions[sample].sum(dim=0)
-        intersection = confusion.diagonal()
-        union = confusion.sum(dim=0) + confusion.sum(dim=1) - intersection
-        present = union > 0
-        scores[index] = (
-            (intersection[present] / union[present]).mean() if present.any() else float("nan")
-        )
+        scores[index] = per_class_iou(confusions[sample].sum(dim=0)).nanmean()
 
     lower = (100.0 - ci) / 2.0
     return float(torch.nanquantile(scores, lower / 100.0)), float(

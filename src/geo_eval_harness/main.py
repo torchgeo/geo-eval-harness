@@ -51,6 +51,7 @@ from geo_eval_harness.results import (
     bootstrap_miou,
     format_setup_value,
     model_results_path,
+    per_class_iou,
     segmentation_setup_columns,
 )
 from geo_eval_harness.resume import (
@@ -123,6 +124,7 @@ class SegmentationOutcome(NamedTuple):
     best_epoch: int | None
     best_val_miou: float | None
     weight_decay: float | None = None
+    class_ious: list[float] | None = None
 
 
 def _expand_dataset_list(names: str | Sequence[str]) -> list[str]:
@@ -689,6 +691,7 @@ def evaluate_segmentation(
         )
     actual_batch_size = probe_batch_size if use_cache else int(train_loader.batch_size or 1)
 
+    class_ious = None
     if isinstance(eval_result, tuple):
         metrics, confusion_matrices = eval_result
         metrics["ci_lower"], metrics["ci_upper"] = bootstrap_miou(
@@ -696,6 +699,8 @@ def evaluate_segmentation(
             n_boot=cfg.classification.bootstrap_samples,
             seed=seed,
         )
+        if cfg.output.per_class_iou:
+            class_ious = per_class_iou(confusion_matrices.sum(dim=0)).tolist()
     else:
         metrics = eval_result
     weight_decay = seg_cfg.weight_decay
@@ -709,6 +714,7 @@ def evaluate_segmentation(
         best_epoch=solver.best_epoch,
         best_val_miou=solver.best_val_miou,
         weight_decay=weight_decay,
+        class_ious=class_ious,
     )
 
 
@@ -777,9 +783,24 @@ def run_segmentation(
         boundary_iou_width=int(metrics["boundary_IoU_width"]),
         best_val_epoch=format_setup_value(outcome.best_epoch),
         best_val_miou=format_setup_value(outcome.best_val_miou),
-    ).to_row()
-    row.update(segmentation_setup_columns(cfg.segmentation))
-    yield [row]
+    )
+    class_rows = [
+        replace(
+            row,
+            metric_name=f"IoU_class_{index}",
+            metric_value=value,
+            ci_lower=float("nan"),
+            ci_upper=float("nan"),
+            fw_iou=None,
+            precision=None,
+            recall=None,
+            f1=None,
+            boundary_iou=None,
+        )
+        for index, value in enumerate(outcome.class_ious or [])
+    ]
+    setup = segmentation_setup_columns(cfg.segmentation)
+    yield [result.to_row() | setup for result in (row, *class_rows)]
 
 
 def _epoch_metrics_writer(

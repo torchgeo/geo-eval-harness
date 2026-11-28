@@ -89,6 +89,16 @@ def explorer_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             },
             {
                 "dataset": "caffe",
+                "method": "seg-upernet",
+                "metric_name": "IoU_class_0",
+                "metric_value": 0.9,
+                "name": "tgeo_model",
+                "bands": "gray",
+                "adaptation": "lora",
+                "decoder": "upernet",
+            },
+            {
+                "dataset": "caffe",
                 "method": "seg-fpn",
                 "metric_name": "mIoU",
                 "metric_value": 0.4,
