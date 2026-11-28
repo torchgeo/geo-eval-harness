@@ -1,0 +1,14 @@
+name: clip/skyclip_vit_l14
+target: geo_eval_harness.models.CLIPVisionBench
+flops_band_config: rgb
+kwargs:
+  model_name: vit_large_patch14_clip_quickgelu_224
+  projection_dim: 768
+  repo_id: torchgeo/vit_large_patch14_224_skyclip_50pct
+  revision: aa6b40850d1dbd643b11716c2a4b7c392d4dec69
+  filename: vit_large_patch14_224_skyclip_50pct-fc4be2dd.pth
+input:
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["blocks.23", "blocks.17", "blocks.11", "blocks.5"]

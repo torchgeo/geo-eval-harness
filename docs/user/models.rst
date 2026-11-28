@@ -516,6 +516,17 @@ The ViT layers bake their RoPE grid in at construction, so the encoder is built
 for one fixed input size (``input.image_size``, 224 by default) and rejects
 any other size at forward time.  ``--image-size none`` is therefore not supported.
 
+Remote-sensing CLIP vision encoders
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+:class:`~geo_eval_harness.models.CLIPVisionBench` loads a pinned, SHA-256-verified vision tower into timm. To use a local copy, set ``model.kwargs.checkpoint_path``. The default input is RGB at 224 pixels with OpenAI CLIP normalization. Sentinel-2 DN inputs use a display stretch that saturates at 3558 DN.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model clip/skyclip_vit_b32 --dataset m-eurosat
+
+SkyCLIP offers ViT-B/32 and ViT-L/14 under ``clip/skyclip_vit_b32`` and ``clip/skyclip_vit_l14``. The default ``pool: proj`` returns the projected image embedding. ViTs also accept ``cls``, ``mean``, and ``both`` for pre-projection tokens. Set ``model.kwargs.normalize: true`` for unit-length embeddings.
+
 AnySat
 ^^^^^^
 
