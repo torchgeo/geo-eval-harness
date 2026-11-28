@@ -529,6 +529,8 @@ SkyCLIP offers ViT-B/32 and ViT-L/14 under ``clip/skyclip_vit_b32`` and ``clip/s
 
 RemoteCLIP provides ``clip/remoteclip_rn50``, ``clip/remoteclip_vit_b32``, and ``clip/remoteclip_vit_l14``. The ResNet preset uses attention pooling for the projection and also accepts ``pool: avg`` for spatially averaged features.
 
+GeoRSCLIP provides ``clip/georsclip_vit_b32``, ``clip/georsclip_vit_l14``, and ``clip/georsclip_vit_h14``. The B/32 and L/14 checkpoints use QuickGELU.
+
 AnySat
 ^^^^^^
 

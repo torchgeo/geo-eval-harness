@@ -1,0 +1,19 @@
+name: clip/georsclip_vit_h14
+target: geo_eval_harness.models.CLIPVisionBench
+supports_model_normalization: true
+flops_band_config: rgb
+kwargs:
+  model_name: vit_huge_patch14_clip_224
+  projection_dim: 1024
+  repo_id: Zilun/GeoRSCLIP
+  revision: 4920188e6eba4e711ef9848cfd7cb77e874ee33f
+  filename: ckpt/RS5M_ViT-H-14.pt
+input:
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - blocks.31
+    - blocks.23
+    - blocks.15
+    - blocks.7
