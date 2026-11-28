@@ -61,6 +61,7 @@ def test_checkpoint_skips_decoder_and_interpolates_only_patch_positions(tmp_path
 def test_sentinel_group_tokens_and_spatial_features() -> None:
     from geo_eval_harness.config.flops import FlopsConfig
     from geo_eval_harness.flops_pipeline import _n_tokens
+    from geo_eval_harness.models import SatMAEPPSentinelBench
 
     selection = ModelConfig(name="satmaepp/s2_vit_l", kwargs={"pretrained": False})
     settings, preset = FlopsConfig(model=selection).resolve()
@@ -68,13 +69,19 @@ def test_sentinel_group_tokens_and_spatial_features() -> None:
     assert preset.input.image_size == 96
     preset.input.image_size = 32
     model = build_model(preset, bands=MEurosat().bands, normalization="model_native").eval()
+    assert isinstance(model, SatMAEPPSentinelBench)
     dn = torch.zeros(1, 13, 32, 32)
     dn[:, 1] = 1184.3824625
     pixels = model.normalize_inputs(dn)
     torch.testing.assert_close(pixels[:, 0], torch.full((1, 32, 32), 127 / 255))
     dn[:, 0] = 10000  # The checkpoint excludes coastal aerosol.
     torch.testing.assert_close(model.normalize_inputs(dn), pixels)
-    tokens = model.backbone.forward_features(pixels)
+    encoder = model.backbone
+    positioned = encoder._pos_embed(encoder.patch_embed(pixels))
+    swir = encoder.patch_embed[2](pixels[:, 8:10])[:, 3]
+    position = torch.cat((encoder.pos_embed[:, 4], encoder.channel_embed[:, 2]), dim=-1)
+    torch.testing.assert_close(positioned[:, 1 + 2 * 16 + 3], swir + position)
+    tokens = encoder.forward_features(pixels)
     assert tokens.shape == (1, 49, 32)
     assert _n_tokens(model, 32) == tokens.shape[1] - 1
     torch.testing.assert_close(model(dn), tokens[:, 1:].mean(dim=1))
