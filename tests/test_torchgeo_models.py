@@ -28,6 +28,7 @@ from geo_eval_harness.models.torchgeo_models import (
     TorchGeoResNetBench,
     TorchGeoScaleMAEBench,
     TorchGeoSwinBench,
+    TorchGeoViTBench,
     _adapt_first_conv,
     _extract_normalize_transforms,
     _resolve_dofa_wavelengths,
@@ -1065,7 +1066,9 @@ class _TinyPatchEmbed(nn.Module):
 
 
 class _TinyViT(nn.Module):
-    """Scale-MAE stand-in with a trainable patch embedding and token block."""
+    """ViT with a trainable patch embedding and token block."""
+
+    num_prefix_tokens = 1
 
     def __init__(self, **_kwargs: Any) -> None:
         super().__init__()
@@ -1110,6 +1113,7 @@ def _install_tiny_backbone(monkeypatch: pytest.MonkeyPatch, backbone: type[nn.Mo
 _GRADIENT_CASES = [
     pytest.param(TorchGeoResNetBench, _TinyConvNet, "mix", 3, id="resnet"),
     pytest.param(TorchGeoEarthLocBench, _TinyEarthLoc, "backbone.mix", 3, id="earthloc"),
+    pytest.param(TorchGeoViTBench, _TinyViT, "block", 3, id="vit"),
     pytest.param(TorchGeoScaleMAEBench, _TinyViT, "block", 3, id="scalemae"),
     pytest.param(TorchGeoCromaBench, _TinyTrainableCroma, "s2_proj", 12, id="croma"),
 ]
