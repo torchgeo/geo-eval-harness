@@ -990,8 +990,11 @@ def test_rejects_other_multiband_satlas_checkpoints(
         wrapper(bands=MEurosat().bands, weights_class=weights_class, weights_member=weights_member)
 
 
-def _ssl4eo_s2_model(
-    monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec], normalization: str
+def _s2_model(
+    monkeypatch: pytest.MonkeyPatch,
+    bands: list[BandSpec],
+    normalization: str,
+    member: str = "SENTINEL2_ALL_MOCO",
 ) -> TorchGeoResNetBench:
     import geo_eval_harness.models.torchgeo_models as tg_models
 
@@ -1001,23 +1004,32 @@ def _ssl4eo_s2_model(
     return TorchGeoResNetBench(
         bands=bands,
         weights_class="ResNet50_Weights",
-        weights_member="SENTINEL2_ALL_MOCO",
+        weights_member=member,
         normalization=normalization,
     )
 
 
-def test_ssl4eo_s2_checkpoints_use_checkpoint_band_order(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SSL4EO-S12 orders B01-B08, B8A, B09-B12; m-eurosat lists B8A last."""
-    model = _ssl4eo_s2_model(monkeypatch, MEurosat().bands, "identity")
+@pytest.mark.parametrize(
+    ("member", "expected"),
+    [
+        ("SENTINEL2_ALL_MOCO", [*range(8), 12, 8, 9, 10, 11]),
+        ("SENTINEL2_ALL_SECO_ECO", [*range(8), 12, 8, 10, 11]),
+    ],
+)
+def test_s2_checkpoints_use_checkpoint_band_order(
+    monkeypatch: pytest.MonkeyPatch, member: str, expected: list[int]
+) -> None:
+    """m-eurosat lists B8A last and includes B10, which L2A checkpoints omit."""
+    model = _s2_model(monkeypatch, MEurosat().bands, "identity", member)
     images = torch.arange(13, dtype=torch.float32).view(1, 13, 1, 1)
     selected = model.normalize_inputs(images).flatten().tolist()
-    assert selected == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 12.0, 8.0, 9.0, 10.0, 11.0]
+    assert selected == expected
 
 
 def test_ssl4eo_s2_native_zero_fills_cirrus_absent_from_l2a(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    model = _ssl4eo_s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
+    model = _s2_model(monkeypatch, _s2_multispectral_bands(), "model_native")
     reflectance = torch.arange(1, 13, dtype=torch.float32).view(1, 12, 1, 1) / 100
     expected = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.10, 0.0, 0.11, 0.12]
     torch.testing.assert_close(
@@ -1030,7 +1042,7 @@ def test_ssl4eo_s2_rejects_datasets_missing_required_bands(
     monkeypatch: pytest.MonkeyPatch, bands: list[BandSpec]
 ) -> None:
     with pytest.raises(BandCompatibilityError, match="B01"):
-        _ssl4eo_s2_model(monkeypatch, bands, "bandspec_zscore")
+        _s2_model(monkeypatch, bands, "bandspec_zscore")
 
 
 class _TinyConvNet(nn.Module):
