@@ -30,16 +30,10 @@ The installed ``geo-eval-harness`` command, ``python -m geo_eval_harness``, and
     a CSV. Accepts its own ``--config``, ``--config-help``, band/head
     selections, timing, output, and resume flags.
 
-``coord``
-    Evaluate location encoders under random/spatial or official splits.
-    Accepts coordinate YAML or explicit model, dataset, method, split,
-    runtime, and output flags.
-
 All measurement commands share ``--output-dir`` for an output root and ``--output`` for an explicit file that takes precedence. CSV commands default to the ``results`` root; profiling defaults to stdout. Image runs keep ``models/``, ``profiles/``, and ``intrinsic_dim/`` subdirectories under the root unless an explicit file combines them.
 
 All measurement commands support ``--dry-run``. See
-:doc:`/user/configuration` for exact YAML fields and :doc:`/user/coordbench`
-for coordinate examples.
+:doc:`/user/configuration` for exact YAML fields.
 
 Strict image configuration
 --------------------------
@@ -150,8 +144,6 @@ and a ``timing`` block. Neither takes an image ``RunConfig``.
 
 .. currentmodule:: geo_eval_harness.flops_pipeline
 .. autofunction:: main
-
-See :doc:`coordbench` for the separate coordinate configuration and runner.
 
 Download helpers
 ----------------

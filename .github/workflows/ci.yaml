@@ -50,8 +50,8 @@ jobs:
         python-version: ["3.12", "3.13", "3.14"]
         include:
           - os: ubuntu-latest
-            extras: --extra dev --extra id --extra olmoearth
-            cache-tag: dev-id-olmoearth
+            extras: --extra dev --extra olmoearth
+            cache-tag: dev-olmoearth
           - os: macos-latest
             extras: --extra dev
             cache-tag: dev
@@ -207,9 +207,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-dev-id
+          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-dev
       - name: Install dependencies
-        run: uv sync --extra dev --extra id --frozen
+        run: uv sync --extra dev --frozen
       - name: Cache pre-commit hooks
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
         with:

@@ -1,0 +1,14 @@
+name: tgeo_vitl16_s2all_closp
+target: geo_eval_harness.models.TorchGeoViTBench
+kwargs:
+  factory: vit_large_patch16_224
+  weights_class: ViTLarge16_Weights
+  weights_member: SENTINEL2_ALL_CLOSP
+input:
+  bands: all
+segmentation:
+  layers:
+    - blocks.23
+    - blocks.17
+    - blocks.11
+    - blocks.5

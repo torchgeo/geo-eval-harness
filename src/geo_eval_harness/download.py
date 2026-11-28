@@ -7,6 +7,9 @@ Targets:
 - ``eurosat`` — torchgeo's EuroSAT downloader, into ``<output>/eurosat``.
 - ``resisc45`` — torchgeo's NWPU-RESISC45 downloader, into ``<output>/resisc45``.
 - ``aid`` — pinned ``isaaccorley/aid`` rehost, into ``<output>/aid``.
+- ``eurosat-l`` — pinned ``isaaccorley/eurosat-l``, into ``<output>/eurosat-l``.
+- ``bigearthnet-l`` — pinned ``isaaccorley/bigearthnet-l``, into ``<output>/bigearthnet-l``.
+- ``lc100-l`` — pinned ``isaaccorley/lc100-l``, into ``<output>/lc100-l``.
 - ``infrabench-cls``: pinned, verified Sentinel-1/2 tiles and spatial splits.
 - ``ucmerced`` — torchgeo's UC Merced downloader, into ``<output>/ucmerced``.
 - ``levir-cd-post`` — torchgeo's LEVIR-CD downloader, into ``<output>/levir-cd-post``.
@@ -34,6 +37,7 @@ Use ``--datasets`` to select a GeoBench subset.
 import hashlib
 import logging
 import shutil
+import tarfile
 import urllib.request
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -63,6 +67,15 @@ GEOBENCH_V2_REPO_PREFIX = "aialliance"
 
 AID_REPO = "isaaccorley/aid"
 AID_REVISION = "e6767964e40f567a18eac6e6ca5fce397e4ce411"
+
+EUROSAT_L_REPO = "isaaccorley/eurosat-l"
+EUROSAT_L_REVISION = "2db8fa8da738ccd8f06ce5861c3d204d07b49ea1"
+
+BIGEARTHNET_L_REPO = "isaaccorley/bigearthnet-l"
+BIGEARTHNET_L_REVISION = "4877101bb325f0a367e0f9fd367bae3e32f30bba"
+
+LC100_L_REPO = "isaaccorley/lc100-l"
+LC100_L_REVISION = "8f0e07f96b5bb254861f6c3d0ff4cb27ce39a9f8"
 
 HOTOSM_REPO = "hotosm/vhr-building-segmentation"
 HOTOSM_REVISION = "8d3e64e5c69aa37209953cce3a48df1092bc7c94"
@@ -110,6 +123,9 @@ TORCHGEO_DATASETS: tuple[str, ...] = (
 DIRECT_DATASETS: tuple[str, ...] = (
     "aid",
     "infrabench-cls",
+    "eurosat-l",
+    "bigearthnet-l",
+    "lc100-l",
     "hotosm_buildings",
     "openearthmap-sar",
     "open_cities",
@@ -225,6 +241,43 @@ def download_aid(output_dir: Path) -> None:
     with zipfile.ZipFile(target / "AID.zip") as archive:
         archive.extractall(target)
     logger.info("AID download complete.")
+
+
+def _download_landsatbench(
+    output_dir: Path, name: str, repo: str, revision: str, manifest: str
+) -> None:
+    target = Path(output_dir) / name
+    target.mkdir(parents=True, exist_ok=True)
+    checksums = load_checksums(manifest)
+    logger.info("Downloading %s@%s -> %s", repo, revision, target)
+    fetch_pinned(repo, revision, target, checksums, allow_patterns=list(checksums))
+    for archive_path in sorted(target / f for f in checksums if f.endswith(".tar")):
+        with tarfile.open(archive_path, "r:") as archive:
+            archive.extractall(target, filter="data")
+    logger.info("%s download complete.", name)
+
+
+def download_eurosat_l(output_dir: Path) -> None:
+    """Download the pinned ``isaaccorley/eurosat-l`` release into ``output_dir/eurosat-l``."""
+    _download_landsatbench(
+        output_dir, "eurosat-l", EUROSAT_L_REPO, EUROSAT_L_REVISION, "eurosat_l.sha256"
+    )
+
+
+def download_bigearthnet_l(output_dir: Path) -> None:
+    """Download the pinned ``isaaccorley/bigearthnet-l`` release into ``output_dir``."""
+    _download_landsatbench(
+        output_dir,
+        "bigearthnet-l",
+        BIGEARTHNET_L_REPO,
+        BIGEARTHNET_L_REVISION,
+        "bigearthnet_l.sha256",
+    )
+
+
+def download_lc100_l(output_dir: Path) -> None:
+    """Download the pinned ``isaaccorley/lc100-l`` release into ``output_dir/lc100-l``."""
+    _download_landsatbench(output_dir, "lc100-l", LC100_L_REPO, LC100_L_REVISION, "lc100_l.sha256")
 
 
 def download_infrabench_cls(output_dir: Path) -> None:

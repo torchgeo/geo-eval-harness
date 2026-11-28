@@ -1,5 +1,5 @@
 # Core image benchmark configuration (schema version 1).
-# Every field below is explicit with its default value (except device: auto for portability). Omit fields to inherit model/dataset defaults.
+# Every field below is explicit with its default value. Omit fields to inherit model/dataset defaults.
 schema_version: 1
 model:
   name: timm/resnet50

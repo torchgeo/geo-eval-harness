@@ -25,6 +25,7 @@ class OutputConfig(OutputPaths):
     resume: StrictBool = False
     # JSON Lines file for per-epoch segmentation records; output-only, so not in the resume hash.
     epoch_metrics: OutputPath | None = None
+    per_class_iou: StrictBool = False
 
 
 class CPUThroughputConfig(StrictModel):

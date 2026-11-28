@@ -1,110 +1,76 @@
 """KNN classifier for geo-eval-harness.
 
-Single-label and multi-label k-nearest neighbours backed by FAISS.
+Exact single-label and multi-label k-nearest neighbours in plain PyTorch.
 
-CPU uses ``IndexFlatL2``; CUDA delegates to :mod:`faissknn` when GPU resources are available.
-For L2 distance, predictions agree apart from floating-point differences.
+Neighbours come from brute-force search: a chunked matrix product between queries and the
+training features, followed by ``topk``. The same code runs on CPU, CUDA, and MPS.
 """
 
-import logging
-import os
-import sys
+import contextlib
+from collections.abc import Iterator
 from typing import Literal, Self
 
-if sys.platform == "darwin":
-    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+import numpy as np
+import torch
+import torch.nn.functional as F
 
-logging.getLogger("faiss.loader").setLevel(logging.WARNING)
+from geo_eval_harness.devices import resolve_device
 
-import faiss  # noqa: E402
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
+Metric = Literal["l2", "ip", "cosine"]
 
-if sys.platform == "darwin":
-    faiss.omp_set_num_threads(1)
-
-logger = logging.getLogger(__name__)
+# Cap each query chunk's score matrix at 2**28 float32 entries (1 GiB).
+_MAX_SCORE_ENTRIES = 2**28
 
 
-def _is_cpu_device(device: str) -> bool:
-    return str(device).lower() == "cpu"
-
-
-def gpu_faiss_available() -> bool:
-    """Return whether the installed FAISS package provides CUDA resources."""
-    return hasattr(faiss, "StandardGpuResources")
-
-
-def resolve_knn_device(requested_device: str | None, model_device: str) -> str:
-    """Resolve the KNN device, falling back for an implicit CUDA request.
-
-    Args:
-        requested_device: Explicit KNN device, or ``None`` to follow the model.
-        model_device: Device used by the feature extractor.
-
-    Returns:
-        Device to use for KNN evaluation.
-    """
-    device = requested_device if requested_device is not None else model_device
-    if _is_cpu_device(device) or gpu_faiss_available():
-        return device
-    if requested_device is not None:
-        raise RuntimeError(
-            f"GPU-enabled FAISS is unavailable for explicit KNN device {requested_device!r}. "
-            "Set --knn-device cpu or install a GPU-enabled FAISS backend."
-        )
-    logger.warning(
-        "GPU-enabled FAISS is unavailable; using CPU for KNN while the model remains on %s. "
-        "Set --knn-device cpu to make this choice explicit.",
-        model_device,
-    )
-    return "cpu"
+@contextlib.contextmanager
+def _full_precision_matmul() -> Iterator[None]:
+    """Disable TF32 and reduced-precision matmul so neighbour ranking stays exact."""
+    previous = torch.get_float32_matmul_precision()
+    torch.set_float32_matmul_precision("highest")
+    try:
+        yield
+    finally:
+        torch.set_float32_matmul_precision(previous)
 
 
 class KNNClassifier:
-    """FAISS-backed KNN classifier with single- and multi-label support.
+    """Exact KNN classifier with single- and multi-label support.
 
     :meth:`fit` uses 1-D labels for single-label tasks and 2-D labels for multi-label tasks.
 
     Args:
-        n_neighbors: Number of neighbours (k). Clamped to ``min(k, n_train)``
-            before either backend is constructed.
-        device: ``"cpu"`` (default) uses the FAISS CPU index.
-            Other values require ``faissknn`` with GPU FAISS.
-            The GPU backend is installed automatically on Linux x86_64.
-            An unavailable backend raises an error.
-        metric: Distance metric — ``"l2"`` (default), ``"ip"`` (inner
-            product), or ``"cosine"`` (cosine similarity; auto-normalizes
-            inputs). GPU path only; CPU path always uses L2.
-        use_fp16: Use fp16 for GPU index computation (~30 % speedup on
-            Ampere+). GPU path only; ignored on CPU.
+        n_neighbors: Number of neighbours (k). Clamped to ``min(k, n_train)`` at fit time.
+        device: Any torch device string, such as ``"cpu"`` (default), ``"cuda"``,
+            ``"cuda:1"``, or ``"mps"``. ``"cuda"`` resolves to the current CUDA device
+            when :meth:`fit` is called.
+        metric: ``"l2"`` (default) ranks by Euclidean distance, ``"ip"`` by inner product,
+            and ``"cosine"`` by cosine similarity (inputs are L2-normalized).
     """
 
     def __init__(
         self,
         n_neighbors: int = 5,
         device: str = "cpu",
-        metric: Literal["l2", "ip", "cosine"] = "l2",
-        *,
-        use_fp16: bool = False,
+        metric: Metric = "l2",
     ) -> None:
         if isinstance(n_neighbors, bool) or not isinstance(n_neighbors, int) or n_neighbors < 1:
             raise ValueError(f"n_neighbors must be a positive integer, got {n_neighbors!r}.")
+        if metric not in ("l2", "ip", "cosine"):
+            raise ValueError(f"metric must be one of 'l2', 'ip', 'cosine'; got {metric!r}.")
         self.n_neighbors = n_neighbors
-        self._effective_n_neighbors: int | None = None
-        self.device = "cuda:0" if device == "cuda" else device
-        self.metric = metric
-        self.use_fp16 = use_fp16
+        self.device = device
+        self.metric: Metric = metric
 
-        self._index: faiss.Index | None = None
+        self._effective_n_neighbors: int | None = None
+        self._device: torch.device | None = None
+        self._train: torch.Tensor | None = None
+        self._train_sq: torch.Tensor | None = None
         self._y: np.ndarray | None = None
         self._n_classes: int | None = None
         self._multi_label: bool = False
 
-        self._impl = None
-
     def fit(self, X: np.ndarray, y: np.ndarray) -> Self:
-        """Index training features and store labels.
+        """Store training features on the device and keep labels on the host.
 
         Args:
             X: ``(n_samples, n_features)`` float32 feature matrix.
@@ -119,28 +85,39 @@ class KNNClassifier:
         self._multi_label = y.ndim == 2
         self._effective_n_neighbors = min(self.n_neighbors, len(X))
 
-        if _is_cpu_device(self.device):
-            self._fit_cpu(X, y)
-        else:
-            self._fit_gpu(X, y)
-        return self
+        self._device = resolve_device(self.device)
+        train = self._prepare(torch.from_numpy(X).to(self._device))
+        self._train = train
+        self._train_sq = (train * train).sum(dim=1) if self.metric == "l2" else None
 
-    def _fit_cpu(self, X: np.ndarray, y: np.ndarray) -> None:
-        self._index = faiss.IndexFlatL2(X.shape[1])
-        self._index.add(X)
         if self._multi_label:
             self._n_classes = int(y.shape[1])
             self._y = y.astype(np.float32)
         else:
             self._y = y.astype(np.int64)
             self._n_classes = int(np.max(self._y)) + 1
+        return self
 
-    def _search_cpu(self, X: np.ndarray) -> np.ndarray:
-        assert self._index is not None
-        X = np.ascontiguousarray(np.atleast_2d(X).astype(np.float32))
+    def _prepare(self, X: torch.Tensor) -> torch.Tensor:
+        return F.normalize(X, dim=1) if self.metric == "cosine" else X
+
+    def _search(self, X: np.ndarray) -> np.ndarray:
+        """Return the ``(n_test, k)`` indices of the nearest training rows."""
+        assert self._train is not None
         assert self._effective_n_neighbors is not None
-        _, indices = self._index.search(X, self._effective_n_neighbors)
-        return indices
+        queries = np.ascontiguousarray(np.atleast_2d(X).astype(np.float32))
+        chunk = max(1, _MAX_SCORE_ENTRIES // len(self._train))
+        found = []
+        with torch.inference_mode(), _full_precision_matmul():
+            for start in range(0, len(queries), chunk):
+                batch = torch.from_numpy(queries[start : start + chunk]).to(self._device)
+                scores = self._prepare(batch) @ self._train.T
+                if self._train_sq is not None:
+                    # argmax of 2 q.t - |t|^2 equals argmin of |q - t|^2; |q|^2 is constant per row.
+                    scores = 2.0 * scores - self._train_sq
+                top = scores.topk(self._effective_n_neighbors, dim=1).indices
+                found.append(top.cpu().numpy())
+        return np.concatenate(found) if found else np.empty((0, self._effective_n_neighbors), int)
 
     def _neighbour_counts(self, indices: np.ndarray) -> np.ndarray:
         """Count each class's votes per test sample, returning shape (n_test, n_classes)."""
@@ -154,52 +131,6 @@ class KNNClassifier:
             n_test, self._n_classes
         )
 
-    def _predict_cpu(self, X: np.ndarray) -> np.ndarray:
-        assert self._y is not None
-        indices = self._search_cpu(X)
-        if self._multi_label:
-            scores = self._y[indices].mean(axis=1)
-            return (scores > 0.5).astype(np.int32)
-        return np.argmax(self._neighbour_counts(indices), axis=1)
-
-    def _predict_proba_cpu(self, X: np.ndarray) -> np.ndarray:
-        assert self._y is not None
-        indices = self._search_cpu(X)
-        k_eff = indices.shape[1]
-        if self._multi_label:
-            return self._y[indices].mean(axis=1)
-        return self._neighbour_counts(indices).astype(np.float32) / k_eff
-
-    def _fit_gpu(self, X: np.ndarray, y: np.ndarray) -> None:
-        from faissknn import FaissKNNClassifier, FaissKNNMultilabelClassifier
-
-        if not gpu_faiss_available():
-            raise RuntimeError(
-                f"KNNClassifier(device={self.device!r}): GPU-enabled FAISS is unavailable. "
-                "Set --knn-device cpu for CLI runs or request device='cpu'."
-            )
-
-        assert self._effective_n_neighbors is not None
-        kwargs = {
-            "n_neighbors": self._effective_n_neighbors,
-            "device": self.device,
-            "metric": self.metric,
-            "use_fp16": self.use_fp16,
-        }
-        if self._multi_label:
-            self._n_classes = int(y.shape[1])
-            self._impl = FaissKNNMultilabelClassifier(**kwargs)
-        else:
-            # Gaps in class IDs require max(y) + 1 slots, not faissknn's unique-label count.
-            self._n_classes = int(np.max(y)) + 1
-            self._impl = FaissKNNClassifier(n_classes=self._n_classes, **kwargs)
-        with torch.cuda.device(self.device):
-            self._impl.fit(X, y.astype(np.int64))
-
-    def _to_gpu_tensor(self, X: np.ndarray) -> torch.Tensor:
-        """Give faissknn a CUDA tensor so it can use device memory directly."""
-        return torch.from_numpy(np.ascontiguousarray(X.astype(np.float32))).to(self.device)
-
     @property
     def multi_label(self) -> bool:
         """Whether the classifier is in multi-label mode."""
@@ -211,19 +142,17 @@ class KNNClassifier:
         Returns single-label class indices ``(n_samples,)`` or multi-label
         binary predictions ``(n_samples, n_classes)``.
         """
-        if _is_cpu_device(self.device):
-            return self._predict_cpu(X)
-        assert self._impl is not None, "Call fit() first."
-        # FAISS's Torch wrapper uses the current device to choose its CUDA stream.
-        with torch.cuda.device(self.device):
-            result = self._impl.predict(self._to_gpu_tensor(X))
-        return result.cpu().numpy() if isinstance(result, torch.Tensor) else result
+        assert self._y is not None, "Call fit() first."
+        indices = self._search(X)
+        if self._multi_label:
+            scores = self._y[indices].mean(axis=1)
+            return (scores > 0.5).astype(np.int32)
+        return np.argmax(self._neighbour_counts(indices), axis=1)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """Predict per-class probabilities ``(n_samples, n_classes)``."""
-        if _is_cpu_device(self.device):
-            return self._predict_proba_cpu(X)
-        assert self._impl is not None, "Call fit() first."
-        with torch.cuda.device(self.device):
-            result = self._impl.predict_proba(self._to_gpu_tensor(X))
-        return result.cpu().numpy() if isinstance(result, torch.Tensor) else result
+        assert self._y is not None, "Call fit() first."
+        indices = self._search(X)
+        if self._multi_label:
+            return self._y[indices].mean(axis=1)
+        return self._neighbour_counts(indices).astype(np.float32) / indices.shape[1]

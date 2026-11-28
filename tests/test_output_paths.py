@@ -1,4 +1,4 @@
-"""Consistent nonblank output paths across image, FLOPs, and coordinate settings."""
+"""Consistent nonblank output paths across image, FLOPs, and profile settings."""
 
 from pathlib import Path
 
@@ -11,7 +11,6 @@ from geo_eval_harness.config.flops import FlopsConfig, FlopsOutputConfig
 from geo_eval_harness.config.profile import ProfileConfig, ProfileOutputConfig
 from geo_eval_harness.config.run import OutputConfig, RunConfig
 from geo_eval_harness.config.schema import StrictModel, resolve_output_path
-from geo_eval_harness.coordbench.config import CoordConfig, CoordOutputConfig
 
 
 @pytest.mark.parametrize(
@@ -21,8 +20,6 @@ from geo_eval_harness.coordbench.config import CoordConfig, CoordOutputConfig
         (OutputConfig, "file", None),
         (FlopsOutputConfig, "directory", "results"),
         (FlopsOutputConfig, "file", None),
-        (CoordOutputConfig, "directory", "results"),
-        (CoordOutputConfig, "file", None),
         (ProfileOutputConfig, "directory", None),
         (ProfileOutputConfig, "file", None),
     ],
@@ -49,7 +46,6 @@ class TestOutputPaths:
         (OutputConfig, "directory", ""),
         (OutputConfig, "file", 1),
         (FlopsOutputConfig, "directory", False),
-        (CoordOutputConfig, "file", " "),
         (ProfileOutputConfig, "directory", "\t\n"),
         (ProfileOutputConfig, "file", 1.5),
     ],
@@ -67,7 +63,6 @@ def test_blank_or_non_string_path_is_rejected(
     [
         (OutputConfig, "directory", "results.csv"),
         (FlopsOutputConfig, "file", " path with spaces.csv "),
-        (CoordOutputConfig, "directory", "missing/tree/out.csv"),
         (ProfileOutputConfig, "directory", " path with spaces.csv "),
     ],
 )
@@ -88,7 +83,6 @@ def test_valid_path_is_not_rewritten(
             True,
         ),
         ("flops", FlopsConfig, {"model": {"name": "rcf"}}, ["--output"], True),
-        ("coord", CoordConfig, {"model": {"name": "sincos"}}, ["--output-dir", "--output"], False),
         (
             "profile",
             ProfileConfig,
@@ -103,7 +97,7 @@ def test_output_flags_preserve_other_settings_and_round_trip(  # noqa: PLR0913 -
     capsys: pytest.CaptureFixture[str],
     flags: list[str],
     command: str,
-    config_class: type[RunConfig | FlopsConfig | CoordConfig | ProfileConfig],
+    config_class: type[RunConfig | FlopsConfig | ProfileConfig],
     selection: dict,
     *,
     yaml_output: bool,

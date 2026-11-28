@@ -36,8 +36,7 @@ Glossary
    intrinsic dimension
        The geometric / statistical dimension of a manifold of feature
        embeddings, estimated by methods such as TwoNN, MLE, or lPCA.
-       Optional in ``geo-eval-harness`` via ``intrinsic_dim`` and the
-       ``[id]`` extra; see :mod:`geo_eval_harness.intrinsic_dim`.
+       Enable these estimators with ``intrinsic_dim.enabled: true``. See :mod:`geo_eval_harness.intrinsic_dim`.
 
    KNN-5
        5-nearest-neighbour classifier evaluated on backbone-extracted

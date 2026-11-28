@@ -230,7 +230,6 @@ def test_satlas_s2rgb_presets_default_to_model_normalization(
         {"dataset": " "},
         {"model": {"name": "rcf", "unexpected": 1}},
         {"runtime": {"device": "cuda:nope"}},
-        {"runtime": {"device": "mps"}},
         {"runtime": {"batch_size": 0}},
         {"runtime": {"batch_size": True}},
         {"runtime": {"seed": -1}},
@@ -260,7 +259,6 @@ def test_profile_rejects_invalid_and_unknown_settings(values: dict[str, Any]) ->
     [
         ("unknown", "m-eurosat", "Unknown model"),
         ("rcf", "unknown", "unknown dataset"),
-        ("sincos", "m-eurosat", "coordinate encoder"),
     ],
 )
 def test_profile_rejects_unknown_or_incompatible_selection(

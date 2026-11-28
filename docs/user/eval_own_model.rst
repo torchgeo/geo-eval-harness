@@ -161,7 +161,6 @@ The preset identifies your importable class and its result name. Add any constru
 
    name: new_model
    target: new_model.NewModel
-   track: image
    kwargs:
      pretrained: true
 

@@ -54,10 +54,6 @@ def test_only_linear_runs_and_resumes_without_knn(tmp_path: Path, kind: str) -> 
             "geo_eval_harness.main.evaluate_knn", side_effect=AssertionError("KNN evaluated")
         ),
         mock.patch(
-            "geo_eval_harness.knn.resolve_knn_device",
-            side_effect=AssertionError("KNN device resolved"),
-        ),
-        mock.patch(
             "geo_eval_harness.knn.KNNClassifier", side_effect=AssertionError("KNN constructed")
         ),
     ):

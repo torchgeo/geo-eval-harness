@@ -46,7 +46,6 @@ def test_level_presets_select_the_matching_model(name, level):
     assert model.level == level
     assert preset.name == name
     assert preset.kwargs == {"level": level}
-    assert preset.track == "image"
     assert model.normalization == "identity"
     assert config.input.bands == "all"
     assert config.input.image_size == 224

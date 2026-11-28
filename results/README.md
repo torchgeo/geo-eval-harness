@@ -2,7 +2,7 @@
 
 This directory holds the checked-in benchmark outputs for **geo-eval-harness**. Files are organized into two categories: canonical benchmark results consumed by the leaderboard and results explorer, and historical one-off study outputs.
 
-For full `EvaluationResult` column schemas, normalization strategy names, method values, and resume-key semantics, see [docs/user/results-format.rst](../docs/user/results-format.rst). For CoordBench evaluation details, see [docs/user/coordbench.rst](../docs/user/coordbench.rst).
+For full `EvaluationResult` column schemas, normalization strategy names, method values, and resume-key semantics, see [docs/user/results-format.rst](../docs/user/results-format.rst).
 
 ## Canonical Benchmark Results
 
@@ -15,7 +15,6 @@ These files are the up-to-date benchmark data read by `scripts/regen_leaderboard
 | `compute_cost.md`, `compute_cost_coverage.csv`, `compute_cost_provenance.json` | Companion protocol notes, requested-cell coverage matrix, and hardware/software provenance metadata for `compute_cost.csv`. |
 | `intrinsic_dim/<model>.csv` | Per-model intrinsic-dimension estimates and centered feature-spectrum diagnostics (`method=intrinsic_dim`). |
 | `profiles/<model>.csv` | Per-model runtime profile rows (`method=profile`). |
-| `coordbench_results.csv` | Canonical CoordBench location-encoder benchmark results produced by `geo-eval-harness coord`. |
 
 ## Historical One-Off Studies
 

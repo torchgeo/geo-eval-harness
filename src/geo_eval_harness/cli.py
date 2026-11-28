@@ -9,7 +9,6 @@ import sys
 from collections.abc import Callable, Sequence
 
 from . import __version__, commands
-from .commands.coord_arguments import add_coord_arguments
 from .commands.flops_arguments import add_flops_arguments
 from .commands.profile_arguments import add_profile_arguments
 from .commands.run_arguments import add_run_arguments
@@ -58,10 +57,6 @@ def _setup_parser() -> argparse.ArgumentParser:
     add_profile_arguments(profile)
     flops = subcommands.add_parser("flops", help="Measure synthetic compute cost")
     add_flops_arguments(flops)
-
-    # Coordinate benchmarks
-    coord = subcommands.add_parser("coord", help="Run coordinate encoder benchmarks")
-    add_coord_arguments(coord)
     return parser
 
 
@@ -92,7 +87,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Run image, coordinate, download, and compute commands."""
+    """Run image, download, and compute commands."""
     args = _parse_args(argv)
     if args.command == "run":
         commands.run(args)
@@ -106,8 +101,6 @@ def main(argv: list[str] | None = None) -> None:
         commands.profile(args)
     elif args.command == "flops":
         commands.flops(args)
-    elif args.command == "coord":
-        commands.coord(args)
     else:
         raise SystemExit(f"{args.command} is not implemented by the image CLI yet")
 

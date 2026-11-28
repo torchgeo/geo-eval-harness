@@ -24,6 +24,28 @@ def _band_configs() -> list[BandConfig]:
     return ["rgb", "s2"]
 
 
+def flops_band_inputs(
+    preset: ModelPreset, *, multispectral: Literal["s2", "all"] = "s2"
+) -> tuple[str, list[BandConfig]]:
+    """Choose synthetic inputs from the checkpoint bands or the model's declared modality."""
+    kwargs = preset.kwargs
+    if (
+        preset.target.startswith("geo_eval_harness.models.TorchGeo")
+        and {"weights_class", "weights_member"} <= kwargs.keys()
+    ):
+        from ..models._torchgeo_bands import S1_BANDS, checkpoint_band_order
+        from ..models.torchgeo_models import _resolve_torchgeo_weights
+
+        weights = _resolve_torchgeo_weights(kwargs["weights_class"], kwargs["weights_member"])
+        order = checkpoint_band_order(weights.meta)
+        if order:
+            return ("kuro_siwo" if order == S1_BANDS else "cloudsen12"), ["all"]
+    modality = kwargs.get("modality")
+    if modality in ("s1", "S1GRD"):
+        return "kuro_siwo", ["all"]
+    return "cloudsen12", ["rgb"] if modality == "RGB" else ["rgb", multispectral]
+
+
 def _heads() -> list[Head]:
     """Return the default multi-scale segmentation heads."""
     return ["fpn", "dpt"]
@@ -41,7 +63,7 @@ class FlopsInputConfig(StrictModel):
     """Synthetic input shape and metadata, never actual dataset samples.
 
     ``s2`` means all bands from ``band_source``.
-    The default CloudSen12 source contains twelve Sentinel-2 optical bands.
+    The model selects the default source and band configuration.
     """
 
     band_source: StrictStr = "cloudsen12"
@@ -126,11 +148,11 @@ class FlopsConfig(StrictModel):
 
     def resolve(self) -> tuple[Self, ModelPreset]:
         """Apply model/dataset defaults beneath explicit YAML or CLI settings."""
-        preset = load_model_preset(self.model, seed=self.runtime.seed).for_dataset(
-            self.input.band_source
-        )
-        if preset.track != "image":
-            raise ValueError(f"{self.model.name!r} is a coordinate encoder; use 'coord'")
+        preset = load_model_preset(self.model, seed=self.runtime.seed)
+        source, bands = flops_band_inputs(preset)
+        explicit_input = self.input.model_dump(exclude_unset=True)
+        source = explicit_input.get("band_source", source)
+        preset = preset.for_dataset(source)
         # Explicit constructor options also take precedence over dataset overrides.
         preset = preset.model_copy(update={"kwargs": {**preset.kwargs, **self.model.kwargs}})
         inputs = preset.input.model_dump(exclude_unset=True)
@@ -139,11 +161,14 @@ class FlopsConfig(StrictModel):
             inputs.pop("image_size", None)
         defaults = {
             "input": {
-                key: value
-                for key, value in inputs.items()
-                if key in {"image_size", "normalization"}
+                "band_source": source,
+                "band_configs": bands,
+                **{k: inputs[k] for k in ("image_size", "normalization") if k in inputs},
             },
-            "segmentation": {"probe": preset.segmentation.model_dump(exclude_unset=True)},
+            "segmentation": {
+                "band_configs": explicit_input.get("band_configs", bands),
+                "probe": preset.segmentation.model_dump(exclude_unset=True),
+            },
         }
         effective = self.model_validate(merge_settings(defaults, self.model_dump_yaml()))
         preset_input = preset.input.model_copy(update={"image_size": effective.input.image_size})

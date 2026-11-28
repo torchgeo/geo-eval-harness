@@ -20,7 +20,7 @@ import yaml
 from timm.models import get_pretrained_cfg, is_model_in_modules
 
 from geo_eval_harness.config.catalog import list_model_configs
-from geo_eval_harness.config.flops import FlopsConfig
+from geo_eval_harness.config.flops import FlopsConfig, flops_band_inputs
 from geo_eval_harness.config.presets import ModelPreset, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig, load_yaml
 from geo_eval_harness.devices import resolve_device
@@ -97,16 +97,7 @@ def build_jobs(models: list[str], sizes: list[int], heads: list[str]) -> list[Jo
         ]
     for name in names:
         preset = load_model_preset(model_selection(name))
-        if preset.track != "image":
-            continue
-        modality = preset.kwargs.get("modality")
-        source = "kuro_siwo" if modality in ("s1", "S1GRD") else "cloudsen12"
-        if modality in ("s1", "S1GRD"):
-            selections = ["all"]
-        elif modality == "RGB":
-            selections = ["rgb"]
-        else:
-            selections = ["rgb", "all"]
+        source, selections = flops_band_inputs(preset, multispectral="all")
         selected = preset.for_dataset(source)
         selected_heads = tuple(heads) if selected.segmentation.layers else ()
         for size in dict.fromkeys(image_grid_size(selected, value) for value in sizes):

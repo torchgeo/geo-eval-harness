@@ -5,17 +5,20 @@ SAR wrappers convert linear power to dB when required by their normalization pol
 They then apply model-specific per-band normalization.
 """
 
+from collections.abc import Callable, Sequence
 from enum import StrEnum
 
 import torch
 
 from geo_eval_harness.datasets.base import BandSpec
+from geo_eval_harness.errors import UnsupportedNormalizationError
 
 
 class InputUnit(StrEnum):
     """Input scales used by GeoBench image tensors."""
 
     S2_DN = "s2_dn"  # raw Sentinel-2 sensor counts, 0..~10000+
+    LANDSAT_C2_L2_DN = "landsat_c2_l2_dn"  # USGS Landsat C2 L2 SR counts (DN * 2.75e-5 - 0.2)
     REFLECTANCE_0_1 = "reflectance_0_1"  # already-normalised, ~0..1 (2.8 max in m-so2sat)
     UINT8 = "uint8"  # 0..255 NAIP / Landsat L1
     S2_TCI = "s2_tci"  # 0..255 Sentinel-2 L1C true-colour image; never detected from data
@@ -24,6 +27,11 @@ class InputUnit(StrEnum):
 # ESA's L1C TCI saturates at 255 for DN 3558 (reflectance 0.3558):
 # https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/definitions
 _S2_TCI_SATURATION_DN = 3558.0
+
+# USGS Landsat Collection 2 Level-2 surface reflectance scale and additive offset:
+# https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products
+_LANDSAT_C2_L2_SCALE = 0.0000275
+_LANDSAT_C2_L2_OFFSET = -0.2
 
 
 def detect_input_unit(bands: list[BandSpec]) -> InputUnit:
@@ -57,6 +65,9 @@ def detect_input_unit(bands: list[BandSpec]) -> InputUnit:
 
 
 def _detect_band_group_unit(bands: list[BandSpec]) -> InputUnit:
+    declared = {b.unit for b in bands if b.unit is not None}
+    if InputUnit.LANDSAT_C2_L2_DN.value in declared:
+        return InputUnit.LANDSAT_C2_L2_DN
     max_value = max(b.max for b in bands)
     if max_value > 1000:
         return InputUnit.S2_DN
@@ -69,6 +80,8 @@ def to_reflectance(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
     """Bring values into roughly ``[0, 1]`` reflectance space."""
     if src == InputUnit.S2_DN:
         return images / 10000.0
+    if src == InputUnit.LANDSAT_C2_L2_DN:
+        return (images * _LANDSAT_C2_L2_SCALE + _LANDSAT_C2_L2_OFFSET).clamp(min=0.0)
     if src == InputUnit.UINT8:
         return images / 255.0
     return images
@@ -78,6 +91,8 @@ def to_s2_dn(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
     """Bring values into S2 DN scale (~``[0, 10000]``)."""
     if src == InputUnit.S2_DN:
         return images
+    if src == InputUnit.LANDSAT_C2_L2_DN:
+        return to_reflectance(images, src) * 10000.0
     if src == InputUnit.REFLECTANCE_0_1:
         return images * 10000.0
     # UINT8 to DN: rescale [0, 255] -> [0, 10000].
@@ -92,6 +107,8 @@ def to_uint8(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
     """
     if src == InputUnit.UINT8:
         return images
+    if src == InputUnit.LANDSAT_C2_L2_DN:
+        return to_reflectance(images, src) * 255.0
     if src == InputUnit.REFLECTANCE_0_1:
         return images * 255.0
     # S2 DN to uint8: rescale [0, 10000] -> [0, 255].
@@ -125,6 +142,29 @@ def to_rgb_display_scale(images: torch.Tensor, src: InputUnit) -> torch.Tensor:
 def linear_power_to_db(images: torch.Tensor) -> torch.Tensor:
     """Convert SAR linear power to dB, flooring power at 1e-6 without mutating inputs."""
     return 10.0 * torch.log10(images.clamp(min=1e-6))
+
+
+def sar_db_converter(
+    bands: list[BandSpec], indices: Sequence[int]
+) -> Callable[[torch.Tensor], torch.Tensor]:
+    """Return a converter from the bands' declared SAR unit to dB for the selected channels."""
+    undeclared = [bands[i].name for i in indices if bands[i].unit not in ("db", "linear_power")]
+    if undeclared:
+        raise UnsupportedNormalizationError(
+            f"Model-native SAR normalization needs SAR bands in 'db' or 'linear_power'; "
+            f"{undeclared} declare no unit. Use --normalization dataset."
+        )
+    log_channels = [i for i in indices if bands[i].unit == "linear_power"]
+
+    if not log_channels:
+        return lambda x: x
+
+    def convert(x: torch.Tensor) -> torch.Tensor:
+        x = x.clone()
+        x[:, log_channels] = linear_power_to_db(x[:, log_channels])
+        return x
+
+    return convert
 
 
 def convert_unit(images: torch.Tensor, src: InputUnit, dst: InputUnit) -> torch.Tensor:
