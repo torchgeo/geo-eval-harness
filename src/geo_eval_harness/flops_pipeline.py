@@ -213,7 +213,7 @@ def _probe_gflops(
 
 
 def _n_tokens(model: nn.Module, image_size: int) -> int | None:
-    """Count spatial patches at the measured size, including padded edges when enabled."""
+    """Count patch tokens across spectral groups, including padded edge patches when enabled."""
     if getattr(model, "patch_size_unit", "pixels") != "pixels":
         return None
     groups = getattr(model, "num_patch_groups", 1)
