@@ -853,6 +853,12 @@ def run_classification(  # noqa: PLR0913 - keep the CLI failure policy explicit
         "n_val": n_counts["val"],
         "n_test": n_counts["test"],
     }
+    if cfg.output.embeddings is not None:
+        from geo_eval_harness.embeddings import write_embeddings
+
+        held_out = {"val": (x_val, y_val), "test": (x_test, y_test)}
+        path = write_embeddings(Path(cfg.output.embeddings), common_meta, held_out)
+        logger.info("Saved validation and test embeddings to %s", path)
     cal_n_bins_linear = cfg.classification.calibration.n_bins_linear
 
     if not plan.skip_knn:

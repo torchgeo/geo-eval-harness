@@ -224,6 +224,17 @@ Epoch field            Description
 
 The ``selected`` line records ``best_epoch`` and ``best_val_miou``, matching the result row. Non-finite values are written as ``NaN`` or ``Infinity``, which Python's ``json`` module and pandas read.
 
+.. _classification-embeddings:
+
+Classification embeddings
+-------------------------
+
+Set ``output.embeddings`` to a directory to save the validation and test embeddings of each classification run to ``<directory>/<model name>/<dataset>-<config_hash>.parquet``. Each row holds ``split``, ``sample_id``, ``label`` and ``embedding``, the model's features before ``classification.feature_standardize``. The schema metadata key ``geo_eval_harness`` holds the run's result metadata, the package version and the sample ID source as JSON.
+
+Validation and test loaders keep dataset order, so ``sample_id`` (``<split>/<index>``) names the same sample in every model's file. The training split is shuffled differently for each model and is not saved. The option is output only, so it does not change ``config_hash``; runs skipped by ``--resume`` write no embeddings.
+
+``python scripts/cka_matrix.py <file> <file> ... --output cka.csv`` writes the linear CKA between every pair of files on the test split (``--split val`` for validation). It fails when the files hold different datasets, sample IDs or labels, and compares at most ``--max-samples`` samples (10,000 by default), keeping the same sample IDs for every model.
+
 Atomic appends
 --------------
 
