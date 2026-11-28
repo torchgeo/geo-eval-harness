@@ -1230,3 +1230,22 @@ def test_s1_requires_both_bands_and_declared_native_units(
     assert s1_resnet(bands, normalization="identity").normalize_inputs(
         images
     ).flatten().tolist() == [2.0, 1.0]
+
+
+def test_softcon_scales_and_clips_pretrained_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from torchgeo.models import ResNet50_Weights
+
+    from geo_eval_harness.config.presets import build_model, load_model_preset
+    from geo_eval_harness.config.schema import ModelConfig
+
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    preset = load_model_preset(ModelConfig(name="torchgeo/resnet50_s2_all_softcon"))
+    model = build_model(preset, bands=MEurosat().bands, normalization="model_native")
+    stats = _extract_normalize_transforms(ResNet50_Weights.SENTINEL2_ALL_SOFTCON)
+    assert stats is not None
+    mean, std = stats[0].mean[0], stats[0].std[0]
+    dn = mean + torch.tensor([-3.0, -1.0, 0.0, 1.0, 3.0]) * std
+    image = dn.view(1, 1, 1, 5).expand(1, 13, 1, 5)
+    torch.testing.assert_close(
+        model.normalize_inputs(image)[0, 0, 0], torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0])
+    )

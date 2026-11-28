@@ -179,6 +179,42 @@ _UNIT_EXPECTED_SOURCE: dict[str, InputUnit] = {
 }
 
 
+def _rescale_to_sigma_range(norms: nn.Sequential, sigma: float) -> nn.Sequential:
+    """Map ``mean - sigma * std`` to 0 and ``mean + sigma * std`` to 1, then clamp.
+
+    Each ``Normalize`` keeps its statistics but standardizes to a bounded range instead of a
+    z-score, as in the min-max preprocessing of the SoftCon authors.
+    """
+    layers: list[nn.Module] = []
+    for layer in norms:
+        mean = torch.as_tensor(layer.mean, dtype=torch.float32)
+        std = torch.as_tensor(layer.std, dtype=torch.float32)
+        layers.append(
+            type(layer)(mean=(mean - sigma * std).tolist(), std=(2.0 * sigma * std).tolist())
+        )
+    layers.append(nn.Hardtanh(0.0, 1.0))
+    return nn.Sequential(*layers)
+
+
+def _checkpoint_normalization(
+    weights: Any, member: str, skip: int, clip_sigma: float | None
+) -> nn.Sequential | None:
+    """Select the checkpoint's normalization stages and optional bounded z-score."""
+    if isinstance(skip, bool) or not isinstance(skip, int) or skip < 0:
+        raise ValueError(f"skip_weight_normalize must be a non-negative integer, got {skip!r}.")
+    if clip_sigma is not None and not (math.isfinite(clip_sigma) and clip_sigma > 0):
+        raise ValueError(f"clip_sigma must be positive and finite, got {clip_sigma!r}.")
+    layers = _extract_normalize_transforms(weights)
+    if layers is None:
+        return None
+    if skip > len(layers):
+        raise ValueError(
+            f"skip_weight_normalize={skip} exceeds the {len(layers)} Normalize layers supplied by {member}."
+        )
+    selected = layers[skip:]
+    return _rescale_to_sigma_range(selected, clip_sigma) if clip_sigma is not None else selected
+
+
 class _TorchGeoBackboneBench(BenchModel):
     """Shared scaffolding for torchgeo pretrained-weights wrappers.
 
@@ -200,6 +236,7 @@ class _TorchGeoBackboneBench(BenchModel):
         target_size: int | None,
         normalization_input_unit: str | None = None,
         skip_weight_normalize: int = 0,
+        clip_sigma: float | None = None,
         factory_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -226,32 +263,14 @@ class _TorchGeoBackboneBench(BenchModel):
             self.normalization_input_unit = normalization_input_unit
         else:
             self.normalization_input_unit = self.weights_input_unit
-        if (
-            isinstance(skip_weight_normalize, bool)
-            or not isinstance(skip_weight_normalize, int)
-            or skip_weight_normalize < 0
-        ):
-            raise ValueError(
-                "skip_weight_normalize must be a non-negative integer, "
-                f"got {skip_weight_normalize!r}."
-            )
+        self._weights_normalize = _checkpoint_normalization(
+            weights, weights_member, skip_weight_normalize, clip_sigma
+        )
         self.weights = weights
         model_factory = _resolve_torchgeo_factory(factory)
         self.backbone = model_factory(weights=weights, **(factory_kwargs or {}))
         self.auto_resize = auto_resize
         self.target_size = target_size
-        weights_normalize = _extract_normalize_transforms(weights)
-        if weights_normalize is not None:
-            if skip_weight_normalize > len(weights_normalize):
-                raise ValueError(
-                    f"skip_weight_normalize={skip_weight_normalize} exceeds the "
-                    f"{len(weights_normalize)} Normalize layers supplied by {weights_member}."
-                )
-            self._weights_normalize = nn.Sequential(
-                *list(weights_normalize)[skip_weight_normalize:]
-            )
-        else:
-            self._weights_normalize = None
         self._weights_target_unit: InputUnit | None = _UNIT_EXPECTED_SOURCE.get(
             self.normalization_input_unit or ""
         )
@@ -289,6 +308,7 @@ class _TorchGeoBackboneBench(BenchModel):
         layers: list[nn.Module] = []
         for inner in self._weights_normalize:
             if not isinstance(inner, (_N1, _N2)):
+                layers.append(inner)
                 continue
             mean = inner.mean
             std = inner.std
