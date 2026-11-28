@@ -465,7 +465,7 @@ Its YAML schema is independent of image runs:
      file: null
      resume: true
 
-By default, Sentinel-1 checkpoints use both VV and VH from Kuro Siwo. Fixed multispectral checkpoints use all CloudSen12 bands, and RGB-only modalities use RGB. Other models measure both RGB and all twelve CloudSen12 bands. Use ``--band-source`` and ``--band-configs`` to override these choices. Both ``all`` and ``s2`` select every source band. Segmentation uses the selected inputs unless you specify ``--seg-band-configs``.
+By default, Sentinel-1 checkpoints use both VV and VH from Kuro Siwo. Fixed multispectral checkpoints use all CloudSen12 bands, and RGB-only modalities use RGB. An optical preset can set ``flops_band_config`` to ``rgb`` or ``all`` to select one input for the FLOPs command and compute sweep. Other models measure both RGB and all twelve CloudSen12 bands. Use ``--band-source`` and ``--band-configs`` to override these choices. Both ``all`` and ``s2`` select every source band. Segmentation uses the selected inputs unless you specify ``--seg-band-configs``.
 ``--image-size`` must be positive; synthetic inputs cannot use native
 dataset dimensions. ``--normalization`` has the same five choices as image
 runs. ``--probe-head`` is ``linear`` or ``mlp``, and
