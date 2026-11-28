@@ -55,6 +55,7 @@ def test_presets_and_dataset_defaults_respect_explicit_values(
         {
             "name": "example",
             "target": "example.Model",
+            "flops_band_config": "all",
             "kwargs": {"features": 12},
             "input": {"image_size": 256},
             "segmentation": {"layers": ["deep"], "learning_rate": 0.02},
@@ -70,6 +71,7 @@ def test_presets_and_dataset_defaults_respect_explicit_values(
     monkeypatch.setattr("geo_eval_harness.config.flops.load_model_preset", lambda *a, **kw: preset)
     config = FlopsConfig(model=ModelConfig(name="example"))
     resolved, selected = config.resolve()
+    assert resolved.input.band_configs == resolved.segmentation.band_configs == ["all"]
     assert resolved.input.image_size == 384
     assert resolved.input.normalization == "model"
     assert resolved.segmentation.probe.layers == ["dataset"]
@@ -79,12 +81,13 @@ def test_presets_and_dataset_defaults_respect_explicit_values(
     explicit = FlopsConfig.model_validate(
         {
             "model": {"name": "example", "kwargs": {"features": 7}},
-            "input": {"image_size": 32, "normalization": "none"},
+            "input": {"image_size": 32, "normalization": "none", "band_configs": ["rgb"]},
             "segmentation": {"probe": {"layers": [], "temporal_pool": "mean"}},
             "output": {"resume": False},
         }
     )
     resolved, selected = explicit.resolve()
+    assert resolved.input.band_configs == resolved.segmentation.band_configs == ["rgb"]
     assert resolved.input.image_size == 32
     assert resolved.input.normalization == "none"
     assert resolved.segmentation.probe.layers == []
