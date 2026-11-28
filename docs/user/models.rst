@@ -125,6 +125,12 @@ The ``satmaepp/rgb_vit_l`` preset runs the ViT-L/16 encoder pretrained on fMoW-R
 
 The default input is 224 pixels. Use ``--image-size`` to select another multiple of 16. Position embeddings are interpolated to the selected patch grid. The default pooling is patch mean, with ``cls`` and ``both`` available through ``model.kwargs.pool``.
 
+The ``satmaepp/s2_vit_l`` preset uses a ViT-L/8 pretrained on fMoW-Sentinel at 96 pixels (or any multiple of 8 via ``--image-size``). It projects three Sentinel-2 band groups independently: B02/B03/B04/B08, B05/B06/B07/B8A, and B11/B12. Each spatial patch yields three tokens. Segmentation averages corresponding patch features across those groups. Model normalization clips per-band DN to two standard deviations around the fMoW-Sentinel mean and quantizes to 8-bit intensities.
+
+.. code-block:: console
+
+   $ geo-eval-harness run --model satmaepp/s2_vit_l --dataset m-eurosat --normalization model
+
 Random Convolutional Features (RCF)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

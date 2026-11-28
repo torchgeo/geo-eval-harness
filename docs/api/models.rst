@@ -83,6 +83,7 @@ SatMAE++
 ^^^^^^^^
 
 .. autoclass:: SatMAEPPBench
+.. autoclass:: SatMAEPPSentinelBench
 
 EoS-FM
 ^^^^^^

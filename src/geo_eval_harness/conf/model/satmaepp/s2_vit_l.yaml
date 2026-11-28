@@ -1,0 +1,10 @@
+name: satmaepp/s2_vit_l
+target: geo_eval_harness.models.SatMAEPPSentinelBench
+supports_model_normalization: true
+flops_band_config: all
+input:
+  image_size: 96
+  bands: all
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers: ["blocks.23", "blocks.17", "blocks.11", "blocks.5"]
