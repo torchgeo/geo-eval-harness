@@ -23,6 +23,9 @@ from geo_eval_harness.segmentation_probe import SegmentationProbe
     [
         ("skyclip_vit_b32", "vit_base_patch32_clip_224"),
         ("skyclip_vit_l14", "vit_large_patch14_clip_quickgelu_224"),
+        ("remoteclip_rn50", "resnet50_clip"),
+        ("remoteclip_vit_b32", "vit_base_patch32_clip_224"),
+        ("remoteclip_vit_l14", "vit_large_patch14_clip_224"),
     ],
 )
 def test_clip_preset(variant: str, architecture: str) -> None:
@@ -73,3 +76,22 @@ def test_clip_rgb_preprocessing_and_patch_readout() -> None:
         torch.testing.assert_close(model(images), torch.nn.functional.normalize(embedding))
         probe = SegmentationProbe(model, layer_names=preset.segmentation.layers, num_classes=2)
         assert probe(images).shape == (1, 2, 63, 95)
+
+
+def test_remoteclip_resnet_readouts_and_segmentation_taps() -> None:
+    preset = load_model_preset(
+        ModelConfig(name="clip/remoteclip_rn50", kwargs={"pretrained": False})
+    )
+    bench = MEurosat()
+    model = build_model(
+        preset, bands=bench.select_band_specs(bench.rgb_bands), normalization="identity"
+    )
+    image = torch.zeros(1, 3, 224, 224)
+    with torch.inference_mode():
+        assert model(image).shape == (1, 1024)
+        model.pool = "avg"
+        torch.testing.assert_close(
+            model(image), model.backbone.forward_features(image).mean((-2, -1))
+        )
+        probe = SegmentationProbe(model, layer_names=preset.segmentation.layers, num_classes=2)
+        assert probe.channels_list == [2048, 1024, 512, 256]
