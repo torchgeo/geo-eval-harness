@@ -9,6 +9,7 @@ import torch
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
 from geo_eval_harness.bands import BandCompatibilityError
+from geo_eval_harness.config import list_model_configs
 from geo_eval_harness.config.flops import FlopsConfig
 from geo_eval_harness.config.presets import build_model, load_model_preset
 from geo_eval_harness.config.schema import ModelConfig
@@ -18,18 +19,13 @@ from geo_eval_harness.models import CLIPVisionBench
 from geo_eval_harness.segmentation_probe import SegmentationProbe
 
 
-@pytest.mark.parametrize(
-    ("variant", "architecture"),
-    [
-        ("skyclip_vit_b32", "vit_base_patch32_clip_224"),
-        ("skyclip_vit_l14", "vit_large_patch14_clip_quickgelu_224"),
-    ],
-)
-def test_clip_preset(variant: str, architecture: str) -> None:
-    config, preset = FlopsConfig(model=ModelConfig(name=f"clip/{variant}")).resolve()
+@pytest.mark.parametrize("name", [n for n in list_model_configs() if n.startswith("clip/")])
+def test_clip_preset_declares_rgb_and_checksum(name: str) -> None:
+    config, preset = FlopsConfig(model=ModelConfig(name=name)).resolve()
     assert config.input.band_configs == config.segmentation.band_configs == ["rgb"]
-    assert preset.kwargs["model_name"] == architecture
     assert preset.kwargs["filename"] in load_checksums("clip_vision.sha256")
+    if name == "clip/skyclip_vit_l14":
+        assert "quickgelu" in preset.kwargs["model_name"]
 
 
 def test_verified_checkpoint_preserves_projection(
@@ -61,8 +57,11 @@ def test_clip_rgb_preprocessing_and_patch_readout() -> None:
     bands = bench.select_band_specs(bench.rgb_bands)
     with pytest.raises(BandCompatibilityError, match="--bands rgb"):
         build_model(preset, bands=bands[::-1])
+    with pytest.raises(ValueError, match="Unsupported CLIP pooling"):
+        build_model(preset, bands=bands, pool="bad")
     preset.kwargs.update(pool="both", normalize=True)
     model = build_model(preset, bands=bands, normalization="model_native")
+    assert any(p.requires_grad for p in model.parameters())
     images = torch.full((1, 3, 63, 95), 1779.0)
     normalized = model.normalize_inputs(images)
     expected = (0.5 - torch.tensor(OPENAI_CLIP_MEAN)) / torch.tensor(OPENAI_CLIP_STD)

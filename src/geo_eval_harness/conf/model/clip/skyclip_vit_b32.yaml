@@ -1,6 +1,5 @@
 name: clip/skyclip_vit_b32
 target: geo_eval_harness.models.CLIPVisionBench
-supports_model_normalization: true
 flops_band_config: rgb
 kwargs:
   model_name: vit_base_patch32_clip_224
@@ -12,8 +11,4 @@ input:
   normalization: model
 segmentation:
   lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
-  layers:
-    - blocks.11
-    - blocks.8
-    - blocks.5
-    - blocks.2
+  layers: ["blocks.11", "blocks.8", "blocks.5", "blocks.2"]
