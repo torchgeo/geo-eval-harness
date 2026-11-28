@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 import yaml
 
@@ -50,6 +51,31 @@ def classification_arguments(
         str(path),
         "--output",
         str(output),
+    ]
+
+
+def test_saved_embeddings_align_across_models(
+    tmp_path: Path, classification_files: Path, cli_main: Callable[..., None]
+) -> None:
+    tables, rows = [], []
+    for features in (8, 16):
+        output = tmp_path / f"rcf-{features}.csv"
+        settings = {
+            "model": {"name": "rcf", "kwargs": {"features": features}},
+            "output": {"embeddings": "embeddings"},
+        }
+        cli_main(classification_arguments(output, extra_settings=settings))
+        row = pd.read_csv(output, dtype={"config_hash": str}).iloc[0]
+        rows.append(row)
+        path = tmp_path / "embeddings" / "rcf" / f"m-eurosat-{row['config_hash']}.parquet"
+        tables.append(pq.read_table(path))
+
+    expected_ids = [f"val/{index}" for index in range(rows[0]["n_val"])]
+    expected_ids += [f"test/{index}" for index in range(rows[0]["n_test"])]
+    assert [table["sample_id"].to_pylist() for table in tables] == [expected_ids, expected_ids]
+    assert tables[0]["label"].to_pylist() == tables[1]["label"].to_pylist()
+    assert [table["embedding"].type.list_size for table in tables] == [
+        row["feature_dim"] for row in rows
     ]
 
 
