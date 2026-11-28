@@ -43,6 +43,8 @@ def flops_band_inputs(
     modality = kwargs.get("modality")
     if modality in ("s1", "S1GRD"):
         return "kuro_siwo", ["all"]
+    if preset.flops_band_config is not None:
+        return "cloudsen12", [preset.flops_band_config]
     return "cloudsen12", ["rgb"] if modality == "RGB" else ["rgb", multispectral]
 
 
