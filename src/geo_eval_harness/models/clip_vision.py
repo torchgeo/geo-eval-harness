@@ -5,6 +5,7 @@ from typing import Any
 import timm
 import torch
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
+from timm.models import is_model_in_modules
 from torchvision.transforms.functional import normalize
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
@@ -43,13 +44,14 @@ class CLIPVisionBench(BenchModel):
         self.input_unit = detect_input_unit(bands) if self.handles_own_normalization else None
         self.pool = pool
         self.normalize_embedding = normalize
-        if pool not in ("proj", *VALID_MODES):
+        is_vit = is_model_in_modules(model_name, {"vision_transformer"})
+        pools = ("proj", *VALID_MODES) if is_vit else ("proj", "avg")
+        if pool not in pools:
             raise ValueError(f"Unsupported CLIP pooling {pool!r} for {model_name}.")
 
-        options: dict[str, Any] = {
-            "dynamic_img_size": dynamic_img_size,
-            "dynamic_img_pad": dynamic_img_size,
-        }
+        options: dict[str, Any] = {}
+        if is_vit:
+            options.update(dynamic_img_size=dynamic_img_size, dynamic_img_pad=dynamic_img_size)
         if pretrained:
             digest = load_checksums("clip_vision.sha256")[filename]
             path = fetch_pinned_file(
@@ -79,6 +81,8 @@ class CLIPVisionBench(BenchModel):
         self._input_hw = (images.shape[-2], images.shape[-1])
         if self.pool == "proj":
             features = self.backbone(images)
+        elif self.pool == "avg":
+            features = self.backbone.forward_features(images).mean(dim=(-2, -1))
         else:
             tokens = self.backbone.forward_features(images)
             features = pool_tokens(

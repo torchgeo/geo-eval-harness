@@ -1,0 +1,18 @@
+name: clip/remoteclip_vit_b32
+target: geo_eval_harness.models.CLIPVisionBench
+supports_model_normalization: true
+kwargs:
+  model_name: vit_base_patch32_clip_224
+  projection_dim: 512
+  repo_id: chendelong/RemoteCLIP
+  revision: bf1d8a3ccf2ddbf7c875705e46373bfe542bce38
+  filename: RemoteCLIP-ViT-B-32.pt
+input:
+  normalization: model
+segmentation:
+  lora_target_modules: 'blocks\.\d+\.(attn\.(qkv|proj)|mlp\.fc[12])'
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2

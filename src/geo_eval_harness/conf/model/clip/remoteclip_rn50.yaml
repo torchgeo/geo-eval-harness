@@ -1,0 +1,17 @@
+name: clip/remoteclip_rn50
+target: geo_eval_harness.models.CLIPVisionBench
+supports_model_normalization: true
+kwargs:
+  model_name: resnet50_clip
+  projection_dim: 1024
+  repo_id: chendelong/RemoteCLIP
+  revision: bf1d8a3ccf2ddbf7c875705e46373bfe542bce38
+  filename: RemoteCLIP-RN50.pt
+input:
+  normalization: model
+segmentation:
+  layers:
+    - stages.3
+    - stages.2
+    - stages.1
+    - stages.0
