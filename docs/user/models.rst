@@ -94,11 +94,11 @@ The presets default to dataset z-scoring. With ``--normalization model``, the wr
 MMEarth
 ^^^^^^^
 
-``mmearth/convnextv2_atto`` wraps the 12-band Sentinel-2 ConvNeXt-V2 Atto encoder from `MMEarth <https://github.com/vishalned/MMEarth-train>`_ (`ECCV 2024 <https://arxiv.org/abs/2405.02771>`_, MIT) using pure PyTorch without ``MinkowskiEngine``. The official ``pt-all_mod_atto_1M_64_uncertainty_56-8`` FCMAE checkpoint downloads from ERDA (or loads from ``model.kwargs.checkpoint_path``), is verified against ``checksums/mmearth.sha256``, remaps sparse pretraining kernels to dense convolutions, and loads strictly.
+``mmearth/convnextv2_atto`` loads the 12-band Sentinel-2 ConvNeXt-V2 Atto encoder from `MMEarth <https://github.com/vishalned/MMEarth-train>`_ (`ECCV 2024 <https://arxiv.org/abs/2405.02771>`_). The official FCMAE checkpoint downloads from ERDA into the torch hub cache. You can also supply the downloaded file with ``model.kwargs.checkpoint_path``. Both paths verify its SHA-256 before loading.
 
-Dataset channels map to MMEarth's 12-band Sentinel-2 pretraining order (``B01, B02, B03, B04, B05, B06, B07, B8A, B08, B09, B11, B12`` — note that narrow NIR ``B8A`` precedes broad NIR ``B08``). Because ConvNeXt-V2 is fully convolutional, inputs keep their native spatial resolution by default (``auto_resize: false``). Classification returns the 320-dimensional global-average-pooled, layer-normalized stage-3 embedding; segmentation hooks the four NCHW stages ``stages.3``, ``stages.2``, ``stages.1``, and ``stages.0`` (widths 320, 160, 80, 40).
+The encoder takes B8A before B08. For missing coastal aerosol (B01) and water vapour (B09), it uses blue (B02) and narrow NIR (B8A), respectively. The default dataset normalization uses each source band's statistics. With ``--normalization model``, the encoder converts optical bands to Sentinel-2 DN and applies the MMEarth64 L2A statistics. Set ``model.kwargs.s2_level: l1c`` for L1C inputs.
 
-The preset defaults to dataset z-scoring, matching MMEarth's GeoBench evaluation script. With ``--normalization model``, inputs convert to Sentinel-2 DN and standardize with MMEarth64's published pretraining statistics (``s2_level: l2a`` by default, or ``l1c``).
+Classification uses the 320-dimensional normalized, global-average-pooled embedding. Segmentation uses the four resolution stages. Set ``--image-size none`` to evaluate at the dataset's native resolution.
 
 SMARTIES
 ^^^^^^^^
