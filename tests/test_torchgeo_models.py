@@ -1194,14 +1194,26 @@ def s1_resnet(monkeypatch: pytest.MonkeyPatch) -> partial[TorchGeoResNetBench]:
     )
 
 
+@pytest.mark.parametrize(
+    ("member", "expected"),
+    [
+        ("SENTINEL1_ALL_DECUR", [0.0, 0.0]),
+        ("SENTINEL1_GRD_CLOSP", [-12.59, -20.26]),
+    ],
+)
 def test_s1_selects_vv_vh_and_converts_only_linear_power(
     s1_resnet: partial[TorchGeoResNetBench],
+    member: str,
+    expected: list[float],
 ) -> None:
     vv, vh = Sen1Floods11S1.bands
     bands = [*_rgb_bands(), vh, replace(vv, unit="linear_power")]
     images = torch.tensor([1000.0, 1000.0, 1000.0, -20.26, 10 ** (-12.59 / 10)]).view(1, 5, 1, 1)
     torch.testing.assert_close(
-        s1_resnet(bands).normalize_inputs(images), torch.zeros(1, 2, 1, 1), atol=1e-5, rtol=0
+        s1_resnet(bands, weights_member=member).normalize_inputs(images),
+        torch.tensor(expected).view(1, 2, 1, 1),
+        atol=1e-5,
+        rtol=0,
     )
 
 
