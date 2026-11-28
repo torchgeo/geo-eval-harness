@@ -32,6 +32,7 @@ from geo_eval_harness.models.torchgeo_models import (
     TorchGeoSwinBench,
     TorchGeoViTBench,
     _adapt_first_conv,
+    _checkpoint_normalization,
     _extract_normalize_transforms,
     _resolve_dofa_wavelengths,
     _resolve_panopticon_chn_ids,
@@ -1205,3 +1206,31 @@ def test_s1_requires_both_bands_and_declared_native_units(
     assert s1_resnet(bands, normalization="identity").normalize_inputs(
         images
     ).flatten().tolist() == [2.0, 1.0]
+
+
+def test_sigma_clipping_follows_all_checkpoint_normalization_stages() -> None:
+    weights = SimpleNamespace(
+        transforms=nn.Sequential(
+            Normalize(mean=[0.0], std=[255.0]), Normalize(mean=[0.5], std=[0.25])
+        )
+    )
+    normalize = _checkpoint_normalization(weights, "test", skip=0, clip_sigma=2.0)
+    assert normalize is not None
+    image = torch.tensor([0.0, 127.5, 255.0]).view(1, 1, 1, 3)
+    torch.testing.assert_close(normalize(image).flatten(), torch.tensor([0.0, 0.5, 1.0]))
+
+
+def test_softcon_scales_and_clips_pretrained_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from torchgeo.models import ResNet50_Weights
+
+    monkeypatch.setattr("torchgeo.models.resnet50", lambda weights: _TinySatlasResNet())
+    preset = load_model_preset(ModelConfig(name="torchgeo/resnet50_s2_all_softcon"))
+    model = build_model(preset, bands=MEurosat().bands, normalization="model_native")
+    stats = _extract_normalize_transforms(ResNet50_Weights.SENTINEL2_ALL_SOFTCON)
+    assert stats is not None
+    mean, std = stats[0].mean[0], stats[0].std[0]
+    dn = mean + torch.tensor([-3.0, -1.0, 0.0, 1.0, 3.0]) * std
+    image = dn.view(1, 1, 1, 5).expand(1, 13, 1, 5)
+    torch.testing.assert_close(
+        model.normalize_inputs(image)[0, 0, 0], torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0])
+    )

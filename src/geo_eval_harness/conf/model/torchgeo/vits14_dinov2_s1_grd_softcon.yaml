@@ -1,0 +1,14 @@
+name: tgeo_vits14_dinov2_s1grd_softcon
+target: geo_eval_harness.models.TorchGeoViTBench
+kwargs:
+  factory: vit_small_patch14_dinov2
+  weights_class: ViTSmall14_DINOv2_Weights
+  weights_member: SENTINEL1_GRD_SOFTCON
+input:
+  bands: all
+segmentation:
+  layers:
+    - blocks.11
+    - blocks.8
+    - blocks.5
+    - blocks.2
