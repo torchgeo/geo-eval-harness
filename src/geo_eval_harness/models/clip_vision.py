@@ -6,6 +6,7 @@ import timm
 import torch
 import torch.nn.functional as F
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
+from timm.models import is_model_in_modules
 from torchvision.transforms import functional as TF
 
 from geo_eval_harness.bands import BandCompatibilityError, BandSpec
@@ -22,7 +23,9 @@ _CLIP_STD = list(OPENAI_CLIP_STD)
 
 
 class CLIPVisionBench(BenchModel):
-    """CLIP vision tower with a verified checkpoint and optional token pooling."""
+    """CLIP vision tower with a verified checkpoint and optional pooling."""
+
+    feature_layout = "nchw"
 
     def __init__(  # noqa: PLR0913 - packaged checkpoint metadata and public readout options
         self,
@@ -41,15 +44,22 @@ class CLIPVisionBench(BenchModel):
     ) -> None:
         if [canonical_band_name(b.name) for b in bands] != ["red", "green", "blue"]:
             raise BandCompatibilityError("CLIP expects RGB channels in order. Use --bands rgb.")
-        if pool not in ("proj", *VALID_MODES):
-            raise ValueError(f"Unsupported CLIP pooling {pool!r} for {model_name}.")
+        is_vit = is_model_in_modules(model_name, {"vision_transformer"})
+        pools = ("proj", *VALID_MODES) if is_vit else ("proj", "mean")
+        if pool not in pools:
+            raise ValueError(
+                f"Unsupported CLIP pooling {pool!r} for {model_name}; choose from {pools}."
+            )
         self.handles_own_normalization = normalization == NormalizationStrategy.MODEL_NATIVE
         super().__init__(bands, normalization)
         self._input_unit = detect_input_unit(bands) if self.handles_own_normalization else None
+        self._is_vit = is_vit
         self.pool = pool
         self.normalize = normalize
 
-        options: dict[str, Any] = {"dynamic_img_size": True, "dynamic_img_pad": True}
+        options: dict[str, Any] = (
+            {"dynamic_img_size": True, "dynamic_img_pad": True} if is_vit else {}
+        )
         if pretrained:
             digest = load_checksums("clip_vision.sha256")[filename]
             path = fetch_pinned_file(
@@ -71,6 +81,8 @@ class CLIPVisionBench(BenchModel):
         self._input_hw = (images.shape[-2], images.shape[-1])
         if self.pool == "proj":
             features = self.backbone(images)
+        elif not self._is_vit:
+            features = self.backbone.forward_features(images).mean(dim=(-2, -1))
         else:
             tokens = self.backbone.forward_features(images)
             features = pool_tokens(

@@ -72,3 +72,25 @@ def test_clip_rgb_preprocessing_and_patch_readout() -> None:
         torch.testing.assert_close(model(images), torch.nn.functional.normalize(embedding))
         probe = SegmentationProbe(model, layer_names=preset.segmentation.layers, num_classes=2)
         assert probe(images).shape == (1, 2, 63, 95)
+
+
+def test_remoteclip_resnet_readouts_and_segmentation_taps() -> None:
+    preset = load_model_preset(
+        ModelConfig(name="clip/remoteclip_rn50", kwargs={"pretrained": False})
+    )
+    bench = MEurosat()
+    bands = bench.select_band_specs(bench.rgb_bands)
+    with pytest.raises(ValueError, match=r"Unsupported CLIP pooling.*'proj', 'mean'"):
+        build_model(preset, bands=bands, pool="cls")
+    model = build_model(preset, bands=bands, normalization="identity")
+    assert model.feature_layout == "nchw"
+    image = torch.zeros(1, 3, 63, 95)
+    with torch.inference_mode():
+        assert model(image).shape == (1, 1024)
+        probe = SegmentationProbe(model, layer_names=preset.segmentation.layers, num_classes=2)
+        assert probe.channels_list == [2048, 1024, 512, 256]
+        assert probe(image).shape == (1, 2, 63, 95)
+        pooled = build_model(preset, bands=bands, pool="mean", normalization="identity")
+        torch.testing.assert_close(
+            pooled(image), pooled.backbone.forward_features(image).mean((-2, -1))
+        )
